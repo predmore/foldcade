@@ -2462,6 +2462,7 @@ class FoldcadeApp : Application() {
                                     snapshot.platforms.associate { it.platformId to it.displayName },
                                     readAt = readAt,
                                     restoreReported = false,
+                                    settles = false,
                                 )
                                 val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                                 if (waiting && savedGames.isNotEmpty()) shell.showCuratedHome()
