@@ -188,9 +188,9 @@ internal class RommLibrary internal constructor(
                     if (!catalog.hasPlatforms()) null else {
                         val platforms = catalog.platforms()
                         val games = platforms.flatMap { platform ->
-                            val listed = catalog.listing(platform.id)
-                                ?: if (platform.romCount == 0L) emptyList() else return@runInterruptible null
-                            listed.map { it.toGame(wiring.romRoot, wiring.platforms) }
+                            // An interrupted first listing of another system must not
+                            // hide systems whose complete listings are already saved.
+                            catalog.listing(platform.id).orEmpty().map { it.toGame(wiring.romRoot, wiring.platforms) }
                         }
                         RommCatalogSnapshot(platforms.map { it.toListedPlatform(wiring) }, games)
                     }

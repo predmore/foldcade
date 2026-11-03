@@ -365,6 +365,31 @@ class RommLibraryTest {
     }
 
     @Test
+    fun anInterruptedNewSystemDoesNotHidePreviouslySavedSystemsAtStartup() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds"), platform(4, "snes")))
+            catalog.rememberPage(3, RomQuery(), page(rom("3ds", 3)), true)
+            catalog.rememberPage(4, RomQuery(limit = 1), RomPage(listOf(rom("snes", 4).copy(id = 9)), 2, 1, 0), false)
+            catalog.finishRefresh()
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); throw RommUnavailable("offline") }
+            refreshRommCatalog(harness.library, cached = {
+                assertEquals(listOf("1234"), it.games.map { game -> game.remoteKey })
+                assertFalse(rommCatalogLive(harness.library))
+                published = true
+            }) { harness.library.connect() }
+            assertTrue(published)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun cancellingDownloadClearsItsActivityAndDoesNotProduceATarget() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds")) }
