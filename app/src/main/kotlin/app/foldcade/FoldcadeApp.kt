@@ -116,6 +116,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -793,6 +794,12 @@ class FoldcadeApp : Application() {
         } catch (error: Exception) { Log.w("FoldcadeTheme", "Theme trials skipped", error); emptyList() }
         perfMark("theme-recovery-end")
         applySetupRestore()
+        // Restore applies first. Replay history on IO while Main prepares the theme, but join it
+        // before constructing the shell so its first Recent order and play totals are complete.
+        val preparedPlays = scope.async {
+            perfMark("history-prepare-start")
+            PlaySessions.open(File(filesDir, "play-sessions/events.log")).also { perfMark("history-prepare-end") }
+        }
         store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
@@ -843,7 +850,7 @@ class FoldcadeApp : Application() {
         val initialTheme = store.themeIndex(ids, names)
         themeChosen(initialTheme, music::setThemeChoice)
         perfMark("history-start")
-        plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
+        plays = runBlocking { preparedPlays.await() }
         perfMark("history-end")
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
@@ -1043,7 +1050,7 @@ class FoldcadeApp : Application() {
                     playersLoaded.complete(Unit)
                 }
                 // Listing games needs entries, not save-folder providers or old ROM copies.
-                if (store.folderTrees().isNotEmpty()) reloadFolder()
+                if (store.folderTrees().isNotEmpty()) reloadFolder(startup = true)
                 perfMark("save-prepare-start")
                 saveFoldersReady.await()
                 readRetroArchCores()
@@ -2158,7 +2165,7 @@ class FoldcadeApp : Application() {
         }
     }
 
-    fun reloadFolder(): Job {
+    fun reloadFolder(startup: Boolean = false): Job {
         libraryRetry = { reloadFolder() }
         val ticket = libraryTicket.incrementAndGet()
         return folderRefreshes.record(pluginLoad.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
@@ -2184,7 +2191,9 @@ class FoldcadeApp : Application() {
                 }
                 return@launch
             }
-            withContext(Dispatchers.Main.immediate) {
+            // Home can draw its saved places before this scan finishes. An early startup read
+            // must not replace that first grid with Loading; an explicit reload still shows it.
+            if (!startup) withContext(Dispatchers.Main.immediate) {
                 if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = false)
             }
             if (ticket != libraryTicket.get()) return@launch
