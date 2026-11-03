@@ -1889,7 +1889,13 @@ internal fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): A
     val held = remember(record, query, allowed, connections, artKeySaved, revision) { app.covers.cachedScene(record, query) }
     var fetched by remember(record, query, allowed, connections, artKeySaved, revision) { mutableStateOf<ArtScene?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved, revision) {
-        if ((record != null || query != null) && held?.complete != true) fetched = app.covers.fetchScene(record, query)
+        if ((record != null || query != null) && held?.complete != true) {
+            // Restore partial disk hits before waiting for a slow/offline source to fill their missing parts.
+            app.art.restore()
+            val restored = app.covers.cachedScene(record, query)
+            fetched = restored
+            if (restored?.complete != true) fetched = app.covers.fetchScene(record, query)
+        }
     }
     val scene = app.covers.chosenScene(fetched ?: held, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key }
@@ -1990,7 +1996,10 @@ internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, auto
     }
     var fetched by remember(record, query, allowed, connections, artKeySaved, revision, automatic) { mutableStateOf<ArtSet?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved, revision, automatic) {
-        if (automatic && (record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
+        if (automatic && (record != null || query != null) && held == null) {
+            app.art.restore()
+            fetched = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
+        }
     }
     val set = app.covers.chosen(held ?: fetched, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key && it.kind == ArtKind.Tile }
