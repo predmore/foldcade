@@ -25,3 +25,17 @@ data class LaunchableApp(
     val label: String,
     val systemGame: Boolean,
 )
+
+/** Android's own Settings app. Its label, "Settings", would read as Foldcade's. */
+const val ANDROID_SETTINGS_PACKAGE = "com.android.settings"
+
+/**
+ * An app's name as Foldcade says it: its own [label], except Android's Settings, which is
+ * "Android settings" on its tile, beside a game, and in a close warning, as R1 names it.
+ */
+fun appName(packageName: String?, label: String): String =
+    if (packageName == ANDROID_SETTINGS_PACKAGE) Copy.androidSettings else label
+
+/** An app's grid label where [appName] does not fit under its tile: Android settings is its gear's Settings again. */
+fun appShortName(packageName: String?): String? =
+    if (packageName == ANDROID_SETTINGS_PACKAGE) SettingsCopy.title else null

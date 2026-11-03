@@ -89,6 +89,9 @@ class CommandCenter(
     /** What the app beside [panel] is. Null for one Foldcade did not open. */
     fun beside(panel: Panel): RunningApp? = besideId(panel)?.let(running::get)
 
+    /** True when the app beside [panel] is one Foldcade did not open, so only Android knows what it is. */
+    fun besideOther(panel: Panel): Boolean = besideId(panel) == OTHER_APP_ID
+
     /** The achievements of the game beside [panel]. Null while loading, and for a game with none. */
     fun achievements(panel: Panel): GameAchievements? =
         besideId(panel)?.let(loaded::get)?.achievements?.takeIf { it.achievements.isNotEmpty() }

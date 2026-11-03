@@ -59,6 +59,7 @@ import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowControl
 import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
+import app.foldcade.language.settingsInnerDetail
 import app.foldcade.language.settingsInnerRows
 import app.foldcade.language.settingsInnerTitle
 import app.foldcade.language.settingsRows
@@ -90,7 +91,7 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
             Modifier
                 .fillMaxSize()
                 .background(theme.background)
-                .padding(horizontal = if (compact) 20.dp else 40.dp, vertical = 16.dp),
+                .padding(horizontal = if (compact) 20.dp else SETTINGS_PAGE_H, vertical = SETTINGS_PAGE_V),
             horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 24.dp),
         ) {
             // The categories scroll inside the ring's reach on each side, so the art's column adds it.
@@ -125,14 +126,11 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                     }
                 }
             }
-            val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
             Box(
                 Modifier
                     .weight(0.68f)
                     .fillMaxHeight()
-                    .clip(card)
-                    .background(cardFill(theme, design.settings.cardLift))
-                    .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card),
+                    .settingsCard(theme),
             ) {
                 // A new category's card rises in from the way the focus went.
                 SlideSwap(
@@ -317,12 +315,18 @@ private fun InnerHeader(model: PickerModel, inner: SettingsInner) {
         Box(Modifier.size(HEADER_ART), contentAlignment = Alignment.Center) {
             TileArt(innerArt(inner, model), lit = 1f, off = off)
         }
-        BasicText(
-            settingsInnerTitle(inner, model),
-            style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            BasicText(
+                settingsInnerTitle(inner, model),
+                style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // What the page is about, in a word or two each: a folder's path, its games, its art and info.
+            settingsInnerDetail(inner, model)?.let {
+                BasicText(it, style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }
 
@@ -497,8 +501,13 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
  * list rather than art here and gaps there. The menus keep [rowIcon] alone.
  */
 private fun settingsRowIcon(row: Row): Int? = when (row) {
-    // On a page that already shows the folder or the connection.
-    is Row.ForgetFolder, is Row.SignOut -> null
+    // On a page that already shows the connection.
+    is Row.SignOut -> null
+    // The page already shows the folder, so its row wears the act.
+    is Row.ForgetFolder -> R.drawable.symbol_remove
+    // Under the Emulators shelf, so the rows share Systems' icon column.
+    Row.SaveSetup -> R.drawable.symbol_saves
+    Row.FindSaves -> R.drawable.ic_control_search
     Row.SyncLibrary -> R.drawable.ic_badge_sync
     Row.AddFolder -> R.drawable.symbol_folder
     Row.AddRomm -> R.drawable.symbol_cloud
@@ -509,20 +518,41 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
 }
 
 @Composable
-private fun Header(theme: Theme, back: PromptKey, titled: Boolean = true, onBack: () -> Unit) {
+private fun Header(theme: Theme, back: PromptKey, titled: Boolean = true, onBack: () -> Unit) =
+    PageHeader(theme, back, SettingsCopy.title.takeIf { titled }, onBack)
+
+/**
+ * A Settings page's head: Back's key and the page's [title] on one pill, which a tap also
+ * closes. Settings, Themes and Licenses wear it. Without a title it is the key alone.
+ */
+@Composable
+internal fun PageHeader(theme: Theme, back: PromptKey, title: String?, onBack: () -> Unit) {
     Row(
         Modifier
             .clip(theme.style.shape.control())
             .background(theme.surface)
             .press(onBack)
-            .padding(start = 12.dp, end = if (titled) 24.dp else 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 12.dp, end = if (title != null) 24.dp else 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         PromptImage(promptGlyph(back), 32.dp)
-        if (titled) BasicText(SettingsCopy.title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true))
+        if (title != null) BasicText(title, style = style(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true))
     }
 }
+
+/** A Settings page's card: the lifted fill and the faint border, as tall as the page. */
+internal fun Modifier.settingsCard(theme: Theme): Modifier {
+    val design = theme.style
+    val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
+    return clip(card)
+        .background(cardFill(theme, design.settings.cardLift))
+        .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card)
+}
+
+/** The margins round a Settings page on the top screen. */
+internal val SETTINGS_PAGE_H = 40.dp
+internal val SETTINGS_PAGE_V = 16.dp
 
 /** A category: its art and one word, always the same height so the highlight never changes size. */
 @Composable

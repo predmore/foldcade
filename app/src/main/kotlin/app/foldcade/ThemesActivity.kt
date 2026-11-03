@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -24,14 +22,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
-import app.foldcade.language.Copy
 import app.foldcade.language.Meaning
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.Theme
@@ -41,8 +37,14 @@ import app.foldcade.language.ThemesAction
 import app.foldcade.language.ThemesCopy
 import app.foldcade.language.ThemesPage
 import app.foldcade.language.ThemesRow
+import app.foldcade.language.PromptKey
+import app.foldcade.language.promptKeyOf
+import app.foldcade.language.themeFacts
 import app.foldcade.ui.LocalFoldTheme
-import app.foldcade.ui.cardFill
+import app.foldcade.ui.PageHeader
+import app.foldcade.ui.SETTINGS_PAGE_H
+import app.foldcade.ui.SETTINGS_PAGE_V
+import app.foldcade.ui.settingsCard
 import app.foldcade.ui.keepInView
 import app.foldcade.ui.rememberSelectionSlots
 import app.foldcade.ui.ringScroll
@@ -95,10 +97,21 @@ class ThemesActivity : PanelKeyActivity() {
         val theme = app.paintFor(app.shell.model.themeIndex)
         setContent {
             CompositionLocalProvider(LocalFoldTheme provides theme) {
-                ThemesScreen(theme.theme, page, theme.theme.motion.animatorScale(LocalContext.current.contentResolver))
+                val back = promptKeyOf(faceMap().backKey) ?: PromptKey.FaceB
+                ThemesScreen(theme.theme, page, back, theme.theme.motion.animatorScale(LocalContext.current.contentResolver)) { onMeaning(Meaning.Back) }
             }
         }
         hideSystemBars()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        app.settingsPagesOpen++
+    }
+
+    override fun onStop() {
+        app.settingsPagesOpen--
+        super.onStop()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -138,25 +151,24 @@ class ThemesActivity : PanelKeyActivity() {
 private val ZIP_TYPES = arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
 
 @Composable
-private fun ThemesScreen(theme: Theme, page: ThemesPage, scale: Float) {
+private fun ThemesScreen(theme: Theme, page: ThemesPage, back: PromptKey, scale: Float, onBack: () -> Unit) {
     val design = theme.style
-    val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
-    Column(
+    // Settings' shell: the head over the packs on the left, and the focused pack's card on the right.
+    Row(
         Modifier
             .fillMaxSize()
             .background(theme.background)
-            .padding(horizontal = 48.dp, vertical = 32.dp),
+            .padding(horizontal = SETTINGS_PAGE_H, vertical = SETTINGS_PAGE_V),
+        horizontalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        BasicText(ThemesCopy.title, style = textStyle(theme, theme.onBackground, design.type.heroTitle, display = true))
-        Row(
-            Modifier.weight(1f).fillMaxWidth().padding(top = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
+        Column(Modifier.weight(0.32f).fillMaxHeight()) {
+            PageHeader(theme, back, ThemesCopy.title, onBack)
             val slots = rememberSelectionSlots()
             Column(
                 Modifier
-                    .weight(0.42f)
-                    .fillMaxHeight()
+                    .padding(top = 20.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
                     .ringScroll()
                     .selectionHighlight(slots, page.focus, ring = true, scale = scale),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -176,58 +188,46 @@ private fun ThemesScreen(theme: Theme, page: ThemesPage, scale: Float) {
                             .fillMaxWidth()
                             .selectionSlot(slots, index)
                             .keepInView(focused)
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         style = textStyle(theme, if (focused) theme.onBackground else theme.onBackground.copy(alpha = design.menu.labelRestAlpha), design.type.menuRow),
                     )
                 }
             }
-            Box(
-                Modifier
-                    .weight(0.58f)
-                    .fillMaxHeight()
-                    .clip(card)
-                    .background(cardFill(theme, design.settings.cardLift))
-                    .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.settings.borderAlpha), card)
-                    .padding(28.dp),
-            ) {
-                (page.focused as? ThemesRow.Pack)?.entry?.let { PackDetails(theme, it) }
+            // What the page says back, as why an install was refused, under the rows it is about.
+            page.note?.let {
+                BasicText(it, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = textStyle(theme, theme.onBackground, design.type.hint))
             }
         }
-        BasicText(
-            page.note ?: Copy.back,
-            modifier = Modifier.padding(top = 16.dp),
-            style = textStyle(theme, if (page.note != null) theme.onBackground else theme.muted, design.type.hint),
-        )
+        Box(
+            Modifier
+                .weight(0.68f)
+                .fillMaxHeight()
+                .settingsCard(theme)
+                .padding(28.dp),
+        ) {
+            (page.focused as? ThemesRow.Pack)?.entry?.let { PackDetails(theme, it) }
+        }
     }
 }
 
-/** A pack's own words about itself, then what Foldcade found in it. */
+/** A pack's own words about itself, then anything Foldcade found wrong while loading it. */
 @Composable
 private fun PackDetails(theme: Theme, entry: ThemeEntry) {
     val design = theme.style
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         BasicText(entry.name, style = textStyle(theme, theme.onBackground, design.type.dialogTitle, display = true))
-        val facts = listOfNotNull(
-            entry.about.author,
-            entry.release,
-            ThemesCopy.builtIn.takeIf { !entry.removable },
-            ThemesCopy.inUse.takeIf { entry.inUse },
-            ThemesCopy.onTrial.takeIf { entry.onTrial },
-        )
+        val facts = themeFacts(entry)
         if (facts.isNotEmpty()) BasicText(facts.joinToString(" · "), style = textStyle(theme, theme.muted, design.type.hint))
         entry.about.description?.let { BasicText(it, style = textStyle(theme, theme.onBackground, design.type.dialogBody)) }
         if (entry.parents.isNotEmpty()) BasicText("${ThemesCopy.builds} ${entry.parents.joinToString(" › ")}", style = textStyle(theme, theme.muted, design.type.hint))
         entry.about.license?.let { BasicText("${ThemesCopy.license} $it", style = textStyle(theme, theme.muted, design.type.hint)) }
-        if (entry.diagnostics.isEmpty()) {
-            BasicText(ThemesCopy.report, style = textStyle(theme, theme.muted, design.type.hint), modifier = Modifier.padding(top = 8.dp))
-        } else {
-            entry.diagnostics.forEachIndexed { index, it ->
-                BasicText(
-                    "${it.source}  ${it.message}",
-                    style = textStyle(theme, theme.onBackground, design.type.hint),
-                    modifier = if (index == 0) Modifier.padding(top = 8.dp) else Modifier,
-                )
-            }
+        // A pack that loaded cleanly says nothing more; an author reads what went wrong here.
+        entry.diagnostics.forEachIndexed { index, it ->
+            BasicText(
+                "${it.source}  ${it.message}",
+                style = textStyle(theme, theme.onBackground, design.type.hint),
+                modifier = if (index == 0) Modifier.padding(top = 8.dp) else Modifier,
+            )
         }
     }
 }

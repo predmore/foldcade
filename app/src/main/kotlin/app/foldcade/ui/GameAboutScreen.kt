@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
@@ -168,16 +170,18 @@ private fun AboutCard(
             verticalArrangement = Arrangement.spacedBy(GAP),
         ) {
             if (facts.isNotEmpty() || shot != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    FactList(facts, theme, factRoom, Modifier.weight(1f))
+                // The screenshot sits in the top corner; facts beside it make room, and facts below it take the card's width.
+                val shotWidth = shot?.let { minOf(shotMax, shotTall * it.ratio) } ?: 0.dp
+                val shotHeight = shot?.let { shotWidth / it.ratio } ?: 0.dp
+                Box(Modifier.fillMaxWidth().heightIn(min = shotHeight)) {
+                    FactList(facts, theme, factRoom, besideWidth = if (shot != null) shotWidth + GAP else 0.dp, besideHeight = shotHeight, Modifier.fillMaxWidth())
                     if (shot != null) {
                         Image(
                             painter = shot.painter,
                             contentDescription = null,
                             modifier = Modifier
-                                .widthIn(max = shotMax)
-                                .heightIn(max = shotTall)
-                                .aspectRatio(shot.ratio)
+                                .align(Alignment.TopEnd)
+                                .size(shotWidth, shotHeight)
                                 .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp / 2)),
                             contentScale = ContentScale.Crop,
                         )
@@ -195,10 +199,12 @@ private fun AboutCard(
 /**
  * One row per fact: its name, muted, in a column as wide as the widest name, and what it is
  * beside it. A long value takes a second line while the facts stay within [room] pixels
- * tall, earlier facts first, and ends in "…" past that.
+ * tall, earlier facts first, and ends in "…" past that. A row that starts beside the
+ * screenshot, the top [besideHeight] of the list, leaves [besideWidth] free for it; a row
+ * below it takes the whole width.
  */
 @Composable
-private fun FactList(facts: List<AboutFact>, theme: Theme, room: Int, modifier: Modifier) {
+private fun FactList(facts: List<AboutFact>, theme: Theme, room: Int, besideWidth: Dp, besideHeight: Dp, modifier: Modifier) {
     if (facts.isEmpty()) {
         Spacer(modifier)
         return
@@ -213,20 +219,29 @@ private fun FactList(facts: List<AboutFact>, theme: Theme, room: Int, modifier: 
     }
     BoxWithConstraints(modifier) {
         val gapPx = with(density) { FACT_GAP.roundToPx() }
-        val valueWidth = (constraints.maxWidth - labelWidth - with(density) { LABEL_GAP.roundToPx() }).coerceAtLeast(0)
-        val lines = remember(facts, valueStyle, valueWidth, room) {
+        val besidePx = with(density) { besideWidth.roundToPx() }
+        val besideTall = with(density) { besideHeight.roundToPx() }
+        val fullWidth = (constraints.maxWidth - labelWidth - with(density) { LABEL_GAP.roundToPx() }).coerceAtLeast(0)
+        // Each fact's lines, and whether it sits beside the screenshot, laid out top to bottom.
+        val laid = remember(facts, valueStyle, fullWidth, besidePx, besideTall, room) {
             val line = measurer.measure(LINE_PROBE, valueStyle, maxLines = 1).size.height
-            val wraps = facts.map {
-                measurer.measure(it.value, valueStyle, constraints = Constraints(maxWidth = valueWidth), maxLines = FACT_MAX_LINES).lineCount > 1
-            }
             var tall = facts.size * line + (facts.size - 1) * gapPx
-            wraps.map { wrap -> if (wrap && tall + line <= room) 2.also { tall += line } else 1 }
+            var top = 0
+            facts.map { fact ->
+                val beside = top < besideTall
+                val width = if (beside) (fullWidth - besidePx).coerceAtLeast(0) else fullWidth
+                val wrap = measurer.measure(fact.value, valueStyle, constraints = Constraints(maxWidth = width), maxLines = FACT_MAX_LINES).lineCount > 1
+                val lines = if (wrap && tall + line <= room) 2.also { tall += line } else 1
+                top += lines * line + gapPx
+                lines to beside
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(FACT_GAP)) {
             facts.forEachIndexed { index, fact ->
-                Row(horizontalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
+                val (lines, beside) = laid[index]
+                Row(Modifier.padding(end = if (beside) besideWidth else 0.dp), horizontalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
                     BasicText(fact.label, Modifier.width(with(density) { labelWidth.toDp() }), maxLines = 1, softWrap = false, style = labelStyle)
-                    BasicText(fact.value, Modifier.weight(1f), maxLines = lines[index], overflow = TextOverflow.Ellipsis, style = valueStyle)
+                    BasicText(fact.value, Modifier.weight(1f), maxLines = lines, overflow = TextOverflow.Ellipsis, style = valueStyle)
                 }
             }
         }

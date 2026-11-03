@@ -51,7 +51,9 @@ object PlayerChoiceCopy {
         system -> "Auto · $label"
         else -> "Default · $label"
     }
-    fun notInstalled(label: String): String = "$label · not installed"
+    /** What a choice that is gone ends with. A row too narrow for both shortens the name, never this. */
+    const val notInstalledEnd = " · not installed"
+    fun notInstalled(label: String): String = "$label$notInstalledEnd"
     fun core(label: String): String = "$label (RetroArch)"
     fun opened(label: String): String = "Opened with $label"
     fun unavailable(choice: PlayerChoice): String = if (choice.core == null) {

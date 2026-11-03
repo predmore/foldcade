@@ -126,6 +126,20 @@ fun libraryTabs(games: List<LibraryGame>): List<LibraryTab> {
  */
 fun systemTabLabel(systemId: String, name: String): String = SHORT_SYSTEMS[systemId.lowercase(Locale.ROOT)] ?: name
 
+/**
+ * What a folder's grid label says when its whole name does not fit under the tile: a
+ * system's folder by its tab's short name (GBA, Switch), Recently played as Recent. Null
+ * for a name the player gave, and for a folder with no shorter name.
+ */
+fun folderShortName(folder: HomeFolder): String? = when {
+    folder.namedByUser -> null
+    folder.recent -> LibraryCopy.recent
+    folder.platformId != null -> systemTabLabel(folder.platformId, folder.name)
+    // Android Games says Android, as its All games tab does.
+    folder.bucket != null -> systemTabLabel(folder.id, folder.name)
+    else -> null
+}?.takeIf { it != folder.name }
+
 private val SHORT_SYSTEMS: Map<String, String> = mapOf(
     "game-boy" to "GB", "gb" to "GB",
     "game-boy-color" to "GBC", "gbc" to "GBC",

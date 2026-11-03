@@ -11,7 +11,6 @@ object ThemesCopy {
     const val onTrial = "On trial"
     const val builds = "Builds on"
     const val license = "License"
-    const val report = "Nothing to report"
     /** The removal waiting on a second press of the bottom-screen button, [letter] on the player's pad. */
     fun removeArmed(letter: FaceLetter?): String = "Press ${letter?.name ?: "it"} again to remove"
     const val remove = "Remove"
@@ -47,6 +46,18 @@ data class ThemeEntry(
     val inUse: Boolean,
     val onTrial: Boolean,
     val parents: List<String> = emptyList(),
+)
+
+/**
+ * The line under a pack's name: who made it and its release, then whether it comes with
+ * Foldcade and whether it is in use. A pack Foldcade ships says only that, not Foldcade again.
+ */
+fun themeFacts(entry: ThemeEntry): List<String> = listOfNotNull(
+    entry.about.author?.takeIf { entry.removable },
+    entry.release,
+    ThemesCopy.builtIn.takeIf { !entry.removable },
+    ThemesCopy.inUse.takeIf { entry.inUse },
+    ThemesCopy.onTrial.takeIf { entry.onTrial },
 )
 
 /** A row on the Themes page. */

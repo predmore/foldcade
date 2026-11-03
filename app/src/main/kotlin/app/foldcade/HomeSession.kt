@@ -102,6 +102,7 @@ import app.foldcade.language.closeFolders
 import app.foldcade.language.foldcadeFolders
 import app.foldcade.language.groupOnHome
 import app.foldcade.language.openAnyFolder
+import app.foldcade.language.folderShortName
 import app.foldcade.language.openFolders
 import app.foldcade.language.setFolderOnHome
 
@@ -122,6 +123,8 @@ data class HomeFace(
     val occupiesBoth: Boolean,
     /** The game is on its server and not on this device yet. The tile shows a cloud. */
     val onServer: Boolean = false,
+    /** A folder's label when [title] does not fit under its tile ([folderShortName]). */
+    val shortTitle: String? = null,
 )
 
 /**
@@ -1114,6 +1117,7 @@ class HomeSession(
             platformId = folder.platformId,
             androidPackage = null,
             occupiesBoth = false,
+            shortTitle = folderShortName(folder),
         )
     }
 
@@ -1211,6 +1215,7 @@ class HomeSession(
                 platformId = folder.platformId,
                 androidPackage = null,
                 occupiesBoth = false,
+                shortTitle = folderShortName(folder),
             )
         }
         val item = catalogById[id]

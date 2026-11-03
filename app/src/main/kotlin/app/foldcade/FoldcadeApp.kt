@@ -237,6 +237,15 @@ class FoldcadeApp : Application() {
     var themesChanged by mutableStateOf(false)
         private set
 
+    /**
+     * How many of Settings' own pages that are activities of their own, Themes and Licenses,
+     * are in front. The screen beside one is then Settings' command center, not an app's.
+     */
+    var settingsPagesOpen by mutableStateOf(0)
+
+    /** The other app in front of a screen, for the command center beside it. */
+    val frontApps by lazy { FrontApps(UsageAccess(this), packageName) }
+
     private val themeTurn = java.util.concurrent.atomic.AtomicInteger()
 
     /**
@@ -1927,9 +1936,18 @@ class FoldcadeApp : Application() {
     fun libraryFolders(): List<LibraryFolder> {
         val scan = (plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan()
         val gameUris = scan?.let { it.games.map { game -> game.documentUri } + it.steamShortcuts.map { game -> game.documentUri } }.orEmpty()
+        val sources = localMedia?.index()?.sourceUris.orEmpty()
+        val grantOf = { uri: String -> runCatching { folderGrantUri(uri) }.getOrNull() }
+        val gamesIn = gameUris.groupingBy(grantOf).eachCount()
+        val mediaIn = sources.mapNotNullTo(HashSet(), grantOf)
         return store.libraryFolders().map { folder ->
-            val mediaOnly = isMediaOnlyLibraryTree(folder.uri, localMedia?.index()?.sourceUris.orEmpty(), gameUris)
-            folder.copy(artAndInfo = mediaOnly)
+            val grant = grantOf(folder.uri)
+            folder.copy(
+                artAndInfo = isMediaOnlyLibraryTree(folder.uri, sources, gameUris),
+                path = runCatching { folderPathLabel(folder.uri) }.getOrNull(),
+                games = gamesIn[grant] ?: 0,
+                media = grant in mediaIn,
+            )
         }
     }
 

@@ -1609,12 +1609,20 @@ class ShellController(
 
     /** What A says for the focused game when it is not a choice of screens. */
     fun focusedPlayKey(): PlayKey {
+        if (focusedOpensPlace()) return PlayKey.Open
         val game = focusedPlayable() ?: return PlayKey.None
         return when {
             isPaused(focusedTileId(game)) -> PlayKey.Resume
             game.occupiesBothDisplays -> PlayKey.Play
             else -> PlayKey.None
         }
+    }
+
+    /** The focused tile on Home or in Folders is a folder, a collection, or All games, which A opens. */
+    private fun focusedOpensPlace(): Boolean {
+        if (find != null || model.focus.chrome != null || model.libraryGrid || !showingHome()) return false
+        val face = home.face(model.focus.cellIndex) ?: return false
+        return !face.empty && (face.folder || face.allTile)
     }
 
     /** The focused tile when it is a game A would start. */

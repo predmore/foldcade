@@ -141,6 +141,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.actionFaces
+import app.foldcade.language.appName
+import app.foldcade.language.appShortName
 import app.foldcade.language.heroPlayLine
 import app.foldcade.language.openPlayerLabel
 import app.foldcade.language.DateStyle
@@ -597,7 +599,7 @@ private fun PanelBody(
                     )
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
-                        CenterSubject.App(panel, app.commandCenter.beside(panel)),
+                        centerSubject(app, panel),
                         hints = false,
                     ) { app.commandCenter.browse(panel) }
                 }
@@ -834,6 +836,27 @@ private sealed interface CenterSubject {
 }
 
 /**
+ * What the command center beside [panel]'s other screen stands beside. An app Foldcade opened
+ * is known by name. Themes and Licenses are Settings' pages, so Settings' command center stands
+ * beside them. Any other app, as one opened from Recents or an emulator's own setup, is the
+ * last app Android brought to the front, read again each minute and on each wake.
+ */
+@Composable
+private fun centerSubject(app: FoldcadeApp, panel: Panel): CenterSubject {
+    val known = app.commandCenter.beside(panel)
+    val other = known == null && app.commandCenter.besideOther(panel)
+    if (other && app.settingsPagesOpen > 0) {
+        return CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
+    }
+    val minute = app.deviceStatus.status.collectAsStateWithLifecycle().value.minute
+    val awake = !app.commandCenter.dimmed(panel)
+    val front by produceState<String?>(null, other, minute, awake) {
+        if (other) value = withContext(Dispatchers.IO) { app.frontApps.latest() }
+    }
+    return CenterSubject.App(panel, known ?: front?.takeIf { other }?.let { RunningApp(title = "", packageName = it) })
+}
+
+/**
  * Settings, Play activity, or a game's About filling the other screen while both are Foldcade's.
  * This screen then says where the user is, the way it would beside an app: About names the
  * game and wears its platform's mark.
@@ -853,7 +876,8 @@ private fun pageBeside(
         settings != null && settings.screen != screen ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
         playActivity != null && playActivity.screen != screen ->
-            CenterSubject.Page(PlayCopy.activity, null, "console", settings = false)
+            // The clock L1's chip and Y › Play time wear.
+            CenterSubject.Page(PlayCopy.activity, R.drawable.ic_status_playtime, null, settings = false)
         about != null && about.screen != screen -> {
             val game = app.shell.aboutGame(about.game)
             CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false)
@@ -1114,7 +1138,7 @@ private fun appLabel(packageName: String?): String? {
         if (packageName == null) return@remember null
         runCatching {
             val manager = context.packageManager
-            manager.getApplicationLabel(manager.getApplicationInfo(packageName, 0)).toString()
+            appName(packageName, manager.getApplicationLabel(manager.getApplicationInfo(packageName, 0)).toString())
         }.getOrNull()
     }
 }
@@ -1763,7 +1787,8 @@ private fun HeroLabel(
                 val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
                 val year = details?.releaseYear
                 val genre = details?.genres?.firstOrNull()
-                val facts = if (item == null || (year == null && genre == null)) {
+                // A game is measured with or without a year or genre, so its play line stays either way.
+                val facts = if (item == null) {
                     heroFacts(copy.title, copy.detail, *rest.toTypedArray())
                 } else {
                     // The line is measured as the card draws it, the save or activity word in front included.
@@ -2573,7 +2598,7 @@ private fun Picker(
                         onTapKey = { at -> onEffect(shell.tapFind(at)) },
                         onTapResult = { at -> onEffect(shell.tapFindResult(at)) },
                         onTapFilter = { at -> onEffect(shell.tapFindFilter(at)) },
-                        tile = { entry, focused, size, onClick -> FoundTile(app, screen, entry, focused, size, !iconsOnly, onClick) },
+                        tile = { entry, focused, size, titleWidth, onClick -> FoundTile(app, screen, entry, focused, size, titleWidth, !iconsOnly, onClick) },
                         modifier = Modifier.slidingUp { finding.progress.value },
                     )
                 }
@@ -3077,7 +3102,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
             model.connectOpen -> HintPlace.Connect
             model.dialog != null -> HintPlace.Dialog
             model.panel != null -> HintPlace.Menu
-            !model.atLibraryRoot -> HintPlace.InsidePlatform
+            // Hidden is opened from Edit home, so B going back is named even with nothing hidden.
+            !model.atLibraryRoot || model.homeGrid == HomeGrid.Hidden -> HintPlace.InsidePlatform
             else -> HintPlace.RootGrid
         },
     )
@@ -3536,6 +3562,7 @@ private fun StripColumn(
                     Cell(
                         title = label,
                         mark = game?.mark,
+                        shortTitle = face?.shortTitle ?: appShortName(game?.androidPackage),
                         themedApp = themedApp,
                         art = art,
                         showTitle = showTitle,
@@ -3971,7 +3998,7 @@ private fun CarriedTile(
  * or a group's mark. A hidden one wears a badge, since Find shows it all the same.
  */
 @Composable
-private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, focused: Boolean, size: Dp, showTitle: Boolean, onClick: () -> Unit) {
+private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, showTitle: Boolean, onClick: () -> Unit) {
     val shell = app.shell
     val game = if (entry.kind == FindKind.Group) null else shell.findGame(entry.id)
     val appObject = appGlyph(game?.androidPackage)
@@ -3990,12 +4017,14 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
                     .tileAnchor(cornerPx * foldTheme().motion.scaleFocus)
             } else Modifier,
             title = entry.title,
+            shortTitle = appShortName(game?.androidPackage),
             mark = entry.mark ?: game?.mark,
             themedApp = themedApp,
             art = art,
             showTitle = showTitle,
             focused = focused,
             size = size,
+            titleWidth = titleWidth,
             corner = corner,
             icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
             favorite = false,
@@ -4192,6 +4221,8 @@ private const val SETTLE_WINDOW_MILLIS = 600L
 private fun Cell(
     title: String,
     mark: String?,
+    /** Said instead of [title] when the whole title does not fit on its line, as GBA for Game Boy Advance. */
+    shortTitle: String? = null,
     /** The theme's object for an app ([appGlyph]), drawn in place of [mark] and its launcher [icon]. */
     themedApp: MarkGlyph? = null,
     art: Painter? = null,
@@ -4477,8 +4508,18 @@ private fun Cell(
             }
         }
         if (showTitle) {
+            val labelStyle = text(
+                if (focused) theme.onBackground else theme.muted,
+                LocalFoldTheme.current.theme.style.type.gridLabel,
+                theme,
+            ).copy(textAlign = TextAlign.Center)
+            val measurer = rememberTextMeasurer()
+            val roomPx = with(LocalDensity.current) { titleWidth.roundToPx() }
+            val shown = if (shortTitle == null) title else remember(title, shortTitle, labelStyle.fontSize, labelStyle.fontFamily, roomPx) {
+                if (measurer.measure(title, labelStyle, maxLines = 1, softWrap = false).size.width <= roomPx) title else shortTitle
+            }
             BasicText(
-                text = if (socket) "" else title,
+                text = if (socket) "" else shown,
                 modifier = Modifier
                     .zIndex(1f)
                     .clearAndSetSemantics { }
@@ -4486,11 +4527,7 @@ private fun Cell(
                     // The tile's slot stays its width. A wider title spills evenly either side.
                     .width(size)
                     .requiredWidth(titleWidth),
-                style = text(
-                    if (focused) theme.onBackground else theme.muted,
-                    LocalFoldTheme.current.theme.style.type.gridLabel,
-                    theme,
-                ).copy(textAlign = TextAlign.Center),
+                style = labelStyle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
