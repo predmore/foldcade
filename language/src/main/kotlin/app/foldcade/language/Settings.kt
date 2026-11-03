@@ -436,7 +436,8 @@ fun libraryFolderLabel(name: String, artAndInfo: Boolean): String =
  * art and info when it brings those beside its games. A media-only folder's title already says so.
  */
 fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
-    folder.path?.ifEmpty { null },
+    // A folder at the top of its storage is named by its path, so the path says nothing more.
+    folder.path?.ifEmpty { null }?.takeIf { it != folder.label },
     folderCountLine(folder.games).takeIf { folder.games > 0 },
     SettingsCopy.artAndInfo.takeIf { folder.media && !folder.artAndInfo },
 ).joinToString(" · ").ifEmpty { null }

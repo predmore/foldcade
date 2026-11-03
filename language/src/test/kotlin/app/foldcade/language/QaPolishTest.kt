@@ -15,6 +15,8 @@ class QaPolishTest {
         assertNull(folderShortName(HomeFolder("p", "My handhelds", platformId = "game-boy-advance", namedByUser = true)))
         assertNull(folderShortName(HomeFolder("g", "Genesis", platformId = "genesis")))
         assertNull(folderShortName(HomeFolder("c", "Favourites", userMade = true)))
+        assertEquals("Android", folderShortName(HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame)))
+        assertNull(folderShortName(HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp)))
     }
 
     @Test
@@ -22,6 +24,8 @@ class QaPolishTest {
         assertEquals(Copy.androidSettings, appName(ANDROID_SETTINGS_PACKAGE, "Settings"))
         assertEquals("Files", appName("com.android.documentsui", "Files"))
         assertEquals("Settings", appName(null, "Settings"))
+        assertEquals(SettingsCopy.title, appShortName(ANDROID_SETTINGS_PACKAGE))
+        assertNull(appShortName("com.android.documentsui"))
     }
 
     @Test
@@ -45,8 +49,10 @@ class QaPolishTest {
         val both = LibraryFolder("tree", "foldcade-qa1102", path = "ROMs/foldcade-qa1102", games = 38, media = true)
         assertEquals("ROMs/foldcade-qa1102 · 38 games · ${SettingsCopy.artAndInfo}", libraryFolderDetail(both))
         // A media-only folder's title already says art and info; one with nothing found says only where it is.
-        assertEquals("ES-DE", libraryFolderDetail(LibraryFolder("t", "ES-DE", artAndInfo = true, path = "ES-DE", media = true)))
+        assertEquals("Download/ES-DE", libraryFolderDetail(LibraryFolder("t", "ES-DE", artAndInfo = true, path = "Download/ES-DE", media = true)))
         assertEquals("1 game", libraryFolderDetail(LibraryFolder("t", "x", games = 1)))
+        // A folder at the top of its storage would say its name twice.
+        assertEquals("9 games · ${SettingsCopy.artAndInfo}", libraryFolderDetail(LibraryFolder("t", "foldcade-qa1102D", path = "foldcade-qa1102D", games = 9, media = true)))
         assertNull(libraryFolderDetail(LibraryFolder("t", "x")))
     }
 

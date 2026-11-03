@@ -135,6 +135,8 @@ fun folderShortName(folder: HomeFolder): String? = when {
     folder.namedByUser -> null
     folder.recent -> LibraryCopy.recent
     folder.platformId != null -> systemTabLabel(folder.platformId, folder.name)
+    // Android Games says Android, as its All games tab does.
+    folder.bucket != null -> systemTabLabel(folder.id, folder.name)
     else -> null
 }?.takeIf { it != folder.name }
 

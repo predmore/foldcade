@@ -142,6 +142,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foldcade.language.actionFaces
 import app.foldcade.language.appName
+import app.foldcade.language.appShortName
 import app.foldcade.language.heroPlayLine
 import app.foldcade.language.openPlayerLabel
 import app.foldcade.language.DateStyle
@@ -3552,7 +3553,7 @@ private fun StripColumn(
                     Cell(
                         title = label,
                         mark = game?.mark,
-                        shortTitle = face?.shortTitle,
+                        shortTitle = face?.shortTitle ?: appShortName(game?.androidPackage),
                         themedApp = themedApp,
                         art = art,
                         showTitle = showTitle,
@@ -4007,6 +4008,7 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
                     .tileAnchor(cornerPx * foldTheme().motion.scaleFocus)
             } else Modifier,
             title = entry.title,
+            shortTitle = appShortName(game?.androidPackage),
             mark = entry.mark ?: game?.mark,
             themedApp = themedApp,
             art = art,

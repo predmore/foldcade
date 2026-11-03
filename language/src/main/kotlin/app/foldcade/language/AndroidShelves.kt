@@ -35,3 +35,7 @@ const val ANDROID_SETTINGS_PACKAGE = "com.android.settings"
  */
 fun appName(packageName: String?, label: String): String =
     if (packageName == ANDROID_SETTINGS_PACKAGE) Copy.androidSettings else label
+
+/** An app's grid label where [appName] does not fit under its tile: Android settings is its gear's Settings again. */
+fun appShortName(packageName: String?): String? =
+    if (packageName == ANDROID_SETTINGS_PACKAGE) SettingsCopy.title else null
