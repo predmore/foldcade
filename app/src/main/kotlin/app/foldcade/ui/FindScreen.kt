@@ -195,7 +195,8 @@ private fun ResultStrip(
             focus > first[0] + across - 1 -> focus - across + 1
             else -> first[0]
         }.coerceIn(0, max(0, results.size - across))
-        val shownFirst by eased(first[0].toFloat(), motion.durationTravel, scale)
+        val targetFirst = first[0].toFloat()
+        val shownFirst by eased(targetFirst, motion.durationTravel, scale)
         // Results centre while there are fewer than fit, and start at the left once they fill it.
         val spare = max(0f, widthPx - padPx * 2 - (results.size * pitchPx - with(density) { gap.toPx() }))
         val lead by eased(spare / 2f, motion.durationTravel, scale)
@@ -223,10 +224,15 @@ private fun ResultStrip(
             }
         }
         // Follow the animated positions, including tiles crossing the window on a reorder.
-        // Only a membership change recomposes the strip; per-frame motion stays in layout
-        // and layers. One extra pitch beyond each fading edge gives incoming art a head start.
-        val visible by remember(positions, across) {
-            derivedStateOf { positions.filter { findResultInWindow(it.at.value, shownFirst, across) } }
+        // Prepare the destination window as soon as the cursor moves, before the scroll's
+        // next frame makes it visible. Otherwise fast held input can outrun incoming art.
+        // Only membership changes recompose; per-frame motion stays in layout and layers.
+        val visible by remember(positions, across, targetFirst) {
+            derivedStateOf {
+                positions.filter {
+                    findResultInWindow(it.at.value, shownFirst, across, it.index.toFloat(), targetFirst)
+                }
+            }
         }
         visible.forEach { position ->
             key(position.entry.id) {

@@ -42,6 +42,22 @@ class FindResultWindowTest {
     }
 
     @Test
+    fun cursorPreparesTheDestinationBeforeTheAnimatedScrollMoves() {
+        assertFalse(findResultInWindow(8f, 0f, 4))
+        assertTrue(findResultInWindow(8f, 0f, 4, targetAt = 8f, targetFirst = 4f))
+        // Keep the departing tile while it is still visibly fading.
+        assertTrue(findResultInWindow(0f, 0f, 4, targetAt = 0f, targetFirst = 4f))
+        assertFalse(findResultInWindow(12f, 0f, 4, targetAt = 12f, targetFirst = 4f))
+    }
+
+    @Test
+    fun aReorderPreparesItsNewWindowBeforeTilesHaveReachedTheirRanks() {
+        assertTrue(findResultInWindow(20f, 0f, 4, targetAt = 0f, targetFirst = 0f))
+        assertTrue(findResultInWindow(0f, 0f, 4, targetAt = 20f, targetFirst = 0f))
+        assertFalse(findResultInWindow(20f, 0f, 4, targetAt = 12f, targetFirst = 0f))
+    }
+
+    @Test
     fun singleCellViewportStillKeepsItsEdgeFades() {
         assertEquals((3..7).toList(), (0 until 24).filter { findResultInWindow(it.toFloat(), 5f, 1) })
     }
