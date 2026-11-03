@@ -566,9 +566,11 @@ private fun PanelBody(
             speed = model.motionSpeed,
             animatorScale = scale,
             running = running,
-            // Opaque game art or Settings over it, or the menu's blur, leaves nothing to watch move.
-            held = cover.covered || settingsOver || LocalUnderMenu.current || centerHere ||
+            // Explicit visual holds freeze every input. Art keeps its old clock pause, but
+            // while a dissolve or transparency reveals the scene its camera must still slide.
+            held = settingsOver || LocalUnderMenu.current || centerHere ||
                 (panel != null && app.launchBlooms.fills(panel)),
+            pauseClock = cover.covered,
             occluded = cover.occluded || (covered && foldTheme().background.alpha >= 1f),
             live = sceneLive(app, backdrop, scale, camera),
         )

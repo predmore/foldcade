@@ -21,7 +21,7 @@ data class FoldPaint(
     val wallpaperBottom: ImageBitmap? get() = wallpapers.bottom
 }
 
-/** A pack's two wallpapers, prepared off Main before its paint reaches either panel. */
+/** A pack's two wallpapers, prepared off Main and published together to both panels. */
 class ThemeWallpapers(private val decode: (top: Boolean) -> ImageBitmap?) {
     private data class Images(val top: ImageBitmap?, val bottom: ImageBitmap?)
     @Volatile private var images: Images? = null
@@ -39,16 +39,20 @@ class ThemeWallpapers(private val decode: (top: Boolean) -> ImageBitmap?) {
     }
 }
 
-/** Keep the previous complete paint while a newly selected pack's images are decoded. */
+/** First show the chosen theme; keep previous paint during later switches until images decode. */
 @Composable
 internal fun preparedPaint(requested: FoldPaint): FoldPaint {
-    var shown by remember { mutableStateOf(if (requested.wallpapers.prepared) requested else FoldPaint(builtInTheme())) }
+    var shown by remember { preparedPaintState(requested) }
     LaunchedEffect(requested) {
         withContext(Dispatchers.IO) { requested.wallpapers.prepare() }
         shown = requested
     }
     return if (requested.wallpapers.prepared) requested else shown
 }
+
+/** First draw uses the chosen theme; completing its same wallpaper cache must still redraw. */
+internal fun preparedPaintState(initial: FoldPaint): MutableState<FoldPaint> =
+    mutableStateOf(initial, neverEqualPolicy())
 
 val LocalFoldTheme = staticCompositionLocalOf { FoldPaint(builtInTheme()) }
 

@@ -28,7 +28,10 @@ fun Backdrop(
     speed: MotionSpeed,
     animatorScale: Float,
     running: Boolean,
+    /** An explicit visual hold, such as a blurred menu, freezes the clock and live inputs. */
     held: Boolean = false,
+    /** Art dissolves keep their original clock pause while their visible camera stays live. */
+    pauseClock: Boolean = false,
     /** Fully opaque content covers this surface; keep its clock/seed but submit no drawing. */
     occluded: Boolean = false,
     panel: Float = 0f,
@@ -48,7 +51,7 @@ fun Backdrop(
     val clock = if (scene.animateWhenMotionOff && animatorScale > 0f) 1f
         else backdropClock(speed, animatorScale).coerceAtMost(scene.maxClock)
     val moving = !scene.animateWhenMotionOff && running && clock > 0f
-    val ticking = previewTime == null && running && !held && !occluded && clock > 0f
+    val ticking = previewTime == null && running && !held && !pauseClock && !occluded && clock > 0f
     // Seconds of visible motion. Double keeps frame steps exact through months of uptime.
     var time by remember(scene) { mutableDoubleStateOf(scene.frozenTime) }
     var viewport by remember(scene) { mutableStateOf(IntSize.Zero) }
