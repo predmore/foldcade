@@ -56,6 +56,35 @@ class MoveSettingsTest {
         assertTrue(shell.model.systemPlayers.any { it.platformId == "game-boy-advance" })
     }
 
+    private fun openSystemNotice(platform: String) {
+        val notice = FoldNotice(PLAYER_CHOICE_SYSTEM_NOTICE + platform, "Opened another emulator", "Choose an emulator", settingsCategory = SettingsCategory.Players)
+        shell.setNotices(listOf(notice))
+        shell.onMeaning(Meaning.RightPanel, HostScreen.Top)
+        val panel = shell.model.panel!!
+        walkPanelTo(shell, panelRows(panel, shell.model).indexOf(Row.Notice(notice.id)), panel.screen)
+        shell.onMeaning(Meaning.Activate, HostScreen.Top)
+        assertEquals(SettingsCategory.Players, settingsCategories(shell.model)[shell.model.settings!!.category])
+        assertEquals(SettingsInner.Systems, shell.model.settings!!.inner)
+        assertEquals(Row.SystemPlayer(platform), settingsFocus(shell.model))
+    }
+
+    @Test fun fallbackNoticeFindsItsSystemBeforeSettingsHasEverOpenedAndWithNoPlayersInstalled() {
+        store.setSystemPlayerChoice("nintendo-ds", PlayerChoice(ra.id, "melonds", "melonDS (RetroArch)"))
+        shell.setInstalledApps(emptyList(), host.playerPackageNames(), emptySet())
+        assertTrue(shell.model.systemPlayers.isEmpty())
+        openSystemNotice("nintendo-ds")
+    }
+
+    @Test fun fallbackNoticeFindsItsSystemAfterAnEarlierSortingSystemArrives() {
+        open()
+        shell.closeSettings()
+        val gba = retro.players.first { it.platformId == "game-boy-advance" }
+        store.setSystemPlayerChoice("game-boy-advance", PlayerChoice(gba.id, label = gba.displayName))
+        shell.ingestLibrary("romm", listOf(entry("nintendo-ds"), entry("game-boy-advance")), host.platformDefinitions())
+        assertEquals(listOf("nintendo-ds"), shell.model.systemPlayers.map { it.platformId })
+        openSystemNotice("nintendo-ds")
+    }
+
     @Test fun saveRowsReuseWorkButRefreshOnSetupSyncFolderAndInstallChanges() {
         val before = shell.model.playerSaves
         repeat(4) { shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom) }

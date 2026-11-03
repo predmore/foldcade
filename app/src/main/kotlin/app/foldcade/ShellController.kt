@@ -3485,7 +3485,7 @@ class ShellController(
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
             home.lastOccupiedIndex()
         } else count - 1
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = if (next.settings != null) systemPlayerChoices() else next.systemPlayers,
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = if (next.settings != null || next.panel != null) systemPlayerChoices() else next.systemPlayers,
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
@@ -3749,7 +3749,7 @@ class ShellController(
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
                 openWith = openWith(tileOf(id), game.platformId)) else null,
-                playerSaves = playerSaveSettings(), systemPlayers = if (ready.settings != null) systemPlayerChoices() else ready.systemPlayers)
+                playerSaves = playerSaveSettings(), systemPlayers = if (ready.settings != null || ready.panel != null) systemPlayerChoices() else ready.systemPlayers)
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }
