@@ -3,6 +3,7 @@ package app.foldcade.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -27,7 +28,12 @@ fun Backdrop(
     speed: MotionSpeed,
     animatorScale: Float,
     running: Boolean,
+    /** An explicit visual hold, such as a blurred menu, freezes the clock and live inputs. */
     held: Boolean = false,
+    /** Art dissolves keep their original clock pause while their visible camera stays live. */
+    pauseClock: Boolean = false,
+    /** Fully opaque content covers this surface; keep its clock/seed but submit no drawing. */
+    occluded: Boolean = false,
     panel: Float = 0f,
     previewTime: Double? = null,
     seed: Double? = null,
@@ -45,13 +51,19 @@ fun Backdrop(
     val clock = if (scene.animateWhenMotionOff && animatorScale > 0f) 1f
         else backdropClock(speed, animatorScale).coerceAtMost(scene.maxClock)
     val moving = !scene.animateWhenMotionOff && running && clock > 0f
-    val ticking = previewTime == null && running && !held && clock > 0f
+    val ticking = previewTime == null && running && !held && !pauseClock && !occluded && clock > 0f
     // Seconds of visible motion. Double keeps frame steps exact through months of uptime.
     var time by remember(scene) { mutableDoubleStateOf(scene.frozenTime) }
     var viewport by remember(scene) { mutableStateOf(IntSize.Zero) }
     val resolution = scene.renderScale
     // The scene works at its render size, so the grid's slide reaches it in the same px.
-    val told = { live().let { if (resolution == 1f || it.scroll == 0f) it else it.copy(scroll = it.scroll * resolution) } }
+    val inputs = remember(scene) { BackdropInputs() }
+    inputs.visibility(occluded)
+    val told = {
+        inputs.read(held) { live() }.let {
+            if (resolution == 1f || it.scroll == 0f) it else it.copy(scroll = it.scroll * resolution)
+        }
+    }
     LaunchedEffect(ticking, clock, scene, moving, panel, viewport) {
         if (!ticking || viewport.width == 0 || viewport.height == 0) return@LaunchedEffect
         var last = 0L
@@ -76,6 +88,9 @@ fun Backdrop(
             if (sleep > 0L) delay(sleep)
         }
     }
+    // Leave the remembered scene, renderer and time above this boundary. Recreating them on
+    // uncover would roll a new seed and reset the ribbons. No Canvas means no live subscriptions.
+    if (occluded) return
     Canvas(Modifier.fillMaxSize().layout { measurable, constraints ->
         val targetWidth = (constraints.maxWidth * resolution).toInt().coerceAtLeast(1)
         val targetHeight = (constraints.maxHeight * resolution).toInt().coerceAtLeast(1)
@@ -91,35 +106,73 @@ fun Backdrop(
     }
 }
 
+/** A held scene keeps its last inputs, including scroll, without observing their live sources. */
+internal class BackdropInputs {
+    private var last: SceneLive? = null
+    private var hidden = false
+
+    fun visibility(occluded: Boolean) {
+        // The camera can travel while hidden. Sample its current position before the first
+        // pixel is revealed, even if a blur or an art dissolve still holds the clock.
+        if (hidden && !occluded) last = null
+        hidden = occluded
+    }
+
+    fun read(held: Boolean, live: () -> SceneLive): SceneLive {
+        if (held) return last ?: Snapshot.withoutReadObservation(live).also { last = it }
+        return live().also { last = it }
+    }
+}
+
+/** A late image only occludes after an actual draw at the end of Coil's crossfade. */
+internal class BackdropArtReveal(crossfadeMillis: Int) {
+    private val duration = crossfadeMillis * 1_000_000L
+    var firstDraw by mutableStateOf<Long?>(null)
+        private set
+    var complete by mutableStateOf(crossfadeMillis == 0)
+        private set
+
+    fun drew(started: Long, finished: Long = started) {
+        if (complete) return
+        val first = firstDraw
+        if (first == null) firstDraw = finished
+        else if (started - first >= duration) complete = true
+    }
+}
+
 /** How often a stopped scene asks its frame rate again, so one that waits for an hour wakes. */
 private const val STOPPED_RECHECK_MILLIS = 60_000L
 
 /**
  * Opaque layers over one panel's backdrop. While any is composed the backdrop is
- * held: nobody can see it move, and a frame that does not change costs nothing.
+ * held. Only layers whose parents are also opaque can omit its drawing entirely.
  */
 internal class BackdropCover {
-    private var layers by mutableIntStateOf(0)
-    val covered: Boolean get() = layers > 0
+    private val layers = mutableStateListOf<() -> Boolean>()
+    val covered: Boolean get() = layers.isNotEmpty()
+    val occluded by derivedStateOf { layers.any { it() } }
 
-    fun add() {
-        layers++
+    fun add(opaque: () -> Boolean) {
+        layers.add(opaque)
     }
 
-    fun remove() {
-        layers--
+    fun remove(opaque: () -> Boolean) {
+        layers.remove(opaque)
     }
 }
 
 internal val LocalBackdropCover = staticCompositionLocalOf<BackdropCover?> { null }
+internal val LocalBackdropOpaque = compositionLocalOf { true }
 
 /** Call from a layer that paints the whole panel opaque, for as long as it does. */
 @Composable
-internal fun CoversBackdrop() {
+internal fun CoversBackdrop(opaque: Boolean = true) {
     val cover = LocalBackdropCover.current ?: return
+    val whole = rememberUpdatedState(opaque && LocalBackdropOpaque.current)
+    val read = remember { { whole.value } }
     DisposableEffect(cover) {
-        cover.add()
-        onDispose { cover.remove() }
+        cover.add(read)
+        onDispose { cover.remove(read) }
     }
 }
 

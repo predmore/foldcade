@@ -182,7 +182,8 @@ class PackagedTheme(
                 name = file.name,
                 paint = FoldPaint(
                     theme = theme,
-                    wallpapers = ThemeWallpapers { top -> decode(wallpaperZipName(entries.keys, top)?.let { entries[it] }) },
+                    wallpapers = if (wallpaperZipName(entries.keys, true) == null && wallpaperZipName(entries.keys, false) == null) ThemeWallpapers.None
+                        else ThemeWallpapers { top -> decode(wallpaperZipName(entries.keys, top)?.let { entries[it] }) },
                     icons = resources.icons.mapValues { (_, icon) -> listOf(icon) },
                 ),
                 sounds = ThemeSounds(context, listOf(entries) + (inherit?.sounds?.layers.orEmpty()), style.sound.volume),
