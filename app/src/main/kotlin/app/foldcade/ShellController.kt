@@ -2127,7 +2127,9 @@ class ShellController(
     fun hasLibraryGames(): Boolean = libraryItems.isNotEmpty()
 
     /** The scanned library is on the home grid. Emulator waits for this line. */
-    fun showCuratedHome() {
+    fun showCuratedHome(fromStartup: Boolean = false) {
+        // Startup kept Home usable: ingestion already refreshed it, including any page or menu.
+        if (fromStartup && !model.libraryGrid) return
         val focus = model.focus.takeIf { showingHome() } ?: GridFocus()
         artPicker = null
         find = null

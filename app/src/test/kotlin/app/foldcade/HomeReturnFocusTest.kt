@@ -57,6 +57,36 @@ class HomeReturnFocusTest {
         assertEquals(GridStrip.column(shell.model.focus.cellIndex), shell.model.focus.lastColumn)
     }
 
+    @Test fun aStartupCatalogKeepsFindAndItsQueryOpen() {
+        val shell = shell()
+        load(shell)
+        shell.openFind()
+        val find = shell.find!!
+        for (char in "alpha") shell.tapFind(KeyboardLayout.find(KeyCap.Glyph(char)))
+        load(shell)
+        shell.showCuratedHome(fromStartup = true)
+        assertSame(find, shell.find)
+        assertEquals("alpha", shell.find!!.query.lowercase())
+        // An explicit reload still lands on Home as it always did.
+        shell.showCuratedHome()
+        assertNull(shell.find)
+    }
+
+    @Test fun aStartupCatalogKeepsTheTilesMenuButReplacesALoadingGrid() {
+        val shell = shell()
+        load(shell)
+        focus(shell, collection)
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNotNull(shell.model.panel)
+        load(shell)
+        shell.showCuratedHome(fromStartup = true)
+        assertNotNull(shell.model.panel)
+        shell.showLoading(insidePlatform = false)
+        shell.showCuratedHome(fromStartup = true)
+        assertFalse(shell.model.libraryGrid)
+        assertEquals(EmptyGrid.None, shell.model.emptyGrid)
+    }
+
     @Test fun recentSortedFolderFindsTheLaunchedGameAfterHistoryReordersIt() {
         val played = ids.mapIndexed { i, id -> id to (400L - i * 100L) }.toMap().toMutableMap()
         val store = store(FolderSort.Recent)

@@ -45,9 +45,11 @@ internal suspend fun loadPlatforms(
     libraryId: String,
     folderName: (String) -> String = { "" },
     occupiesBoth: (String) -> Boolean = { false },
+    /** False after a local rescan: its published snapshot is already connected. */
+    connect: Boolean = true,
 ): LoadedLibrary {
     return try {
-        plugins.connect(libraryId)
+        if (connect) plugins.connect(libraryId)
         val listed = plugins.listPlatforms(libraryId)
         if (listed.isEmpty()) return LoadedLibrary.NoPlatforms
         val entries = listed.map { platform ->
