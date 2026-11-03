@@ -21,6 +21,12 @@ data class PlayerChoiceRow(
         options.firstOrNull { it.samePlayer(choice) }?.label ?: if (missing) PlayerChoiceCopy.notInstalled(choice.label) else choice.label
     } ?: PlayerChoiceCopy.inherited(system, inherited)
 
+    /**
+     * The emulator alone, for a row too narrow for "Default · X" or "Auto · X": which emulator
+     * plays matters more than that it was inherited. Null when [value] is already just a name.
+     */
+    fun shortValue(): String? = if (selected == null) inherited else null
+
     fun step(direction: Int): PlayerChoice? {
         val values = values
         val index = values.indexOfFirst { value ->

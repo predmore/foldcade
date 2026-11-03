@@ -6,13 +6,16 @@ import org.junit.Test
 
 class ControllerGridTest {
     @Test fun unusedControllerButtonsCannotFallBackToActivation() {
-        val unused = listOf(KeyEvent.KEYCODE_BUTTON_THUMBL, KeyEvent.KEYCODE_BUTTON_THUMBR,
+        val unused = listOf(KeyEvent.KEYCODE_BUTTON_THUMBL,
             KeyEvent.KEYCODE_BUTTON_MODE, KeyEvent.KEYCODE_BUTTON_C, KeyEvent.KEYCODE_BUTTON_Z,
             KeyEvent.KEYCODE_BUTTON_1, KeyEvent.KEYCODE_BUTTON_16)
         unused.forEach {
             assertNull(meaningOf(it))
             assertTrue(consumesUnmapped(it))
         }
+        // R3 has a meaning on a grid, and is still swallowed wherever it has none, never DPAD_CENTER.
+        assertTrue(consumesUnmapped(KeyEvent.KEYCODE_BUTTON_THUMBR))
+        assertNull(meaningOf(KeyEvent.KEYCODE_BUTTON_THUMBR, homeKeys = HomeKeys.Moving))
         assertTrue(consumesUnmapped(KeyEvent.KEYCODE_BUTTON_START))
         assertFalse(consumesUnmapped(KeyEvent.KEYCODE_ENTER))
         assertFalse(consumesUnmapped(KeyEvent.KEYCODE_HOME))

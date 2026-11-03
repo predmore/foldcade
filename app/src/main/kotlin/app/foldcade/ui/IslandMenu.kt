@@ -105,16 +105,25 @@ internal fun TopIslands(
     // An open drawer stays on the screen it opened on, as one from a page left there by a
     // layout change: it is drawn there, and the islands follow it until it closes.
     val model = app.shell.model
-    if (screen != (model.panel?.screen ?: model.layout.menuScreen)) return
+    // Y's menu is by its tile on the grid's screen, so it never takes the islands with it.
+    val island = model.panel?.takeIf { it.side != Side.Tile }
+    if (screen != (island?.screen ?: model.layout.menuScreen)) return
     val dialogCovers = model.dialog?.screen == screen
+    // Y's card over this grid, as in Top only, quiets the closed pills with the tiles under it.
+    val under = motionState(
+        if (tileMenuOn(app, screen)) 1f else 0f,
+        LocalFoldTheme.current.theme.motion.arrive(LocalFoldTheme.current.theme.motion.durationIsland, scale),
+    )
+    val quiet = LocalFoldTheme.current.theme.style.menu.scrimAlphaUnblurred
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .zIndex(4f)
+            .graphicsLayer { alpha = 1f - quiet * under.value }
             .focusProperties { canFocus = false },
     ) {
         // A tap off the open card closes it, as its shoulder would. The cards sit above and keep their own taps.
-        if (!dialogCovers && model.panel?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
+        if (!dialogCovers && island?.screen == screen) Box(Modifier.fillMaxSize().closesIsland(app))
         Island(
             app = app,
             screen = screen,
@@ -189,16 +198,10 @@ private fun Island(
     val openWidth = maxOf(maxWidth * 0.48f, minOf(ISLAND_MIN_OPEN_WIDTH, maxWidth - inset * 2))
     // The open card fits its rows, up to most of the screen. A taller menu scrolls.
     // A new level or a new notice changes the rows, and the card eases to the new height.
-    // Y's menu may reach a little further: a paused game's ten actions fit the Thor's top
-    // screen without scrolling at 91%, and fall 10dp short at 88%.
     var rowsHeight by remember(side) { mutableStateOf(Dp.Hairline) }
     val reach = ringReach()
     // Over a grid on the same screen the card stops above the grid's hint row, and a long menu scrolls.
-    val reachFraction = when {
-        overGrid -> OVER_GRID_REACH
-        panel?.level == PanelLevel.Actions -> 0.91f
-        else -> 0.88f
-    }
+    val reachFraction = if (overGrid) OVER_GRID_REACH else 0.88f
     val maximumHeight = with(density) { (maxHeight * reachFraction).roundToPx() }
     val reservedHeight = with(density) { pillHeight.roundToPx() + reach.roundToPx() * 2 + MENU_BOTTOM_DP.dp.roundToPx() }
     val availableRows = with(density) { (maximumHeight - reservedHeight).toDp() }
@@ -226,11 +229,9 @@ private fun Island(
         when (side) {
             Side.Left -> app.shell.model.focus.chrome == Chrome.LeftIsland
             Side.Right -> app.shell.model.focus.chrome == Chrome.StatusCluster
+            Side.Tile -> false
         }
     val interactive = open && progress > 0.92f
-    // Y's menu acts on one tile, so its header names that tile instead of today's play.
-    // The two swap as the card grows and shrinks, so the closed pill is always L1's.
-    val actingShown = if (side == Side.Left && panel?.level?.actsOnTile == true) progress else 0f
     val rim = remember(theme) { FocusRing(theme) }
     // The rows read the open fraction in their layers, so the morph does not recompose them.
     val opening = rememberUpdatedState(progress)
@@ -278,8 +279,7 @@ private fun Island(
                 .wrapContentWidth(edge, unbounded = true)
                 .onSizeChanged { rowWidth = with(density) { it.width.toDp() } }
                 .height(pillHeight)
-                .padding(start = 8.dp, end = 14.dp)
-                .graphicsLayer { alpha = 1f - actingShown },
+                .padding(start = 8.dp, end = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -292,9 +292,6 @@ private fun Island(
                 // percent, and Bluetooth. The bell stays too, since the notices are still there.
                 StatusIcons(app, readOpening, scale)
             }
-        }
-        if (side == Side.Left && actingShown > 0f) {
-            ActingHeader(app, Modifier.height(pillHeight).padding(start = 14.dp, end = 20.dp).graphicsLayer { alpha = actingShown })
         }
         if (panel != null && progress > 0f) {
             // The rows are laid out at the open card's width from the first frame, and the
@@ -331,22 +328,6 @@ private fun Island(
     }
 }
 
-/** Y and the name of the tile its menu acts on. */
-@Composable
-private fun ActingHeader(app: FoldcadeApp, modifier: Modifier) {
-    val theme = LocalFoldTheme.current.theme
-    val name = app.shell.model.tileActions?.bulk?.let { SelectionCopy.count(it.size) } ?: app.shell.restoredGapTitle() ?: app.shell.focusedHero()?.let { heroCopy(it).title }?.takeIf { it.isNotBlank() } ?: Copy.emptySlot
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        PromptImage(promptGlyph(actionFaces(app.shell.model.faceMap).optionsGlyph), 26.dp)
-        BasicText(
-            text = name,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = TextStyle(color = theme.onBackground, fontSize = theme.style.type.sideRow, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
-        )
-    }
-}
-
 /** The open card's margin under its scroll. The rows keep the ring's reach inside it as well. */
 private const val MENU_BOTTOM_DP = 6f
 
@@ -354,7 +335,7 @@ private const val MENU_BOTTOM_DP = 6f
 private const val RIM_MIDDLE = 0.06f / 0.08f
 private const val RIM_END = 0.26f / 0.34f
 
-private fun Side.meaning(): Meaning = if (this == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
+private fun Side.meaning(): Meaning = if (this == Side.Right) Meaning.RightPanel else Meaning.LeftPanel
 
 @Composable
 private fun islandProgress(

@@ -391,7 +391,6 @@ class ThemeMotion internal constructor(private val reader: ThemeStyleReader) {
     val durationLaunchHold = ms("durationLaunchHold", 600)
     val launchPush = reader.number("motion", "launchPush", 1.06f, TokenDomain.Positive)
     val durationSelect = ms("durationSelect", 280)
-    val durationSummaryDwell = ms("durationSummaryDwell", 1200)
     val durationBob = ms("durationBob", 1800)
     val durationLetterHold = ms("durationLetterHold", 360)
     val durationLetterFade = ms("durationLetterFade", 120)

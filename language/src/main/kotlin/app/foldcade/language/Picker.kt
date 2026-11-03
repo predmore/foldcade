@@ -22,20 +22,26 @@ data class GridFocus(
 enum class Side {
     Left,
     Right,
+
+    /**
+     * Not an island: Y's menu, which grows out of the focused tile on the grid's screen and sits
+     * beside it. L1 and R1 never draw it, and pressing either swaps it for their own.
+     */
+    Tile,
 }
 
-/** [depth] is how far in a level sits, so going in and coming back move opposite ways. [actsOnTile] marks menus whose header names the focused tile. */
-enum class PanelLevel(val depth: Int, val actsOnTile: Boolean = false) {
+/** [depth] is how far in a level sits, so going in and coming back move opposite ways. */
+enum class PanelLevel(val depth: Int) {
     Root(0),
 
     /** One saved RomM server's edit and sign-out actions, opened from Settings. */
     RommConnection(1),
 
-    /** Y's menu for the focused tile, in the left island. */
-    Actions(1, actsOnTile = true),
+    /** Y's menu for the focused tile, beside it ([Side.Tile]). */
+    Actions(1),
 
     /** Add to: Home, then the collections the focused game can join, each checked while it is in it. */
-    Collections(2, actsOnTile = true),
+    Collections(2),
 
     /** L1's Edit home: the settings for the whole board. The focused tile's actions are Y's. */
     EditHome(1),
@@ -760,7 +766,7 @@ private val placeRows: Set<Row> = setOf(Row.Home, Row.AllLibrary, Row.Apps)
  * [quickTileColumns] of them lead the menu as round tiles; any past those are rows.
  */
 val verbRows: List<Row> = listOf(
-    Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.Saves, Row.RenameFolder, Row.FolderIcon, Row.NewCollection,
+    Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.Saves, Row.RestartGame, Row.CloseGame, Row.RenameFolder, Row.FolderIcon, Row.NewCollection,
 )
 
 /**
@@ -791,7 +797,10 @@ fun tileLabel(row: Row): String? = when (row) {
     Row.Saves -> SavePickerCopy.title
     Row.RenameFolder -> Copy.rename
     Row.FolderIcon -> Copy.icon
-    Row.NewCollection -> Copy.tileNew
+    // Two lines under its tile, so it never reads as a bare "New".
+    Row.NewCollection -> Copy.newCollection
+    Row.RestartGame -> Copy.restart
+    Row.CloseGame -> Copy.closeGame
     is Row.QuickTile -> when (row.setting) {
         QuickSetting.Wifi -> Copy.wifi
         QuickSetting.Bluetooth -> Copy.bluetooth
@@ -1035,7 +1044,8 @@ data class FolderSortChoice(val folderId: String, val sort: FolderSort)
 
 /**
  * Y's menu for the tile. Undo leads when there is one. Then come the tile's own verbs
- * ([verbRows]), which draw as round tiles, and under them the rest as rows. Add to holds
+ * ([verbRows]), which draw as round tiles, and under them the rest as rows. A game still open
+ * in its player adds Restart and Close to the verbs, after the tile's own. Add to holds
  * every place a game can be put, Home first, and New collection at its end, so a game's
  * menu has one tile for all of them. Remove takes the tile off the spot it is in, and Hide
  * is its own row, after it. Sort, on a folder tile, orders that folder and comes last. What
@@ -1055,6 +1065,10 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.collections != null) add(Row.AddToCollection)
     if (tile.art) add(Row.ChooseArt)
     if (tile.saves) add(Row.Saves)
+    // A game still open in its player starts over or closes from the round tiles the tile's own
+    // verbs leave, or from the first rows under them, so the menu beside the tile fits (UX-02).
+    if (tile.restart) add(Row.RestartGame)
+    if (tile.close) add(Row.CloseGame)
     if (tile.rename) add(Row.RenameFolder)
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
@@ -1068,8 +1082,6 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.moveTo != null) add(Row.MoveApp)
     if (tile.select) add(Row.SelectTile)
     if (tile.remove != null) add(Row.RemoveTile)
-    if (tile.restart) add(Row.RestartGame)
-    if (tile.close) add(Row.CloseGame)
     if (tile.moveGame != null) add(Row.MoveGame)
     if (tile.hide) add(Row.Hide)
     if (tile.removeDownload) add(Row.RemoveDownload)
@@ -1166,6 +1178,7 @@ private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = whe
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
         Side.Right -> rightRows(model.notices)
+        Side.Tile -> emptyList()
     }
 }
 
@@ -1794,6 +1807,8 @@ private fun presentPanel(model: PickerModel, meaning: Meaning, screen: HostScree
     val side = if (meaning == Meaning.LeftPanel) Side.Left else Side.Right
     val open = model.panel
     if (open == null) return model.copy(panel = freshPanel(side, model.focus, model.layout))
+    // Y's menu is not an island: it shrinks back into its tile as the shoulder's island grows.
+    if (open.side == Side.Tile) return model.copy(panel = freshPanel(side, open.grid, model.layout), focus = open.grid)
     if (open.retiring) {
         val pending = if (side == open.side) null else side
         return model.copy(panel = open.copy(pendingSide = pending))
@@ -1881,8 +1896,8 @@ private fun applyGrid(
 }
 
 /**
- * Y opens the focused tile's menu in the left island, with Foldcade's other
- * options. R1 is the device's. With nothing to offer, it stays shut.
+ * Y opens the focused tile's menu beside the tile, on the grid's screen ([tileMenu]). L1 and R1
+ * keep their islands. With nothing to offer, it stays shut.
  */
 private fun openActions(model: PickerModel): PickerModel {
     if (model.arranging) return model
@@ -1890,9 +1905,21 @@ private fun openActions(model: PickerModel): PickerModel {
         if (model.tileActions?.undo != true) return model
     } else if (model.focus.chrome != null) return model
     if (actionRows(model.tileActions).isEmpty()) return model
-    return model.copy(panel = freshPanel(Side.Left, model.focus, model.layout).copy(
-        level = PanelLevel.Actions, recoveryOnly = model.count <= 0))
+    return model.copy(panel = tileMenu(model.focus, model.layout, recoveryOnly = model.count <= 0))
 }
+
+/**
+ * Y's menu for the tile at [grid]: on the grid's screen, where the tile is, never the hero's. A game
+ * holding that screen sends it to the one Foldcade still shows ([onShownScreens]), where the grid is then.
+ */
+fun tileMenu(grid: GridFocus, layout: ScreenLayout, recoveryOnly: Boolean = false): SidePanel = SidePanel(
+    side = Side.Tile,
+    screen = layout.gridScreen,
+    level = PanelLevel.Actions,
+    index = 0,
+    grid = grid,
+    recoveryOnly = recoveryOnly,
+)
 
 private fun backGrid(model: PickerModel): Pair<PickerModel, Effect?> {
     val hold = model.hold
@@ -2144,6 +2171,8 @@ private fun applyPanel(
         }
         val chord = chordIndex(rows, meaning)
         if (chord != null) return activateRow(model, current.copy(index = chord), rows[chord], screen)
+        // Y opened the tile's menu, so Y closes it again, unless a row there takes Y (Y then Y is Move).
+        if (meaning == Meaning.Options && current.side == Side.Tile) return model.copy(panel = null, focus = current.grid) to null
     }
     return when (meaning) {
         Meaning.MoveUp, Meaning.MoveDown -> {

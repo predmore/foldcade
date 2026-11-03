@@ -43,10 +43,12 @@ the actual grant enforcement. Image reads use IO and refuse bodies over 20 MiB.
 ## On screen
 
 The top screen's facts line adds the release year and first genre after the platform,
-and drops genre, then year, before it would cut the play line. When focus rests on a
-game for `motion.durationSummaryDwell` (1.2 s in Afterglow), the name card grows to
-show up to three lines of the summary; moving on closes it at once. Top only has no
-hero, so it has no summary there. A game with no facts looks exactly as before.
+and drops genre, then year, before it would cut the play line. When the focused game has
+a summary, the grid's hint row names R3 Info. R3, the right stick's click, grows the name
+card to show up to three lines of it, and R3 again folds it. Moving on, or B, closes it at
+once, so each game starts closed. Top only has no hero, so it has no summary there. A
+game with no facts looks exactly as before. The old `motion.durationSummaryDwell` token
+is retired: a pack that still sets it is told it does nothing.
 
 Y › About (ROM games only) opens a page on the layout's page screen: cover, title,
 platform, facts, a screenshot when one is known, and the summary cut to fit. Nothing

@@ -169,8 +169,10 @@ def controller_assets():
                            note=f"Face-button diamond, {seat} seat{held}"))
     for way in DPAD_ARROWS:
         A.append(Asset(f"ic_btn_dpad_{way}", 24, 24, dpad(way), note=f"D-pad {way}"))
-    A.append(Asset("ic_btn_lstick_press", 24, 24, stick("L", clicked=True), note="Left stick click (L3)"))
-    A.append(Asset("ic_btn_rstick_press", 24, 24, stick("R", clicked=True), note="Right stick click (R3)"))
+    for suffix, pressed in (("", False), ("_filled", True)):
+        held = " (held)" if pressed else ""
+        A.append(Asset(f"ic_btn_lstick_press{suffix}", 24, 24, stick("L", pressed, clicked=True), note=f"Left stick click (L3){held}"))
+        A.append(Asset(f"ic_btn_rstick_press{suffix}", 24, 24, stick("R", pressed, clicked=True), note=f"Right stick click (R3){held}"))
     return A
 
 # ---------------- status islands ----------------

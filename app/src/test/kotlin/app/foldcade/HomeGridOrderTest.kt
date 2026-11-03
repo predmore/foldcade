@@ -906,12 +906,11 @@ class HomeGridOrderTest {
         focus(shell, puzzle)
         // All offers what a game has, and nothing that brings a folder back. All has no spots, so no Remove.
         assertEquals(listOf(Row.AddToCollection, Row.About, Row.SelectTile, Row.Hide), optionRows(shell))
-        // With no Move in All, Y then Y does nothing.
+        // With no Move in All, Y then Y closes the menu Y opened, and does nothing else.
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        val (open, effect) = shell.model to shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        assertNull(effect)
-        assertEquals(open.panel, shell.model.panel)
-        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNotNull(shell.model.panel)
+        assertNull(shell.onMeaning(Meaning.Options, HostScreen.Bottom))
+        assertNull(shell.model.panel)
         // Add to › Home pins it. The folder the user took off Home stays off.
         addToHome(shell)
         assertTrue(shell.homeFace(puzzle)!!.onGrid)

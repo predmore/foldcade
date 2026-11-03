@@ -111,7 +111,6 @@
     "motion.durationLaunchHold": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":600.0},
     "motion.launchPush": {"kind":"number","above":0.0,"afterglow":1.06},
     "motion.durationSelect": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":280.0},
-    "motion.durationSummaryDwell": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":1200.0},
     "motion.durationBob": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":1800.0},
     "motion.durationLetterHold": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":360.0},
     "motion.durationLetterFade": {"kind":"duration","unit":"ms","role":"duration","min":1.0,"max":2.1474836E9,"afterglow":120.0},
@@ -307,7 +306,9 @@
     "sound.volume": {"kind":"number","min":0.0,"max":1.0,"afterglow":0.4}
   },
   "renamedTokens": {},
-  "retiredTokens": [],
+  "retiredTokens": [
+    "motion.durationSummaryDwell"
+  ],
   "slots": [
     "badge.check",
     "badge.cloud",
@@ -374,6 +375,7 @@
     "button.lstick",
     "button.lstick.filled",
     "button.lstick.press",
+    "button.lstick.press.filled",
     "button.r1",
     "button.r1.filled",
     "button.r2",
@@ -381,6 +383,7 @@
     "button.rstick",
     "button.rstick.filled",
     "button.rstick.press",
+    "button.rstick.press.filled",
     "button.select",
     "button.select.filled",
     "button.square",

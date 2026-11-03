@@ -223,6 +223,52 @@ class ShellController(
     }
     private var keptArtTarget: Pair<String, GridFocus>? = null
 
+    /**
+     * The game whose name card R3 opened to its summary, by hero key. Moving to another game, or B,
+     * folds it, so each game starts closed ([Meaning.Info]).
+     */
+    var summaryOpenFor by mutableStateOf<String?>(null)
+        private set
+
+    /** The hero's game that has a summary to show, by key, while the hero draws it. See [offerSummary]. */
+    var summaryOffered by mutableStateOf<String?>(null)
+        private set
+
+    /** Each drawn hero's offer, newest last. */
+    private val summaryOffers = LinkedHashMap<Any, String?>()
+
+    /**
+     * A hero says which game it could open to a summary, or none. Two heroes can be drawn while
+     * one crossfades into the other, so each takes back only its own offer ([withdrawSummary]).
+     */
+    fun offerSummary(owner: Any, key: String?) {
+        if (summaryOffers.keys.lastOrNull() !== owner || summaryOffers[owner] != key) {
+            summaryOffers.remove(owner)
+            summaryOffers[owner] = key
+        }
+        if (summaryOffered != key) summaryOffered = key
+    }
+
+    /** The hero [owner] leaves. The offer of a hero still drawn stands. */
+    fun withdrawSummary(owner: Any) {
+        summaryOffers.remove(owner)
+        val left = summaryOffers.values.lastOrNull()
+        if (summaryOffered != left) summaryOffered = left
+    }
+
+    /** The grid rests on the focused game with nothing over it, as the hero's card needs to open. */
+    fun summaryResting(): Boolean = model.dialog == null && model.panel == null && !model.connectOpen &&
+        model.focus.chrome == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
+        model.savePicker == null && model.saveSetup == null && model.saveConflict == null && find == null &&
+        typing() == null && folderIconPick() == null && artPicker == null &&
+        homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
+
+    /** R3 has something to open: the hero holds the focused game's summary and the grid rests on it. */
+    fun offersInfo(): Boolean = summaryOffered != null && summaryOffered == focusedHero()?.key && summaryResting()
+
+    /** The name card shows the focused game's summary now. */
+    fun summaryShown(): Boolean = summaryOpenFor != null && summaryOpenFor == summaryOffered && offersInfo()
+
     private fun closeArtAfterFocusChange() {
         val state = artPicker ?: return
         val focused = focusedGame()
@@ -415,6 +461,8 @@ class ShellController(
             if (canceled) cue(next.themeIndex, "back")
             if (stable.saveSetup != null) saveSetupSeen = true
             closeArtAfterFocusChange()
+            // Each game's name card starts closed: moving on folds the summary R3 opened.
+            if (summaryOpenFor != null && summaryOpenFor != focusedHero()?.key) summaryOpenFor = null
         }
 
     /** Set up saves has been open in this process, so a saved one is from a Home that outlived it. */
@@ -753,6 +801,21 @@ class ShellController(
         if (!completingDelete && heldActions.swallows(meaning.ordinal, repeatCount, capturing = model.deleteHold?.meaning == meaning)) return null
         if (!completingDelete && model.deleteHold != null) {
             inputKey(meaning, inputWindow, inputKeys[inputWindow])
+            return null
+        }
+        // R3 opens the focused game's summary on the hero, and folds it again. B folds it before
+        // anything else B does, so the grid's own Back waits for the next press.
+        if (meaning == Meaning.Info) {
+            if (offersInfo()) {
+                val opening = !summaryShown()
+                summaryOpenFor = if (opening) summaryOffered else null
+                cue(model.themeIndex, if (opening) "open" else "close")
+            }
+            return null
+        }
+        if (meaning == Meaning.Back && summaryShown()) {
+            summaryOpenFor = null
+            cue(model.themeIndex, "close")
             return null
         }
         val panel = model.panel
@@ -1286,13 +1349,13 @@ class ShellController(
                 showBoard(at?.let { GridFocus(cellIndex = it, lastColumn = GridStrip.column(it)) } ?: model.focus, keepDialog = true)
                 cue(model.themeIndex, "activate")
             }
-            // The tile menu, for the focused result, in the left island as Y opens it on a grid.
+            // The tile menu, for the focused result, beside it as Y opens it on a grid.
             // The menu holds its result from here, and opens in the same step: a model published
             // without it in between would read as the menu closing.
             FindOutcome.Options -> {
                 val session = find ?: return null
                 session.holdMenu()
-                val menu = model.copy(panel = SidePanel(Side.Left, model.layout.menuScreen, PanelLevel.Actions, 0, model.focus))
+                val menu = model.copy(panel = app.foldcade.language.tileMenu(model.focus, model.layout))
                 if (actionRows(withShelf(menu).tileActions).isNotEmpty()) publish(menu) else session.releaseMenu()
             }
         }
@@ -2295,8 +2358,15 @@ class ShellController(
 
     /** Closes whichever top menu is open. A closed menu stays closed. */
     fun closePanel() {
-        val side = model.panel?.side ?: return
-        val meaning = if (side == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
+        val panel = model.panel ?: return
+        if (panel.side == Side.Tile) {
+            // Y's menu shrinks back into its tile from any level, Add to's included.
+            publish(model.copy(panel = null, focus = panel.grid))
+            if (home.releaseMenu()) publish(model)
+            cue(model.themeIndex, "close")
+            return
+        }
+        val meaning = if (panel.side == Side.Left) Meaning.LeftPanel else Meaning.RightPanel
         onMeaning(meaning, model.layout.menuScreen)
     }
 
@@ -3892,6 +3962,9 @@ class ShellController(
                 val panel = before.panel
                 if (panel != null && chordIndex(panelRows(panel, before), meaning) != null) {
                     cue(after.themeIndex, activateCue(before, after, effect))
+                } else if (meaning == Meaning.Options && panel?.side == Side.Tile && after.panel == null) {
+                    // Y closing the menu it opened.
+                    cue(after.themeIndex, "close")
                 }
             }
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {

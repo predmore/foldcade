@@ -929,6 +929,10 @@
       "file": "icons/ic_btn_lstick_press.xml",
       "tint": false
     },
+    "button.lstick.press.filled": {
+      "file": "icons/ic_btn_lstick_press_filled.xml",
+      "tint": false
+    },
     "button.r1": {
       "file": "icons/ic_btn_r1.xml",
       "tint": false
@@ -955,6 +959,10 @@
     },
     "button.rstick.press": {
       "file": "icons/ic_btn_rstick_press.xml",
+      "tint": false
+    },
+    "button.rstick.press.filled": {
+      "file": "icons/ic_btn_rstick_press_filled.xml",
       "tint": false
     },
     "button.select": {
@@ -1834,7 +1842,6 @@
       "durationLaunchHold": 600,
       "launchPush": 1.06,
       "durationSelect": 280,
-      "durationSummaryDwell": 1200,
       "durationBob": 1800,
       "durationLetterHold": 360,
       "durationLetterFade": 120,

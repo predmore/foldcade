@@ -67,9 +67,10 @@ class ControllerGridHostTest {
         val folder = decodeHome(store.homeBoardRaw()).slots.indexOf(HOME_ANDROID_GAMES)
         shell.touchCell(folder, HostScreen.Bottom)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        val rows = panelRows(shell.model.panel!!, shell.model)
-        shell.touchPanel(rows.indexOf(Row.RemoveTile), HostScreen.Top)
-        shell.touchPanel(rows.indexOf(Row.RemoveTile), HostScreen.Top)
+        val panel = shell.model.panel!!
+        val rows = panelRows(panel, shell.model)
+        shell.touchPanel(rows.indexOf(Row.RemoveTile), panel.screen)
+        shell.touchPanel(rows.indexOf(Row.RemoveTile), panel.screen)
         assertEquals(Copy.offHome, shell.model.undoVerb)
         shell.openHomeAll()
         assertNull(shell.model.undoVerb)

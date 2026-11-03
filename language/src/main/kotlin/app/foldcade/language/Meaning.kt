@@ -55,6 +55,12 @@ enum class Meaning {
 
     /** Start while typing: saves the text. */
     Done,
+
+    /**
+     * R3, the right stick's click, on a grid: opens the hero's name card to the focused game's
+     * summary, or folds it again. Moving on, or B, folds it too.
+     */
+    Info,
 }
 
 /** Extra keys that exist only on the home grid. Idle keeps the shared map. */
@@ -112,6 +118,8 @@ private val shoulderKeys = setOf(
     KeyEvent.KEYCODE_BUTTON_SELECT,
     // Held, Y would open a menu, then run its Move chord, then drop, over and over.
     KeyEvent.KEYCODE_BUTTON_Y,
+    // Held, R3 would open the summary and fold it again at each repeat.
+    KeyEvent.KEYCODE_BUTTON_THUMBR,
 )
 
 fun meaningOf(
@@ -163,11 +171,17 @@ fun meaningOf(
         keyCode == KeyEvent.KEYCODE_DEL || keyCode == KeyEvent.KEYCODE_FORWARD_DEL -> Meaning.Dismiss
         keyCode == KeyEvent.KEYCODE_BUTTON_L2 -> Meaning.LetterBackward
         keyCode == KeyEvent.KEYCODE_BUTTON_R2 -> Meaning.LetterForward
+        // Only where the hero can show a summary: on a grid, not over a held tile, Find, or the keyboard.
+        keyCode == KeyEvent.KEYCODE_BUTTON_THUMBR &&
+            (homeKeys == HomeKeys.Idle || homeKeys == HomeKeys.AllLibrary) -> Meaning.Info
         else -> null
     }
 }
 
-/** Unused controller buttons must not reach Android's activating key fallback. */
+/**
+ * Unused controller buttons must not reach Android's activating key fallback. That covers L3 and
+ * R3 (THUMBL, THUMBR): unhandled, Android turns them into DPAD_CENTER, which would launch the tile.
+ */
 fun consumesUnmapped(keyCode: Int): Boolean =
     keyCode in KeyEvent.KEYCODE_BUTTON_A..KeyEvent.KEYCODE_BUTTON_MODE ||
         keyCode in KeyEvent.KEYCODE_BUTTON_1..KeyEvent.KEYCODE_BUTTON_16

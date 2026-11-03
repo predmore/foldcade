@@ -47,7 +47,7 @@ class HomeSelectionViewChangeTest {
     private fun choose(shell: ShellController, row: Row) {
         val target = panelRows(shell.model.panel!!, shell.model).indexOf(row)
         assertTrue("Missing $row", target >= 0)
-        if (shell.model.panel!!.index != target) shell.touchPanel(target, HostScreen.Top)
+        if (shell.model.panel!!.index != target) shell.touchPanel(target, shell.model.panel!!.screen)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
     }
 }

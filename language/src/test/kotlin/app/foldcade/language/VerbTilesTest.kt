@@ -11,7 +11,8 @@ class VerbTilesTest {
     @Test fun aGameLeadsWithMoveAddToArtAndSaves() {
         val rows = actionRows(game)
         assertEquals(listOf(Row.MoveTile, Row.AddToCollection, Row.ChooseArt, Row.Saves), rows.slice(tileBlock(rows)))
-        assertEquals(listOf(Row.SelectTile, Row.RestartGame, Row.Hide, Row.RemoveDownload, Row.SortFolder), rows.drop(4))
+        // A paused game's Restart has no tile left, so it leads the rows.
+        assertEquals(listOf(Row.RestartGame, Row.SelectTile, Row.Hide, Row.RemoveDownload, Row.SortFolder), rows.drop(4))
     }
 
     @Test fun eachKindOfTileLeadsWithItsOwnVerbs() {
@@ -37,7 +38,7 @@ class VerbTilesTest {
     @Test fun aVerbPastTheFourthIsARow() {
         val rows = actionRows(game.copy(rename = true))
         assertEquals(0..3, tileBlock(rows))
-        assertEquals(Row.RenameFolder, rows[4])
+        assertEquals(listOf(Row.RestartGame, Row.RenameFolder), rows.slice(4..5))
     }
 
     @Test fun aVerbFurtherDownAPageStaysARow() {
@@ -88,7 +89,8 @@ class VerbTilesTest {
         verbRows.forEach { verb ->
             val words = tileLabel(verb)
             assertNotNull("$verb", words)
-            assertFalse("$verb: $words", words!!.contains(' ') && words != Copy.addTo)
+            // New collection wraps to two lines under its tile rather than reading as a bare "New".
+            assertFalse("$verb: $words", words!!.contains(' ') && words != Copy.addTo && tileLabelLines(verb) < 2)
         }
     }
 

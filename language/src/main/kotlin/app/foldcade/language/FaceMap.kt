@@ -25,6 +25,9 @@ enum class PromptKey {
     L2,
     R2,
 
+    /** The right stick's click. */
+    R3,
+
     /** Left and right on the D-pad, for a slider. Only a hint glyph; no single key is it. */
     DpadSides,
     ;
@@ -110,6 +113,7 @@ fun promptKeyOf(keyCode: Int): PromptKey? = when (keyCode) {
     KeyEvent.KEYCODE_BUTTON_R1 -> PromptKey.R1
     KeyEvent.KEYCODE_BUTTON_L2 -> PromptKey.L2
     KeyEvent.KEYCODE_BUTTON_R2 -> PromptKey.R2
+    KeyEvent.KEYCODE_BUTTON_THUMBR -> PromptKey.R3
     else -> null
 }
 
@@ -126,6 +130,7 @@ fun keyOfPrompt(key: PromptKey): Int = when (key) {
     PromptKey.R1 -> KeyEvent.KEYCODE_BUTTON_R1
     PromptKey.L2 -> KeyEvent.KEYCODE_BUTTON_L2
     PromptKey.R2 -> KeyEvent.KEYCODE_BUTTON_R2
+    PromptKey.R3 -> KeyEvent.KEYCODE_BUTTON_THUMBR
     PromptKey.DpadSides -> KeyEvent.KEYCODE_DPAD_RIGHT
 }
 

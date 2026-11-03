@@ -95,9 +95,9 @@ class GameAboutTest {
     @Test
     fun aboutOpensOnTheTopScreenInEveryLayoutWhereverItsMenuWas() {
         for (layout in ScreenLayout.entries) {
-            // Y's menu opens with the islands: under the grid in Art bottom, over it in Top only.
+            // Y's menu opens beside its tile, on the grid's screen.
             val menu = yMenu(layout)
-            assertEquals(layout.name, layout.menuScreen, menu.panel?.screen)
+            assertEquals(layout.name, layout.gridScreen, menu.panel?.screen)
             // The page is a full page, as Settings and Play activity are: the larger top screen.
             assertEquals(layout.name, HostScreen.Top, openAbout(layout).gameAbout?.screen)
         }
