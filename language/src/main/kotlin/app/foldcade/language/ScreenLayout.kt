@@ -119,3 +119,14 @@ fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
 
 /** [onShownScreens] with only the dark screen unshown, for a model that knows no apps. */
 fun PickerModel.offTheDarkScreen(): PickerModel = onShownScreens { it != layout.darkScreen }
+
+/**
+ * True while one of Foldcade's own pages or dialogs is on [screen], over whatever the screen
+ * shows under it, such as the command center beside an app. Its keys are the page's.
+ */
+fun PickerModel.pageOn(screen: HostScreen): Boolean = dialog?.screen == screen || fullPageOn(screen)
+
+/** True while one of Foldcade's full pages is on [screen]: Settings, the connect form, Play activity, or About. */
+fun PickerModel.fullPageOn(screen: HostScreen): Boolean =
+    settings?.screen == screen || (connectOpen && connectScreen == screen) ||
+        playActivity?.screen == screen || gameAbout?.screen == screen

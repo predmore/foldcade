@@ -56,8 +56,15 @@ class RommConnectionNavigationTest {
         val selected = home.onSetting(Row.RommConnection("romm", "RomM"))
         val opened = reduce(selected, Meaning.Activate).first
         val onSignOut = reduce(opened, Meaning.MoveDown).first
-        val (closed, effect) = reduce(onSignOut, Meaning.Activate)
+        // Signing out stops saves syncing, so it asks first, on Not now.
+        val (asking, none) = reduce(onSignOut, Meaning.Activate)
+        assertNull(none)
+        assertEquals(DialogKind.RommSignOut, asking.dialog?.kind)
+        assertEquals(DialogButton.NotNow, asking.dialog!!.buttons[asking.dialog!!.index])
+        assertEquals(asking.copy(dialog = null), reduce(asking, Meaning.Back).first)
+        val (closed, effect) = reduce(reduce(asking, Meaning.MoveLeft).first, Meaning.Activate)
         assertEquals(Effect.ForgetCredentials("romm"), effect)
+        assertNull(closed.dialog)
         assertNull(closed.panel)
         assertFalse(closed.connectOpen)
     }

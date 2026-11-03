@@ -71,6 +71,8 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
 import app.foldcade.language.SidePanel
 import app.foldcade.language.ConnectKind
+import app.foldcade.language.PairingCode
+import app.foldcade.language.openRommSignIn
 import app.foldcade.language.Chrome
 import app.foldcade.language.Copy
 import app.foldcade.language.DialogKind
@@ -379,8 +381,22 @@ class ShellController(
     /** The Y heading for a held gap; ordinary empty slots keep their existing title. */
     fun restoredGapTitle(): String? {
         val index = (model.panel?.grid ?: model.focus).cellIndex
+        return restoredGapTitle(index)
+    }
+
+    /** What the restored gap at [index] waits for, or null when no restored game is held there. */
+    private fun restoredGapSources(index: Int): Set<String>? {
+        if (!showingHome()) return null
         val id = home.restoredGapAt(index) ?: return null
-        val sources = store.restoreHolds().sources[id] ?: return null
+        return store.restoreHolds().sources[id]
+    }
+
+    /** True while the restored gap at [index] waits for RomM, and RomM for a sign-in: A signs in there. */
+    fun gapNeedsSignIn(index: Int = model.focus.cellIndex): Boolean =
+        model.rommSignIn && restoredGapSources(index)?.contains(RommCredentials.PLUGIN_ID) == true
+
+    private fun restoredGapTitle(index: Int): String? {
+        val sources = restoredGapSources(index) ?: return null
         val folders = (store.libraryFolders().associate { it.uri to it.label } + store.restoreFolders().associate { it.uri to it.name })
         val computers = store.moonlightHostNames() + moonlightHosts.mapValues { it.value.name } + model.streamHosts.associate { it.key to it.name }
         return app.foldcade.language.restoreWaitingTitle(sources, folders, computers)
@@ -485,7 +501,7 @@ class ShellController(
         setupValidation += 1
         // A token submitted on either display retires every outstanding challenge.
         if (model.connectKind == ConnectKind.Romm) connectVisit += 1
-        model = model.copy(connectBusy = true, connectHint = null, connectRetry = model.connectKind == ConnectKind.Romm)
+        model = model.copy(connectBusy = true, connectHint = null, connectCode = null, connectRetry = model.connectKind == ConnectKind.Romm)
         return setupValidation
     }
 
@@ -836,7 +852,10 @@ class ShellController(
         // One of Foldcade's folders keeps its games off Home, so its Undo says so rather than Removed.
         val removesFolder = removeVerb == RemoveVerb.Remove && before.atRoot &&
             before.folders[app.foldcade.language.visibleSlots(before).getOrNull((model.panel?.grid ?: model.focus).cellIndex)]?.system == true
-        val result = applyMeaning(meaning, screen, repeatCount, inputWindow)
+        val signingOut = model.dialog?.kind == DialogKind.RommSignOut
+        val result = routeConnect(applyMeaning(meaning, screen, repeatCount, inputWindow))
+        // The press that answers the sign-out question stays its own: a held A can't reach the row under it.
+        if (signingOut && model.dialog == null) heldActions.capture(meaning.ordinal)
         if (row != Row.Undo && (home.encoded() != beforeSaved || row == Row.MoveTile)) {
             // Taking a game out of Add to's choice: a collection, or Home, where it was a pin.
             val wasIn = { id: String?, choice: String ->
@@ -895,6 +914,15 @@ class ShellController(
             if (repeatCount > 0) return null
             heldActions.capture(meaning.ordinal)
             return changeHome { removeHomeTile(it) }
+        }
+        // A on a restored place that waits for RomM signs in, as its hint and its hero say.
+        if (meaning == Meaning.Activate && homeActive() && model.panel == null && find == null && model.dialog == null && model.settings == null &&
+            !model.connectOpen && homeKeys() == HomeKeys.Idle && model.focus.chrome == null && gapNeedsSignIn()) {
+            if (repeatCount > 0) return null
+            heldActions.capture(meaning.ordinal)
+            val (next, effect) = model.openRommSignIn(model.focus)
+            publish(next)
+            return effect
         }
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
             model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
@@ -2183,7 +2211,8 @@ class ShellController(
             invalidateSetupValidation()
             connectOriginRevision += 1
             // Keep retry available until a replacement challenge arrives; token checks retire polling.
-            model = model.copy(connectHint = null)
+            // The code was for the old address.
+            model = model.copy(connectHint = null, connectCode = null)
         }
         model = model.copy(
             connectOrigin = origin,
@@ -2229,6 +2258,7 @@ class ShellController(
             connectIndex = 0,
             connectWarning = cleartextCredentialWarning(origin),
             connectHint = null,
+            connectCode = null,
             connectRetry = false,
             connectKind = ConnectKind.Romm,
         )
@@ -2247,6 +2277,7 @@ class ShellController(
             connectIndex = 0,
             connectWarning = null,
             connectHint = null,
+            connectCode = null,
             connectRetry = false,
             connectKind = ConnectKind.ArtKey,
             connectReturnPanel = null,
@@ -2266,13 +2297,20 @@ class ShellController(
         if (model.librarySyncing != syncing) model = model.copy(librarySyncing = syncing)
     }
 
+    /** A note on the form. One that ends the attempt ([retry]) takes its code away: a phone can no longer approve it. */
     fun showSetupHint(hint: String?, retry: Boolean = false) {
-        model = model.copy(connectHint = hint, connectRetry = retry)
+        model = model.copy(connectHint = hint, connectRetry = retry, connectCode = if (retry) null else model.connectCode)
+    }
+
+    /** A code a phone can approve now, which replaces any note about the last one. */
+    fun showDeviceCode(code: PairingCode) {
+        model = model.copy(connectCode = code, connectHint = null, connectRetry = false)
     }
 
     /** A retry on either display supersedes every previous device-code attempt. */
     fun beginDeviceCodeAttempt(): Int {
         connectVisit += 1
+        model = model.copy(connectCode = null)
         showSetupHint(null)
         return connectVisit
     }
@@ -2285,7 +2323,21 @@ class ShellController(
         deviceCodeVisitCurrent(visit) && connectOriginRevision == originRevision && !model.connectBusy
 
     fun setSignedIn(backends: List<SignedInBackend>) {
-        model = model.copy(signedIn = backends, rommSaved = store.rommOrigin() != null || backends.any { it.pluginId == RommCredentials.PLUGIN_ID })
+        val signedIn = backends.any { it.pluginId == RommCredentials.PLUGIN_ID }
+        val saved = store.rommOrigin() != null
+        model = model.copy(signedIn = backends, rommSaved = saved || signedIn, rommSignIn = saved && !signedIn)
+    }
+
+    /** RomM answered with the saved token, so a refusal before it has passed. */
+    fun rommAccepted() {
+        if (model.signedIn.any { it.pluginId == RommCredentials.PLUGIN_ID } || store.rommOrigin() == null) return
+        setSignedIn(listOf(SignedInBackend(RommCredentials.PLUGIN_ID, "RomM")) + model.signedIn)
+    }
+
+    /** RomM refused the saved token. Until a sign-in its saves wait, and every place RomM shows says so. */
+    fun rommRefused() {
+        if (model.signedIn.none { it.pluginId == RommCredentials.PLUGIN_ID }) return
+        setSignedIn(model.signedIn.filter { it.pluginId != RommCredentials.PLUGIN_ID })
     }
 
     fun setFolders(folders: List<LibraryFolder>) {
@@ -2300,6 +2352,7 @@ class ShellController(
             connectOpen = false,
             connectScreen = null,
             connectHint = null,
+            connectCode = null,
             connectRetry = false,
             panel = model.connectReturnPanel,
             settings = model.connectReturnSettings,
@@ -2385,7 +2438,7 @@ class ShellController(
 
     /** One tap focuses a text row. Save activates on that tap. */
     fun touchConnect(index: Int, screen: HostScreen): Effect? {
-        val field = connectFields(model.connectKind, model.connectRetry).getOrNull(index) ?: return null
+        val field = connectFields(model.connectKind).getOrNull(index) ?: return null
         if (field == ConnectField.Origin || field == ConnectField.Token) {
             if (model.connectIndex != index) model = model.copy(connectIndex = index)
             return null
@@ -2393,7 +2446,16 @@ class ShellController(
         val (next, effect) = reduce(model.copy(connectIndex = index), Meaning.Activate, screen)
         if (!next.connectOpen) connectToken = ""
         publish(next)
-        return effect
+        return routeConnect(effect)
+    }
+
+    /**
+     * RomM's one button: with no token typed it pairs a phone, getting a new code once the last
+     * attempt ended, and does nothing while a phone can still approve the code on screen.
+     */
+    private fun routeConnect(effect: Effect?): Effect? {
+        if (effect != Effect.SaveRommToken || connectToken.isNotBlank()) return effect
+        return if (model.connectCode == null || model.connectRetry) Effect.RetryRommDeviceCode else null
     }
 
     fun setRowsPerPage(rows: Int) {
@@ -3091,7 +3153,7 @@ class ShellController(
         // A tile in the hand stays on top while it walks, over a group too.
         val carried = homeCarry()?.let { home.faceOf(it.id) }?.let(::homeShelf)
         if (carried != null) return heroItem(carried)
-        if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return null
+        if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return restoredGapHero(model.focus.cellIndex)
         if (model.gridKind == GridKind.Platforms) {
             val entry = focusedEntry() ?: return null
             return HeroSubject.Folder(
@@ -3106,6 +3168,27 @@ class ShellController(
         if (model.libraryGrid && model.gridKind != GridKind.Games) return null
         val game = focusedGame() ?: return null
         return heroItem(game)
+    }
+
+    /**
+     * A restored place still waiting for its source says what for on the top screen, rather than
+     * leaving it empty: "Waiting for RomM", and how to bring it back when that is a sign-in.
+     */
+    private fun restoredGapHero(index: Int): HeroSubject? {
+        val sources = restoredGapSources(index) ?: return null
+        val title = restoredGapTitle(index) ?: return null
+        val mark = when {
+            RommCredentials.PLUGIN_ID in sources -> "cloud"
+            sources.any { it.startsWith("folder:") } -> "folder"
+            sources.any { it.startsWith("moonlight:") } -> "moonlight"
+            else -> null
+        }
+        return HeroSubject.Item(HeroItem(
+            key = "restore-gap:${home.restoredGapAt(index)}",
+            title = title,
+            detail = if (gapNeedsSignIn(index)) Copy.signInToBringBack else "",
+            mark = mark,
+        ))
     }
 
     private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
@@ -3458,7 +3541,9 @@ class ShellController(
         // A game a library lists has a page of its own. An app, a stream, or a shortcut has nothing for it to say.
         val aboutGame = playGame?.takeIf { home.item(it)?.let { item -> app.foldcade.language.hasAboutPage(item) } == true }
         val withAbout = if (aboutGame != null) (withPlay ?: TileActions()).copy(about = true, game = withPlay?.game ?: aboutGame) else withPlay
-        return counted.copy(tileActions = (withAbout ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null), undoVerb = activeUndo()?.verb, atLibraryRoot = root)
+        val signIn = tile?.bulk == null && home.selection == null && onHome && find == null && gapNeedsSignIn(counted.focus.cellIndex)
+        return counted.copy(tileActions = (withAbout ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null, signIn = signIn),
+            undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
     /** A menu acts on its named game even after Add to leaves the focused slot empty. */

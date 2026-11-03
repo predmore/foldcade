@@ -281,9 +281,9 @@ class SetupRoundTwoRegressionTest {
     @Test fun previewDistinguishesConnectingRommFromSwitchingServers() {
         val backup = backup().copy(settings = backup().settings + ("romm_origin" to "https://romm.example"))
         val connecting = backupPreview(backup, emptySet()).second
-        assertTrue(connecting.contains("RomM: romm.example; sign in"))
+        assertTrue(connecting.contains("After the restore, sign in to RomM at romm.example."))
         assertFalse(connecting.contains("switches"))
-        assertTrue(backupPreview(backup, emptySet(), "https://other.example").second.contains("RomM: switches to romm.example; sign in again"))
-        assertFalse(backupPreview(backup, emptySet(), "https://romm.example").second.contains("RomM:"))
+        assertTrue(backupPreview(backup, emptySet(), "https://other.example").second.contains("RomM changes to romm.example. Sign in after the restore."))
+        assertFalse(backupPreview(backup, emptySet(), "https://romm.example").second.contains("RomM"))
     }
 }

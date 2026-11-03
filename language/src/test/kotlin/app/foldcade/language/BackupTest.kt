@@ -8,7 +8,7 @@ class BackupTest {
     @Test fun backupUndoAndRedoUseTheirOwnCopyWithoutChangingConfirmationSafety() {
         assertEquals("Home, collections, hidden games, settings, themes and play time, in one file. Not saves or sign-ins.", BackupCopy.body)
         val redo = backupDialog(HostScreen.Top, undo = true, redo = true)
-        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.RedoRestore, DialogButton.PlayHistory, DialogButton.NotNow), redo.buttons)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.RedoRestore, DialogButton.PlayHistory), redo.buttons)
         assertEquals("Redo restore", dialogButtonLabel(DialogButton.RedoRestore))
         for ((action, title, body) in listOf(
             Triple(RestoreAction.Undo, "Undo restore?", "Puts back the setup you had before, from Nov 1, 2026. Play time from both is kept."),
@@ -91,16 +91,20 @@ class BackupTest {
     @Test fun previewCountsUniqueGamesCollectionsHiddenAndMissingApps() {
         val summary = backupHomeSummary(board, setOf(local))
         assertEquals(BackupHomeSummary(4, 1, 1, 3, 1), summary)
-        assertEquals("Home: 4 games, 1 collection, 1 hidden · Theme: Afterglow · Not here yet: 3 games, 1 app",
+        assertEquals("4 games on Home · 1 collection · 1 hidden · Theme: Afterglow\n3 games and 1 app aren’t here yet. They come back once their library reconnects, or once they’re installed.",
             BackupCopy.preview(summary.games, summary.collections, summary.hidden, "Afterglow", summary.missingGames, summary.missingApps))
     }
 
     @Test fun dialogsOpenSafelyAndHeldButtonsCannotAnswerThem() {
         val simple = backupDialog(HostScreen.Top)
-        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.PlayHistory, DialogButton.NotNow), simple.buttons)
-        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.UndoRestore, DialogButton.PlayHistory, DialogButton.NotNow), backupDialog(HostScreen.Top, true).buttons)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.PlayHistory), simple.buttons)
+        assertEquals(listOf(DialogButton.BackUp, DialogButton.PickRestore, DialogButton.UndoRestore, DialogButton.PlayHistory), backupDialog(HostScreen.Top, true).buttons)
         assertEquals(DialogButton.BackUp, simple.buttons[simple.index])
-        assertEquals(DialogButton.NotNow, simple.buttons[simple.safeIndex])
+        // No Not now: B closes it, and presses none of its buttons.
+        assertEquals(BACK_CLOSES, simple.safeIndex)
+        val (closed, back) = reduce(PickerModel(count = 0, rowsPerPage = 1, dialog = simple), Meaning.Back, HostScreen.Top)
+        assertNull(closed.dialog)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Backup, null), back)
         assertFalse(DialogButton.UndoRestore in simple.buttons)
         assertTrue(DialogButton.UndoRestore in backupDialog(HostScreen.Top, true).buttons)
         val confirm = restoreDialog("Nov 1, 2026", "Home: 4 games", HostScreen.Top)
@@ -119,6 +123,10 @@ class BackupTest {
         val remaining = backupDone(BackupCopy.signIn, HostScreen.Top, restored = true)
         assertEquals(BackupCopy.restored, remaining.title)
         assertEquals(BackupCopy.signIn, remaining.body)
+        // Undo restore says what it did.
+        val undone = backupDone("", HostScreen.Top, restored = true, undone = true)
+        assertEquals("Restore undone", undone.title)
+        assertEquals("Your setup is back as it was.", undone.body)
     }
 
     @Test fun systemFitsWithEveryPermissionPromptPending() {
@@ -140,12 +148,14 @@ class BackupTest {
     }
 
     @Test fun previewOnlyNamesThingsThatAreMissingAndUsesTheShortConfirmationBody() {
-        val home = "Home: 3 games, 1 collection, 1 hidden · Theme: Built-in"
-        assertEquals("$home · Not here yet: 3 games", BackupCopy.preview(3, 1, 1, "Built-in", 3, 0))
-        assertEquals("$home · Not here yet: 1 app", BackupCopy.preview(3, 1, 1, "Built-in", 0, 1))
+        val home = "3 games on Home · 1 collection · 1 hidden · Theme: Built-in"
+        assertEquals("$home\n3 games aren’t here yet. They come back once their library reconnects.", BackupCopy.preview(3, 1, 1, "Built-in", 3, 0))
+        assertEquals("$home\n1 app isn’t here yet. It comes back once it’s installed.", BackupCopy.preview(3, 1, 1, "Built-in", 0, 1))
         assertEquals(home, BackupCopy.preview(3, 1, 1, "Built-in", 0, 0))
-        assertEquals("$home · Not here yet: 1 game, 2 apps", BackupCopy.preview(3, 1, 1, "Built-in", 1, 2))
-        assertEquals("Replaces your Home, collections, hidden games, settings and theme with this backup's from Nov 1, 2026. Play time from both is kept.",
+        assertEquals("$home\n1 game and 2 apps aren’t here yet. They come back once their library reconnects, or once they’re installed.", BackupCopy.preview(3, 1, 1, "Built-in", 1, 2))
+        // Nothing of a kind is not named at all.
+        assertEquals("1 game on Home · Theme: Built-in", BackupCopy.preview(1, 0, 0, "Built-in", 0, 0))
+        assertEquals("Replaces your Home, collections, hidden games, settings and theme with the ones in this backup, from Nov 1, 2026. Play time from both is kept.",
             restoreDialog("Nov 1, 2026", home, HostScreen.Top).body)
     }
 

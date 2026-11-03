@@ -24,12 +24,12 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**.
 2. Enter its address, including `https://` or `http://`, such as `https://romm.example.com`.
-3. Open the verification address shown in Foldcade on your phone or computer, sign in, and approve the code.
+3. A code appears beside the fields, in groups of four, with a QR code. Scan it with your phone, or open the short address under it on any phone or computer, sign in, and approve the code. The button reads **Waiting for phone…** meanwhile.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.
 
 Foldcade stores a token, not your RomM password.
 
-If approval fails, choose **Get a new code**, or paste a **Client API token** and choose **Save token**. See [RomM's token guide](https://docs.romm.app/latest/developers/client-api-tokens/).
+If the code expires or is declined, choose **Pair with phone** for a new one. To use a token instead, paste it into **Token (optional)**; the button then reads **Connect**. See [RomM's token guide](https://docs.romm.app/latest/developers/client-api-tokens/).
 
 A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, and `firmware.read`.
 
@@ -37,7 +37,15 @@ A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write
 
 Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 
-Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**.
+Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**. Sign out asks first: saves stop syncing and RomM's games leave Home.
+
+## Signed out
+
+After restoring a setup backup, which leaves sign-ins out, or once RomM refuses the saved token, RomM waits for a sign-in, and saves wait on the device until then. Foldcade says so everywhere RomM shows:
+
+- R1 keeps a notice, **RomM: sign in to sync saves**, that has no Dismiss. **A** opens the sign-in form.
+- The RomM tile in **Settings › Library** wears the not-syncing mark, and its menu reads **Signed out**, with **Sign in** and **Remove**.
+- A restored RomM game on Home is a gap until then. Focused, the top screen reads **Waiting for RomM** and **Sign in to bring it back**; **A**, or **Sign in** in its **Y** menu, opens the form.
 
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
 

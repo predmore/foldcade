@@ -22,9 +22,35 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import app.foldcade.language.DialogKind
+import app.foldcade.language.Meaning
 import org.junit.Test
 
 class RommConnectionTest {
+    @Test
+    fun aHeldAThatAnswersNotNowDoesNotAskToSignOutAgain() = runBlocking {
+        val session = SessionStore(MemoryPrefs())
+        val credentials = MemoryCredentialStore()
+        saveRommConnection(session, credentials, "https://one.example", "rmm_one")
+        val shell = ShellController(session, host(credentials))
+        shell.setSignedIn(listOf(SignedInBackend("romm", "RomM")))
+        shell.previewIsland(Side.Left)
+        shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
+        shell.touchPanel(leftRows().indexOf(Row.Settings), HostScreen.Top)
+        shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
+        val library = settingsRows(SettingsCategory.Library, shell.model)
+        shell.touchSettingsRow(library.indexOfFirst { it is Row.RommConnection }, HostScreen.Top)
+        shell.touchPanel(1, HostScreen.Top)
+        assertNull(shell.touchPanel(1, HostScreen.Top))
+        assertEquals(DialogKind.RommSignOut, shell.model.dialog?.kind)
+        // Not now is focused. A closes it, and A held from there reaches nothing under it.
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top))
+        assertNull(shell.model.dialog)
+        repeat(3) { assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top, repeatCount = it + 1)) }
+        assertNull(shell.model.dialog)
+        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
+    }
+
     @Test
     fun editingTheConnectionKeepsItsIdentityAndReturnsToItsActions() = runBlocking {
         val session = SessionStore(MemoryPrefs())
@@ -54,7 +80,8 @@ class RommConnectionTest {
         assertEquals("rmm_changed", token(credentials, "access-token"))
 
         shell.touchPanel(1, HostScreen.Top)
-        assertEquals(Effect.ForgetCredentials("romm"), shell.touchPanel(1, HostScreen.Top))
+        assertNull(shell.touchPanel(1, HostScreen.Top))
+        assertEquals(Effect.ForgetCredentials("romm"), shell.touchDialog(0, HostScreen.Top))
         removeRommServer(credentials, session)
         assertNull(session.rommOrigin())
         assertTrue(credentials.lookup("romm", "access-token") is CredentialLookup.Absent)

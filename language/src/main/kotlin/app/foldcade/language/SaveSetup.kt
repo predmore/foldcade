@@ -207,8 +207,12 @@ fun PickerModel.openSaveSetup(
 fun saveSetupWanted(model: PickerModel): Boolean =
     saveSetupTiles(model, SaveSetupPage()).any { !it.findSaves && !it.done }
 
+/** Set up saves lays its tiles out in lines of this many, so every emulator shows at once. */
+const val SAVE_SETUP_COLUMNS = 4
+
 /**
- * Left and right move along the strip; up and down do nothing. Confirm does the focused
+ * Left and right move along the tiles; up and down move a line of [SAVE_SETUP_COLUMNS], to the
+ * last tile when the line below is shorter. Confirm does the focused
  * tile's step, or opens its Settings page once it syncs, or closes on All set. The bottom
  * button skips the tile for this run and glides to the next that needs you, as it dismisses
  * everywhere else. Back closes, to the Settings page that opened it if one did. A held key,
@@ -216,7 +220,7 @@ fun saveSetupWanted(model: PickerModel): Boolean =
  * once: only the D-pad repeats.
  */
 fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, repeatCount: Int = 0): Pair<PickerModel, Effect?> {
-    if (repeatCount > 0 && meaning != Meaning.MoveLeft && meaning != Meaning.MoveRight) return model to null
+    if (repeatCount > 0 && meaning !in setOf(Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown)) return model to null
     val tiles = saveSetupTiles(model, page)
     val index = tiles.indexOfFirst { it.key == page.focus }
     val tile = tiles.getOrNull(index)
@@ -231,6 +235,11 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
             tiles.isEmpty() -> model to null
             index < 0 -> moved(tiles.first().key)
             else -> moved(tiles.getOrNull(index + 1)?.key ?: page.focus)
+        }
+        Meaning.MoveUp -> if (index >= SAVE_SETUP_COLUMNS) moved(tiles[index - SAVE_SETUP_COLUMNS].key) else model to null
+        Meaning.MoveDown -> when {
+            index < 0 || index / SAVE_SETUP_COLUMNS >= tiles.lastIndex / SAVE_SETUP_COLUMNS -> model to null
+            else -> moved(tiles[(index + SAVE_SETUP_COLUMNS).coerceAtMost(tiles.lastIndex)].key)
         }
         Meaning.Back -> closeSaveSetup(model, page) to null
         Meaning.Activate -> when {
@@ -337,6 +346,21 @@ fun saveSetupActions(model: PickerModel, page: SaveSetupPage): List<HintKey> {
         add(HintKey(confirm, SaveSetupCopy.action(tile)))
         if (tile.needsYou(page)) add(HintKey(actionFaces(model.faceMap).bottomGlyph, SaveSetupCopy.skip))
     }
+}
+
+/**
+ * An emulator's how-to as numbered steps, when it is written one "1. …" a line, as DuckStation's
+ * is, without their numbers. Null for a how-to in plain sentences, which reads as it is.
+ */
+fun numberedSteps(text: String?): List<String>? {
+    val lines = text?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() } ?: return null
+    if (lines.size < 2) return null
+    val steps = lines.mapIndexed { index, line ->
+        val number = "${index + 1}."
+        if (!line.startsWith(number)) return null
+        line.removePrefix(number).trim()
+    }
+    return steps.takeIf { it.none(String::isEmpty) }
 }
 
 /** One or two words a control, one short sentence a step. Emulators' own how-tos are theirs. */

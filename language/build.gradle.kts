@@ -27,6 +27,7 @@ dependencies {
     implementation(libs.activity.compose)
     api(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
+    testImplementation(libs.zxing.core)
 }
 
 // Exercise the same archive that the app packages, including its reference validation.

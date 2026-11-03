@@ -176,7 +176,11 @@ object SavePickerCopy {
     fun sourceDetail(save: SavePickerSave): String {
         val client = clientName(save.origin?.client)
         val device = deviceName(save.origin?.deviceName)
-        val from = if (client != null && device != null) "$client on $device" else client ?: device ?: fallbackSource(save)
+        // Every Foldcade names its RomM device Foldcade, so the device is named once, not "Foldcade on Foldcade".
+        val from = when {
+            client != null && device != null && !device.equals(client, ignoreCase = true) -> "$client on $device"
+            else -> client ?: device ?: fallbackSource(save)
+        }
         return listOfNotNull(from, named(save.emulator, save)?.takeIf { !it.equals(from, ignoreCase = true) }).joinToString(" · ")
     }
     private fun clientName(client: String?): String? = when (val name = client?.trim()?.lowercase(Locale.ROOT)?.takeIf { it.isNotEmpty() }) {
@@ -189,6 +193,9 @@ object SavePickerCopy {
         else -> name.split(Regex("[\\s_-]+")).joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
     }
     fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: noSlot
+    const val today = "Today"
+    const val yesterday = "Yesterday"
+    const val emptySlot = "Empty slot"
     fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
     /** Under the game's name on the top screen, once the saves are known. */
@@ -209,9 +216,9 @@ object SavePickerCopy {
         SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
         SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
     }
-    fun confirmationTitle(choice: SavePickerChoice, player: String): String = when (choice) {
+    fun confirmationTitle(choice: SavePickerChoice, player: String, destination: String = (choice as? SavePickerChoice.Copy)?.destination?.slot.orEmpty()): String = when (choice) {
         is SavePickerChoice.Play -> "Play this save?"
-        is SavePickerChoice.Copy -> "Copy to ${choice.destination.slot}?"
+        is SavePickerChoice.Copy -> "Copy to $destination?"
         SavePickerChoice.Setup -> "Set up $player first"
     }
     fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false, ownSlots: List<String> = emptyList()): String = when (choice) {
@@ -222,6 +229,58 @@ object SavePickerCopy {
             (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
     }
+}
+
+/**
+ * Slot names that are a file's or Foldcade's own, not a name anyone chose: Azahar's "title",
+ * melonDS's "sav", RetroArch's "srm". Those saves go by when they were made instead.
+ */
+private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "archive", "default", "save")
+
+/** True when [slot] says nothing to a player, so its saves are named by date. */
+fun genericSlot(slot: String?, ownSlots: List<String>): Boolean =
+    slot.isNullOrBlank() || slot.lowercase(Locale.ROOT) in MACHINE_SLOTS || slot in ownSlots
+
+/**
+ * What each save is called on the page, by [SavePickerSave.id]. A slot someone named keeps its
+ * name, and a Backup says so. A generic slot is named by its day, "Today", "Yesterday",
+ * "Oct 25", with the time once two of them share a day: "Oct 25, 8:47 PM".
+ */
+fun saveNames(saves: List<SavePickerSave>, ownSlots: List<String>, style: DateStyle, now: Long, zone: ZoneId = ZoneId.systemDefault()): Map<String, String> {
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    fun day(save: SavePickerSave): String {
+        val at = Instant.ofEpochMilli(save.updatedAtMillis).atZone(zone)
+        val date = at.toLocalDate()
+        return when {
+            !date.isBefore(today) -> SavePickerCopy.today
+            date == today.minusDays(1) -> SavePickerCopy.yesterday
+            date.year == today.year -> style.monthDay(at)
+            else -> style.monthDayYear(at)
+        }
+    }
+    val dated = saves.filter { !it.backup && genericSlot(it.slot, ownSlots) }
+    val days = dated.groupBy(::day)
+    return saves.associate { save ->
+        save.id to when {
+            save.backup -> SavePickerCopy.backup
+            save !in dated -> SavePickerCopy.slot(save)
+            else -> {
+                val name = day(save)
+                if ((days[name]?.size ?: 0) > 1) "$name, ${style.time(Instant.ofEpochMilli(save.updatedAtMillis).atZone(zone))}" else name
+            }
+        }
+    }
+}
+
+/** True when a save's [name] already ends with its time, so the page does not say the date twice. */
+fun saveNameSaysTime(name: String, millis: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault()): Boolean =
+    name.endsWith(", " + style.time(Instant.ofEpochMilli(millis).atZone(zone)))
+
+/** A slot to copy into, by name: its own, the newest save in it when it is generic, or an empty slot. */
+fun destinationName(destination: SaveDestination, saves: List<SavePickerSave>, names: Map<String, String>, ownSlots: List<String>): String {
+    if (!genericSlot(destination.slot, ownSlots)) return destination.slot
+    val newest = saves.filter { !it.backup && it.slot == destination.slot }.maxByOrNull { it.updatedAtMillis }
+    return newest?.let { names[it.id] } ?: SavePickerCopy.emptySlot
 }
 
 fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.isNullOrBlank() && !player.isNullOrBlank() &&

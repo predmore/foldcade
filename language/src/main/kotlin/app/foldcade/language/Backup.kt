@@ -26,17 +26,37 @@ object BackupCopy {
     const val confirm = "Restore this backup?"
     const val restored = "Restored"
     const val restoredDone = "All set."
+    /** After Undo restore: the setup from before is back, so the title says that rather than Restored. */
+    const val undone = "Restore undone"
+    const val undoneDone = "Your setup is back as it was."
     const val pickAgain = "Pick again"
-    fun replacing(date: String): String = "Replaces your Home, collections, hidden games, settings and theme with this backup's from $date. Play time from both is kept."
+    fun replacing(date: String): String = "Replaces your Home, collections, hidden games, settings and theme with the ones in this backup, from $date. Play time from both is kept."
     fun undoing(date: String): String = "Puts back the setup you had before, from $date. Play time from both is kept."
     fun redoing(date: String): String = "Puts back the restored setup, from $date. Play time from both is kept."
+    /**
+     * What the backup holds, one line, then what is not on this device yet, in a sentence:
+     * "43 games on Home · 2 collections · Theme: Afterglow", then "38 games aren't here yet.
+     * They come back once their library reconnects." Counts of nothing are left out.
+     */
     fun preview(games: Int, collections: Int, hidden: Int, theme: String, missingGames: Int, missingApps: Int): String {
+        val home = listOfNotNull(
+            "${count(games, "game")} on Home",
+            count(collections, "collection").takeIf { collections > 0 },
+            "$hidden hidden".takeIf { hidden > 0 },
+            "Theme: $theme",
+        ).joinToString(" · ")
         val missing = listOfNotNull(
             count(missingGames, "game").takeIf { missingGames > 0 },
             count(missingApps, "app").takeIf { missingApps > 0 },
         )
-        val home = "Home: ${count(games, "game")}, ${count(collections, "collection")}, $hidden hidden · Theme: $theme"
-        return home + if (missing.isEmpty()) "" else " · Not here yet: ${missing.joinToString(", ")}"
+        if (missing.isEmpty()) return home
+        val one = missingGames + missingApps == 1
+        val back = when {
+            missingApps == 0 -> if (one) "It comes back once its library reconnects." else "They come back once their library reconnects."
+            missingGames == 0 -> if (one) "It comes back once it’s installed." else "They come back once they’re installed."
+            else -> "They come back once their library reconnects, or once they’re installed."
+        }
+        return "$home\n${missing.joinToString(" and ")} ${if (one) "isn’t" else "aren’t"} here yet. $back"
     }
     private fun count(number: Int, noun: String): String = "$number $noun${if (number == 1) "" else "s"}"
     const val signIn = "Sign in to RomM again."
@@ -45,8 +65,8 @@ object BackupCopy {
     const val eden = "Pick Eden's folder again."
     fun folders(names: String): String = "Pick these folders again in Settings › Library: $names."
     fun saves(names: String): String = "Pick save folders again: $names."
-    fun switchedRomm(host: String): String = "RomM: switches to $host; sign in again"
-    fun connectRomm(host: String): String = "RomM: $host; sign in"
+    fun switchedRomm(host: String): String = "RomM changes to $host. Sign in after the restore."
+    fun connectRomm(host: String): String = "After the restore, sign in to RomM at $host."
     fun waiting(source: String): String = "Waiting for $source"
 }
 
@@ -68,15 +88,20 @@ fun restoreWaitingTitle(sources: Set<String>, folders: Map<String, String>, comp
 /** A file flow opened from Settings stays with its page, whichever panel delivered the key. */
 fun PickerModel.backupDialogScreen(from: HostScreen): HostScreen = settings?.screen ?: from
 
+/**
+ * Back up, Restore, Undo or Redo, and Play history. B closes it, so it has no Not now: five
+ * buttons did not fit the bottom screen's narrower Settings on one line.
+ */
 fun backupDialog(screen: HostScreen, undo: Boolean = false, redo: Boolean = false): DialogState {
     val buttons = listOf(DialogButton.BackUp, DialogButton.PickRestore) +
-        (if (undo) listOf(if (redo) DialogButton.RedoRestore else DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory, DialogButton.NotNow)
-    return DialogState(DialogKind.Backup, BackupCopy.title, BackupCopy.body, buttons, 0, buttons.lastIndex, screen)
+        (if (undo) listOf(if (redo) DialogButton.RedoRestore else DialogButton.UndoRestore) else emptyList()) + listOf(DialogButton.PlayHistory)
+    return DialogState(DialogKind.Backup, BackupCopy.title, BackupCopy.body, buttons, 0, BACK_CLOSES, screen)
 }
 
-fun backupDone(message: String, screen: HostScreen, restored: Boolean = false, library: Boolean = false): DialogState = DialogState(
-    DialogKind.BackupDone, if (restored) BackupCopy.restored else BackupCopy.title,
-    if (restored && message.isBlank()) BackupCopy.restoredDone else message,
+/** [undone]: the restore just finished was Undo restore, so it names that rather than Restored. */
+fun backupDone(message: String, screen: HostScreen, restored: Boolean = false, library: Boolean = false, undone: Boolean = false): DialogState = DialogState(
+    DialogKind.BackupDone, if (restored) (if (undone) BackupCopy.undone else BackupCopy.restored) else BackupCopy.title,
+    if (restored && message.isBlank()) (if (undone) BackupCopy.undoneDone else BackupCopy.restoredDone) else message,
     if (library) listOf(DialogButton.Library, DialogButton.Ok) else listOf(DialogButton.Ok), 0, if (library) 1 else 0, screen,
 )
 

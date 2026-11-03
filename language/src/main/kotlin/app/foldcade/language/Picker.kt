@@ -143,6 +143,9 @@ enum class DialogKind {
     Backup,
     RestoreBackup,
     BackupDone,
+
+    /** Sign out of RomM, or remove a server that waits for a sign-in. Opens on Not now. */
+    RommSignOut,
 }
 
 enum class DialogButton {
@@ -173,6 +176,7 @@ enum class DialogButton {
     RedoRestore,
     RestoreBackup,
     Library,
+    SignOut,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -201,6 +205,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.UndoRestore -> BackupCopy.undo
     DialogButton.RedoRestore -> BackupCopy.redo
     DialogButton.Library -> SettingsCopy.library
+    DialogButton.SignOut -> if (subject == ROMM_REMOVE) Copy.remove else Copy.signOut
 }
 
 data class DialogState(
@@ -209,6 +214,7 @@ data class DialogState(
     val body: String,
     val buttons: List<DialogButton>,
     val index: Int,
+    /** The button Back presses. [BACK_CLOSES] when Back only closes and no button says so. */
     val safeIndex: Int,
     val screen: HostScreen,
     /** A second muted line. The missing-player dialog lists package names here. */
@@ -218,6 +224,9 @@ data class DialogState(
     /** Where its opener put it, retained while an occupied screen displaces it. */
     val preferredScreen: HostScreen = screen,
 )
+
+/** A [DialogState.safeIndex] for a dialog without a Not now: Back closes it, as Not now would. */
+const val BACK_CLOSES = -1
 
 /** One of Moonlight's computers, for its Settings › Library switch. [key] is its lower-case UUID. */
 data class StreamHostSetting(val key: String, val name: String, val paired: Boolean)
@@ -232,6 +241,47 @@ fun pairHostDialog(name: String, pin: String, key: String, screen: HostScreen): 
     safeIndex = 0,
     screen = screen,
     subject = key,
+)
+
+/** [DialogState.subject] of the confirmation that removes a RomM server waiting for a sign-in. */
+const val ROMM_REMOVE = "remove"
+
+/**
+ * Signing out of RomM stops its saves syncing, and its games leave Home, so it asks first,
+ * on Not now. Signed out already, the same row removes the server.
+ */
+fun rommSignOutDialog(signedOut: Boolean, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.RommSignOut,
+    title = if (signedOut) Copy.removeRommTitle else Copy.signOutRommTitle,
+    body = if (signedOut) Copy.removeRommBody else Copy.signOutRommBody,
+    buttons = listOf(DialogButton.SignOut, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+    subject = if (signedOut) ROMM_REMOVE else null,
+)
+
+/** The RomM form, to sign in, from wherever RomM waits: R1's notice, a restored gap, its Y menu. */
+fun PickerModel.openRommSignIn(grid: GridFocus): Pair<PickerModel, Effect?> = copy(
+    panel = null,
+    focus = grid,
+    connectOpen = true,
+    connectScreen = layout.pageScreen,
+    connectIndex = 0,
+    connectKind = ConnectKind.Romm,
+    connectReturnPanel = null,
+    connectReturnSettings = null,
+) to Effect.EditRommConnection
+
+/** R1's standing notice while RomM waits for a sign-in. It has no X: it goes once RomM is signed in. */
+const val ROMM_SIGN_IN_NOTICE = "foldcade:romm-sign-in"
+
+fun rommSignInNotice(postedMillis: Long): FoldNotice = FoldNotice(
+    id = ROMM_SIGN_IN_NOTICE,
+    title = Copy.rommSignInNoticeTitle,
+    body = Copy.rommSignInNoticeBody,
+    postedMillis = postedMillis,
+    dismissable = false,
 )
 
 /** Forgetting opens on Not now, and Back keeps the pairing too. */
@@ -626,6 +676,9 @@ sealed interface Row {
     data class RommConnection(val pluginId: String, val label: String) : Row
     data class EditRomm(val pluginId: String) : Row
 
+    /** The RomM connect form, from a place that waits for RomM: a restored gap's Y menu. */
+    data object SignInRomm : Row
+
     /** Add a server, whether it is the first or an additional connection. */
     data object AddRomm : Row
     data class Notice(val id: String) : Row
@@ -771,8 +824,8 @@ val verbRows: List<Row> = listOf(
 
 /**
  * The rows [rows] draws as round tiles, side by side in lines of [quickTileColumns]: R1's
- * Android screens, L1's places, or the verbs that lead a tile's menu, under Undo when it is
- * there. Empty when the page has none. Verbs lead only a tile's menu, so a verb further down
+ * Android screens, L1's places, or the verbs that lead a tile's menu, under Undo or Sign in
+ * when one is there. Empty when the page has none. Verbs lead only a tile's menu, so a verb further down
  * a page, such as Add to's New collection, stays a row.
  */
 fun tileBlock(rows: List<Row>): IntRange {
@@ -781,7 +834,8 @@ fun tileBlock(rows: List<Row>): IntRange {
         val end = (start until rows.size).firstOrNull { rows[it] !is Row.QuickTile && rows[it] !in placeRows } ?: rows.size
         return start until end
     }
-    val lead = if (rows.firstOrNull() == Row.Undo) 1 else 0
+    // Undo, and a restored gap's Sign in, sit over the verbs as rows of their own.
+    val lead = rows.takeWhile { it == Row.Undo || it == Row.SignInRomm }.size
     val verbs = rows.drop(lead).take(quickTileColumns).takeWhile { it in verbRows }.size
     return lead until lead + verbs
 }
@@ -951,7 +1005,6 @@ enum class ConnectField {
     Origin,
     Token,
     Save,
-    Retry,
 }
 
 /** What the connect form saves: a RomM server and token, or a SteamGridDB key. */
@@ -960,10 +1013,34 @@ enum class ConnectKind {
     ArtKey,
 }
 
-fun connectFields(kind: ConnectKind = ConnectKind.Romm, retry: Boolean = false): List<ConnectField> = when (kind) {
-    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save) +
-        if (retry) listOf(ConnectField.Retry) else emptyList()
+/**
+ * The form's rows, top to bottom. RomM's one button pairs a phone while the token is empty and
+ * connects once one is typed, so a new code needs no button of its own.
+ */
+fun connectFields(kind: ConnectKind = ConnectKind.Romm): List<ConnectField> = when (kind) {
+    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
     ConnectKind.ArtKey -> listOf(ConnectField.Token, ConnectField.Save)
+}
+
+/** RomM's device pairing: the [code] to approve, and the page at [url] that approves it. */
+data class PairingCode(val code: String, val url: String) {
+    /** "EUUJ NSZV": in fours, so it reads aloud and types on a phone without losing the place. */
+    val spaced: String get() = code.chunked(4).joinToString(" ")
+
+    /** The page without its scheme or query, short enough to type: "romm.example/pair/device". */
+    val shortUrl: String get() = url.substringAfter("://").substringBefore('?').substringBefore('#').trimEnd('/')
+}
+
+/**
+ * RomM's button says what A does now: Connect once a token is typed (or before there is a
+ * server to pair with), Pair with phone for a new code, and nothing to press while a phone
+ * can approve the code on screen.
+ */
+fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
+    busy -> Copy.connecting
+    tokenTyped || !originTyped -> Copy.connect
+    code != null && !retry -> Copy.waitingForPhone
+    else -> Copy.pairWithPhone
 }
 
 /**
@@ -990,6 +1067,8 @@ data class CollectionChoice(val folderId: String, val name: String, val member: 
  */
 data class TileActions(
     val select: Boolean = false,
+    /** A restored gap that waits for RomM, signed out: Sign in leads its menu. */
+    val signIn: Boolean = false,
     val bulk: List<String>? = null,
     /** The game or group Show on Home goes to. Null leaves the row out: it is nowhere on Home. */
     val showOnHome: String? = null,
@@ -1066,6 +1145,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
         return@buildList
     }
     if (tile.undo) add(Row.Undo)
+    if (tile.signIn) add(Row.SignInRomm)
     if (tile.move) add(Row.MoveTile)
     if (tile.collections != null) add(Row.AddToCollection)
     if (tile.art) add(Row.ChooseArt)
@@ -1112,6 +1192,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
                 if (notice.savePlayerId != null || notice.settingsCategory != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
+                if (notice.id == ROMM_SIGN_IN_NOTICE) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
                 if (notice.openable) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, NoticeCopy.open))
                 if (notice.dismissable) add(HintKey(roles.bottomGlyph, NoticeCopy.dismiss))
                 add(back)
@@ -1215,7 +1296,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
-    Row.SaveSetup -> RowText(SaveSetupCopy.title)
+    // How many emulators still wait, in the attention colour, until every one syncs.
+    Row.SaveSetup -> RowText(SaveSetupCopy.title, saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage()).takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
     Row.PlayOn -> RowText(ScreenCopy.playOn, screenLabel(model.playOn))
     Row.OpenWith -> RowText(PlayerChoiceCopy.openWith, model.tileActions?.openWith?.value())
@@ -1248,10 +1330,12 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddFolder -> RowText(Copy.addFolder)
     Row.SyncLibrary -> RowText(Copy.syncGames, if (model.librarySyncing) Copy.syncing else null)
     is Row.RommConnection -> RowText(row.label)
-    is Row.EditRomm -> RowText(Copy.editRommConnection)
+    // Signed out, the connection's first row signs in, and its last removes the server.
+    is Row.EditRomm -> RowText(if (model.rommSignIn) Copy.signIn else Copy.editRommConnection)
+    Row.SignInRomm -> RowText(Copy.signIn)
     Row.AddRomm -> RowText(Copy.addRommServer)
     // Both live on a page that already names the connection or the folder.
-    is Row.SignOut -> RowText(Copy.signOut)
+    is Row.SignOut -> RowText(if (row.pluginId == "romm" && model.rommSignIn) Copy.remove else Copy.signOut)
     is Row.ForgetFolder -> RowText(Copy.remove)
     is Row.PickFolderAgain -> RowText(BackupCopy.pickAgain)
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
@@ -1264,7 +1348,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
             else -> Copy.notSyncing
         }
-        RowText(Copy.saveFolder, chosen)
+        // A player whose saves live in the folder Foldcade hosts (DuckStation) asks for its own
+        // folder only for its BIOS, so the row says that, and its Choose is not a save waiting.
+        RowText(if (setting?.hostedTitle != null) Copy.biosFolder else Copy.saveFolder, chosen)
     }
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
@@ -1295,7 +1381,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.EdenUser -> RowText(Copy.setup, Copy.notSyncing)
     Row.EdenFolder -> RowText(
         Copy.edenKeys,
-        if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.setUp,
+        // Until Eden's folder is held its saves wait, so it reads as every row that must be acted on does.
+        if (model.eden?.fromRomm == true) Copy.edenFromRomm else Copy.notSyncing,
     )
     Row.Apps -> RowText(Copy.apps)
     Row.Hidden -> RowText(Copy.hiddenAppsRow)
@@ -1605,6 +1692,11 @@ data class PickerModel(
     val signedIn: List<SignedInBackend> = emptyList(),
     /** A saved address still has connection actions when its token needs recovery. */
     val rommSaved: Boolean = signedIn.any { it.pluginId == "romm" },
+    /**
+     * RomM has an address but no sign-in: after a restore, which leaves tokens out, or once the
+     * server refused the token. Saves wait until a sign-in, so every place RomM shows says so.
+     */
+    val rommSignIn: Boolean = false,
     /** The folders the library reads. Each has a row to remove it. */
     val folders: List<LibraryFolder> = emptyList(),
     val connectOrigin: String = "",
@@ -1616,6 +1708,8 @@ data class PickerModel(
     val connectReturnSettings: SettingsPage? = null,
     val connectWarning: String? = null,
     val connectHint: String? = null,
+    /** The pairing code on the form, while a phone can approve it. */
+    val connectCode: PairingCode? = null,
     val connectBusy: Boolean = false,
     val connectRetry: Boolean = false,
     val reLoginPending: Boolean = false,
@@ -1702,7 +1796,7 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
-        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory) && repeatCount > 0 &&
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
@@ -1710,6 +1804,10 @@ fun reduce(
         val (next, choice) = applyDialog(dialog, meaning)
         if (dialog.kind == DialogKind.Backup && choice == DialogButton.PlayHistory) {
             return coerced.copy(dialog = playHistoryDialog(dialog.screen)) to null
+        }
+        if (dialog.kind == DialogKind.RommSignOut) {
+            return if (choice == DialogButton.SignOut) coerced.copy(dialog = null, panel = null, focus = coerced.panel?.grid ?: coerced.focus) to Effect.ForgetCredentials("romm")
+            else coerced.copy(dialog = if (choice != null) null else next) to null
         }
         val chosen = choice?.let { Effect.DialogChoice(it, dialog.kind, dialog.subject) }
         if (dialog.kind == DialogKind.BackupDone && choice == DialogButton.Library) {
@@ -1738,7 +1836,7 @@ fun reduce(
         return coerced.copy(saveConflict = if (action != null) null else next) to effect
     }
     if (coerced.connectOpen) {
-        val fields = connectFields(coerced.connectKind, coerced.connectRetry)
+        val fields = connectFields(coerced.connectKind)
         val index = coerced.connectIndex.coerceIn(0, fields.lastIndex)
         val field = fields[index]
         return when (meaning) {
@@ -1746,6 +1844,7 @@ fun reduce(
                 connectOpen = false,
                 connectScreen = null,
                 connectBusy = false,
+                connectCode = null,
                 panel = coerced.connectReturnPanel,
                 settings = coerced.connectReturnSettings,
                 connectReturnPanel = null,
@@ -1755,7 +1854,6 @@ fun reduce(
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
                 ConnectField.Save -> coerced to if (coerced.connectBusy) null else if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
-                ConnectField.Retry -> coerced to if (coerced.connectBusy) null else Effect.RetryRommDeviceCode
                 ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to Effect.EditField
             }
             Meaning.LeftPanel, Meaning.RightPanel ->
@@ -2505,7 +2603,10 @@ private fun activateRow(
             connectHint = null,
             connectReturnPanel = null,
         ) to Effect.OpenAddRomm
-        is Row.SignOut -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
+        // RomM's asks first: saves stop syncing, and its games leave Home.
+        is Row.SignOut -> if (row.pluginId == "romm") model.copy(panel = panel, dialog = rommSignOutDialog(model.rommSignIn, screen)) to null
+            else model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
+        Row.SignInRomm -> model.openRommSignIn(panel.grid)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
         is Row.PickFolderAgain -> model.copy(panel = null, focus = panel.grid) to Effect.PickFolderAgain(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id)
@@ -2611,6 +2712,7 @@ private fun TileActions.toggled(folderId: String): TileActions = copy(
 /** A. An app's notice opens that app and R1 closes. A Foldcade notice has no app, so A shows all of its text. */
 private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    if (notice.id == ROMM_SIGN_IN_NOTICE) return model.openRommSignIn(panel.grid)
     // The save-setup notices open Set up saves: the merged one at the first emulator that needs
     // you, one emulator's on its own tile.
     if (notice.settingsCategory == SettingsCategory.Players && notice.id.startsWith("foldcade:save-setup:")) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
@@ -2686,7 +2788,7 @@ private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState
         Meaning.LeftPanel, Meaning.RightPanel,
         -> dialog.copy(index = index) to null
         Meaning.Activate -> dialog to dialog.buttons[index]
-        Meaning.Back -> dialog to dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
+        Meaning.Back -> dialog to if (dialog.safeIndex == BACK_CLOSES) DialogButton.NotNow else dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
         else -> dialog.copy(index = index) to null
     }
 }

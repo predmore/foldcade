@@ -69,17 +69,44 @@ class ShellHostTest {
         assertFalse(shell.deviceCodeFormCurrent(visit, revision))
         shell.editOrigin("https://another.example")
         assertTrue(shell.model.connectRetry)
-        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Bottom))
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(2, HostScreen.Bottom))
         val editedTicket = shell.beginSetupValidation()!!
         shell.editOrigin("https://edited.example")
         assertFalse(shell.setupValidationCurrent(editedTicket))
         assertTrue(shell.model.connectRetry)
-        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Top))
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(2, HostScreen.Top))
         val retry = shell.beginDeviceCodeAttempt()
         assertTrue(shell.deviceCodeFormCurrent(retry, shell.connectOriginRevision))
         shell.closeConnect()
         shell.openConnect("https://romm.example")
         assertFalse(shell.deviceCodeVisitCurrent(retry))
+    }
+
+    @Test
+    fun rommsOneButtonPairsWithoutATokenWaitsOnALiveCodeAndConnectsWithOne() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openConnect("https://romm.example")
+        shell.beginDeviceCodeAttempt()
+        // No code yet: the button asks for one.
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(2, HostScreen.Top))
+        val code = app.foldcade.language.PairingCode("EUUJNSZV", "https://romm.example/pair/device?user_code=EUUJNSZV")
+        shell.showDeviceCode(code)
+        assertEquals(code, shell.model.connectCode)
+        // A phone can approve the code on screen: nothing to press.
+        assertNull(shell.touchConnect(2, HostScreen.Top))
+        shell.editToken("rmm_token")
+        assertEquals(app.foldcade.language.Effect.SaveRommToken, shell.touchConnect(2, HostScreen.Top))
+        shell.editToken("")
+        // The code ends: it leaves the form, and the button gets a new one.
+        shell.showSetupHint(app.foldcade.language.Copy.rommCodeExpired, retry = true)
+        assertNull(shell.model.connectCode)
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(2, HostScreen.Top))
+        // A new address retires the code too.
+        shell.showDeviceCode(code)
+        shell.editOrigin("https://other.example")
+        assertNull(shell.model.connectCode)
+        shell.closeConnect()
+        assertNull(shell.model.connectCode)
     }
 
     @Test
@@ -111,13 +138,13 @@ class ShellHostTest {
         shell.showSetupHint(app.foldcade.language.Copy.rommCodeExpired, retry = true)
         repeat(3) { shell.onMeaning(Meaning.MoveDown, HostScreen.Top) }
         assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.onMeaning(Meaning.Activate, HostScreen.Top))
-        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(3, HostScreen.Top))
+        assertEquals(app.foldcade.language.Effect.RetryRommDeviceCode, shell.touchConnect(2, HostScreen.Top))
         val previousAttempt = shell.connectVisit
         assertTrue(shell.beginDeviceCodeAttempt() > previousAttempt)
         assertFalse(shell.model.connectRetry)
         shell.showSetupHint(app.foldcade.language.Copy.rommCodeDenied, retry = true)
         shell.beginSetupValidation()
-        assertNull(shell.touchConnect(3, HostScreen.Top))
+        assertNull(shell.touchConnect(2, HostScreen.Top))
         shell.editOrigin("https://another.example")
         assertTrue(shell.model.connectRetry)
         assertNull(shell.model.connectHint)

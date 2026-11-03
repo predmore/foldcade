@@ -229,9 +229,25 @@ class SaveSetupTest {
         // A held D-pad glides.
         assertEquals(keys[keys.size - 2], at.press(Meaning.MoveLeft, repeatCount = 3).first.page().focus)
         assertEquals(keys.first(), opened.press(Meaning.MoveLeft).first.page().focus)
-        for (meaning in listOf(Meaning.MoveUp, Meaning.MoveDown, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu, Meaning.Options)) {
+        for (meaning in listOf(Meaning.MoveUp, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu, Meaning.Options)) {
             assertEquals(meaning.name, opened to null, opened.press(meaning))
         }
+    }
+
+    @Test fun upAndDownMoveALineOfFourAndLandOnTheLastTileOfAShortLine() {
+        val opened = model.openSaveSetup(HostScreen.Top)
+        val keys = opened.tiles().map { it.key }
+        assertTrue("the fixture has a second, shorter line", keys.size in (SAVE_SETUP_COLUMNS + 1) until SAVE_SETUP_COLUMNS * 2)
+        val first = opened.on(keys.first())
+        assertEquals(keys[SAVE_SETUP_COLUMNS], first.press(Meaning.MoveDown).first.page().focus)
+        // Down from the end of the first line lands on the shorter line's last tile.
+        val end = opened.on(keys[SAVE_SETUP_COLUMNS - 1])
+        assertEquals(keys.last(), end.press(Meaning.MoveDown).first.page().focus)
+        val below = opened.on(keys.last())
+        assertEquals(below to null, below.press(Meaning.MoveDown))
+        assertEquals(keys[keys.lastIndex - SAVE_SETUP_COLUMNS], below.press(Meaning.MoveUp).first.page().focus)
+        // A held D-pad glides here too.
+        assertEquals(keys[SAVE_SETUP_COLUMNS], first.press(Meaning.MoveDown, repeatCount = 2).first.page().focus)
     }
 
     @Test fun skippingMarksItForThisRunAndGlidesToTheNextThatNeedsYou() {
@@ -320,8 +336,10 @@ class SaveSetupTest {
 
         var settings = model.openSettings(HostScreen.Top, SettingsCategory.Players)
         settings = settings.copy(settings = settings.settings!!.copy(onRows = true, row = settingsRows(SettingsCategory.Players, model).indexOf(Row.SaveSetup)))
-        assertEquals(RowText(SaveSetupCopy.title), rowText(Row.SaveSetup, model))
-        assertEquals(RowControl.Opens, rowControl(Row.SaveSetup, model))
+        // The row says how many still wait, in the attention colour.
+        val left = saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage())
+        assertEquals(RowText(SaveSetupCopy.title, SaveSetupCopy.toGo(left)), rowText(Row.SaveSetup, model))
+        assertEquals(RowControl.Value(SaveSetupCopy.toGo(left), attention = true), rowControl(Row.SaveSetup, model))
         // The A held from the row before does not open it.
         assertEquals(settings.settings, settings.press(Meaning.Activate, repeatCount = 2).first.settings)
         val opened = settings.press(Meaning.Activate).first

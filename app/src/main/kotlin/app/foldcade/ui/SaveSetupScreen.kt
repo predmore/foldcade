@@ -63,6 +63,8 @@ import app.foldcade.language.saveSetupPause
 import app.foldcade.language.saveSetupSkipped
 import app.foldcade.language.saveSetupTiles
 import app.foldcade.language.setupStatus
+import app.foldcade.language.SAVE_SETUP_COLUMNS
+import app.foldcade.language.numberedSteps
 import kotlin.math.floor
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,9 +89,7 @@ internal fun SaveSetupBottom(app: FoldcadeApp, page: SaveSetupPage, screen: Host
     AdvanceAfterCheck(app, scale)
     Column(Modifier.fillMaxSize().background(theme.background).padding(horizontal = EDGE_H, vertical = EDGE_V)) {
         Head(app, page, screen, scale, dispatch)
-        Spacer(Modifier.weight(1f))
-        Strip(app, page, TILE_ART, labels = true, scale = scale)
-        Spacer(Modifier.weight(1f))
+        Grid(app, page, scale, Modifier.weight(1f).fillMaxWidth())
     }
 }
 
@@ -164,7 +164,56 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
 }
 
 /**
- * The tiles side by side under one gliding highlight. The strip never pages: it slides only as
+ * Every tile at once, in lines of [SAVE_SETUP_COLUMNS] under one gliding highlight, so nothing
+ * that still needs you is out of sight: eight emulators are two lines of four. More lines take
+ * smaller art rather than scroll.
+ */
+@Composable
+private fun Grid(app: FoldcadeApp, page: SaveSetupPage, scale: Float, modifier: Modifier) {
+    val theme = LocalFoldTheme.current.theme
+    val tiles = saveSetupTiles(app.shell.model, page)
+    val focus = tiles.indexOfFirst { it.key == page.focus }
+    val delays = flipDelays(tiles, (theme.motion.durationSetupStagger * scale).toLong())
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val reach = ringReach()
+        val lines = ((tiles.size + SAVE_SETUP_COLUMNS - 1) / SAVE_SETUP_COLUMNS).coerceAtLeast(1)
+        val labelHeight = with(LocalDensity.current) { theme.style.type.hint.toDp() } * LABEL_LINE + TILE_LABEL_GAP
+        val column = (maxWidth - reach * 2 - TILE_GAP * (SAVE_SETUP_COLUMNS - 1)) / SAVE_SETUP_COLUMNS
+        val tall = (maxHeight - reach * 2 - LINE_GAP * (lines - 1)) / lines - labelHeight
+        val art = minOf(TILE_ART, column / TILE_WIDTH, tall).coerceAtLeast(COMPACT_ART)
+        val slots = rememberSelectionSlots()
+        Column(
+            Modifier
+                .padding(reach)
+                .selectionHighlight(slots, focus.takeIf { it >= 0 }, ring = true, scale = scale),
+            verticalArrangement = Arrangement.spacedBy(LINE_GAP),
+        ) {
+            tiles.chunked(SAVE_SETUP_COLUMNS).forEachIndexed { line, chunk ->
+                Row(horizontalArrangement = Arrangement.spacedBy(TILE_GAP)) {
+                    chunk.forEachIndexed { at, tile ->
+                        val index = line * SAVE_SETUP_COLUMNS + at
+                        StripTile(
+                            tile = tile,
+                            status = setupStatus(tile, page),
+                            focused = index == focus,
+                            flipDelay = delays[tile.key] ?: 0L,
+                            art = art,
+                            label = true,
+                            scale = scale,
+                            artModifier = Modifier.selectionSlot(slots, index, depth = 2),
+                            modifier = Modifier.width(column).hostPress { app.shell.touchSaveSetupTile(tile.key) },
+                        )
+                    }
+                    // A short last line keeps the columns of the lines above it.
+                    repeat(SAVE_SETUP_COLUMNS - chunk.size) { Spacer(Modifier.width(column)) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The tiles side by side under one gliding highlight, on the one screen beside a game. The strip never pages: it slides only as
  * far as the focus needs, as the home grid does, and sits centred while every tile fits. Without
  * [labels] each column is just its art, so more fit.
  */
@@ -483,9 +532,12 @@ private fun StepWords(tile: SetupTile, step: SetupStep?, page: SaveSetupPage, co
             )
         }
         // The words of the step on its way out stay its own, not the next one's.
-        SaveSetupCopy.stepBody(tile.copy(steps = listOfNotNull(step)), checking)?.let { body ->
+        val body = SaveSetupCopy.stepBody(tile.copy(steps = listOfNotNull(step)), checking)
+        val steps = numberedSteps(body)
+        if (steps != null) NumberedSteps(steps, theme)
+        else body?.let {
             BasicText(
-                body,
+                it,
                 style = setupStyle(theme.muted, design.type.dialogBody, theme),
                 maxLines = (if (compact) COMPACT_BODY_LINES else BODY_LINES) - if (shown.shown != null) NOTE_LINES else 0,
                 overflow = TextOverflow.Ellipsis,
@@ -499,6 +551,29 @@ private fun StepWords(tile: SetupTile, step: SetupStep?, page: SaveSetupPage, co
                 maxLines = NOTE_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+/**
+ * An emulator's own how-to, one numbered step a line: the number on a small disc, the words
+ * beside it, so a long path through its menus reads one tap at a time.
+ */
+@Composable
+private fun NumberedSteps(steps: List<String>, theme: Theme) {
+    val design = theme.style
+    Column(verticalArrangement = Arrangement.spacedBy(STEP_GAP)) {
+        steps.forEachIndexed { index, step ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.size(STEP_DISC).clip(design.shape.control()).background(theme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText("${index + 1}", style = setupStyle(theme.onBackground, design.type.hint, theme, bold = true).copy(textAlign = TextAlign.Center), maxLines = 1)
+                }
+                // A step a line in the hint size, so five of them and the buttons fit at a large font too.
+                BasicText(step, style = setupStyle(theme.muted, design.type.hint, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -666,13 +741,16 @@ private fun setupStyle(color: Color, size: TextUnit, theme: Theme, bold: Boolean
 
 /**
  * The bottom screen is about 538 × 468dp: four tiles of 92dp fit across it with their names,
- * and the strip slides for a fifth.
+ * and two lines of them under the head, about 250dp with the ring's reach.
  */
 private val EDGE_H = 24.dp
 private val EDGE_V = 16.dp
 private val TILE_ART = 92.dp
 private val TILE_GAP = 8.dp
 private val TILE_LABEL_GAP = 4.dp
+private val LINE_GAP = 14.dp
+/** A label's line, as a share of its font size. */
+private const val LABEL_LINE = 1.4f
 
 /** A tile's column is wider than its art, so a name like DuckStation fits under it. */
 private const val TILE_WIDTH = 1.22f
@@ -681,6 +759,8 @@ private const val BADGE_INK = 0.74f
 private const val ART_FILL = 0.84f
 private const val SYMBOL_FILL = 0.62f
 private val DOT = 10.dp
+private val STEP_DISC = 22.dp
+private val STEP_GAP = 4.dp
 
 /** The top screen, about 833 × 468dp, keeps the Saves page's margins. Nothing on it scrolls. */
 private val TOP_EDGE_H = 40.dp

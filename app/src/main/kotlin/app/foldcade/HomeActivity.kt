@@ -349,6 +349,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun commandCenterKey(meaning: app.foldcade.language.Meaning): Boolean {
         if (foldcade.shell.model.saveSetup != null) return false
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return false
+        // A page or dialog that moved onto this screen covers the command center and keeps its keys
+        // (see FoldcadeApp's browse for displaced pages): B must close a dialog that has no Not now.
+        if (foldcade.shell.model.pageOn(panel.screen())) return false
         return foldcade.commandCenter.onKey(panel, meaning, foldcade.shell::atRest)
     }
 
@@ -614,10 +617,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if ("cores" in todo) add(BackupCopy.cores)
                 if ("eden" in todo) add(BackupCopy.eden)
             }
+            // The before-copy offers Redo only once an Undo was what ran.
+            val undone = foldcade.setupBackups.undoAction() == RestoreAction.Redo
             withContext(Dispatchers.Main.immediate) {
                 snapshotFlow { foldcade.shell.model.dialog == null }.first { it }
                 foldcade.shell.present(backupDone(lines.joinToString("\n"), screen, restored = true,
-                    library = todo.any { it.startsWith("folders:") }).copy(subject = "restored"))
+                    library = todo.any { it.startsWith("folders:") }, undone = undone).copy(subject = "restored"))
             }
         }
     }
@@ -2467,6 +2472,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (effect.button in setOf(DialogButton.RestoreBackup, DialogButton.UndoRestore, DialogButton.RedoRestore) && backup != null) restoreSetup(backup, action)
                 else foldcade.scope.launch { foldcade.setupBackups.discard(backup) }
             }
+            // The shell answers it itself: Sign out forgets RomM, Not now only closes.
+            DialogKind.RommSignOut -> Unit
             DialogKind.BackupDone -> when (effect.subject) {
                 "restored" -> foldcade.scope.launch { foldcade.setupBackups.result.delete() }
                 "restore-failed" -> foldcade.scope.launch { foldcade.setupBackups.acknowledgeFailure() }
@@ -2683,9 +2690,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         onChallenge = { challenge ->
             withContext(Dispatchers.Main.immediate) {
                 if (foldcade.shell.deviceCodeFormCurrent(visit, originRevision)) {
-                    foldcade.shell.showSetupHint(
-                        "${Copy.rommDeviceCode}\n${challenge.userCode}\n${challenge.verificationUrl}",
-                    )
+                    foldcade.shell.showDeviceCode(app.foldcade.language.PairingCode(challenge.userCode, challenge.verificationUrl))
                 }
             }
         },
