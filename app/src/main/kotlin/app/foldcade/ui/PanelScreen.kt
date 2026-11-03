@@ -1892,8 +1892,9 @@ internal fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): A
         if ((record != null || query != null) && held?.complete != true) {
             // Restore partial disk hits before waiting for a slow/offline source to fill their missing parts.
             app.art.restore()
-            fetched = app.covers.cachedScene(record, query)
-            fetched = app.covers.fetchScene(record, query)
+            val restored = app.covers.cachedScene(record, query)
+            fetched = restored
+            if (restored?.complete != true) fetched = app.covers.fetchScene(record, query)
         }
     }
     val scene = app.covers.chosenScene(fetched ?: held, query)

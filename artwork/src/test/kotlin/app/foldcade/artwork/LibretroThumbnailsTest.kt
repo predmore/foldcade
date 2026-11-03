@@ -152,11 +152,17 @@ class LibretroThumbnailsTest {
                 return super.getPath()
             }
         }
-        val source = LibretroThumbnails(FakeHttp(emptyMap()), trackedDir)
+        var clockCalls = 0
+        val source = LibretroThumbnails(FakeHttp(emptyMap()), trackedDir) {
+            check(Thread.currentThread() !== caller) { "Listing lookup resumed on the caller" }
+            clockCalls++
+            System.currentTimeMillis()
+        }
         assertEquals(
             "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS/Named_Boxarts/Luigi%27s%20Mansion%20%28USA%29.png",
             source.find(ArtQuery("k", "Luigi's Mansion", "nintendo-3ds"))?.cover,
         )
+        assertEquals(1, clockCalls)
         dir.deleteRecursively()
         Unit
     }
