@@ -711,6 +711,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.paintFor(foldcade.shell.model.themeIndex).theme.background.toArgb()
 
     override fun onResume() {
+        perfMark("resume ${javaClass.simpleName}")
         super.onResume()
         if (initialHomeRecallPending) {
             initialHomeRecallPending = false
@@ -726,10 +727,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
-        foldcade.refreshFoundSaveFolders()
+        foldcade.refreshSavesOnReturn()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
-        foldcade.refreshSaveSync()
         // Usage access may have changed while Home was away, and without it no game reads Paused.
         foldcade.pruneRunningGames()
         val displayId = display?.displayId
@@ -829,6 +829,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     override fun onPause() {
+        foldcade.noteHomePaused()
         foldcade.shell.inputFocus(inputWindow, false)
         resumed = false
         refreshShellVisible()
@@ -1041,8 +1042,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
+    /** A visible early library must not allow a player to bypass startup save preparation. */
+    private fun waitForSavePreparation(then: () -> Unit): Boolean {
+        if (foldcade.savePreparationReady) return false
+        val generation = beginLaunch()
+        foldcade.launchWork.job = foldcade.scope.launch {
+            foldcade.awaitPlugins()
+            withContext(Dispatchers.Main.immediate) {
+                if (!launchCurrent(generation)) return@withContext
+                foldcade.launchWork.job = null
+                then()
+            }
+        }
+        return true
+    }
+
     private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null, foldersChecked: Boolean = false, coresChecked: Boolean = false) {
         val game = Shelf.games.getOrNull(index) ?: return
+        if (waitForSavePreparation {
+            val currentIndex = Shelf.games.indexOfFirst { it.id == game.id }
+            if (currentIndex >= 0) launchGame(currentIndex, saveSyncDeclinedFor, foldersChecked, coresChecked)
+        }) return
         if (game.emptyShelfHint) return
         if (!coresChecked && game.platformId?.let { foldcade.mayOpenRetroArch(game.id, it) } == true) {
             val generation = beginLaunch()
@@ -1430,6 +1450,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         fresh: Boolean = false,
         saveSyncDeclinedFor: String? = null,
     ) {
+        if (waitForSavePreparation {
+            val preparedRoute = foldcade.shell.launchRoute(route.tileId, pressed = route.play) ?: route
+            launchBackendGame(title, platformId, preparedRoute, fresh, saveSyncDeclinedFor)
+        }) return
         foldcade.noteSaveLaunch(route)
         // A game still open in its player comes back where it was, with nothing downloaded or placed.
         if (!fresh && resumeRunning(route.tileId, title, platformId) { launchBackendGame(title, platformId, route, fresh = true) }) return

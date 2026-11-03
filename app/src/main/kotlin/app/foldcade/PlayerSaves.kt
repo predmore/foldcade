@@ -72,6 +72,11 @@ internal data class SaveChild(
     val size: Long,
 )
 
+/** Positioned reads from one open document, held only for the duration of a health check. */
+internal interface SaveDocumentRead : java.io.Closeable {
+    fun read(offset: Long, length: Int): ByteArray?
+}
+
 /** Content-resolver work [PlayerSaves] needs, so its decisions run on the JVM in tests. */
 internal interface SaveDocuments {
     /** Display name of the document at [uri], or null. */
@@ -129,6 +134,12 @@ internal interface SaveDocuments {
      * when it cannot be read. The default reads nothing.
      */
     fun readAt(uri: String, offset: Long, length: Int): ByteArray? = null
+
+    /** One open handle for several positioned reads. Implementations without handles keep their ordinary reads. */
+    fun openRead(uri: String): SaveDocumentRead? = object : SaveDocumentRead {
+        override fun read(offset: Long, length: Int) = readAt(uri, offset, length)
+        override fun close() = Unit
+    }
 
     /**
      * Everything below the folder at [name] inside [folderUri], or null when
@@ -641,7 +652,8 @@ internal class PlayerSaves(
 
     /** What Settings shows for [player], read from [folderUri]. Never writes. */
     fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
-        player.saveSyncState(folderAccess(player, folderUri, allowWrite = false))
+        DocumentSaveFolder(docs, folderUri, allowWrite = false, reuseReads = true, backup = { _, _ -> })
+            .use { player.saveSyncState(it) }
     } catch (_: Exception) {
         null
     }
@@ -1180,6 +1192,36 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         null
     } catch (_: OutOfMemoryError) {
         null
+    }
+
+    override fun openRead(uri: String): SaveDocumentRead? {
+        val descriptor = try {
+            resolver.openFileDescriptor(Uri.parse(uri), "r")
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        return try {
+            val input = FileInputStream(descriptor.fileDescriptor)
+            val channel = input.channel
+            object : SaveDocumentRead {
+                override fun read(offset: Long, length: Int): ByteArray? = try {
+                    val size = channel.size()
+                    if (offset in 0 until size) channel.position(offset)
+                    readSlice(size, offset, length) { channel.read(it) }
+                } catch (_: Exception) {
+                    null
+                } catch (_: OutOfMemoryError) {
+                    null
+                }
+
+                override fun close() {
+                    try { input.close() } finally { descriptor.close() }
+                }
+            }
+        } catch (_: Exception) {
+            descriptor.close()
+            null
+        }
     }
 
     override fun write(uri: String, bytes: ByteArray) {

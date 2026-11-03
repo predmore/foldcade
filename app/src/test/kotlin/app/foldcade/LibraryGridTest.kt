@@ -81,6 +81,45 @@ class LibraryGridTest {
     }
 
     @Test
+    fun aChangedQuietRefreshListsTheNewSnapshotWithoutWalkingAgain() = runBlocking {
+        val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        val entry = LocalFolderEntry()
+        host.register(entry)
+        val root = FolderEntry("content://nds", "nds", DOCUMENT_DIRECTORY_MIME)
+        var games = listOf(FolderEntry("content://nds/one", "One.nds", "application/octet-stream"))
+        var walks = 0
+        entry.folder.bindTree(root) { walks++; games }
+        loadPlatforms(host, LocalFolderBackend.ID)
+        assertEquals(1, walks)
+        games = games + FolderEntry("content://nds/two", "Two.nds", "application/octet-stream")
+        val refresh = readFolderRefresh(entry.folder, { true }) {
+            loadPlatforms(host, LocalFolderBackend.ID, connect = false)
+        }!!
+        val snapshot = entry.folder.mediaScan()
+        assertTrue(refresh.changed)
+        assertEquals("2", (refresh.library as LoadedLibrary.Platforms).entries.single().shortText)
+        assertEquals(2, loadGames(host, LocalFolderBackend.ID, "nintendo-ds").size)
+        assertTrue(snapshot === entry.folder.mediaScan())
+        assertEquals(2, walks)
+        val unchanged = readFolderRefresh(entry.folder, { true }) { error("Unchanged must not reload") }!!
+        assertFalse(unchanged.changed)
+        assertNull(unchanged.library)
+        assertEquals(3, walks)
+        assertTrue(snapshot === entry.folder.mediaScan())
+    }
+
+    @Test
+    fun anIncompleteQuietWalkDoesNotReportOrLoadTheLibrary() = runBlocking {
+        val entry = LocalFolderEntry()
+        val root = FolderEntry("content://nds", "nds", DOCUMENT_DIRECTORY_MIME)
+        var games = listOf(FolderEntry("content://nds/one", "One.nds", "application/octet-stream"))
+        entry.folder.bindTree(root) { games }
+        entry.folder.connect()
+        games = emptyList()
+        assertNull(readFolderRefresh(entry.folder, { false }) { error("Incomplete forest must not settle restore") })
+    }
+
+    @Test
     fun anEmptyFolderHasNoPlatforms() = runBlocking {
         val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         val entry = LocalFolderEntry()

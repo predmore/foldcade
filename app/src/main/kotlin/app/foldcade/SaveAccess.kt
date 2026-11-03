@@ -96,8 +96,18 @@ internal class DocumentSaveFolder(
     private val docs: SaveDocuments,
     private val folderUri: String,
     private val allowWrite: Boolean,
+    private val reuseReads: Boolean = false,
     private val backup: (String, ByteArray) -> Unit,
-) : SaveFolderAccess {
+) : SaveFolderAccess, java.io.Closeable {
+    init { require(!reuseReads || !allowWrite) }
+
+    private val reads = mutableMapOf<String, SaveDocumentRead?>()
+
+    override fun close() {
+        try {
+            reads.values.forEach { read -> runCatching { read?.close() } }
+        } finally { reads.clear() }
+    }
     /** True once a write, a new folder, or a move to backups changed the tree. */
     var changed: Boolean = false
         private set
@@ -125,9 +135,17 @@ internal class DocumentSaveFolder(
     override fun read(path: String, offset: Long, length: Int): ByteArray? {
         if (offset < 0 || length < 0 || savePathParts(path) == null) return null
         if (length == 0) return ByteArray(0)
-        val uri = docs.find(folderUri, path) ?: return null
         return try {
-            docs.readAt(uri, offset, length)
+            if (reuseReads) {
+                // Resolve the path and open the card once, including the all-FF whole-card check.
+                val reader = if (path in reads) reads[path] else {
+                    docs.find(folderUri, path)?.let(docs::openRead).also { reads[path] = it }
+                }
+                reader?.read(offset, length)
+            } else {
+                val uri = docs.find(folderUri, path) ?: return null
+                docs.readAt(uri, offset, length)
+            }
         } catch (_: Exception) {
             null
         } catch (_: OutOfMemoryError) {
