@@ -97,9 +97,6 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
     /** A menu's highlight landing on a row, and a switch flipping. Long enough to read the overshoot. */
     val durationSelect = style.motion.durationSelect
 
-    /** How long the cursor rests on a game before its name card opens to show the summary. */
-    val durationSummaryDwell = style.motion.durationSummaryDwell.toLong()
-
     private val arriveCurve = style.motion.arrive
     val easingArrive: Easing = CubicBezierEasing(arriveCurve[0], arriveCurve[1], arriveCurve[2], arriveCurve[3])
     val easingLeave: Easing = style.motion.leave.let { CubicBezierEasing(it[0], it[1], it[2], it[3]) }
@@ -153,6 +150,23 @@ open class MotionStyle(private val style: ThemeStyle = ThemeStyle()) {
         if (slope < 1f || slope >= arriveOpeningSlope) return arrive(base, animatorScale)
         val reach = arriveCurve[1] / slope
         return tween(durationMillis = millis, easing = CubicBezierEasing(reach, arriveCurve[1], arriveCurve[2], arriveCurve[3]))
+    }
+
+    /**
+     * Y's menu grows out of its tile and shrinks back into it, unless Motion is Off or Android
+     * removes animations: then it fades in place, over [durationShort].
+     */
+    fun tileMenuGrows(speed: MotionSpeed, animatorScale: Float): Boolean =
+        speed != MotionSpeed.Off && !reduced(animatorScale)
+
+    /** That grow, or its shrink when not [opening]. Slower takes twice [durationIsland]. */
+    fun tileMenu(opening: Boolean, speed: MotionSpeed, animatorScale: Float): FiniteAnimationSpec<Float> {
+        val base = when {
+            !tileMenuGrows(speed, animatorScale) -> durationShort
+            speed == MotionSpeed.Slower -> durationIsland * 2
+            else -> durationIsland
+        }
+        return if (opening) arrive(base, animatorScale) else leave(base, animatorScale)
     }
 
     /** A held tile's size: lifted off the grid, over its neighbours. */

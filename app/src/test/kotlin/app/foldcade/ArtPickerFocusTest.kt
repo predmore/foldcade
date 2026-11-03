@@ -74,8 +74,8 @@ class ArtPickerFocusTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
         assertTrue(index >= 0)
-        shell.touchPanel(index, HostScreen.Top)
-        shell.touchPanel(index, HostScreen.Top)
+        shell.touchPanel(index, shell.model.panel!!.screen)
+        shell.touchPanel(index, shell.model.panel!!.screen)
         val gameId = shell.artPicker!!.gameId
         shell.artMatches(gameId, listOf(ArtMatch(1, "Beta")))
         val loaded = shell.artPicker!!.copy(loading = false,

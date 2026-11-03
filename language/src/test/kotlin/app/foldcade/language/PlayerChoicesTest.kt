@@ -63,7 +63,7 @@ class PlayerChoicesTest {
         val rows = actionRows(tile)
         assertEquals(listOf(Row.ChooseArt, Row.Saves, Row.OpenWith, Row.PlayTime), rows)
         val shown = model.copy(tileActions = tile)
-        assertEquals(RowControl.Choice("Default · Pizza Boy GBA"), rowControl(Row.OpenWith, shown))
+        assertEquals(RowControl.Choice("Default · Pizza Boy GBA", short = "Pizza Boy GBA"), rowControl(Row.OpenWith, shown))
         val panel = SidePanel(Side.Left, HostScreen.Top, PanelLevel.Actions, rows.indexOf(Row.OpenWith), GridFocus(cellIndex = 2))
         val menu = shown.copy(panel = panel)
         assertEquals(Effect.SetGamePlayerChoice("menu-target", first), reduce(menu, Meaning.Activate).second)
@@ -85,7 +85,7 @@ class PlayerChoicesTest {
         assertNull(reduce(opened, Meaning.Activate, repeatCount = 1).second)
         assertEquals(Effect.SetSystemPlayerChoice("gba", first), reduce(opened, Meaning.Activate).second)
         assertEquals(Effect.SetSystemPlayerChoice("gba", second), reduce(opened, Meaning.MoveLeft).second)
-        assertEquals(RowControl.Choice("Auto · Pizza Boy GBA"), rowControl(Row.SystemPlayer("gba"), opened))
+        assertEquals(RowControl.Choice("Auto · Pizza Boy GBA", short = "Pizza Boy GBA"), rowControl(Row.SystemPlayer("gba"), opened))
         val back = reduce(opened, Meaning.Back).first
         assertNull(back.settings!!.inner)
         assertEquals(Row.Systems, settingsFocus(back))
@@ -105,7 +105,7 @@ class PlayerChoicesTest {
         assertEquals(Row.SystemPlayer("gba"), settingsFocus(next))
         // The missing choice reads in the attention colour, on Systems and in Open with.
         assertEquals(RowControl.Choice("My Boy! · not installed", attention = true), rowControl(Row.SystemPlayer("gba"), next))
-        assertEquals(RowControl.Choice("Auto · Pizza Boy GBA"), rowControl(Row.SystemPlayer("a"), next))
+        assertEquals(RowControl.Choice("Auto · Pizza Boy GBA", short = "Pizza Boy GBA"), rowControl(Row.SystemPlayer("a"), next))
         val missingGame = model.copy(tileActions = TileActions(game = "g", openWith = choice.copy(selected = gone, selectedUsable = false)))
         assertEquals(RowControl.Choice("My Boy! · not installed", attention = true), rowControl(Row.OpenWith, missingGame))
         assertEquals("RetroArch's mGBA core isn't installed.", PlayerChoiceCopy.unavailable(second))

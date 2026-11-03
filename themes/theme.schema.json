@@ -191,6 +191,7 @@
                             "button.lstick",
                             "button.lstick.filled",
                             "button.lstick.press",
+                            "button.lstick.press.filled",
                             "button.r1",
                             "button.r1.filled",
                             "button.r2",
@@ -198,6 +199,7 @@
                             "button.rstick",
                             "button.rstick.filled",
                             "button.rstick.press",
+                            "button.rstick.press.filled",
                             "button.select",
                             "button.select.filled",
                             "button.square",
@@ -809,13 +811,6 @@
                             "minimum": 1.0,
                             "maximum": 2.1474836E9,
                             "default": 280.0,
-                            "description": "ms; follows base.durationScale"
-                        },
-                        "durationSummaryDwell": {
-                            "type": "number",
-                            "minimum": 1.0,
-                            "maximum": 2.1474836E9,
-                            "default": 1200.0,
                             "description": "ms; follows base.durationScale"
                         },
                         "durationBob": {

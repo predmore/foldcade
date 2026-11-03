@@ -37,11 +37,14 @@ class CloseGameTest {
         assertEquals(Effect.DialogChoice(DialogButton.CloseIt, DialogKind.CloseGame), reduce(model, Meaning.Activate).second)
     }
 
-    @Test fun pausedControlsStayTogetherAndXBelongsToClose() {
+    @Test fun restartAndCloseStayTogetherAndXBelongsToClose() {
         val tile = TileActions(move = true, collections = emptyList(), art = true, saves = true, select = true,
             remove = RemoveVerb.Remove, restart = true, close = true, moveGame = HostScreen.Bottom, hide = true, game = "g")
         val rows = actionRows(tile)
-        assertEquals(listOf(Row.RestartGame, Row.CloseGame, Row.MoveGame), rows.slice(rows.indexOf(Row.RestartGame)..rows.indexOf(Row.MoveGame)))
+        assertEquals(listOf(Row.RestartGame, Row.CloseGame), rows.slice(rows.indexOf(Row.RestartGame)..rows.indexOf(Row.CloseGame)))
+        // With Move, Add to, Art and Saves on the tiles, they lead the rows under them.
+        assertEquals(tileBlock(rows).last + 1, rows.indexOf(Row.RestartGame))
+        assertTrue(rows.indexOf(Row.MoveGame) > rows.indexOf(Row.CloseGame))
         assertEquals(Row.CloseGame, rows[chordIndex(rows, Meaning.ActivateBottom)!!])
         assertNull(chords(rows)[rows.indexOf(Row.MoveGame)])
         assertNull(chords(rows)[rows.indexOf(Row.RemoveTile)])

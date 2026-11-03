@@ -42,7 +42,7 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["app.com.android.chrome"])
         assertNotNull(pack.icons["app.org.azahar_emu.azahar"])
         assertNotNull(pack.icons["symbol.close"])
-        assertEquals(392, pack.icons.size)
+        assertEquals(394, pack.icons.size)
     }
 
     @Test

@@ -75,8 +75,8 @@ class ArtChoicesTest {
         val rows = panelRows(shell.model.panel!!, shell.model)
         val index = rows.indexOf(Row.ChooseArt)
         assertTrue(rows.toString(), index >= 0)
-        shell.touchPanel(index, HostScreen.Top)
-        shell.touchPanel(index, HostScreen.Top)
+        shell.touchPanel(index, shell.model.panel!!.screen)
+        shell.touchPanel(index, shell.model.panel!!.screen)
         val state = shell.artPicker!!
         assertEquals(homeGameId("local-folder", "game"), state.gameId)
         assertEquals(HomeKeys.ChoosingArt, shell.homeKeys())
@@ -112,8 +112,8 @@ class ArtChoicesTest {
             shell.setArtKeySaved(true)
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
             val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
-            shell.touchPanel(index, HostScreen.Top)
-            shell.touchPanel(index, HostScreen.Top)
+            shell.touchPanel(index, shell.model.panel!!.screen)
+            shell.touchPanel(index, shell.model.panel!!.screen)
             return shell
         }
         val first = ArtMatch(1, "Wrong Collection")
@@ -176,8 +176,8 @@ class ArtChoicesTest {
         val index = panelRows(shell.model.panel!!, shell.model).indexOf(Row.ChooseArt)
         assertTrue(index >= 0)
         store.update { it.launch(ExternalApp("top"), Panel.Top) }
-        shell.touchPanel(index, HostScreen.Top)
-        shell.touchPanel(index, HostScreen.Top)
+        shell.touchPanel(index, shell.model.panel!!.screen)
+        shell.touchPanel(index, shell.model.panel!!.screen)
         assertNull(shell.artPicker)
         assertNull(store.session.surfaceOn(Panel.Top))
         assertEquals(Surface.Dark, store.session.surfaceOn(Panel.Bottom))

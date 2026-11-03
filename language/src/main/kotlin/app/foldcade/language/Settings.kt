@@ -383,7 +383,8 @@ fun PickerModel.versionCopySettled(): PickerModel =
 sealed interface RowControl {
     data class Toggle(val on: Boolean) : RowControl
     data class Check(val on: Boolean, val some: Boolean = false) : RowControl
-    data class Choice(val value: String, val attention: Boolean = false) : RowControl
+    /** [short] is what [value] shortens to where it does not fit, such as the emulator alone for "Default · X". */
+    data class Choice(val value: String, val attention: Boolean = false, val short: String? = null) : RowControl
     data object Opens : RowControl
     data class Value(val text: String, val attention: Boolean = false) : RowControl
     data object None : RowControl
@@ -400,9 +401,11 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.Artwork -> RowControl.Toggle(model.artwork)
     is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })
     // An emulator choice that is not installed reads in the attention colour, as Not syncing does.
-    Row.OpenWith -> RowControl.Choice(value.orEmpty(), attention = model.tileActions?.openWith?.missing == true)
-    is Row.SystemPlayer -> RowControl.Choice(value.orEmpty(),
-        attention = model.systemPlayers.firstOrNull { it.platformId == row.platformId }?.choice?.missing == true)
+    Row.OpenWith -> RowControl.Choice(value.orEmpty(), attention = model.tileActions?.openWith?.missing == true,
+        short = model.tileActions?.openWith?.shortValue())
+    is Row.SystemPlayer -> model.systemPlayers.firstOrNull { it.platformId == row.platformId }?.choice.let { choice ->
+        RowControl.Choice(value.orEmpty(), attention = choice?.missing == true, short = choice?.shortValue())
+    }
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
