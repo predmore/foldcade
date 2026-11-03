@@ -360,14 +360,48 @@ class HomeSession(
 
     fun catalog(): List<HomeItem> = catalogCache
 
-    fun visibleCount(): Int = faces().size
+    private var slotsBoard: HomeBoard? = null
+    private var slotsCache: List<String?> = emptyList()
+    private var lastOccupied = -1
+    private var hasGaps = false
+
+    /** Deduplication and the trailing-gap scan belong to a board edit, not a focus move. */
+    private fun slots(): List<String?> {
+        if (slotsBoard !== board) {
+            slotsCache = visibleSlots(board)
+            lastOccupied = slotsCache.indexOfLast { it != null }
+            hasGaps = canTidy(board)
+            slotsBoard = board
+        }
+        return slotsCache
+    }
+
+    fun lastOccupiedIndex(): Int { slots(); return lastOccupied }
+
+    fun visibleCount(): Int = when {
+        board.allOpen -> allRows().size
+        board.foldersOpen -> folderRows().size
+        else -> slots().size
+    }
+
+    private var facesBoard: HomeBoard? = null
+    private var facesMerge = -1
+    private var facesIcon: IconPick? = null
+    private var facesGaps: Set<String>? = null
+    private var facesCache: List<HomeFace> = emptyList()
 
     fun face(index: Int): HomeFace? = faces().getOrNull(index)
 
     fun faces(): List<HomeFace> {
         if (board.allOpen) return allFaces()
-        if (board.foldersOpen) return folderFaces()
-        return visibleSlots(board).map { id -> faceFor(id) }
+        if (facesBoard === board && facesMerge == merges && facesIcon === iconPick && facesGaps === restoredGaps) return facesCache
+        return (if (board.foldersOpen) folderFaces() else slots().map(::faceFor)).also {
+            facesCache = it
+            facesBoard = board
+            facesMerge = merges
+            facesIcon = iconPick
+            facesGaps = restoredGaps
+        }
     }
 
     fun keys(): HomeKeys = when {
@@ -460,11 +494,11 @@ class HomeSession(
             return TileActions(folderOnHome = FolderSwitch(entry.folder.id, entry.onHome))
         }
         if (index < 0) return null
-        val id = visibleSlots(board).getOrNull(index)
+        val id = slots().getOrNull(index)
         if (open?.recent == true) {
             return id?.let { gameActions(it, move = false, remove = null).copy(select = true) }
         }
-        val gaps = canTidy(board)
+        val gaps = hasGaps
         val moves = open?.sorted != true
         // An empty slot, or one past the last tile, moves as a tile does, makes a collection on
         // the root, and closes the board's gaps.
@@ -475,10 +509,10 @@ class HomeSession(
         if (id == HOME_ALL) return TileActions(move = true, newCollection = true, tidyBoard = gaps)
         val folder = board.folders[id]
         if (folder != null) {
-            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index), tidyBoard = gaps,
+            return TileActions(move = true, rename = true, icon = folder.userMade, remove = removeVerb(board, index, slots()), tidyBoard = gaps,
                 sort = sortChoice(folder))
         }
-        return gameActions(id, move = moves, remove = removeVerb(board, index), tidyBoard = gaps).copy(select = true, boardSort = sort)
+        return gameActions(id, move = moves, remove = removeVerb(board, index, slots()), tidyBoard = gaps).copy(select = true, boardSort = sort)
     }
 
     /** The games in a folder sorted by Most played: the only ones whose play time a merge needs. */
@@ -498,13 +532,13 @@ class HomeSession(
      */
     fun stepSort(folderId: String, direction: Int, index: Int, reread: () -> Unit = {}): Int {
         val folder = board.folders[folderId] ?: return index
-        val focused = menuGame ?: visibleSlots(board).getOrNull(index)
+        val focused = menuGame ?: slots().getOrNull(index)
         val next = setFolderSort(board, folderId, folder.sort.stepped(direction), catalog())
         if (next == board) return index
         board = next
         reread()
         if (board.openFolderId != folderId) return index
-        val slots = visibleSlots(board)
+        val slots = slots()
         val last = slots.indexOfLast { it != null }
         val at = when {
             focused != null -> slots.indexOf(focused).takeIf { it >= 0 } ?: index
@@ -617,7 +651,7 @@ class HomeSession(
     }
 
     /** What X does to the tile at [index]. Null in All and Folders, or where X does nothing. */
-    fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen || board.foldersOpen) null else removeVerb(board, index)
+    fun removeVerb(index: Int): RemoveVerb? = if (board.allOpen || board.foldersOpen) null else removeVerb(board, index, slots())
 
     /** A server game with a copy on this device. */
     private fun downloaded(id: String): Boolean = copies(id).any { it.availability == Availability.Cached }
@@ -663,7 +697,7 @@ class HomeSession(
     /** The game at [index] in All or on the board. Null for a group, the All tile, or an empty slot. */
     private fun slotGame(index: Int): String? {
         if (board.foldersOpen) return null
-        val id = if (board.allOpen) allRows().getOrNull(index)?.id else visibleSlots(board).getOrNull(index)
+        val id = if (board.allOpen) allRows().getOrNull(index)?.id else slots().getOrNull(index)
         return id?.takeIf { it != HOME_ALL && board.folders[it] == null && (it !in restoredGaps || it in catalogById) }
     }
 
@@ -721,7 +755,7 @@ class HomeSession(
 
     /** Opens the keyboard on the name of the folder or collection at [index], all of it selected. */
     fun startRename(index: Int) {
-        val id = visibleSlots(board).getOrNull(index) ?: return
+        val id = slots().getOrNull(index) ?: return
         if (id !in board.folders) return
         openNaming(id, index, fresh = false)
     }
@@ -766,7 +800,7 @@ class HomeSession(
 
     /** Opens the icon picker for the collection at [index]. */
     fun pickIcon(index: Int) {
-        val id = visibleSlots(board).getOrNull(index) ?: return
+        val id = slots().getOrNull(index) ?: return
         val look = board.folders[id]?.takeIf { it.userMade }?.let(::collectionLook) ?: return
         iconPick = IconPick.open(id, look)
         iconCell = index
@@ -777,9 +811,9 @@ class HomeSession(
      * up the strip, or stays in its slot when that was empty. Returns where focus goes.
      */
     fun tidyBoard(index: Int): Int {
-        val focused = visibleSlots(board).getOrNull(index)
+        val focused = slots().getOrNull(index)
         board = tidy(board)
-        val slots = visibleSlots(board)
+        val slots = slots()
         val at = focused?.let { slots.indexOf(it) }?.takeIf { it >= 0 } ?: index
         return at.coerceAtMost(GridStrip.reach(slots.indexOfLast { it != null } + 1) - 1).coerceAtLeast(0)
     }
@@ -792,7 +826,7 @@ class HomeSession(
     }
 
     internal fun restoredGapAt(index: Int): String? = if (board.foldersOpen || board.allOpen) null else
-        visibleSlots(board).getOrNull(index)?.takeIf { it in restoredGaps && it !in catalogById }
+        slots().getOrNull(index)?.takeIf { it in restoredGaps && it !in catalogById }
 
     /**
      * Places catalog item [id] on Home in its own folder, the way Add to Home in
@@ -1000,12 +1034,12 @@ class HomeSession(
     fun carry(): HomeCarry? {
         val hold = board.hold ?: return null
         val id = heldId(board) ?: return null
-        val slot = visibleSlots(board).indexOf(id).takeIf { it >= 0 } ?: return null
+        val slot = slots().indexOf(id).takeIf { it >= 0 } ?: return null
         return HomeCarry(
             id = id,
             slot = slot,
             at = hold.index,
-            over = heldOver(board)?.let { visibleSlots(board).indexOf(it) }?.takeIf { it >= 0 },
+            over = heldOver(board)?.let { slots().indexOf(it) }?.takeIf { it >= 0 },
             overHome = hold.overHome,
             canTakeOut = canTakeOut(board),
         )

@@ -1451,6 +1451,10 @@ fun rowLabel(row: Row, model: PickerModel): String {
     return if (value.isNullOrEmpty()) text.label else "${text.label}  $value"
 }
 
+/** One grid position, without allocating the identity order used outside rearranging. */
+fun displaySource(model: PickerModel, index: Int): Int =
+    if (model.order.size == model.count) model.order.getOrElse(index) { index } else index
+
 fun displayOrder(model: PickerModel): List<Int> {
     if (model.count <= 0) return emptyList()
     if (model.arranging && model.order.size == model.count) return model.order
