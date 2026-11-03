@@ -107,11 +107,14 @@ class ShellPlayerChoiceTest {
         listing.setInstalledApps(emptyList(), host.playerPackageNames(), host.playerPackageNames())
         listing.showPlatforms("romm", emptyList())
         listing.showGames(listOf(cell(game)))
+        listing.onMeaning(Meaning.Menu, HostScreen.Top)
         assertEquals(listOf("nintendo-ds"), listing.model.systemPlayers.map { it.platformId })
     }
 
     @Test fun systemsOnlyListLibraryPlatformsWithChoicesAndSettingsWritesPersist() {
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
         assertEquals(listOf("nintendo-ds"), shell.model.systemPlayers.map { it.platformId })
+        shell.closeSettings()
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Bottom)
         repeat(leftRows().indexOf(Row.Settings)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
