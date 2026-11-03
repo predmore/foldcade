@@ -54,11 +54,24 @@ class LauncherIconCacheTest {
         assertEquals("new", cache.getOrLoad(key()) { "new" })
     }
 
-    @Test fun twoPanelsShareAnInFlightLoad() = runBlocking {
+    @Test fun unrelatedIconsCanRenderWhileAnotherIconIsStillLoading() = runBlocking {
         val cache = LauncherIconCache<String>(2)
-        val first = async { cache.getOrLoad(key()) { "first" } }
-        val second = async { cache.getOrLoad(key()) { error("Loaded twice") } }
+        val started = CompletableDeferred<Unit>()
+        val finish = CountDownLatch(1)
+        val first = async(Dispatchers.Default) {
+            cache.getOrLoad(key("first")) {
+                started.complete(Unit)
+                check(finish.await(5, TimeUnit.SECONDS))
+                "first"
+            }
+        }
+        started.await()
+        try {
+            assertEquals("second", cache.getOrLoad(key("second")) { "second" })
+        } finally {
+            finish.countDown()
+        }
         assertEquals("first", first.await())
-        assertEquals("first", second.await())
+        assertEquals("first", cache.getOrLoad(key("first")) { error("Re-rasterized") })
     }
 }

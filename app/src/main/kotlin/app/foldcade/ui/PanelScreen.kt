@@ -1995,7 +1995,10 @@ internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, auto
     }
     var fetched by remember(record, query, allowed, connections, artKeySaved, revision, automatic) { mutableStateOf<ArtSet?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved, revision, automatic) {
-        if (automatic && (record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
+        if (automatic && (record != null || query != null) && held == null) {
+            app.art.restore()
+            fetched = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
+        }
     }
     val set = app.covers.chosen(held ?: fetched, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key && it.kind == ArtKind.Tile }
