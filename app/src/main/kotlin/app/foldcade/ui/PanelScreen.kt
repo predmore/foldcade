@@ -2415,11 +2415,14 @@ private fun Picker(
     androidx.compose.runtime.SideEffect { anchor?.slid = { slide.value } }
     val gridOrigin = remember { floatArrayOf(0f, 0f) }
     val ringPx = with(LocalDensity.current) { ringReach().toPx() }
+    // Which menu the dim is for, kept as it fades out, so the tile stays lit while Y's card shrinks back into it.
+    val dimForTile = remember { booleanArrayOf(false) }
+    if (menuOver) dimForTile[0] = tileMenuOn(app, screen)
     val tileHole = remember(anchor, screen, ringPx) {
         {
             // Read so the dim draws again each frame the grid slides, and its hole follows the tile.
             slide.value
-            anchor?.takeIf { tileMenuOn(app, screen) }?.bounds()?.let { bounds ->
+            anchor?.takeIf { dimForTile[0] }?.bounds()?.let { bounds ->
                 val corner = anchor.cornerPx + ringPx
                 RoundRect(
                     bounds.translate(-gridOrigin[0], -gridOrigin[1]).inflate(ringPx),

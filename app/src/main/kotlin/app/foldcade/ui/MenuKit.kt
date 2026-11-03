@@ -482,7 +482,7 @@ internal fun CheckMark(on: Boolean, focused: Boolean, scale: Float, some: Boolea
  * makes its room as the focus arrives, nudging the value aside.
  */
 @Composable
-internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float, modifier: Modifier = Modifier) {
+internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scale: Float, modifier: Modifier = Modifier, short: String? = null) {
     val theme = LocalFoldTheme.current.theme
     val arrows by eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val arrow = style.copy(color = theme.onBackground)
@@ -494,8 +494,8 @@ internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scal
         )
         // A long value, as an emulator's name, shortens itself and keeps both chevrons.
         Box(Modifier.weight(1f, fill = false)) {
-            SlideSwap(target = value, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
-                BasicText(shown, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            SlideSwap(target = value to short, scale = scale, distance = 18.dp, vertical = true, direction = { _, _ -> 1 }) { (shown, shorter) ->
+                FittedChoice(shown, shorter, style)
             }
         }
         BasicText(
@@ -510,6 +510,26 @@ internal fun ChoiceValue(value: String, focused: Boolean, style: TextStyle, scal
                 }
             },
         )
+    }
+}
+
+/** [value] when it fits its room, else [short] when there is one, shortened again only if that is too long too. */
+@Composable
+private fun FittedChoice(value: String, short: String?, style: TextStyle) {
+    if (short == null) {
+        BasicText(value, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
+    androidx.compose.ui.layout.Layout(
+        content = {
+            BasicText(value, style = style, maxLines = 1, softWrap = false)
+            BasicText(short, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+    ) { measurables, constraints ->
+        val loose = constraints.copy(minWidth = 0)
+        val whole = measurables[0].measure(loose.copy(maxWidth = androidx.compose.ui.unit.Constraints.Infinity))
+        val shown = if (whole.width <= constraints.maxWidth) whole else measurables[1].measure(loose)
+        layout(shown.width, shown.height) { shown.placeRelative(0, 0) }
     }
 }
 
@@ -732,7 +752,7 @@ internal fun MenuRow(
                 }
                 LabelAndChoice(Modifier.weight(1f)) {
                     labelText(Modifier)
-                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale)
+                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale, short = control.short)
                 }
             }
             is RowControl.Value -> BasicText(control.text,
