@@ -351,7 +351,7 @@ The top screen's selected item.
 
 ### `menu`
 
-The L1, R1 and Y menus and their islands.
+The L1, R1 and Y menus, the L1 and R1 islands, and the card Y's menu opens in beside its tile. The card wears the islands' fill, rim and lift.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
