@@ -31,18 +31,33 @@ import kotlinx.coroutines.withContext
  */
 internal data class LauncherArt(val image: ImageBitmap, val fullBleed: Boolean)
 
+/** Thirty-two adaptive icons retain at most 18 MiB of raster pixels. Visible images remain owned by Compose. */
+internal object LauncherIcons {
+    val cache = LauncherIconCache<LauncherArt>(32)
+    var revision by mutableStateOf(0L)
+        private set
+
+    fun clear() {
+        cache.clear()
+        revision++
+    }
+}
+
 @Composable
 internal fun launcherIcon(packageName: String?): LauncherArt? {
     val context = LocalContext.current
+    val revision = LauncherIcons.revision
     var art by remember(packageName) { mutableStateOf<LauncherArt?>(null) }
-    LaunchedEffect(packageName) {
-        art = null
+    LaunchedEffect(packageName, revision) {
         if (packageName == null) return@LaunchedEffect
         // Rasterizing an adaptive icon on the scroll thread hitches the grid.
         art = withContext(Dispatchers.Default) {
-            val drawable = runCatching { context.packageManager.getApplicationIcon(packageName) }.getOrNull()
-                ?: return@withContext null
-            runCatching { launcherArt(drawable) }.getOrNull()
+            val pm = context.packageManager
+            val info = runCatching { pm.getPackageInfo(packageName, 0) }.getOrNull() ?: return@withContext null
+            val key = LauncherIconKey(packageName, info.longVersionCode, info.lastUpdateTime, TILE_PX)
+            LauncherIcons.cache.getOrLoad(key) {
+                runCatching { launcherArt(pm.getApplicationIcon(packageName)) }.getOrNull()
+            }
         }
     }
     return art

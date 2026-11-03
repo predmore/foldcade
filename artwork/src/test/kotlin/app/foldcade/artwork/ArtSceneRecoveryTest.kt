@@ -58,6 +58,8 @@ class ArtSceneRecoveryTest {
         assertEquals(screenshot, finder.findScene(query))
         offline = false
         val restarted = ArtFinder({ listOf(retro, grid) }, ArtIndex(file))
+        assertNull(restarted.cachedScene(query))
+        restarted.restore()
         assertEquals(screenshot, restarted.cachedScene(query))
         assertEquals(screenshot.or(hero), restarted.findScene(query))
         assertEquals(2, grid.calls)

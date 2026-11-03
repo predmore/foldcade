@@ -111,13 +111,13 @@ class ArtFinderTest {
     }
 
     @Test
-    fun theIndexSurvivesARestartAndCompacts() {
+    fun theIndexSurvivesARestartAndCompacts() = runBlocking {
         val file = tempFile()
         val index = ArtIndex(file)
         repeat(200) { index.put("k", listOf("s", "https://a/$it.png", "https://a/sq\t$it.png", "")) }
         index.put("gone", null)
         val reopened = ArtIndex(file)
-        assertEquals(listOf("s", "https://a/199.png", "https://a/sq\t199.png", ""), reopened.hit("k"))
+        assertEquals(ArtIndex.Known.Hit(listOf("s", "https://a/199.png", "https://a/sq\t199.png", "")), reopened.lookup("k"))
         assertEquals(ArtIndex.Known.Miss, reopened.lookup("gone"))
         assert(file.readLines().size < 200)
         // A line from before this layout is dropped, so it is looked up again.
@@ -174,6 +174,37 @@ class ArtFinderTest {
         assertEquals("$base/library_hero.jpg", found?.background)
         assertEquals(listOf("$base/library_600x900_2x.jpg", "$base/library_600x900.jpg"), http.heads)
         assertNull(SteamStoreArt(FakeHttp(emptyMap())).find(ArtQuery("k", "Old", "pc", steamAppId = 10)))
+    }
+
+    @Test
+    fun indexConstructionAndCacheReadsDoNoIoAndMutationsAndRestoreUseIo() = runBlocking {
+        val file = tempFile()
+        val caller = Thread.currentThread()
+        var diskCalls = 0
+        val tracked = object : File(file.path) {
+            override fun isFile(): Boolean {
+                check(Thread.currentThread() !== caller) { "Index load on caller" }
+                diskCalls++
+                return super.isFile()
+            }
+            override fun getPath(): String {
+                check(Thread.currentThread() !== caller) { "Index I/O on caller" }
+                diskCalls++
+                return super.getPath()
+            }
+        }
+        val index = ArtIndex(tracked)
+        assertNull(index.hit("k"))
+        assertEquals(0, diskCalls)
+        repeat(100) { index.put("k", listOf("s", "https://a/$it", "", "")) }
+        index.put("miss", null)
+        index.forgetMisses()
+        val reopened = ArtIndex(tracked)
+        assertNull(reopened.hit("k"))
+        assertEquals(ArtIndex.Known.Hit(listOf("s", "https://a/99", "", "")), reopened.lookup("k"))
+        assertNull(reopened.lookup("miss"))
+        file.parentFile.deleteRecursively()
+        Unit
     }
 
     private class SceneOnly(

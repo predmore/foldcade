@@ -15,7 +15,11 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /** Server-scoped metadata and complete, unfiltered listings. All disk work runs on IO. */
-internal class RommCatalog(private val file: Path, private val origin: String) {
+internal class RommCatalog(
+    private val file: Path,
+    private val origin: String,
+    private val write: (Path, ByteArray) -> Unit = ::writeDurably,
+) {
     private var restored = false
     private var platforms: List<PlatformSummary>? = null
     /**
@@ -26,6 +30,9 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
     private val listings = HashMap<Long, List<String>>()
     private val incoming = HashMap<Long, MutableList<String>>()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private var refreshes = 0
+    private var dirty = false
+    private var persisted: Snapshot? = null
 
     @Synchronized
     fun restore() {
@@ -37,6 +44,7 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
             platforms = saved.platforms
             saved.roms.forEach { roms.putIfAbsent(it.id.toString(), it) }
             listings.putAll(saved.listings)
+            persisted = snapshot()
         } catch (_: IOException) {
             // A first launch or an evicted file needs a fresh listing.
         } catch (_: SerializationException) {
@@ -49,15 +57,21 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
     @Synchronized
     fun rememberPlatforms(items: List<PlatformSummary>) {
         restore()
-        platforms = items.toList()
-        save()
+        if (platforms != items) {
+            platforms = items.toList()
+            dirty = true
+        }
+        saveIfReady()
     }
 
     @Synchronized
     fun rememberRoms(items: List<RomSummary>) {
         restore()
-        items.forEach { roms[it.id.toString()] = it }
-        save()
+        items.forEach {
+            val previous = roms.put(it.id.toString(), it)
+            if (previous?.withoutArtworkCredentials() != it.withoutArtworkCredentials()) dirty = true
+        }
+        saveIfReady()
     }
 
     /** A search or interrupted refresh cannot replace a complete offline listing. */
@@ -73,10 +87,26 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
         }
         collected += page.items.map { it.id.toString() }
         if (finished) {
-            listings[platformId] = collected.distinct()
+            val complete = collected.distinct()
+            if (listings.put(platformId, complete) != complete) dirty = true
             incoming.remove(platformId)
-            save()
+            saveIfReady()
         }
+    }
+
+    /** Page updates stay available in memory; a refresh pays for one durable snapshot. */
+    @Synchronized
+    fun beginRefresh() {
+        restore()
+        if (refreshes++ == 0) incoming.clear()
+    }
+
+    /** Also flushes on cancellation, keeping completed listings and the previous incomplete one. */
+    @Synchronized
+    fun finishRefresh() {
+        check(refreshes > 0)
+        if (--refreshes == 0) incoming.clear()
+        saveIfReady()
     }
 
     fun rom(remoteKey: String): RomSummary? = roms[remoteKey]
@@ -90,14 +120,21 @@ internal class RommCatalog(private val file: Path, private val origin: String) {
     @Synchronized
     fun listing(platformId: Long): List<RomSummary>? = listings[platformId]?.mapNotNull(roms::get)
 
-    private fun save() {
+    private fun snapshot() = Snapshot(
+        platforms = platforms,
+        roms = roms.values.sortedBy { it.id }.map { it.withoutArtworkCredentials() },
+        listings = listings.toMap(),
+    )
+
+    private fun saveIfReady() {
+        if (refreshes != 0 || !dirty) return
         try {
-            val snapshot = Snapshot(
-                platforms = platforms,
-                roms = roms.values.map { it.withoutArtworkCredentials() },
-                listings = listings.toMap(),
-            )
-            writeDurably(file, json.encodeToString(snapshot).toByteArray(Charsets.UTF_8))
+            val snapshot = snapshot()
+            if (snapshot != persisted) {
+                write(file, json.encodeToString(snapshot).toByteArray(Charsets.UTF_8))
+                persisted = snapshot
+            }
+            dirty = false
         } catch (_: IOException) {
             // Metadata persistence must not fail a successful network request.
         }

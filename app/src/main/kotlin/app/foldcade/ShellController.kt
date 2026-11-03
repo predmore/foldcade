@@ -138,7 +138,7 @@ import app.foldcade.language.RetroArchSetting
 import app.foldcade.language.Side
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.connectFields
-import app.foldcade.language.displayOrder
+import app.foldcade.language.displaySource
 import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.finishIslandRetire
 import app.foldcade.language.replaceIsland
@@ -624,6 +624,10 @@ class ShellController(
         selectedUsable = playerResolution(gameId, platformId).source == PlayerChoiceSource.Game,
         inherited = playerChoiceLabel(playerResolution(null, platformId).player?.takeIf { it.packageNames.any(installedPlayers::contains) }),
     ).takeIf { it.visible }
+
+    /** Notices and Set up saves choose a Settings row in the reducer, before Settings opens. */
+    private fun settingsPlayerChoices(next: PickerModel): List<SystemPlayerChoice> =
+        if (next.settings != null || next.panel != null || next.saveSetup != null) systemPlayerChoices() else next.systemPlayers
 
     private fun systemPlayerChoices(): List<SystemPlayerChoice> =
         (libraryGames.values.map { it.platformId } + entries.mapNotNull { it.game?.platformId } + Shelf.games.mapNotNull { it.platformId })
@@ -1575,9 +1579,9 @@ class ShellController(
 
     private fun focusGridId(id: String, leftmost: Boolean = false): Boolean {
         val index = when {
-            model.libraryGrid && model.gridKind == GridKind.Games -> displayOrder(model).indexOfFirst { source ->
-                entries.getOrNull(source)?.game?.let { tileOf(homeGameId(it.backendId, it.remoteKey)) } == id
-            }
+            model.libraryGrid && model.gridKind == GridKind.Games -> (0 until model.count).firstOrNull { index ->
+                entries.getOrNull(displaySource(model, index))?.game?.let { tileOf(homeGameId(it.backendId, it.remoteKey)) } == id
+            } ?: -1
             showingHome() -> home.faces().indexOfFirst { !it.empty && it.id?.let(::tileOf) == id }
             else -> -1
         }
@@ -1847,6 +1851,7 @@ class ShellController(
      * Folds one backend's games into the curated board.
      * A later scan keeps placed tiles and only fills new ones when the setting is on.
      * Every library lands on the same board. An open panel or dialog stays open.
+     * A snapshot ([settles] false) adds known games without pruning missing ones or finishing the source.
      */
     fun ingestLibrary(
         libraryId: String,
@@ -1855,15 +1860,18 @@ class ShellController(
         listedNames: Map<String, String> = emptyMap(),
         readAt: Long = deviceMark(),
         restoreReported: Boolean = true,
+        settles: Boolean = true,
     ) {
         listedPlatformNames.putAll(listedNames.filterValues { it.isNotBlank() })
         val prefix = "lib:$libraryId:"
-        if ((relisting[libraryId] ?: 0L) <= readAt) relisting.remove(libraryId)
-        // A download or delete after [readAt] is newer than what the scan saw on disk.
-        deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
+        if (settles) {
+            if ((relisting[libraryId] ?: 0L) <= readAt) relisting.remove(libraryId)
+            // A download or delete after [readAt] is newer than what the scan saw on disk.
+            deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
+        }
         val items = ArrayList<HomeItem>()
         val remembered = HashMap<String, Game>()
-        sameSources.keys.removeAll { it.startsWith(prefix) }
+        if (settles) sameSources.keys.removeAll { it.startsWith(prefix) }
         for (entry in entries) {
             val game = entry.game ?: continue
             val id = homeGameId(libraryId, game.remoteKey)
@@ -1893,10 +1901,13 @@ class ShellController(
             }
             remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
-        libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
-        if (libraryId != "local-folder" && restoreReported) reportRestoreSources(setOf(libraryId))
-        settledLibraries += libraryId
-        libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
+        val replaced = if (settles) emptySet() else items.mapTo(HashSet()) { it.id }
+        libraryItems = libraryItems.filterNot { if (settles) it.id.startsWith(prefix) else it.id in replaced } + items
+        if (settles) {
+            if (libraryId != "local-folder" && restoreReported) reportRestoreSources(setOf(libraryId))
+            settledLibraries += libraryId
+            libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
+        }
         libraryGames.putAll(remembered)
         extraPlatforms = platforms.map { platform ->
             HomePlatform(
@@ -2102,7 +2113,7 @@ class ShellController(
         if (activity.isEmpty() && running.isEmpty() && streaming.isEmpty()) return null
         if (!model.libraryGrid) homeCarry()?.let { return activityOf(it.id) }
         val source = if (model.libraryGrid) {
-            displayOrder(model).getOrElse(model.focus.cellIndex) { model.focus.cellIndex }
+            displaySource(model, model.focus.cellIndex)
         } else {
             model.focus.cellIndex
         }
@@ -3009,7 +3020,7 @@ class ShellController(
     fun gameAt(index: Int): ShelfGame? = when {
         index !in 0 until model.count -> null
         showingHome() -> home.face(index)?.let(::homeShelf)
-        else -> tileFromOrder(displayOrder(model).getOrElse(index) { index })
+        else -> tileFromOrder(displaySource(model, index))
     }
 
     /** Find's subject as a game: the focused result, or the best one on the keys. Null for a group. */
@@ -3257,6 +3268,7 @@ class ShellController(
     }
 
     fun refreshPlayerSaves() {
+        saveSettingsCache = null
         val settings = playerSaveSettings()
         val folders = settings.map { store.playerSaveFolder(plugins.player(it.playerId)?.saveFolderId() ?: it.playerId) }
         if (settings == healthPlayerSettings && folders == healthPlayerFolders) return
@@ -3284,7 +3296,7 @@ class ShellController(
 
     private fun libraryEntry(snapshot: PickerModel): GridEntry? {
         if (!snapshot.libraryGrid) return null
-        val source = displayOrder(snapshot).getOrElse(snapshot.focus.cellIndex) { snapshot.focus.cellIndex }
+        val source = displaySource(snapshot, snapshot.focus.cellIndex)
         return entries.getOrNull(source)
     }
 
@@ -3304,7 +3316,7 @@ class ShellController(
     /** The cell [index] shows, after the arrange order. */
     fun entryAt(index: Int): GridEntry? {
         if (!model.libraryGrid || index !in 0 until model.count) return null
-        val source = displayOrder(model).getOrElse(index) { index }
+        val source = displaySource(model, index)
         return entries.getOrNull(source)
     }
 
@@ -3466,7 +3478,7 @@ class ShellController(
 
     private fun displaySource(snapshot: PickerModel): Int {
         val index = snapshot.focus.cellIndex
-        return displayOrder(snapshot).getOrElse(index) { index }
+        return displaySource(snapshot, index)
     }
 
     private fun artPickerAvailable(): Boolean = store.session.controlsPanel() != null
@@ -3482,9 +3494,9 @@ class ShellController(
             else -> emptyList()
         }
         val lastOccupied = if (next.homeGrid == HomeGrid.StandIns && !home.board.allOpen && !home.board.foldersOpen) {
-            app.foldcade.language.visibleSlots(home.board).indexOfLast { it != null }
+            home.lastOccupiedIndex()
         } else count - 1
-        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = systemPlayerChoices(),
+        val counted = next.copy(count = count, playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(next),
             gridLabels = labels, lastOccupiedIndex = lastOccupied,
             screenJumpLastColumn = if (showingHome(next) && !home.board.allOpen && !home.board.foldersOpen) GridStrip.column(lastOccupied.coerceAtLeast(0)) else null)
         val game = tileOn(counted)
@@ -3586,8 +3598,30 @@ class ShellController(
         refreshPlayerSaves()
     }
 
+    private data class SaveSettingsCache(
+        val definitions: List<Platform>,
+        val installed: Set<String>,
+        val sync: Map<String, SaveSyncState>,
+        val setup: Map<String, String>,
+        val rows: List<PlayerSaveSetting>,
+    )
+    private var saveSettingsCache: SaveSettingsCache? = null
+
+    /** Folder bindings are mutable plugin state; their owners call refreshPlayerSaves after a check. */
+    private fun playerSaveSettings(): List<PlayerSaveSetting> {
+        // PluginHost replaces this immutable snapshot after every registration, including player-only entries.
+        val definitions = plugins.platformDefinitions()
+        saveSettingsCache?.let {
+            if (it.definitions === definitions && it.installed === installedPlayers &&
+                it.sync === saveSync && it.setup === setupSteps) return it.rows
+        }
+        return readPlayerSaveSettings().also {
+            saveSettingsCache = SaveSettingsCache(definitions, installedPlayers, saveSync, setupSteps, it)
+        }
+    }
+
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
-    private fun playerSaveSettings(): List<PlayerSaveSetting> =
+    private fun readPlayerSaveSettings(): List<PlayerSaveSetting> =
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
             // Eden's existing row owns its one grant for saves, keys and firmware.
@@ -3726,7 +3760,7 @@ class ShellController(
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
                 openWith = openWith(tileOf(id), game.platformId)) else null,
-                playerSaves = playerSaveSettings(), systemPlayers = systemPlayerChoices())
+                playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(ready))
         } else {
             withShelf(ready.copy(libraryGrid = false))
         }
