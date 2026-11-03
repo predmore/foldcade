@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -193,7 +195,8 @@ private fun ResultStrip(
             focus > first[0] + across - 1 -> focus - across + 1
             else -> first[0]
         }.coerceIn(0, max(0, results.size - across))
-        val shownFirst by eased(first[0].toFloat(), motion.durationTravel, scale)
+        val targetFirst = first[0].toFloat()
+        val shownFirst by eased(targetFirst, motion.durationTravel, scale)
         // Results centre while there are fewer than fit, and start at the left once they fill it.
         val spare = max(0f, widthPx - padPx * 2 - (results.size * pitchPx - with(density) { gap.toPx() }))
         val lead by eased(spare / 2f, motion.durationTravel, scale)
@@ -202,9 +205,12 @@ private fun ResultStrip(
         if (results.isEmpty()) {
             BasicText(FindCopy.noMatches, Modifier.align(Alignment.Center), style = emptyStyle)
         }
-        results.forEachIndexed { index, entry ->
+        // Motion belongs to the result list, not its tile. Offscreen results must finish
+        // their original pop and keep gliding when a query changes their rank, so entering
+        // the viewport never restarts either animation.
+        val positions = results.mapIndexed { index, entry ->
             key(entry.id) {
-                val at by eased(index.toFloat(), motion.durationTravel, scale)
+                val at = eased(index.toFloat(), motion.durationTravel, scale)
                 val pop = remember { Animatable(0f) }
                 LaunchedEffect(Unit) {
                     if (motion.reduced(scale)) {
@@ -214,20 +220,36 @@ private fun ResultStrip(
                     delay(min(index, POP_STAGGER_LIMIT) * POP_STAGGER_MS)
                     withContext(SteadyMenu) { pop.animateTo(1f, motion.playful(motion.durationSelect, scale)) }
                 }
+                ResultPosition(entry, index, at, pop.asState())
+            }
+        }
+        // Follow the animated positions, including tiles crossing the window on a reorder.
+        // Prepare the destination window as soon as the cursor moves, before the scroll's
+        // next frame makes it visible. Otherwise fast held input can outrun incoming art.
+        // Only membership changes recompose; per-frame motion stays in layout and layers.
+        val visible by remember(positions, across, targetFirst) {
+            derivedStateOf {
+                positions.filter {
+                    findResultInWindow(it.at.value, shownFirst, across, it.index.toFloat(), targetFirst)
+                }
+            }
+        }
+        visible.forEach { position ->
+            key(position.entry.id) {
                 Box(
                     Modifier
-                        .offset { IntOffset((padPx + lead + (at - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
+                        .offset { IntOffset((padPx + lead + (position.at.value - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
                         .graphicsLayer {
                             // A result fades as it slides past either edge, so the strip has no cut ends.
-                            val along = at - shownFirst
+                            val along = position.at.value - shownFirst
                             val outside = maxOf(-along, along - (across - 1), 0f)
-                            val grown = popFrom + (1f - popFrom) * pop.value
-                            alpha = (1f - outside).coerceIn(0f, 1f) * pop.value.coerceIn(0f, 1f)
+                            val grown = popFrom + (1f - popFrom) * position.pop.value
+                            alpha = (1f - outside).coerceIn(0f, 1f) * position.pop.value.coerceIn(0f, 1f)
                             scaleX = grown
                             scaleY = grown
                         },
                 ) {
-                    tile(entry, session.onResults && session.index == index, cell, titleWidth) { onTap(index) }
+                    tile(position.entry, session.onResults && session.index == position.index, cell, titleWidth) { onTap(position.index) }
                 }
             }
         }
@@ -244,6 +266,13 @@ private fun ResultStrip(
         }
     }
 }
+
+private data class ResultPosition(
+    val entry: FindEntry,
+    val index: Int,
+    val at: State<Float>,
+    val pop: State<Float>,
+)
 
 /**
  * The strip's one ring. It glides from result to result like the grid's, full while the

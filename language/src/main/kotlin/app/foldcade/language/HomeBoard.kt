@@ -716,9 +716,9 @@ fun canTidy(board: HomeBoard): Boolean {
  * Recently played and the All tile keep what they show, so nothing comes out of those.
  * A game a pin was the only place of is still in All and Find, where Add to brings it back.
  */
-fun removeVerb(board: HomeBoard, index: Int): RemoveVerb? {
+fun removeVerb(board: HomeBoard, index: Int, slots: List<String?> = visibleSlots(board)): RemoveVerb? {
     if (board.allOpen || board.foldersOpen) return null
-    val id = visibleSlots(board).getOrNull(index) ?: return null
+    val id = slots.getOrNull(index) ?: return null
     if (id == HOME_ALL) return null
     val openId = board.openFolderId
     if (openId == null) return if (board.folders[id] != null) RemoveVerb.Remove else RemoveVerb.Unpin

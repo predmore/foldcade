@@ -99,6 +99,8 @@ class ArtMatchingTest {
         assertEquals("https://cdn/cover", finder.find(chosen)?.square)
         assertEquals(ArtScene("https://cdn/hero", "https://cdn/logo"), finder.findScene(chosen))
         val restarted = ArtFinder({ listOf(previous, source) }, ArtIndex(index), ArtIndex(scenes))
+        assertNull(restarted.cached(chosen)) // The first synchronous cache read never opens the TSVs.
+        restarted.restore()
         assertEquals("https://cdn/cover", restarted.cached(chosen)?.square)
         assertEquals("https://cdn/hero", restarted.cachedScene(chosen)?.background)
         assertEquals("https://cdn/wrong", restarted.cached(old)?.cover)

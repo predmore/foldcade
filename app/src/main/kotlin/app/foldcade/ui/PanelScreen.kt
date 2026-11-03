@@ -247,7 +247,7 @@ import app.foldcade.language.gridHints
 import app.foldcade.language.letterOfKey
 import app.foldcade.language.letterbox
 import app.foldcade.language.cursorBrush
-import app.foldcade.language.displayOrder
+import app.foldcade.language.displaySource
 import app.foldcade.language.heroCopy
 import app.foldcade.language.menuFit
 import app.foldcade.language.menuScrollTarget
@@ -1912,7 +1912,13 @@ internal fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): A
     val held = remember(record, query, allowed, connections, artKeySaved, revision) { app.covers.cachedScene(record, query) }
     var fetched by remember(record, query, allowed, connections, artKeySaved, revision) { mutableStateOf<ArtScene?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved, revision) {
-        if ((record != null || query != null) && held?.complete != true) fetched = app.covers.fetchScene(record, query)
+        if ((record != null || query != null) && held?.complete != true) {
+            // Restore partial disk hits before waiting for a slow/offline source to fill their missing parts.
+            app.art.restore()
+            val restored = app.covers.cachedScene(record, query)
+            fetched = restored
+            if (restored?.complete != true) fetched = app.covers.fetchScene(record, query)
+        }
     }
     val scene = app.covers.chosenScene(fetched ?: held, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key }
@@ -2015,7 +2021,10 @@ internal fun rememberArt(app: FoldcadeApp, record: Game?, query: ArtQuery?, auto
     }
     var fetched by remember(record, query, allowed, connections, artKeySaved, revision, automatic) { mutableStateOf<ArtSet?>(null) }
     LaunchedEffect(record, query, allowed, connections, artKeySaved, revision, automatic) {
-        if (automatic && (record != null || query != null) && held == null) fetched = app.covers.fetch(record, query)
+        if (automatic && (record != null || query != null) && held == null) {
+            app.art.restore()
+            fetched = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
+        }
     }
     val set = app.covers.chosen(held ?: fetched, query)
     val picker = LocalArtPreview.current?.takeIf { it.gameId == query?.key && it.kind == ArtKind.Tile }
@@ -3545,10 +3554,9 @@ private const val BURST_SPAN = 3
 private fun shownTitles(app: FoldcadeApp, start: Int, size: Int): List<String> {
     val shell = app.shell
     val showingHome = !shell.model.libraryGrid && shell.model.homeGrid == HomeGrid.StandIns
-    val order = displayOrder(shell.model)
     val end = minOf(start + size, shell.model.count)
     return (start until end).map { index ->
-        val source = if (showingHome) index else order.getOrElse(index) { index }
+        val source = if (showingHome) index else displaySource(shell.model, index)
         shell.tileFromOrder(source)?.title.orEmpty()
     }
 }
@@ -3575,7 +3583,6 @@ private fun StripColumn(
     val focus = shell.model.focus
     val library = shell.model.libraryGrid
     val showingHome = !library && shell.model.homeGrid == HomeGrid.StandIns
-    val order = displayOrder(shell.model)
     val radius = cell * foldTheme().iconRadius
     val radiusPx = with(LocalDensity.current) { radius.toPx() }
     val motion = LocalFoldTheme.current.theme.motion
@@ -3607,7 +3614,7 @@ private fun StripColumn(
                     // A tap rests the cursor here, as on any empty slot.
                     Box(Modifier.size(cell).hostPress { tap() })
                 } else {
-                    val source = if (showingHome) index else order.getOrElse(index) { index }
+                    val source = if (showingHome) index else displaySource(shell.model, index)
                     val face = if (showingHome) shell.homeFace(index) else null
                     val game = shell.tileFromOrder(source)
                     // A tile in the hand draws itself over the grid, so its slot is only

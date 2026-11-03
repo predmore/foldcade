@@ -107,6 +107,18 @@ internal suspend fun loadGames(
         offset = next
     }
     val both = occupiesBoth(platformId)
+    return gameEntries(plugins, libraryId, games, folderName, { both }, gameOccupiesBoth)
+}
+
+/** The same tile records for a saved snapshot and a newly fetched listing. */
+internal suspend fun gameEntries(
+    plugins: PluginHost,
+    libraryId: String,
+    games: List<Game>,
+    folderName: (String) -> String = { "" },
+    occupiesBoth: (String) -> Boolean = { false },
+    gameOccupiesBoth: ((Game) -> Boolean)? = null,
+): List<GridEntry> {
     return games.map { game ->
         GridEntry(
             id = game.remoteKey,
@@ -114,7 +126,7 @@ internal suspend fun loadGames(
             shortText = folderName(game.remoteKey),
             platformId = game.platformId,
             availabilityLabel = availabilityCopy(game.availability),
-            occupiesBothDisplays = gameOccupiesBoth?.invoke(game) ?: both,
+            occupiesBothDisplays = gameOccupiesBoth?.invoke(game) ?: occupiesBoth(game.platformId),
             game = game,
             fileName = plugins.fileName(libraryId, game),
         )
