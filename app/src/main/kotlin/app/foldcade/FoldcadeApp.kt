@@ -2202,7 +2202,7 @@ class FoldcadeApp : Application() {
                 showFailure(ticket, insidePlatform = false)
                 return@launch
             }
-            deliverLibrary(ticket, LocalFolderBackend.ID, readFolders(ticket, backend, saved))
+            deliverLibrary(ticket, LocalFolderBackend.ID, readFolders(ticket, backend, saved), startup = startup)
         }).also { it.start() }
     }
 
@@ -2535,7 +2535,7 @@ class FoldcadeApp : Application() {
      * A library with platforms lands on the curated home grid.
      * Games are read here, off the main thread, then the board is updated.
      */
-    private suspend fun deliverLibrary(ticket: Int, libraryId: String, loaded: LoadedLibrary?) {
+    private suspend fun deliverLibrary(ticket: Int, libraryId: String, loaded: LoadedLibrary?, startup: Boolean = false) {
         val games = if (loaded is LoadedLibrary.Platforms) {
             try {
                 loadEveryGame(libraryId, loaded)
@@ -2567,13 +2567,13 @@ class FoldcadeApp : Application() {
                         plugins.platformDefinitions(),
                         loaded.entries.associate { (it.platformId ?: it.id) to it.title },
                     )
-                    shell.showCuratedHome()
+                    shell.showCuratedHome(fromStartup = startup)
                     perfMark("library-published games=${games.size}")
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
                 LoadedLibrary.NoPlatforms -> if (steamFiles.files.isNotEmpty() && folderReported) {
                     shell.dropLibrary(libraryId)
-                    shell.showCuratedHome()
+                    shell.showCuratedHome(fromStartup = startup)
                 } else {
                     shell.showNoPlatforms(libraryId)
                 }
