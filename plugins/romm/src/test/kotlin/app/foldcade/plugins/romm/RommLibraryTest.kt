@@ -390,6 +390,77 @@ class RommLibraryTest {
     }
 
     @Test
+    fun cachedSnapshotUsesVerifiedMarkersWithoutRehashingRomBytes() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val listed = rom("3ds", 3).copy(files = listOf(RomFileSummary(7, "mario.cci", 9, md5Hash = "0".repeat(32))))
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds")))
+            catalog.rememberPage(3, RomQuery(), page(listed), true)
+            catalog.finishRefresh()
+            val spec = listed.bytes()
+            val target = RommClient.romCacheFile(harness.wiring.romRoot, listed.id, spec.fileName, spec.fileIds)
+            Files.createDirectories(target.parent)
+            Files.write(target, ByteArray(9))
+            val marker = target.resolveSibling(target.fileName.toString() + ".verified")
+            // A deliberately stale marker proves the early pass does not read/hash the ROM.
+            // The live listing must still detect the bytes' mismatch.
+            Files.writeString(marker, """{"size":9,"md5":"${spec.md5}"}""")
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); Heartbeat("5.4.0") }
+            ops.onPlatforms = { listOf(platform(3, "3ds")) }
+            ops.onRoms = { page(listed) }
+            refreshRommCatalog(harness.library, cached = {
+                assertEquals(Availability.Cached, it.games.single().availability)
+                published = true
+            }) {
+                harness.library.connect()
+                harness.library.listPlatforms()
+                assertEquals(Availability.RemoteOnly, harness.library.listGames("3ds", GameQuery()).games.single().availability)
+            }
+            Files.delete(marker)
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+            Files.writeString(marker, """{"size":9,"md5":"${spec.md5}"}""")
+            Files.write(target.resolveSibling(target.fileName.toString() + ".partial"), byteArrayOf(1))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+            Files.delete(target.resolveSibling(target.fileName.toString() + ".partial"))
+            Files.write(target, ByteArray(4))
+            assertEquals(Availability.RemoteOnly, cacheAvailability(harness.wiring.romRoot, listed, verifyBytes = false))
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun systemsLastReportedEmptyDoNotResurrectOldCachedGames() = runBlocking {
+        val ops = ScriptedOps()
+        val harness = harness(ops)
+        try {
+            val catalog = RommCatalog(harness.wiring.data.catalogFile(), harness.wiring.origin)
+            catalog.beginRefresh()
+            catalog.rememberPlatforms(listOf(platform(3, "3ds")))
+            catalog.rememberPage(3, RomQuery(), page(rom("3ds", 3)), true)
+            catalog.finishRefresh()
+            // The host skips a live zero-count system, so its previous listing remains on disk.
+            catalog.rememberPlatforms(listOf(platform(3, "3ds").copy(romCount = 0), platform(4, "snes")))
+            var published = false
+            ops.onHeartbeat = { assertTrue(published); throw RommUnavailable("offline") }
+            refreshRommCatalog(harness.library, cached = {
+                assertTrue(it.games.isEmpty())
+                published = true
+            }) { harness.library.connect() }
+            assertTrue(published)
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun cancellingDownloadClearsItsActivityAndDoesNotProduceATarget() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds")) }

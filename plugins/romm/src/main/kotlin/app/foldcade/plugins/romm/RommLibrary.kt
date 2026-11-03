@@ -190,7 +190,10 @@ internal class RommLibrary internal constructor(
                         val games = platforms.flatMap { platform ->
                             // An interrupted first listing of another system must not
                             // hide systems whose complete listings are already saved.
-                            catalog.listing(platform.id).orEmpty().map { it.toGame(wiring.romRoot, wiring.platforms) }
+                            if (platform.romCount <= 0) emptyList() else catalog.listing(platform.id).orEmpty().map {
+                                // Reading ROM bytes here could delay pending save sync by minutes.
+                                it.toGame(wiring.romRoot, wiring.platforms, verifyBytes = false)
+                            }
                         }
                         RommCatalogSnapshot(platforms.map { it.toListedPlatform(wiring) }, games)
                     }
@@ -1536,17 +1539,19 @@ internal fun alignedPlatformId(definitions: Iterable<Platform>, slug: String): S
 internal fun RomSummary.toGame(
     cacheRoot: Path,
     definitions: Iterable<Platform>,
+    verifyBytes: Boolean = true,
 ): Game = Game(
     backendId = ROMM_LIBRARY_ID,
     remoteKey = id.toString(),
     platformId = alignedPlatformId(definitions, platformSlug),
-    availability = cacheAvailability(cacheRoot, this),
+    availability = cacheAvailability(cacheRoot, this, verifyBytes),
     label = name?.takeIf { it.isNotBlank() } ?: fsName,
     // RomM's own figure for the whole ROM, as its web page shows it.
     sizeBytes = fsSizeBytes.takeIf { it > 0 },
 )
 
-internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
+/** The early snapshot uses small verified markers; live listings still verify the ROM bytes. */
+internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary, verifyBytes: Boolean = true): Availability {
     val spec = rom.bytes()
     val target = RommClient.romCacheFile(cacheRoot, rom.id, spec.fileName, spec.fileIds)
     val files = listOf(target to (spec.expectedSize to spec.md5)) + spec.addOns.map { addOn ->
@@ -1556,7 +1561,8 @@ internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
     val whole = files.all { (file, expected) ->
         Files.isRegularFile(file) &&
             !Files.exists(file.resolveSibling(file.fileName.toString() + ".partial")) &&
-            localRomMatches(file, expected.first, expected.second)
+            (if (verifyBytes) localRomMatches(file, expected.first, expected.second)
+            else RommClient.isVerifiedRom(file, expected.first, expected.second))
     }
     return if (whole) Availability.Cached else Availability.RemoteOnly
 }
