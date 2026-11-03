@@ -823,9 +823,11 @@ class FoldcadeApp : Application() {
         plays = PlaySessions.open(File(filesDir, "play-sessions/events.log"))
         val sliderTick = SliderTick()
         plays.packageOf = { gameId ->
-            val platform = Shelf.games.firstOrNull { it.id == gameId }?.platformId
-            val player = platform?.let { playerFor(gameId, it) }
-            runningOn(gameId)?.packageName ?: player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
+            playTimePackage(gameId) { shelfId ->
+                val platform = Shelf.games.firstOrNull { it.id == shelfId }?.platformId
+                val player = platform?.let { playerFor(shelfId, it) }
+                player?.packageNames?.let { names -> names.firstOrNull(::packageInstalled) ?: names.firstOrNull() }
+            }
         }
         artChoices = ArtChoices.decode(artChoiceFile.takeIf { it.isFile }?.readText())
         shell = ShellController(
@@ -2256,7 +2258,8 @@ class FoldcadeApp : Application() {
      * so no pack on trial is blamed.
      */
     internal fun restart(from: android.app.Activity) {
-        from.startActivity(Intent(from, RestartActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        from.startOnDisplay(Intent(from, RestartActivity::class.java),
+            android.view.Display.DEFAULT_DISPLAY, multipleTask = false)
         from.finishAffinity()
         Runtime.getRuntime().exit(0)
     }

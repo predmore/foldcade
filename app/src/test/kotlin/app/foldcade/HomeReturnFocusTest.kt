@@ -538,6 +538,36 @@ class HomeReturnFocusTest {
         assertTrue(GridStrip.column(39) in shell.model.firstColumn until shell.model.firstColumn + shell.model.columnsShown)
     }
 
+    @Test fun aBackgroundCatalogRefreshKeepsTheVisibleViewport() {
+        val shell = shell(SessionStore(MemoryPrefs()))
+        val many = (0..39).map { "game${it.toString().padStart(2, '0')}" }
+        load(shell, many)
+        shell.openHomeAll()
+        focus(shell, id(many.last()))
+        shell.touchScroll(13)
+        assertEquals(13, shell.model.firstColumn)
+        shell.noteShelfChanged()
+        assertEquals(13, shell.model.firstColumn)
+        shell.notePlayChanged()
+        assertEquals(13, shell.model.firstColumn)
+        assertFocused(shell, id(many.last()))
+    }
+
+    @Test fun returningByIdUsesTheLeftmostScrollThatShowsTheGame() {
+        val shell = shell(SessionStore(MemoryPrefs()))
+        val many = (0..39).map { "game${it.toString().padStart(2, '0')}" }
+        load(shell, many)
+        shell.openHomeAll()
+        val last = id(many.last())
+        focus(shell, last)
+        shell.noteGameLaunched(last)
+        shell.touchScroll(13)
+        assertEquals(13, shell.model.firstColumn)
+        shell.noteHomeReturned()
+        assertFocused(shell, last)
+        assertEquals(10, shell.model.firstColumn)
+    }
+
     @Test fun aGameFoldedWhileAwayReturnsToItsSharedTileAndSurvivesAColdHome() {
         val prefs = MemoryPrefs()
         val store = SessionStore(prefs)

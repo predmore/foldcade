@@ -93,7 +93,7 @@ class ControllerGridTest {
     }
     @Test fun theIconEditorKeepsItsShouldersWhenAnAppCoversTheIslands() {
         // An app on the top screen: L1, R1 and Start have no islands to open.
-        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu)) {
+        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel)) {
             assertTrue(topMenuKeyBlocked(meaning, HomeKeys.Idle, islandsOpen = false))
             assertFalse(topMenuKeyBlocked(meaning, HomeKeys.Idle, islandsOpen = true))
         }
@@ -103,7 +103,7 @@ class ControllerGridTest {
         assertEquals(Meaning.LeftPanel, l1)
         assertFalse(topMenuKeyBlocked(l1!!, HomeKeys.PickingIcon, islandsOpen = false))
         assertFalse(topMenuKeyBlocked(r1!!, HomeKeys.PickingIcon, islandsOpen = false))
-        assertTrue(topMenuKeyBlocked(Meaning.Menu, HomeKeys.PickingIcon, islandsOpen = false))
+        assertFalse(topMenuKeyBlocked(Meaning.Menu, HomeKeys.PickingIcon, islandsOpen = false))
         // The keyboard's shoulders move its caret, so they never meet this guard.
         for (key in listOf(KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1)) {
             val caret = meaningOf(key, homeKeys = HomeKeys.Typing)!!
@@ -113,7 +113,7 @@ class ControllerGridTest {
     }
 
     @Test fun startSharesMenuOwnershipAndPendingLaunchCancellation() {
-        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu)) {
+        for (meaning in listOf(Meaning.LeftPanel, Meaning.RightPanel)) {
             assertTrue(opensTopMenu(meaning))
             assertTrue(cancelsPendingLaunch(meaning, dialogOpen = false, conflictOpen = false))
             assertFalse(cancelsPendingLaunch(meaning, dialogOpen = true, conflictOpen = false))

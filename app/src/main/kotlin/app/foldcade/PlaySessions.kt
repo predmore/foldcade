@@ -59,7 +59,7 @@ class PlaySessions private constructor(
     /** Fired after a session fact is stored. The shell refreshes Recently played. */
     var onChanged: (() -> Unit)? = null
 
-    /** Player package for a game id. Null for a stand-in that has no package. */
+    /** Package usage belongs only to a tile that represents the whole app, never one of its ROMs. */
     var packageOf: (String) -> String? = { null }
 
     /**
@@ -307,4 +307,11 @@ private object WallAndElapsedClock : PlayClock {
     override fun wallNow(): Long = System.currentTimeMillis()
 
     override fun elapsedNow(): Long = SystemClock.elapsedRealtime()
+}
+
+/** A package total belongs to an app tile, never to one ROM or streamed game within it. */
+internal fun playTimePackage(gameId: String, shelfPackage: (String) -> String?): String? = when {
+    gameId.startsWith("android:") -> gameId.removePrefix("android:").takeIf { it.isNotBlank() }
+    gameId in Shelf.APP_TILES -> shelfPackage(gameId)
+    else -> null
 }
