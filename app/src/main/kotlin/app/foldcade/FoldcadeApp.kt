@@ -761,6 +761,7 @@ class FoldcadeApp : Application() {
                 Intent.ACTION_PACKAGE_REMOVED,
                 Intent.ACTION_PACKAGE_CHANGED,
                 -> {
+                    app.foldcade.ui.LauncherIcons.clear()
                     reloadInstalledApps()
                     val changed = intent.data?.schemeSpecificPart
                     // A game cannot still run in an emulator that is gone, so its tile falls back

@@ -28,16 +28,16 @@ class LibretroThumbnails(
 ) : ArtSource {
     override val id: String = "libretro"
 
-    private val listings = ConcurrentHashMap<String, List<String>>()
+    private val listings = ConcurrentHashMap<String, ThumbnailIndex>()
     private val reading = Mutex()
 
     override fun handles(query: ArtQuery): Boolean =
         query.platformId in SYSTEMS && (query.fileName != null || query.title.isNotBlank())
 
-    override suspend fun find(query: ArtQuery): ArtSet? {
-        val system = SYSTEMS[query.platformId] ?: return null
-        val name = bestThumbnail(boxarts(system), query.fileName, query.title) ?: return null
-        return ArtSet(source = id, cover = imageUrl(system, name))
+    override suspend fun find(query: ArtQuery): ArtSet? = withContext(Dispatchers.IO) {
+        val system = SYSTEMS[query.platformId] ?: return@withContext null
+        val name = boxarts(system).best(query.fileName, query.title) ?: return@withContext null
+        ArtSet(source = id, cover = imageUrl(system, name))
     }
 
     /**
@@ -45,24 +45,24 @@ class LibretroThumbnails(
      * server names those as it names the box, so the box's match finds them
      * without another listing. On DS and 3DS the image holds both screens.
      */
-    override suspend fun scene(query: ArtQuery): ArtScene? {
-        val system = SYSTEMS[query.platformId] ?: return null
+    override suspend fun scene(query: ArtQuery): ArtScene? = withContext(Dispatchers.IO) {
+        val system = SYSTEMS[query.platformId] ?: return@withContext null
         // The best box match may have no title screen when a near release does, so try a few.
-        val names = rankedThumbnails(boxarts(system), query.fileName, query.title).take(SCENE_TRIES)
+        val names = boxarts(system).ranked(query.fileName, query.title).take(SCENE_TRIES)
         for (kind in listOf("Named_Titles", "Named_Snaps")) {
             for (name in names) {
                 val url = imageUrl(system, name, kind)
-                if (http.status(url) == 200) return ArtScene(screen = url)
+                if (http.status(url) == 200) return@withContext ArtScene(screen = url)
             }
         }
-        return null
+        null
     }
 
-    private suspend fun boxarts(system: String): List<String> {
+    private suspend fun boxarts(system: String): ThumbnailIndex {
         listings[system]?.let { return it }
         return reading.withLock {
             listings[system]?.let { return@withLock it }
-            val file = File(cacheDir, "${system.replace(Regex("[^A-Za-z0-9]+"), "_")}.txt")
+            val file = File(cacheDir, "${system.replace(LISTING_FILE_UNSAFE, "_")}.txt")
             val kept = if (file.isFile) file.readLines().filter { it.isNotBlank() } else null
             val names = if (kept != null && clock() - file.lastModified() < LISTING_MAX_AGE_MS) {
                 kept
@@ -81,18 +81,15 @@ class LibretroThumbnails(
                     kept ?: throw failure
                 }
             }
-            listings[system] = names
-            names
+            ThumbnailIndex(names).also { listings[system] = it }
         }
     }
 
     private suspend fun readListing(system: String): List<String> {
         val response = http.get("https://$HOST/${segment(system)}/Named_Boxarts/")
         if (response.status != 200) throw IllegalStateException("libretro listing returned ${response.status}")
-        // A system listing is a large HTML page. Parsing it on the caller, which is
-        // the Compose UI dispatcher, holds input long enough to ANR the home screen.
-        val html = response.body
-        return withContext(Dispatchers.IO) { parseListing(html.decodeToString()) }
+        // find/scene keep listing reads, parsing, indexing, and matching together on IO.
+        return parseListing(response.body.decodeToString())
     }
 
     companion object {
@@ -143,51 +140,59 @@ class LibretroThumbnails(
 
 /** Image names in an Apache directory listing, decoded, without `.png`. */
 internal fun parseListing(html: String): List<String> =
-    Regex("""href="([^"?/][^"]*\.png)"""")
-        .findAll(html)
+    LISTING_LINK.findAll(html)
         .map { decodeSegment(it.groupValues[1]).removeSuffix(".png") }
         .distinct()
         .toList()
 
 /**
- * The listing name for a ROM. [fileName] named as No-Intro names it matches
+ * The listing names for a ROM. A filename named as No-Intro names it matches
  * as it is. Otherwise the title must match, and the release whose region the
  * file names wins, then USA, World, Europe, and Japan. A clean release beats
- * a revision, beta, or demo of the same region.
+ * a revision, beta, or demo of the same region. Built once per system listing;
+ * each lookup normalizes only the query and ranks that title's releases.
  */
-internal fun bestThumbnail(names: List<String>, fileName: String?, title: String): String? =
-    rankedThumbnails(names, fileName, title).firstOrNull()
+internal class ThumbnailIndex(names: List<String>) {
+    private val exactNames = names.toHashSet()
+    private val byTitle = names.groupBy(::matchKey)
 
-/** Every listing name for the ROM, best first, by the rules of [bestThumbnail]. */
-internal fun rankedThumbnails(names: List<String>, fileName: String?, title: String): List<String> {
-    val stem = fileName?.let(::fileStem)
-    val exact = stem?.let(::libretroSafe)?.takeIf { it in names }
-    val key = matchKey(stem ?: title).ifEmpty { matchKey(title) }
-    if (key.isEmpty()) return listOfNotNull(exact)
-    val candidates = names.filter { matchKey(it) == key }
-        .ifEmpty { if (stem != null) names.filter { matchKey(it) == matchKey(title) } else emptyList() }
-    val wanted = regionsIn(stem.orEmpty()) + DEFAULT_REGIONS
-    val ranked = candidates.sortedWith(
-        compareBy<String>(
-            { name -> regionsIn(name).minOfOrNull { region -> wanted.indexOf(region).takeIf { it >= 0 } ?: wanted.size } ?: wanted.size },
-            { name -> if (UNOFFICIAL.containsMatchIn(name)) 1 else 0 },
-            { name -> name.length },
-        ),
-    )
-    return listOfNotNull(exact) + (ranked - setOfNotNull(exact))
+    /** Covers need only the best name; an exact filename avoids ranking other releases. */
+    fun best(fileName: String?, title: String): String? {
+        fileName?.let(::fileStem)?.let(::libretroSafe)?.takeIf { it in exactNames }?.let { return it }
+        return ranked(fileName, title).firstOrNull()
+    }
+
+    /** Every matching release, in listing order when region, status, and length tie. */
+    fun ranked(fileName: String?, title: String): List<String> {
+        val stem = fileName?.let(::fileStem)
+        val exact = stem?.let(::libretroSafe)?.takeIf { it in exactNames }
+        val key = matchKey(stem ?: title).ifEmpty { matchKey(title) }
+        if (key.isEmpty()) return listOfNotNull(exact)
+        val candidates = byTitle[key].orEmpty()
+            .ifEmpty { if (stem != null) byTitle[matchKey(title)].orEmpty() else emptyList() }
+        val wanted = regionsIn(stem.orEmpty()) + DEFAULT_REGIONS
+        val ranked = candidates.sortedWith(
+            compareBy<String>(
+                { name -> regionsIn(name).minOfOrNull { region -> wanted.indexOf(region).takeIf { it >= 0 } ?: wanted.size } ?: wanted.size },
+                { name -> if (UNOFFICIAL.containsMatchIn(name)) 1 else 0 },
+                { name -> name.length },
+            ),
+        )
+        return listOfNotNull(exact) + (ranked - setOfNotNull(exact))
+    }
 }
 
 /** The title alone, for comparing: tags cut, articles dropped, letters and digits only. */
 internal fun matchKey(name: String): String {
     val cut = name.indexOfAny(charArrayOf('(', '[')).let { if (it > 0) name.substring(0, it) else name }
     return cut.lowercase()
-        .replace(Regex(""",\s*(the|a|an)\b"""), " ")
-        .replace(Regex("""^(the|a|an)\s+"""), "")
-        .replace(Regex("[^a-z0-9]+"), "")
+        .replace(TRAILING_ARTICLE, " ")
+        .replace(LEADING_ARTICLE, "")
+        .replace(NON_TITLE, "")
 }
 
 /** The server writes these characters as `_` in an image name. */
-internal fun libretroSafe(name: String): String = name.replace(Regex("""[&*/:`<>?\\|"]"""), "_")
+internal fun libretroSafe(name: String): String = name.replace(UNSAFE_NAME, "_")
 
 private fun fileStem(fileName: String): String {
     val dot = fileName.lastIndexOf('.')
@@ -209,10 +214,10 @@ private val UNOFFICIAL = Regex("""\((Rev [^)]*|Beta[^)]*|Demo[^)]*|Proto[^)]*|Sa
 
 /** The regions a name's tags name: "(USA, Europe)" is both, "(U)" is USA. */
 private fun regionsIn(name: String): List<String> =
-    Regex("""\(([^)]*)\)""").findAll(name).flatMap { group ->
+    REGION_TAG.findAll(name).flatMap { group ->
         group.groupValues[1].split(',').map { it.trim() }
     }.mapNotNull { tag ->
-        REGION_CODES[tag] ?: tag.takeIf { it in setOf("USA", "World", "Europe", "Japan", "Korea", "Asia", "Australia") }
+        REGION_CODES[tag] ?: tag.takeIf { it in REGIONS }
     }.toList()
 
 private fun segment(text: String): String =
@@ -220,3 +225,12 @@ private fun segment(text: String): String =
 
 private fun decodeSegment(text: String): String =
     URLDecoder.decode(text.replace("+", "%2B"), StandardCharsets.UTF_8)
+
+private val LISTING_FILE_UNSAFE = Regex("[^A-Za-z0-9]+")
+private val LISTING_LINK = Regex("""href="([^"?/][^"]*\.png)"""")
+private val TRAILING_ARTICLE = Regex(""",\s*(the|a|an)\b""")
+private val LEADING_ARTICLE = Regex("""^(the|a|an)\s+""")
+private val NON_TITLE = Regex("[^a-z0-9]+")
+private val UNSAFE_NAME = Regex("""[&*/:`<>?\\|"]""")
+private val REGION_TAG = Regex("""\(([^)]*)\)""")
+private val REGIONS = setOf("USA", "World", "Europe", "Japan", "Korea", "Asia", "Australia")

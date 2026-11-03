@@ -44,14 +44,14 @@ class LibretroThumbnailsTest {
                 "Legend of Zelda, The - Ocarina of Time 3D (USA) (En,Fr,Es) (Rev 1)",
             "Luigi's Mansion (USA).cci" to "Luigi's Mansion (USA)",
         )
-        cases.forEach { (file, name) -> assertEquals(file, name, bestThumbnail(listing, file, "")) }
+        cases.forEach { (file, name) -> assertEquals(file, name, ThumbnailIndex(listing).best(file, "")) }
     }
 
     @Test
     fun aFileFromEuropePrefersTheEuropeanBox() {
         assertEquals(
             "Kid Icarus - Uprising (Europe) (En,Fr,De,Es,It)",
-            bestThumbnail(listing, "Kid Icarus - Uprising (Europe).cci", ""),
+            ThumbnailIndex(listing).best("Kid Icarus - Uprising (Europe).cci", ""),
         )
     }
 
@@ -59,10 +59,10 @@ class LibretroThumbnailsTest {
     fun aTitleAloneMatchesWithTheArticleInFront() {
         assertEquals(
             "Legend of Zelda, The - Ocarina of Time 3D (USA) (En,Fr,Es)",
-            bestThumbnail(listing, null, "The Legend of Zelda - Ocarina of Time 3D"),
+            ThumbnailIndex(listing).best(null, "The Legend of Zelda - Ocarina of Time 3D"),
         )
-        assertNull(bestThumbnail(listing, null, "Tetris DS"))
-        assertNull(bestThumbnail(listing, "Mansion.cci", "Mansion"))
+        assertNull(ThumbnailIndex(listing).best(null, "Tetris DS"))
+        assertNull(ThumbnailIndex(listing).best("Mansion.cci", "Mansion"))
     }
 
     @Test
@@ -117,6 +117,48 @@ class LibretroThumbnailsTest {
     @Test
     fun anApacheListingParsesToNames() {
         assertEquals(listOf("Luigi's Mansion (USA)", "Super Mario 3D Land (USA) (En,Fr,Es)"), parseListing(page()))
+    }
+
+    @Test
+    fun indexedRankingMatchesTheOriginalForTheExistingListingAndEdgeCases() {
+        val names = listing + listOf(
+            "Test (USA)", "Test (USA) (Beta)", "Test (USA) (Rev 1)", "Test (World)",
+            "Test (E)", "Test (Japan)", "Test (Korea)", "Test (Asia)", "Test (Australia)",
+            "Test (USA, Europe)", "Test (UE)", "Test (JU)", "Test [Hack]", "Test (Demo)",
+            "Test (Proto)", "Test (Sample)", "Test (Kiosk)", "Test (USA)", "", "___", "[Tag]",
+        )
+        val index = ThumbnailIndex(names)
+        val files = names.map { "$it.cci" } + listOf(null, "", "not found.cci", "The Test (J).zip", "!!!.rom", "path/file.nds")
+        val titles = listOf("", "Test", "The Test", "Test, The", "Luigi's Mansion", "No match", "!!!")
+        for (file in files) for (title in titles) {
+            val expected = legacyRankedThumbnails(names, file, title)
+            assertEquals("file=$file title=$title", expected, index.ranked(file, title))
+            assertEquals("cover file=$file title=$title", expected.firstOrNull(), index.best(file, title))
+        }
+        assertEquals(
+            listOf("Kid Icarus - Uprising (USA) (En,Fr,Es)", "Kid Icarus - Uprising (Europe) (En,Fr,De,Es,It)"),
+            index.ranked("Kid Icarus- Uprising.cci", ""),
+        )
+    }
+
+    @Test
+    fun aListingReadFromDiskAndItsMatchingStayOffTheCallingThread() = runBlocking {
+        val dir = Files.createTempDirectory("libretro-thread").toFile()
+        File(dir, "Nintendo_Nintendo_3DS.txt").writeText(listing.joinToString("\n"))
+        val caller = Thread.currentThread()
+        val trackedDir = object : File(dir.path) {
+            override fun getPath(): String {
+                check(Thread.currentThread() !== caller) { "Listing I/O on the caller" }
+                return super.getPath()
+            }
+        }
+        val source = LibretroThumbnails(FakeHttp(emptyMap()), trackedDir)
+        assertEquals(
+            "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%203DS/Named_Boxarts/Luigi%27s%20Mansion%20%28USA%29.png",
+            source.find(ArtQuery("k", "Luigi's Mansion", "nintendo-3ds"))?.cover,
+        )
+        dir.deleteRecursively()
+        Unit
     }
 
     private fun page(): String = """

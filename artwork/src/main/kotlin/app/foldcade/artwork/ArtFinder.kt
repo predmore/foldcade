@@ -1,5 +1,7 @@
 package app.foldcade.artwork
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +32,13 @@ class ArtFinder(
     private val gate = Semaphore(PARALLEL)
     private val perKey = ConcurrentHashMap<String, Mutex>()
 
-    /** What is already known for [query], with no lookup. */
+    /** Restore persisted hits before showing partial art while a network lookup continues. */
+    suspend fun restore() {
+        index.restore()
+        scenes.restore()
+    }
+
+    /** What is already known in memory for [query], with no I/O. */
     fun cached(query: ArtQuery): ArtSet? = if (enabled()) index.hit(query.cacheKey)?.let(::artSetOf) else null
 
     suspend fun find(query: ArtQuery): ArtSet? = lookUp(index, query) { available, _ ->
@@ -44,7 +52,7 @@ class ArtFinder(
         Answer(null, failed)
     }?.let(::artSetOf)
 
-    /** The scene already known for [query], with no lookup. */
+    /** The scene already known in memory for [query], with no I/O. */
     fun cachedScene(query: ArtQuery): ArtScene? = if (enabled()) scenes.hit(query.cacheKey)?.let(::sceneOf) else null
 
     /**
@@ -67,7 +75,7 @@ class ArtFinder(
     }?.let(::sceneOf)
 
     /** Misses and incomplete scenes are asked again, without discarding useful artwork. */
-    fun forgetMisses() {
+    suspend fun forgetMisses() {
         index.forgetMisses()
         scenes.forgetMisses(retryHits = true)
     }
@@ -89,20 +97,20 @@ class ArtFinder(
         query: ArtQuery,
         partial: (List<String>) -> Boolean = { false },
         ask: suspend (List<ArtSource>, List<String>?) -> Answer,
-    ): List<String>? {
-        if (!enabled()) return null
+    ): List<String>? = withContext(Dispatchers.IO) {
+        if (!enabled()) return@withContext null
         // A deliberate match gets first say among public sources, then the usual fallbacks.
         val available = sources().filter { it.handles(query) }.let { all ->
             if (query.steamGridDbGameId == null) all else all.sortedBy { if (it is SteamGridDb) 0 else 1 }
         }
         val sourceIds = available.map { it.id }
         when (val known = store.lookup(query.cacheKey, sourceIds, partial)) {
-            is ArtIndex.Known.Hit -> return known.fields
-            ArtIndex.Known.Miss -> return null
+            is ArtIndex.Known.Hit -> return@withContext known.fields
+            ArtIndex.Known.Miss -> return@withContext null
             null -> Unit
         }
         // The hero and its tile ask at once. The second waits, then reads what the first found.
-        return perKey.computeIfAbsent("${store.file.name}\u0000${query.cacheKey}") { Mutex() }.withLock {
+        perKey.computeIfAbsent("${store.file.name}\u0000${query.cacheKey}") { Mutex() }.withLock {
             when (val known = store.lookup(query.cacheKey, sourceIds, partial)) {
                 is ArtIndex.Known.Hit -> known.fields
                 ArtIndex.Known.Miss -> null
@@ -165,7 +173,11 @@ class ArtIndex(
     private val entries = ConcurrentHashMap<String, Entry>()
     private var lines = 0
 
-    init {
+    @Volatile private var loaded = false
+
+    /** Called only under this index's monitor on IO. Cached reads never open a file. */
+    private fun load() {
+        if (loaded) return
         if (file.isFile) {
             file.forEachLine { line ->
                 lines++
@@ -189,11 +201,19 @@ class ArtIndex(
                 }
             }
         }
+        loaded = true
     }
 
+    /** In-memory art only; [lookup] restores persisted entries off the caller's dispatcher. */
     fun hit(key: String): List<String>? = entries[key]?.fields
 
-    fun lookup(key: String, sources: List<String>? = null, partial: (List<String>) -> Boolean = { false }): Known? {
+    suspend fun restore() {
+        if (loaded) return
+        withContext(Dispatchers.IO) { synchronized(this@ArtIndex) { load() } }
+    }
+
+    suspend fun lookup(key: String, sources: List<String>? = null, partial: (List<String>) -> Boolean = { false }): Known? {
+        restore()
         val entry = entries[key] ?: return null
         val fields = entry.fields
         if (fields != null) {
@@ -205,21 +225,25 @@ class ArtIndex(
         return if (clock() - entry.savedAt < ArtFinder.MISS_MAX_AGE_MS) Known.Miss else null
     }
 
-    @Synchronized
-    fun put(key: String, fields: List<String>?, sources: List<String> = emptyList(), partial: Boolean = false, retry: Boolean = false) {
-        val entry = Entry(fields, clock(), if (fields == null || partial) sources else emptyList(), partial, retry)
-        entries[key] = entry
-        file.parentFile?.mkdirs()
-        file.appendText(lineOf(key, entry))
-        lines++
-        if (lines > COMPACT_FLOOR && lines > entries.size * 2) rewrite()
+    suspend fun put(key: String, fields: List<String>?, sources: List<String> = emptyList(), partial: Boolean = false, retry: Boolean = false) = withContext(Dispatchers.IO) {
+        synchronized(this@ArtIndex) {
+            load()
+            val entry = Entry(fields, clock(), if (fields == null || partial) sources else emptyList(), partial, retry)
+            entries[key] = entry
+            file.parentFile?.mkdirs()
+            file.appendText(lineOf(key, entry))
+            lines++
+            if (lines > COMPACT_FLOOR && lines > entries.size * 2) rewrite()
+        }
     }
 
-    @Synchronized
-    fun forgetMisses(retryHits: Boolean = false) {
-        entries.entries.removeIf { it.value.fields == null }
-        if (retryHits) entries.replaceAll { _, entry -> if (entry.partial) entry.copy(retry = true) else entry }
-        rewrite()
+    suspend fun forgetMisses(retryHits: Boolean = false) = withContext(Dispatchers.IO) {
+        synchronized(this@ArtIndex) {
+            load()
+            entries.entries.removeIf { it.value.fields == null }
+            if (retryHits) entries.replaceAll { _, entry -> if (entry.partial) entry.copy(retry = true) else entry }
+            rewrite()
+        }
     }
 
     private fun rewrite() {
