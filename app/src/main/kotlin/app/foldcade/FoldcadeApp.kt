@@ -53,7 +53,6 @@ import app.foldcade.plugins.droiddeck.DroidDeckGame
 import app.foldcade.plugins.droiddeck.DroidDeckLibrary
 import app.foldcade.plugins.droiddeck.DroidDeckPlayer
 import app.foldcade.plugins.droiddeck.droidDeckShortcutKey
-import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.plugins.moonlight.MoonlightArt
@@ -1235,10 +1234,11 @@ class FoldcadeApp : Application() {
     private suspend fun refreshGameNativeNow() {
         val library = plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary ?: return
         Shelf.gameNativeInstalled = gameNativePackagePresent()
+        val files = steamFiles
         try {
-            val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), steamFileGames)
+            val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), files.route.gameNative)
             withContext(Dispatchers.Main.immediate) {
-                if (reported.releasesRestore(steamFilesRead, store.folderTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
+                if (reported.releasesRestore(files.reported, store.folderTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
                 shell.settleGameNative()
                 shell.noteShelfChanged()
             }
@@ -1358,15 +1358,12 @@ class FoldcadeApp : Application() {
         shell.noteShelfChanged()
     }
 
-    /** Each pause invalidates the next return; the second panel's resume shares that return. */
-    private var savesOnReturn = false
+    private val homeSaveReturns = HomeSaveReturns()
 
-    internal fun noteHomePaused() { savesOnReturn = true }
+    internal fun noteHomePaused() = homeSaveReturns.notePaused()
 
-    internal fun refreshSavesOnReturn() {
-        if (!savesOnReturn) return
-        savesOnReturn = false
-        refreshFoundSaveFolders()
+    internal fun refreshSavesOnReturn(returnedFromGame: Boolean) {
+        if (homeSaveReturns.needsRefresh(returnedFromGame)) refreshFoundSaveFolders()
     }
 
     internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
@@ -1816,10 +1813,6 @@ class FoldcadeApp : Application() {
     @Volatile
     private var droidDeckPinned: List<DroidDeckGame> = emptyList()
 
-    /** DroidDeck games named by .steam files in the folders. */
-    @Volatile
-    private var droidDeckFileGames: List<DroidDeckGame> = emptyList()
-
     @Volatile
     private var droidDeckShortcutsRead = false
 
@@ -1856,13 +1849,17 @@ class FoldcadeApp : Application() {
      * Pinned games first, so a pinned game keeps DroidDeck's whole name over
      * the shortened file name. Settles once both sources have answered.
      */
-    private suspend fun publishDroidDeck() {
-        val library = plugins.library(DroidDeckLibrary.ID) as? DroidDeckLibrary ?: return
-        library.replaceGames(droidDeckPinned + droidDeckFileGames)
+    private val droidDeckPublish = Mutex()
+
+    private suspend fun publishDroidDeck(): Unit = droidDeckPublish.withLock {
+        val library = plugins.library(DroidDeckLibrary.ID) as? DroidDeckLibrary ?: return@withLock
+        val files = steamFiles
+        val pinsRead = droidDeckShortcutsRead
+        library.replaceGames(droidDeckPinned + files.route.droidDeck)
         Shelf.droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE)
         Shelf.droidDeckGames = plugins.droidDeckShelfGames()
         // With no folder there is no scan to wait for.
-        val settled = droidDeckShortcutsRead && (steamFilesRead || store.folderTrees().isEmpty())
+        val settled = pinsRead && (files.reported || store.folderTrees().isEmpty())
         withContext(Dispatchers.Main.immediate) {
             if (settled) {
                 if (Shelf.droidDeckInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("droiddeck"))
@@ -2012,35 +2009,28 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /** The GameNative games named by .steam files in the folders. They join the GameNative catalog. */
+    /** Routed games and their completed-folder report travel together, including across an in-flight shortcut read. */
     @Volatile
-    private var steamFileGames: List<CatalogGame> = emptyList()
-
-    /** The .steam files the last finished scan found, before they are routed. */
-    @Volatile
-    private var steamFiles: List<SteamShortcut> = emptyList()
-
-    @Volatile
-    private var steamFilesRead = false
+    private var steamFiles = SteamFileReport()
 
     private suspend fun useSteamFiles(found: List<SteamShortcut>) {
         shelfPinsReady.await()
-        val firstReport = !steamFilesRead
-        steamFiles = found
-        steamFilesRead = true
-        routeSteamFiles(refreshPcCatalog = firstReport)
+        routeSteamFiles(found)
     }
 
     /** Splits the .steam files between GameNative and DroidDeck. See [routeSteamFiles]. */
-    private suspend fun routeSteamFiles(refreshPcCatalog: Boolean = false) {
+    private val steamRouting = Mutex()
+
+    private suspend fun routeSteamFiles(found: List<SteamShortcut>? = null): Unit = steamRouting.withLock {
+        val before = steamFiles
+        val files = found ?: before.files
         val route = routeSteamFiles(
-            steamFiles,
+            files,
             gameNativeInstalled = gameNativePackagePresent(),
             droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE),
         )
-        droidDeckFileGames = route.droidDeck
-        if (refreshPcCatalog || route.gameNative != steamFileGames) {
-            steamFileGames = route.gameNative
+        steamFiles = SteamFileReport(files, route, found != null || before.reported)
+        if (!before.reported || route.gameNative != before.route.gameNative) {
             refreshGameNative()
         }
         publishDroidDeck()
@@ -2401,7 +2391,7 @@ class FoldcadeApp : Application() {
     private fun openPlatformId(libraryId: String, platformId: String): Job {
         val ticket = libraryTicket.incrementAndGet()
         return pluginLoad.launch {
-            pluginsReady.await()
+            playersLoaded.await()
             if (ticket != libraryTicket.get()) return@launch
             withContext(Dispatchers.Main.immediate) {
                 if (ticket == libraryTicket.get()) shell.showLoading(insidePlatform = true)
@@ -2572,7 +2562,7 @@ class FoldcadeApp : Application() {
                     perfMark("library-published games=${games.size}")
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
-                LoadedLibrary.NoPlatforms -> if (steamFiles.isNotEmpty() && folderReported) {
+                LoadedLibrary.NoPlatforms -> if (steamFiles.files.isNotEmpty() && folderReported) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome()
                 } else {

@@ -727,7 +727,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
-        foldcade.refreshSavesOnReturn()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         // Usage access may have changed while Home was away, and without it no game reads Paused.
@@ -740,6 +739,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val leftPlayer = foldcade.externalPlay.packageName.takeIf { ending }
         if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         val returned = ending && foldcade.externalPlay.sessionId == null
+        // A companion resume (lid, Move) can have consumed the pause while the game was still open.
+        foldcade.refreshSavesOnReturn(returnedFromGame = returned)
         // Back here without the Home button: the player closed the game itself, so it is not paused.
         if (returned && leftPlayer != null && foldcade.homeRecalledOn != displayId) foldcade.runningGames.forget(leftPlayer)
         if (foldcade.homeRecalledOn != displayId) {

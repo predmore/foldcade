@@ -6,6 +6,19 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 
+/** A companion resume may consume a pause while a game is still open; its actual return always checks saves. */
+internal class HomeSaveReturns {
+    private var paused = false
+
+    fun notePaused() { paused = true }
+
+    fun needsRefresh(returnedFromGame: Boolean): Boolean {
+        val refresh = paused || returnedFromGame
+        paused = false
+        return refresh
+    }
+}
+
 /** Shares a recent or running folder walk between both Home activities. Reload bypasses the limit. */
 internal class FolderRefreshes(private val intervalMillis: Long, private val now: () -> Long) {
     private var lastStarted: Long? = null

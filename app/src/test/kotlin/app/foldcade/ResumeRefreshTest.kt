@@ -5,10 +5,23 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ResumeRefreshTest {
+    @Test
+    fun aCompanionResumeCannotConsumeTheGamesActualSaveCheck() {
+        val returns = HomeSaveReturns()
+        assertFalse(returns.needsRefresh(returnedFromGame = false)) // Startup already checks.
+        returns.notePaused()
+        assertTrue(returns.needsRefresh(returnedFromGame = false)) // Lid/Move while still playing.
+        assertFalse(returns.needsRefresh(returnedFromGame = false)) // Other panel shares it.
+        assertTrue(returns.needsRefresh(returnedFromGame = true)) // Actual game return still checks.
+        assertFalse(returns.needsRefresh(returnedFromGame = false))
+    }
+
     @Test
     fun bothPanelsShareTheRunningAndRecentWalkButReloadBypassesTheInterval() {
         var now = 0L

@@ -117,6 +117,13 @@ internal data class SteamFileRoute(
     val droidDeck: List<DroidDeckGame>,
 )
 
+/** A completed folder report includes the routed lists that its restore readiness refers to. */
+internal data class SteamFileReport(
+    val files: List<SteamShortcut> = emptyList(),
+    val route: SteamFileRoute = SteamFileRoute(emptyList(), emptyList()),
+    val reported: Boolean = false,
+)
+
 /**
  * A .steam file DroidDeck synced, or one whose id only DroidDeck can start,
  * goes to DroidDeck. Any other goes to GameNative, unless DroidDeck is the
