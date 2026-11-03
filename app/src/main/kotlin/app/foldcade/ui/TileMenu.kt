@@ -89,6 +89,9 @@ internal class TileAnchor {
      */
     var slidePx by mutableFloatStateOf(0f)
 
+    /** How far the grid has slid now, in px, so a card opening while it slides back reads the tile at rest. */
+    var slid: () -> Float = { 0f }
+
     /** The focused tile's bounds in the window, in px, as drawn now, or null. */
     fun bounds(): Rect? = coordinates?.takeIf { it.isAttached }?.boundsInRoot()?.takeIf { it.width > 0f && it.height > 0f }
 
@@ -152,7 +155,13 @@ internal fun TileMenuLayer(
     var kept by remember { mutableStateOf<SidePanel?>(null) }
     if (live != null) kept = live
     // Where the tile rested when the card opened, in this layer's dp, before the grid slid aside for it.
+    // Read again each time the card opens, as when Y comes back on another tile while one still shrinks.
     var rest by remember { mutableStateOf<Rect?>(null) }
+    var wasOpen by remember { mutableStateOf(false) }
+    if (open != wasOpen) {
+        if (open) rest = null
+        wasOpen = open
+    }
     val grows = motion.tileMenuGrows(model.motionSpeed, scale)
     val progress = remember { Animatable(0f) }
     LaunchedEffect(open, grows) {
@@ -167,15 +176,12 @@ internal fun TileMenuLayer(
     }
     val shownPanel = kept ?: return
     val visible by remember { derivedStateOf { progress.value > 0f } }
-    // Still at the tile: the tile it grows from is read now, or a frame later as it takes the anchor.
-    val starting by remember { derivedStateOf { progress.value < START_READ } }
     if (!visible && !open) return
     val anchor = LocalTileAnchor.current
     val density = LocalDensity.current
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .zIndex(5f)
             .focusProperties { canFocus = false },
     ) {
         // Where this layer sits in the window, so the tile's bounds can be read in its own terms.
@@ -201,12 +207,14 @@ internal fun TileMenuLayer(
         if (rowsHeight > Dp.Hairline) androidx.compose.runtime.SideEffect { settled = true }
         // Where the tile is, in this layer's dp, read once as the card opens: the grid may slide after.
         anchor?.revision
-        if (rest == null && open && starting) {
+        if (rest == null && open) {
             rest = anchor?.bounds()?.let { bounds ->
+                // Less however far the grid has still slid, so this is the tile's own place.
+                val left = bounds.left - origin[0] - anchor.slid()
                 with(density) {
                     Rect(
-                        (bounds.left - origin[0]).toDp().value, (bounds.top - origin[1]).toDp().value,
-                        (bounds.right - origin[0]).toDp().value, (bounds.bottom - origin[1]).toDp().value,
+                        left.toDp().value, (bounds.top - origin[1]).toDp().value,
+                        (left + bounds.width).toDp().value, (bounds.bottom - origin[1]).toDp().value,
                     )
                 }
             }
@@ -382,9 +390,6 @@ internal fun cardPlace(tile: Rect?, width: Float, height: Float, screenWidth: Fl
 }
 
 private fun lerp(start: Float, end: Float, fraction: Float): Float = start + (end - start) * fraction
-
-/** How far into the grow the tile is still read, for a tile that takes the anchor a frame late. */
-private const val START_READ = 0.05f
 
 /** The share of the grow over which the card's fill comes up. */
 private const val FILL_IN = 0.35f

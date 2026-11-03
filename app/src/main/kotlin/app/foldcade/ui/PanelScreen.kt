@@ -2412,10 +2412,13 @@ private fun Picker(
     val anchor = LocalTileAnchor.current
     val slideTo = if (anchor != null && tileMenuOn(app, screen)) anchor.slidePx else 0f
     val slide = motionState(slideTo, motion.tileMenu(slideTo != 0f, model.motionSpeed, scale))
+    androidx.compose.runtime.SideEffect { anchor?.slid = { slide.value } }
     val gridOrigin = remember { floatArrayOf(0f, 0f) }
     val ringPx = with(LocalDensity.current) { ringReach().toPx() }
     val tileHole = remember(anchor, screen, ringPx) {
         {
+            // Read so the dim draws again each frame the grid slides, and its hole follows the tile.
+            slide.value
             anchor?.takeIf { tileMenuOn(app, screen) }?.bounds()?.let { bounds ->
                 val corner = anchor.cornerPx + ringPx
                 RoundRect(
