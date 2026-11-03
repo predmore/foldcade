@@ -1851,6 +1851,7 @@ class ShellController(
      * Folds one backend's games into the curated board.
      * A later scan keeps placed tiles and only fills new ones when the setting is on.
      * Every library lands on the same board. An open panel or dialog stays open.
+     * A snapshot ([settles] false) adds known games without pruning missing ones or finishing the source.
      */
     fun ingestLibrary(
         libraryId: String,
@@ -1859,15 +1860,18 @@ class ShellController(
         listedNames: Map<String, String> = emptyMap(),
         readAt: Long = deviceMark(),
         restoreReported: Boolean = true,
+        settles: Boolean = true,
     ) {
         listedPlatformNames.putAll(listedNames.filterValues { it.isNotBlank() })
         val prefix = "lib:$libraryId:"
-        if ((relisting[libraryId] ?: 0L) <= readAt) relisting.remove(libraryId)
-        // A download or delete after [readAt] is newer than what the scan saw on disk.
-        deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
+        if (settles) {
+            if ((relisting[libraryId] ?: 0L) <= readAt) relisting.remove(libraryId)
+            // A download or delete after [readAt] is newer than what the scan saw on disk.
+            deviceEdited.entries.removeAll { (id, edit) -> id.startsWith(prefix) && edit.first <= readAt }
+        }
         val items = ArrayList<HomeItem>()
         val remembered = HashMap<String, Game>()
-        sameSources.keys.removeAll { it.startsWith(prefix) }
+        if (settles) sameSources.keys.removeAll { it.startsWith(prefix) }
         for (entry in entries) {
             val game = entry.game ?: continue
             val id = homeGameId(libraryId, game.remoteKey)
@@ -1897,10 +1901,13 @@ class ShellController(
             }
             remembered[id] = deviceEdited[id]?.let { (_, availability) -> game.copy(availability = availability) } ?: game
         }
-        libraryItems = libraryItems.filterNot { it.id.startsWith(prefix) } + items
-        if (libraryId != "local-folder" && restoreReported) reportRestoreSources(setOf(libraryId))
-        settledLibraries += libraryId
-        libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
+        val replaced = if (settles) emptySet() else items.mapTo(HashSet()) { it.id }
+        libraryItems = libraryItems.filterNot { if (settles) it.id.startsWith(prefix) else it.id in replaced } + items
+        if (settles) {
+            if (libraryId != "local-folder" && restoreReported) reportRestoreSources(setOf(libraryId))
+            settledLibraries += libraryId
+            libraryGames.keys.filter { it.startsWith(prefix) }.toList().forEach { libraryGames.remove(it) }
+        }
         libraryGames.putAll(remembered)
         extraPlatforms = platforms.map { platform ->
             HomePlatform(

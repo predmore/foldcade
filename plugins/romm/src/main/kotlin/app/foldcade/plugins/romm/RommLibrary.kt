@@ -57,6 +57,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
@@ -66,6 +67,7 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -79,6 +81,16 @@ import kotlinx.serialization.json.put
 
 /** A cached offline listing may fill Home, but cannot release newly restored places. */
 fun rommCatalogLive(library: LibraryBackend?): Boolean = (library as? RommLibrary)?.liveCatalog == true
+
+/** A device-owned snapshot, never evidence that a restored source has reported live. */
+data class RommCatalogSnapshot(val platforms: List<ListedPlatform>, val games: List<Game>)
+
+/** Publishes saved games before any network wait, then flushes metadata once after [refresh]. */
+suspend fun <T> refreshRommCatalog(
+    library: LibraryBackend?,
+    cached: suspend (RommCatalogSnapshot) -> Unit,
+    refresh: suspend () -> T,
+): T = if (library is RommLibrary) library.refreshCatalog(cached, refresh) else refresh()
 
 internal class RommLibrary internal constructor(
     private val gate: RommGate,
@@ -155,10 +167,44 @@ internal class RommLibrary internal constructor(
     private val romLocks = ConcurrentHashMap<Long, Mutex>()
     /** One ROM's file at a time: a download, a launch's check of it, or a delete. */
     private val fileLocks = ConcurrentHashMap<Long, Mutex>()
+    private val refreshLock = Mutex()
     @Volatile private var offlineCatalog = false
     /** True only while every part of the current catalog listing came from the server. */
     @Volatile var liveCatalog = false
         private set
+
+    internal suspend fun <T> refreshCatalog(
+        cached: suspend (RommCatalogSnapshot) -> Unit,
+        refresh: suspend () -> T,
+    ): T = refreshLock.withLock {
+        // A local credential is still required. Opening a session sends no request;
+        // connect below retains the heartbeat/device gate before any pending save sync.
+        gate.call { wiring, _ ->
+            val catalog = gate.catalog(wiring)
+            liveCatalog = false
+            catalog.beginRefresh()
+            try {
+                val snapshot = runInterruptible(Dispatchers.IO) {
+                    if (!catalog.hasPlatforms()) null else {
+                        val platforms = catalog.platforms()
+                        val games = platforms.flatMap { platform ->
+                            // An interrupted first listing of another system must not
+                            // hide systems whose complete listings are already saved.
+                            if (platform.romCount <= 0) emptyList() else catalog.listing(platform.id).orEmpty().map {
+                                // Reading ROM bytes here could delay pending save sync by minutes.
+                                it.toGame(wiring.romRoot, wiring.platforms, verifyBytes = false)
+                            }
+                        }
+                        RommCatalogSnapshot(platforms.map { it.toListedPlatform(wiring) }, games)
+                    }
+                }
+                if (snapshot != null) cached(snapshot)
+                refresh()
+            } finally {
+                withContext(NonCancellable + Dispatchers.IO) { catalog.finishRefresh() }
+            }
+        }
+    }
 
     @Volatile
     private var listener: GameActivityListener? = null
@@ -229,7 +275,7 @@ internal class RommLibrary internal constructor(
      * background, so a slow server does not hold the library open.
      */
     override suspend fun connect() {
-        liveCatalog = true
+        liveCatalog = false
         val catalog = gate.restoreCatalog()
         offlineCatalog = false
         try {
@@ -243,6 +289,7 @@ internal class RommLibrary internal constructor(
             offlineCatalog = true
             return
         }
+        liveCatalog = true
         val wiring = gate.wiring()
         try {
             runInterruptible(Dispatchers.IO) { dropLegacyCache(wiring.cacheRoot, wiring.dataRoot, wiring.romRoot) }
@@ -295,14 +342,14 @@ internal class RommLibrary internal constructor(
             offlineCatalog = true
             catalog.platforms()
         }
-        return platforms.map { platform ->
-            ListedPlatform(
-                platformId = alignedPlatformId(wiring.platforms, platform.slug),
-                displayName = platform.displayName,
-                gameCount = platform.romCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
-            )
-        }
+        return platforms.map { it.toListedPlatform(wiring) }
     }
+
+    private fun app.foldcade.romm.PlatformSummary.toListedPlatform(wiring: RommWiring) = ListedPlatform(
+        platformId = alignedPlatformId(wiring.platforms, slug),
+        displayName = displayName,
+        gameCount = romCount.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
+    )
 
     override suspend fun listGames(platformId: String, query: GameQuery): GamePage {
         val wiring = gate.wiring()
@@ -1492,17 +1539,19 @@ internal fun alignedPlatformId(definitions: Iterable<Platform>, slug: String): S
 internal fun RomSummary.toGame(
     cacheRoot: Path,
     definitions: Iterable<Platform>,
+    verifyBytes: Boolean = true,
 ): Game = Game(
     backendId = ROMM_LIBRARY_ID,
     remoteKey = id.toString(),
     platformId = alignedPlatformId(definitions, platformSlug),
-    availability = cacheAvailability(cacheRoot, this),
+    availability = cacheAvailability(cacheRoot, this, verifyBytes),
     label = name?.takeIf { it.isNotBlank() } ?: fsName,
     // RomM's own figure for the whole ROM, as its web page shows it.
     sizeBytes = fsSizeBytes.takeIf { it > 0 },
 )
 
-internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
+/** The early snapshot uses small verified markers; live listings still verify the ROM bytes. */
+internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary, verifyBytes: Boolean = true): Availability {
     val spec = rom.bytes()
     val target = RommClient.romCacheFile(cacheRoot, rom.id, spec.fileName, spec.fileIds)
     val files = listOf(target to (spec.expectedSize to spec.md5)) + spec.addOns.map { addOn ->
@@ -1512,7 +1561,8 @@ internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary): Availability {
     val whole = files.all { (file, expected) ->
         Files.isRegularFile(file) &&
             !Files.exists(file.resolveSibling(file.fileName.toString() + ".partial")) &&
-            localRomMatches(file, expected.first, expected.second)
+            (if (verifyBytes) localRomMatches(file, expected.first, expected.second)
+            else RommClient.isVerifiedRom(file, expected.first, expected.second))
     }
     return if (whole) Availability.Cached else Availability.RemoteOnly
 }
