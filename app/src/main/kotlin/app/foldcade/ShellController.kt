@@ -1525,7 +1525,7 @@ class ShellController(
             cancelHomeReturn()
             return
         }
-        val landed = focusGridId(id) ||
+        val landed = focusGridId(id, leftmost = true) ||
             (app.foldcade.language.homeLanding(home.board, id) != null && showOnHome(id, burst = false))
         // Home on the free screen leaves the game running on the other one.
         cancelHomeReturn(keepSaved = landed && tileIds(id).any(store.session::runs))
@@ -1545,7 +1545,7 @@ class ShellController(
         }
     }
 
-    private fun focusGridId(id: String): Boolean {
+    private fun focusGridId(id: String, leftmost: Boolean = false): Boolean {
         val index = when {
             model.libraryGrid && model.gridKind == GridKind.Games -> displayOrder(model).indexOfFirst { source ->
                 entries.getOrNull(source)?.game?.let { tileOf(homeGameId(it.backendId, it.remoteKey)) } == id
@@ -1554,7 +1554,8 @@ class ShellController(
             else -> -1
         }
         if (index < 0) return false
-        publish(model.copy(focus = GridFocus(cellIndex = index, lastColumn = GridStrip.column(index))))
+        publish(model.copy(firstColumn = if (leftmost) 0 else model.firstColumn,
+            focus = GridFocus(cellIndex = index, lastColumn = GridStrip.column(index))))
         return true
     }
 
@@ -2556,15 +2557,16 @@ class ShellController(
     }
 
     /**
-     * The screens changed hands. A game's About page stays only while its screen still shows
+     * The screens changed hands. Republish so displaced pages can return without another key.
+     * A game's About page stays only while its screen still shows
      * Foldcade's grid or hero: a game there covers it, a command center there takes its keys, and
      * the dark screen draws nothing.
      */
     fun noteSessionChanged() {
-        val page = model.gameAbout ?: return
+        val page = model.gameAbout
         val session = store.session
-        val panel = page.screen.panel()
-        if (!session.draws(panel) || session.surfaceOn(panel) == Surface.CommandCenter) publish(model.copy(gameAbout = null, focus = page.grid))
+        val covered = page?.takeIf { !session.draws(it.screen.panel()) || session.surfaceOn(it.screen.panel()) == Surface.CommandCenter }
+        publish(covered?.let { model.copy(gameAbout = null, focus = it.grid) } ?: model)
     }
 
     /** The game a page about [gameId] shows: the tile it is now, as Home shows it. Null once no library lists it. */
@@ -3599,8 +3601,8 @@ class ShellController(
     }
 
     private fun publish(requested: PickerModel) {
-        // The other screen changes at once. A page open now stays where it is until it closes,
-        // unless no screen Foldcade draws is left for it: it would sit under a game, taking keys.
+        // Layout changes at once. The model setter keeps pages on a shown screen and returns
+        // them to their preferred screen when it is free again.
         if (requested.layout != model.layout) store.update { it.withLayout(requested.layout) }
         val next = if (requested.layout != model.layout && Panel.entries.none(store.session::draws)) {
             requested.copy(settings = null, playActivity = null, gameAbout = null, panel = null, focus = requested.settings?.grid ?: requested.gameAbout?.grid ?: requested.focus)
@@ -3712,7 +3714,14 @@ class ShellController(
         model = model.copy(pills = shown, focus = if (shown) model.focus else model.focus.copy(chrome = null))
     }
 
+    private var shownBoardView = Triple(home.board.openFolderId, home.board.allOpen, home.board.foldersOpen)
+
     private fun showBoard(focus: GridFocus, keepDialog: Boolean) {
+        val view = Triple(home.board.openFolderId, home.board.allOpen, home.board.foldersOpen)
+        val changedView = view != shownBoardView || model.libraryGrid || model.homeGrid != HomeGrid.StandIns
+        shownBoardView = view
+        // A child's strip position and a view's Undo belong to the view the player just left.
+        if (changedView) undo = null
         val count = home.visibleCount()
         // An empty slot past the last tile keeps the cursor, as it does on the strip.
         val cell = focus.cellIndex.coerceIn(0, (GridStrip.reach(count) - 1).coerceAtLeast(0))
@@ -3725,6 +3734,7 @@ class ShellController(
                 hold = null,
                 order = emptyList(),
                 count = count,
+                firstColumn = if (changedView) 0 else model.firstColumn,
                 focus = GridFocus(
                     cellIndex = cell,
                     lastColumn = if (count == 0) 0 else GridStrip.column(cell),

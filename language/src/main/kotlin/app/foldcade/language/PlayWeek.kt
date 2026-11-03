@@ -94,6 +94,11 @@ object PlayCopy {
     const val export = "Export"
     const val import = "Import"
     const val exported = "Saved."
+    fun exported(folder: String?, name: String?): String = when {
+        !folder.isNullOrBlank() -> "Saved to $folder."
+        !name.isNullOrBlank() -> "Saved as $name."
+        else -> exported
+    }
     const val notSaved = "The file couldn't be saved."
     const val updated = "Updated"
 

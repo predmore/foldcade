@@ -15,9 +15,10 @@ class RestartActivity : Activity() {
         super.onCreate(savedInstanceState)
         // Long enough for the old process to have gone, so Home starts in a new one.
         Handler(Looper.getMainLooper()).postDelayed({
-            startActivity(
+            startOnDisplay(
                 Intent(this, PrimaryHomeActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),
+                android.view.Display.DEFAULT_DISPLAY, multipleTask = false,
             )
             finish()
             Runtime.getRuntime().exit(0)

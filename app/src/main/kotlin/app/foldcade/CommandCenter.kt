@@ -156,6 +156,13 @@ class CommandCenter(
         val session = store.session
         if (session.surfaceOn(panel) == Surface.CommandCenter) {
             touch(panel)
+            // Start is the global Settings key. Make this panel available to its page and let
+            // the shell handle it, keeping the focused game and grid position behind the page.
+            if (meaning == Meaning.Menu) {
+                listOn = null
+                store.update { it.browse(panel) }
+                return false
+            }
             if (listOn == panel) {
                 val last = (achievements(panel)?.achievements?.lastIndex ?: 0).coerceAtLeast(0)
                 when (meaning) {

@@ -215,6 +215,8 @@ data class DialogState(
     val detail: String? = null,
     /** What the dialog is about, such as the computer a pairing dialog names. */
     val subject: String? = null,
+    /** Where its opener put it, retained while an occupied screen displaces it. */
+    val preferredScreen: HostScreen = screen,
 )
 
 /** One of Moonlight's computers, for its Settings › Library switch. [key] is its lower-case UUID. */
