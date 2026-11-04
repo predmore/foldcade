@@ -154,7 +154,7 @@ class SettingsTilesTest {
     @Test
     fun tilesMoveInTwoDirectionsAndTheRowsUnderThemInOne() {
         val rows = settingsRows(SettingsCategory.Library, library)
-        // RomM, two folders, the computer, and Add; then Sync games, Game art, SteamGridDB.
+        // RomM, two folders, the computer, and Add; then Sync games, Find games, Game art, SteamGridDB.
         assertEquals(
             listOf(
                 Row.RommConnection("romm", "RomM"),
@@ -163,6 +163,7 @@ class SettingsTilesTest {
                 Row.SettingsTile(SettingsInner.Host(gameWin.key)),
                 Row.SettingsTile(SettingsInner.Add),
                 Row.SyncLibrary,
+                Row.FindGames,
                 Row.Artwork,
                 Row.ArtKey,
             ),
@@ -181,7 +182,7 @@ class SettingsTilesTest {
         assertEquals(5, settingsFocusIndex(rows, 4, Meaning.MoveDown))
         assertEquals(4, settingsFocusIndex(rows, 5, Meaning.MoveUp))
         assertEquals(6, settingsFocusIndex(rows, 5, Meaning.MoveDown))
-        assertEquals(7, settingsFocusIndex(rows, 7, Meaning.MoveDown))
+        assertEquals(8, settingsFocusIndex(rows, 8, Meaning.MoveDown))
 
         val model = onCategory(library, SettingsCategory.Library)
         assertEquals(Row.SyncLibrary, settingsFocus(model.press(Meaning.MoveDown, Meaning.MoveDown)))

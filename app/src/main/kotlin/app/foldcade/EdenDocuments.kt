@@ -37,16 +37,26 @@ internal object EdenFolders {
 internal class EdenFolderReader(
     private val context: Context,
     private val chosenFolder: (packageName: String) -> String?,
+    private val foundFolder: () -> String? = { null },
 ) {
     fun granted(packageName: String): Uri? {
-        val chosen = chosenFolder(packageName)?.let(Uri::parse) ?: return null
-        if (chosen.authority != EdenFolders.authority(packageName) || !EdenFolders.isRoot(chosen)) return null
+        val chosen = (chosenFolder(packageName) ?: foundFolder())?.let(Uri::parse) ?: return null
+        val id = try { folderDocumentId(chosen.toString()) } catch (_: IllegalArgumentException) { return null }
+        if (!edenDataRoot(packageName, chosen.authority, id)) return null
         val held = context.contentResolver.persistedUriPermissions.any { permission ->
             folderGrantUri(permission.uri.toString()) == folderGrantUri(chosen.toString()) && permission.isReadPermission && permission.isWritePermission
         }
         return chosen.takeIf { held }
     }
 }
+
+/** The provider root and its exact external-files directory refer to the same Eden data. */
+internal fun edenDataRoot(packageName: String, authority: String?, documentId: String): Boolean =
+    packageName in EDEN_PACKAGES && when (authority) {
+        EdenFolders.authority(packageName) -> documentId == "root" || documentId == "root/"
+        "com.android.externalstorage.documents" -> documentId == "primary:Android/data/$packageName/files"
+        else -> false
+    }
 
 /**
  * Reads and writes one granted Eden folder. Paths stay inside `keys/` and

@@ -86,6 +86,8 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 
 Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
 
+**A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
+
 ### Two drawers, always a press away
 
 | L1: your Foldcade | R1: your Thor |

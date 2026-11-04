@@ -93,6 +93,22 @@ class NoticesTest {
     }
 
     @Test
+    fun anEdenFolderFindReadsItsLocationWithoutOfferingAnotherPicker() {
+        val notice = FoldNotice("foldcade:saves-found", Copy.savesFoundTitle,
+            Copy.savesFoundBody(listOf("Eden" to "Android/data/dev.eden.eden_emulator/files")))
+        for (signedIn in listOf(emptyList(), listOf(SignedInBackend("romm", "RomM")))) {
+            val base = model(listOf(notice)).copy(eden = EdenSetting(fromRomm = true), signedIn = signedIn)
+            val right = reduce(base, Meaning.RightPanel).first
+            val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+            assertFalse(panelHints(focused)!!.any { it.label == Copy.setUp })
+            val (opened, effect) = reduce(focused, Meaning.Activate)
+            assertNull(effect)
+            assertNull(opened.saveSetup)
+            assertEquals(noticeReader(notice, focused.panel!!.screen), opened.dialog)
+        }
+    }
+
+    @Test
     fun aSaveNoticeForAnEmulatorNotOnTheStripStillOpensItsOwnFixAndCanBeDismissed() {
         val notice = FoldNotice("setup", "ARMSX2 saves aren’t syncing", "Set up to keep them on RomM.", savePlayerId = "armsx2")
         val cases = listOf(
