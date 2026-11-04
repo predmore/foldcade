@@ -31,6 +31,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
@@ -41,8 +43,42 @@ class LaunchSavesTest {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.held = player.saveDeclarations(owner).map { it.slot }
             val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local) }.exceptionOrNull()
-            assertTrue(failure is SaveNotPlaced)
+            assertTrue(failure is UnresolvedSaveNotPlaced)
+            val pending = unresolvedSaveHold(failure as SaveNotPlaced) { PendingBackendLaunch("Game", player.platformId, GameRoute("tile", owner, owner), player.id, Panel.Bottom) }
+            assertNotNull(pending)
+            assertFalse((failure as UnresolvedSaveNotPlaced).needsEdenUser)
             assertTrue(server.calls.isEmpty())
+        }
+    }
+
+    @Test fun unresolvedPspAndGameCubeCanPlayOfflineOnlyAfterTheExplicitPerLaunchChoice() = runBlocking {
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        for (player in players) {
+            (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+            server.listingFails = true
+            val route = GameRoute("tile", owner, owner)
+            val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, player, local) }.exceptionOrNull()
+            assertTrue(failure is UnresolvedSaveNotPlaced)
+            val pending = unresolvedSaveHold(failure as SaveNotPlaced) { PendingBackendLaunch("Game", player.platformId, route, player.id, Panel.Bottom) }
+            val prompt = app.foldcade.language.saveNotPlacedDialog("Game", app.foldcade.language.HostScreen.Bottom, playAnyway = pending != null)
+            assertTrue(prompt.buttons.contains(app.foldcade.language.DialogButton.PlayWithoutSyncing))
+            assertEquals(app.foldcade.language.Copy.saveUnresolved, prompt.body)
+            var declinedFor: String? = null
+            answerUnresolvedSaveHold(app.foldcade.language.DialogButton.PlayWithoutSyncing,
+                cancel = { error("explicit play does not cancel") }, openPlayer = { error("explicit play does not open settings") },
+                playWithoutSyncing = { declinedFor = player.id })
+            assertFalse(saveSyncForLaunch(player, declinedFor))
+            val listingCount = server.listings
+            val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, player, local, syncing = saveSyncForLaunch(player, declinedFor))
+            assertEquals(local, prepared.target)
+            assertTrue(prepared.spots.isEmpty())
+            assertEquals(listingCount, server.listings)
+            assertTrue(server.calls.isEmpty())
+            assertTrue(docs.files.isEmpty())
+            assertTrue(marks.isEmpty())
+            assertTrue(awaiting.isEmpty())
+            assertTrue(saveSyncForLaunch(player, null))
+            assertTrue(saveSyncForLaunch(player, "another-player"))
         }
     }
     private val libraries = HashMap<String, RecordingLibrary>()
@@ -198,6 +234,8 @@ class LaunchSavesTest {
         var toPlace: String? = null
         var held: List<String> = emptyList()
         var declarationsSeen: List<SaveDeclaration> = emptyList()
+        var listingFails = false
+        var listings = 0
 
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
@@ -205,6 +243,12 @@ class LaunchSavesTest {
         override suspend fun listGames(platformId: String, query: GameQuery) = GamePage(emptyList(), null)
         override suspend fun ensureLocal(game: Game): LaunchTarget = error("no download")
         override suspend fun saves(game: Game) = SaveSet(id, held.map { SaveSlot(it, "0".repeat(32), null) })
+
+        override suspend fun serverSaves(game: Game, player: Player?): List<app.foldcade.api.plugin.ServerSave> {
+            listings++
+            if (listingFails) throw java.io.IOException("offline")
+            return emptyList()
+        }
 
         override suspend fun prepareLaunch(game: Game, player: Player): Placement {
             declarationsSeen = player.saveDeclarations(game)

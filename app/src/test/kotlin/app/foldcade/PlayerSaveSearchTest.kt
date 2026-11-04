@@ -261,8 +261,8 @@ class PlayerSaveSearchTest {
         val failure = runCatching {
             LaunchSaves(saves, plugins(library)) { awaiting += it }.prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
         }.exceptionOrNull()
-        assertTrue(failure is EdenSaveNotPlaced)
-        assertTrue((failure as EdenSaveNotPlaced).needsUser)
+        assertTrue(failure is UnresolvedSaveNotPlaced)
+        assertTrue((failure as UnresolvedSaveNotPlaced).needsEdenUser)
         assertEquals(1, library.listings)
         assertEquals(0, library.negotiations)
         assertTrue(marks.stored.isEmpty())
@@ -279,8 +279,8 @@ class PlayerSaveSearchTest {
             LaunchSaves(saves, plugins(library)) { error("no save was placed") }
                 .prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
         }.exceptionOrNull()
-        assertTrue(failure is EdenSaveNotPlaced)
-        assertFalse((failure as EdenSaveNotPlaced).needsUser)
+        assertTrue(failure is UnresolvedSaveNotPlaced)
+        assertFalse((failure as UnresolvedSaveNotPlaced).needsEdenUser)
         assertEquals(0, library.listings)
         assertEquals(0, library.negotiations)
         assertTrue(marks.stored.isEmpty())
@@ -298,7 +298,7 @@ class PlayerSaveSearchTest {
             LaunchSaves(saves, plugins(first, second)) { error("no save was placed") }
                 .prepare(route.copy(servers = listOf(route.saves, other)), player, LaunchTarget.ContentUri(ROM))
         }.exceptionOrNull()
-        assertTrue(failure is EdenSaveNotPlaced)
+        assertTrue(failure is UnresolvedSaveNotPlaced)
         assertEquals(1, first.listings)
         assertEquals(1, second.listings)
         assertEquals(0, first.negotiations + second.negotiations)
@@ -314,10 +314,10 @@ class PlayerSaveSearchTest {
             LaunchSaves(saves, plugins(library)) { error("no save was placed") }
                 .prepare(edenRoute(player), player, LaunchTarget.ContentUri(ROM))
         }.exceptionOrNull()
-        assertTrue(failure is EdenSaveNotPlaced)
-        assertFalse((failure as EdenSaveNotPlaced).needsUser)
+        assertTrue(failure is UnresolvedSaveNotPlaced)
+        assertFalse((failure as UnresolvedSaveNotPlaced).needsEdenUser)
         val route = edenRoute(player)
-        assertTrue(edenSaveHold(failure) { PendingBackendLaunch("Fantasy Life", player.platformId, route, player.id, Panel.Bottom) } != null)
+        assertTrue(unresolvedSaveHold(failure) { PendingBackendLaunch("Fantasy Life", player.platformId, route, player.id, Panel.Bottom) } != null)
         assertEquals(0, library.negotiations)
         assertTrue(marks.stored.isEmpty())
     }
@@ -354,7 +354,7 @@ class PlayerSaveSearchTest {
         assertEquals(SaveNotPlaced::class.java, failure?.javaClass)
         assertEquals(1, library.negotiations)
         assertEquals(if (tornWrite) "partial write" else "old progress", docs.text("$path/systemdata"))
-        val pending = edenSaveHold(failure as SaveNotPlaced) { error("a failed placement must not offer a bypass") }
+        val pending = unresolvedSaveHold(failure as SaveNotPlaced) { error("a failed placement must not offer a bypass") }
         assertNull(pending)
         val dialog = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = pending != null)
         assertEquals(DialogKind.Ok, dialog.kind)
@@ -376,7 +376,7 @@ class PlayerSaveSearchTest {
         assertEquals(0, library.listings)
         assertEquals(0, library.negotiations)
         assertTrue(marks.stored.isEmpty())
-        assertTrue(runCatching { launch.prepare(route, player, LaunchTarget.ContentUri(ROM)) }.exceptionOrNull() is EdenSaveNotPlaced)
+        assertTrue(runCatching { launch.prepare(route, player, LaunchTarget.ContentUri(ROM)) }.exceptionOrNull() is UnresolvedSaveNotPlaced)
         assertTrue(marks.stored.isEmpty())
         // The opt-out also bypasses sync when both the profile and title resolve.
         eden(1)

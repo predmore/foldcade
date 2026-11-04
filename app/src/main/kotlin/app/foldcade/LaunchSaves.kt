@@ -47,8 +47,8 @@ internal class LaunchSaves(
                         val held = plugins.saves(owner.backendId, owner).slots.any { it.slot in slots }
                         val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot in slots }
                         if (incoming) {
-                            if (player is EdenPlayer) throw EdenSaveNotPlaced(needsUser = !saves.edenHasUser(player, owner))
-                            throw SaveNotPlaced()
+                            if (player is EdenPlayer) throw UnresolvedSaveNotPlaced(needsEdenUser = !saves.edenHasUser(player, owner))
+                            throw UnresolvedSaveNotPlaced()
                         }
                     }
                 } catch (cancelled: CancellationException) {
@@ -57,8 +57,7 @@ internal class LaunchSaves(
                     throw failure
                 } catch (_: Exception) {
                     // An unavailable listing cannot prove there is no incoming save.
-                    if (player is EdenPlayer) throw EdenSaveNotPlaced(needsUser = false)
-                    throw SaveNotPlaced()
+                    throw UnresolvedSaveNotPlaced()
                 }
             }
             // With no incoming save, first boot can make a user and save. Return
@@ -169,7 +168,8 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 /** A library save could not be written into the player's folder and checked. */
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
-internal class EdenSaveNotPlaced(val needsUser: Boolean) : SaveNotPlaced()
+/** No destination was resolved before negotiation or writing; an explicit per-launch opt-out is safe. */
+internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {
