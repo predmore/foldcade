@@ -42,22 +42,36 @@ internal fun RetroArchPlayer.firmwareCore(): String {
     }
 }
 
+// PicoDrive also opens these names, as raw images or ZIPs, before its core-info names.
+// https://github.com/libretro/picodrive/blob/master/platform/libretro/libretro.c (biosfiles_*, find_bios)
+private val picoDriveBiosNames = mapOf(
+    "bios_CD_U.bin" to listOf("bios_CD_U", "us_scd2_9306", "SegaCDBIOS9303", "us_scd1_9210"),
+    "bios_CD_E.bin" to listOf("bios_CD_E", "eu_mcd2_9306", "eu_mcd2_9303", "eu_mcd1_9210"),
+    "bios_CD_J.bin" to listOf("bios_CD_J", "jp_mcd2_921222", "jp_mcd1_9112", "jp_mcd1_9111"),
+)
+private val picoDriveBiosPaths = picoDriveBiosNames.values.flatten().flatMap { base -> listOf("$base.bin", "$base.zip") }.toSet()
+
 // SwanStation's directory scan also recognizes the documented PCSX PS1 dumps.
 // Its core-info list names only a subset (HostInterface::FindBIOSImageInDirectory).
-internal fun RetroArchPlayer.firmwareList(): List<CoreFirmware> = coreFirmware.filter {
-    it.core == firmwareCore() || firmwareCore() == "swanstation" && it.core == "pcsx_rearmed"
-}.filter { file ->
-    // Shared cores list firmware for several systems. Only this player's system
-    // matters when deciding whether its optional BIOS is already in place.
-    when (platformId) {
-        "game-boy" -> file.path in setOf("gb_bios.bin", "dmg_boot.bin", "sgb_bios.bin", "sgb_boot.bin")
-        "game-boy-color" -> file.path in setOf("gbc_bios.bin", "cgb_boot.bin")
-        "game-boy-advance" -> file.path == "gba_bios.bin"
-        "sega-cd" -> file.path.startsWith("bios_CD_")
-        "master-system" -> file.path.endsWith(".sms")
-        "game-gear" -> file.path == "bios.gg"
-        "genesis", "sega-32x" -> !file.path.startsWith("bios_CD_") && !file.path.endsWith(".sms") && file.path != "bios.gg"
-        else -> true
+internal fun RetroArchPlayer.firmwareList(): List<CoreFirmware> {
+    val core = firmwareCore()
+    val files = coreFirmware.filter { it.core == core || core == "swanstation" && it.core == "pcsx_rearmed" }
+    val alternates = if (core != "picodrive") emptyList() else picoDriveBiosPaths
+        .filterNot { path -> files.any { it.path == path } }
+        .map { path -> CoreFirmware(core, path, true, null, if (path.endsWith(".bin")) 131072L else null) }
+    return (files + alternates).filter { file ->
+        // Shared cores list firmware for several systems. Only this player's system
+        // matters when deciding whether its optional BIOS is already in place.
+        when (platformId) {
+            "game-boy" -> file.path in setOf("gb_bios.bin", "dmg_boot.bin", "sgb_bios.bin", "sgb_boot.bin")
+            "game-boy-color" -> file.path in setOf("gbc_bios.bin", "cgb_boot.bin")
+            "game-boy-advance" -> file.path == "gba_bios.bin"
+            "sega-cd" -> file.path.startsWith("bios_CD_") || core == "picodrive" && file.path in picoDriveBiosPaths
+            "master-system" -> file.path.endsWith(".sms")
+            "game-gear" -> file.path == "bios.gg"
+            "genesis", "sega-32x" -> !file.path.startsWith("bios_CD_") && file.path !in picoDriveBiosPaths && !file.path.endsWith(".sms") && file.path != "bios.gg"
+            else -> true
+        }
     }
 }
 
@@ -66,7 +80,7 @@ internal fun identifyBios(files: List<CoreFirmware>, offer: FirmwareOffer): Core
     if (offer.header.isEmpty()) return null
     val hash = biosMd5(offer.header)
     return files.firstOrNull { it.md5 == hash }
-        ?: files.firstOrNull { it.md5 == null && it.path.substringAfterLast('/').equals(biosLeaf(offer.name), true) }
+        ?: files.firstOrNull { it.md5 == null && it.path.substringAfterLast('/').equals(biosLeaf(offer.name), true) && (it.size == null || it.size == offer.header.size.toLong()) }
 }
 
 /** Region-sensitive cores require the BIOS for the disc's region, not every region's BIOS. */
@@ -89,13 +103,16 @@ internal fun RetroArchPlayer.requiredBios(game: Game): List<List<String>> {
         // core-info required flags. Never turn those warnings into launch gates.
         // https://github.com/libretro/gpsp/blob/master/libretro/libretro.c (selected_bios = builtin_bios)
         // https://github.com/hrydgard/ppsspp/blob/master/libretro/libretro.cpp ("Core system files missing, expect bugs.")
-        firmwareCore() in setOf("gpsp", "ppsspp") -> emptyList()
+        // https://github.com/libretro/beetle-psx-libretro/blob/master/libretro.c (BIOSFile absent -> bundled openbios)
+        firmwareCore() in setOf("gpsp", "ppsspp", "mednafen_psx", "mednafen_psx_hw") -> emptyList()
         firmwareCore() == "yabasanshiro" -> listOf(listOf("saturn_bios.bin", "sega_101.bin", "mpr-17933.bin"))
-        system.platformId == "sega-cd" -> regional("bios_CD_J.bin", "bios_CD_U.bin", "bios_CD_E.bin")
+        system.platformId == "sega-cd" -> regional("bios_CD_J.bin", "bios_CD_U.bin", "bios_CD_E.bin").map { regionFiles ->
+            if (firmwareCore() != "picodrive") regionFiles else regionFiles.flatMap { path ->
+                picoDriveBiosNames.getValue(path).flatMap { base -> listOf("$base.bin", "$base.zip") }
+            }
+        }
         system.platformId == "pc-engine-cd" -> listOf(listOf("syscard3.pce"))
-        firmwareCore() == "swanstation" -> listOf(files.map { it.path })
-        firmwareCore() in setOf("mednafen_psx", "mednafen_psx_hw") ->
-            regional("scph5500.bin", "scph5501.bin", "scph5502.bin")
+        firmwareCore() == "swanstation" -> listOf(files.map { it.path }.distinct())
         firmwareCore() == "mednafen_saturn" -> if (region == 'J') listOf(listOf("sega_101.bin"))
             else if (region != null) listOf(listOf("mpr-17933.bin")) else listOf(listOf("mpr-17933.bin", "sega_101.bin"))
         else -> files.filterNot { it.optional }.map { listOf(it.path) }
@@ -127,7 +144,7 @@ internal fun RetroArchPlayer.missingBios(game: Game, folder: SaveFolderAccess): 
         // revision is the player's choice, not proof that the BIOS is missing.
         entry != null && (entry.size <= 0 || spec?.size == null || entry.size == spec.size) &&
             folder.read(listOf(path.substringBeforeLast('/', ""), entry.name).filter { it.isNotEmpty() }.joinToString("/"), 0L, 1)?.isNotEmpty() == true
-    } }.map { it.joinToString(" / ") }
+    } }.map { if (firmwareCore() == "picodrive" && platformId == "sega-cd") it.first() else it.joinToString(" / ") }
 
 /** Full bytes for hashing normal BIOS dumps, plus one byte to reject oversized lookalikes. */
 internal const val FIRMWARE_HEADER_SIZE = 4 * 1024 * 1024 + 1

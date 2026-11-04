@@ -2110,7 +2110,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         return withContext(Dispatchers.Main.immediate) {
             if (!launchCurrent(generation)) return@withContext false
-            if (result.written.isNotEmpty()) {
+            if (result.blocksLaunch) foldcade.dismissNotice("firmware:${player.id}")
+            if (result.written.isNotEmpty() && !result.blocksLaunch) {
                 val name = foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId
                 foldcade.postNotice(app.foldcade.language.FoldNotice(
                     id = "firmware:${player.id}", title = app.foldcade.language.FirmwareCopy.ready(name),

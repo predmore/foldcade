@@ -42,7 +42,7 @@ class FirmwareTest {
 
     @Test fun pinnedAndInstalledCoreFirmwareFollowTheCoreThatWillLaunch() {
         entry.cores.update(mapOf(PACKAGES.first() to setOf("mednafen_psx_libretro_android.so")))
-        assertEquals(listOf(listOf("scph5501.bin")), player("playstation").requiredBios(game("playstation")))
+        assertTrue(player("playstation").requiredBios(game("playstation")).isEmpty())
         assertTrue(player("playstation", "pcsx_rearmed").requiredBios(game("playstation")).isEmpty())
         assertEquals(listOf(listOf("saturn_bios.bin", "sega_101.bin", "mpr-17933.bin")), player("saturn").requiredBios(game("saturn")))
         assertEquals(listOf(listOf("mpr-17933.bin")), player("saturn", "mednafen_saturn").requiredBios(game("saturn")))
@@ -77,6 +77,25 @@ class FirmwareTest {
         assertTrue(sega.hasFirmware(folder))
     }
 
+    @Test fun picoDriveAcceptsItsRegionalRawAndZippedAlternativesWithoutChangingOtherCores() {
+        val pico = player("sega-cd", "picodrive")
+        val regions = mapOf(
+            "USA" to listOf("us_scd2_9306", "SegaCDBIOS9303", "us_scd1_9210", "bios_CD_U"),
+            "Europe" to listOf("eu_mcd2_9306", "eu_mcd2_9303", "eu_mcd1_9210", "bios_CD_E"),
+            "Japan" to listOf("jp_mcd2_921222", "jp_mcd1_9112", "jp_mcd1_9111", "bios_CD_J"),
+        )
+        for ((region, names) in regions) for (name in names) for (extension in listOf("bin", "zip")) {
+            val file = "$name.$extension"
+            assertTrue(file, pico.missingFirmware(game("sega-cd", "Game ($region)"), installed(file, 131072)).isEmpty())
+            assertTrue(file, pico.hasFirmware(installed(file, 131072)))
+        }
+        assertFalse(player("sega-cd", "genesis_plus_gx").missingFirmware(game("sega-cd"), installed("us_scd1_9210.bin", 131072)).isEmpty())
+        assertTrue(player("genesis", "picodrive").firmwareList().none { it.path.startsWith("us_scd") })
+        assertEquals("us_scd1_9210.bin", pico.firmwareDestination(FirmwareOffer("dump.zip/us_scd1_9210.bin", ByteArray(131072))))
+        assertNull(pico.firmwareDestination(FirmwareOffer("us_scd1_9210.bin", ByteArray(12))))
+        assertEquals(listOf("bios_CD_U.bin"), pico.missingFirmware(game("sega-cd"), installed("empty.bin", 0)))
+    }
+
     @Test fun ps1CoresKeepTheirOwnDirectorySearchAndOverrideBiosChoices() {
         for (name in listOf("SCPH5501.BIN", "SCPH-5501.bin", "scph7003.bin", "openbios.bin", "my-console.dump")) {
             assertTrue(name, player("playstation", "mednafen_psx").missingFirmware(game("playstation"), installed(name, 524288)).isEmpty())
@@ -98,7 +117,7 @@ class FirmwareTest {
             assertTrue(system, p.needsFirmwareFolder(game(system), firmwareOffered = true))
         }
         assertTrue(player("sega-cd").needsFirmwareFolder(game("sega-cd"), firmwareOffered = false))
-        assertTrue(player("playstation", "mednafen_psx").needsFirmwareFolder(game("playstation"), firmwareOffered = false))
+        assertFalse(player("playstation", "mednafen_psx").needsFirmwareFolder(game("playstation"), firmwareOffered = false))
     }
 
     @Test fun metadataFilteringStillFindsRenamedBiosWithUnusualDocumentedSizes() {
@@ -112,6 +131,8 @@ class FirmwareTest {
     @Test fun openBiosAndBundledAssetsNeverBlockWorkingCores() {
         assertTrue(player("game-boy-advance", "gpsp").requiredBios(game("game-boy-advance")).isEmpty())
         assertTrue(player("psp").requiredBios(game("psp")).isEmpty())
+        assertTrue(player("playstation", "mednafen_psx").requiredBios(game("playstation")).isEmpty())
+        assertTrue(player("playstation", "mednafen_psx_hw").requiredBios(game("playstation")).isEmpty())
         assertTrue(coreFirmware.any { it.core == "yabasanshiro" && it.path == "sega_101.bin" && it.md5 == "85ec9ca47d8f6807718151cbcca8b964" })
     }
 

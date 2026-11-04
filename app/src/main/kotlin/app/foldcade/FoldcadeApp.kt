@@ -1093,6 +1093,8 @@ class FoldcadeApp : Application() {
 
     private var androidNotices: List<FoldNotice> = emptyList()
     private var foldcadeNotices: List<FoldNotice> = emptyList()
+    /** Optional BIOS setup stays quiet after X, for this process. Saves keep their own stronger policy. */
+    private val offeredFirmwareFolders = mutableSetOf<String>()
 
     /** The device's notifications, from [NoticeListener]. Main thread. */
     fun setAndroidNotices(notices: List<FoldNotice>) {
@@ -1102,6 +1104,7 @@ class FoldcadeApp : Application() {
 
     /** A notice of Foldcade's own. One with the same id replaces it. */
     fun postNotice(notice: FoldNotice) {
+        if (notice.firmwarePlayerId != null && !offeredFirmwareFolders.add(notice.id)) return
         foldcadeNotices = foldcadeNotices.filter { it.id != notice.id } + notice
         publishNotices()
     }
