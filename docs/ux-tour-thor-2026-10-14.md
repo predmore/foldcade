@@ -35,7 +35,7 @@ Status: Fixed in the working branch; unit tests and an isolated Thor upgrade pas
 
 ### B2 — The save-conflict choices do not fit the bottom display
 
-Bug · High · Current source · isolated fixture
+Bug · High · Fixed in #237 · isolated fixture
 
 On the 1240 × 1080 bottom display, the right save card wraps more than the left. Keep both is compressed at the lower edge and Decide later is outside the visible screen.
 
@@ -49,13 +49,13 @@ Expected: Both save cards and all resolution actions should remain readable and 
 
 Suggested: Give the cards equal widths and make the body scroll or adapt its spacing and type size. Keep the safe action and cancellation visible.
 
-Status: Open. Reproduced in the built-in rendering fixture, not with a real server conflict.
+Status: Fixed in #237. The cards share a width and a height, a short screen uses tighter spacing, and what does not fit scrolls with the focus. Decide later stays on screen. Checked with the conflict fixture and on a Thor at 1240 × 1080.
 
 [Screenshot evidence](https://poof.i.socia.dev/poof-v2z7umpk/#preview-save-conflict)
 
 ### B3 — Play activity exposes document URIs as game names
 
-Bug · Medium · Live release · reproduced
+Bug · Medium · Fixed in #238 · was live release
 
 Two entries in Most played show content://com.android.e… rather than readable game titles. The same list also contains correctly resolved names.
 
@@ -68,7 +68,7 @@ Expected: Historical play records should preserve a readable title even when the
 
 Suggested: Persist a display name with each tracked game, or provide a human-readable fallback instead of the internal ID.
 
-Status: Open. Visible on repeated visits.
+Status: Fixed in #238. History keeps the name a game had when it was played, resolves older remote keys, and shows a cleaned filename or Removed game when the catalog entry is gone.
 
 [Screenshot evidence](https://poof.i.socia.dev/poof-v2z7umpk/#play-activity)
 

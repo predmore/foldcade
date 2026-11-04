@@ -38,3 +38,15 @@ tasks.register("testDebugUnitTest") {
         ":app:testDebugUnitTest",
     )
 }
+
+tasks.register("lintDebug") {
+    group = "verification"
+    description = "Android lint for :app and :language. Fails on errors."
+    dependsOn(":app:lintDebug", ":language:lintDebug")
+}
+
+tasks.register("updateThemeContract") {
+    group = "verification"
+    description = "Rewrite themes/contract.json and themes/theme.schema.json from the engine."
+    dependsOn(":language:testDebugUnitTest")
+}
