@@ -10,7 +10,7 @@ sealed interface TileActivity {
      * [fraction] is 0..1, or null while the size is not known.
      * [firmware] uses its own words on the top screen. The pulse and the fraction stay the same.
      */
-    data class Downloading(val fraction: Float?, val firmware: Boolean = false) : TileActivity
+    data class Downloading(val fraction: Float?, val firmware: Boolean = false, val core: String? = null) : TileActivity
 
     /** Every byte is here and is being checked. */
     data object Checking : TileActivity
@@ -42,7 +42,7 @@ val SyncMark.worked: Boolean get() = this == SyncMark.Synced || this == SyncMark
 /** The top screen's words for [activity], first on the line under the game's name. */
 fun activityLine(activity: TileActivity): String = when (activity) {
     is TileActivity.Downloading -> {
-        val word = if (activity.firmware) Copy.gettingFirmware else Copy.downloading
+        val word = activity.core?.let(Copy::gettingCore) ?: if (activity.firmware) Copy.gettingFirmware else Copy.downloading
         activity.fraction
             ?.let { "$word ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }
             ?: word

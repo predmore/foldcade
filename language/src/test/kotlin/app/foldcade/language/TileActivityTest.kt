@@ -32,6 +32,14 @@ class TileActivityTest {
         assertFalse(SyncMark.NotSynced.worked)
     }
 
+    @Test fun coreProgressNamesTheCoreAndKeepsTheDownloadFraction() {
+        assertEquals("Getting Gambatte…", activityLine(TileActivity.Downloading(null, core = "Gambatte")))
+        assertEquals("Getting Genesis Plus GX… 42%", activityLine(TileActivity.Downloading(.42f, core = "Genesis Plus GX")))
+        val dialog = coreDownloadFailedDialog("Gambatte", HostScreen.Top)
+        assertEquals(listOf(DialogButton.TryAgain, DialogButton.OpenRetroArch, DialogButton.NotNow), dialog.buttons)
+        assertEquals(2, dialog.safeIndex)
+    }
+
     @Test
     fun aMarkStaysLongEnoughToSeeAndNoLonger() {
         assertTrue(Motion.durationSyncMark > Motion.durationFocus + Motion.durationTravel)

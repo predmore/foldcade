@@ -1796,6 +1796,7 @@
       "menuRow": 18,
       "sideRow": 18,
       "hint": 14,
+      "tileStatus": 10,
       "clock": 64,
       "bodyWeight": 400,
       "strongWeight": 600

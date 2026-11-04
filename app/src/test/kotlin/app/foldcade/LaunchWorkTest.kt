@@ -20,6 +20,7 @@ class LaunchWorkTest {
             delivered = true
         }
         work.job = download
+        work.retroArchCore = PreparedRetroArchCore("com.retroarch.aarch64", app.foldcade.plugins.retroarch.Core("gambatte", "Gambatte"), java.io.File("core.so"))
         started.await()
         // The bottom activity uses this same coordinator when B or a shoulder is pressed.
         work.cancel()
@@ -28,6 +29,7 @@ class LaunchWorkTest {
         assertFalse(delivered)
         assertFalse(work.current(top))
         assertFalse(work.active)
+        org.junit.Assert.assertNull(work.retroArchCore)
 
         val next = work.begin()
         work.job = launch { CompletableDeferred<Unit>().await() }
