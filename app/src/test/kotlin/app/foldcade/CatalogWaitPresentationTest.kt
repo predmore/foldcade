@@ -47,6 +47,9 @@ class CatalogWaitPresentationTest {
             assertEquals("Gain Ground", shell.displayTitle(shell.findGame(id), shell.activityAt(index(shell))))
         }
         assertEquals(1, reads)
+        assertNull("No cached metadata means no premature provider fetch", shell.artRecord(shell.findGame(id)))
+        assertNull("Do not cache an artwork search before the catalog is known", shell.artQuery(shell.findGame(id)))
+        assertNull(shell.focusedRecord())
         assertNull("An artwork identity must not become a launchable record", shell.launchRoute(id))
         shell.endCatalogWait(id)
         assertNull(shell.activityAt(index(shell)))
@@ -77,9 +80,13 @@ class CatalogWaitPresentationTest {
         try {
             RommPlugins.install(RommWiring(origin, RommTokenSource { error("No network or token read for cached identity") }, root.resolve("roms"), root))
             val host = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply { register(RommEntry()) }
+            val shell = shell(host)
+            shell.beginCatalogWait(id)
+            assertNull("An unknown game must not fetch and poison the provider cache", shell.artRecord(shell.findGame(id)))
+            assertNull("Never search for the anonymous fallback title", shell.artQuery(shell.findGame(id)))
+            shell.endCatalogWait(id)
             // The ordinary background metadata restore fills memory; no catalog is published to Home.
             host.metadata(RommCredentials.METADATA_ID)!!.details(Game("romm", "23", "", Availability.RemoteOnly, id))
-            val shell = shell(host)
             shell.beginCatalogWait(id)
             val game = shell.findGame(id)
             assertEquals("Cached Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)

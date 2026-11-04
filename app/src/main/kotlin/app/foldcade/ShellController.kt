@@ -2122,7 +2122,9 @@ class ShellController(
             game.title, tileId, TileActivity.LoadingLibrary,
             rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
         )
-        if (record != null) catalogWaitRecords[tileId] = record
+        // An unknown record would let art fetchers cache a failed provider lookup
+        // or search for "Your game" under the real game's id before its catalog arrives.
+        if (record != null && cached != null) catalogWaitRecords[tileId] = record
         activity = activity + (tileId to TileActivity.LoadingLibrary)
     }
 
