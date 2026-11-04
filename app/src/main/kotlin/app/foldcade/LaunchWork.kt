@@ -7,6 +7,7 @@ internal class LaunchWork {
     private var generation = 0
     var job: Job? = null
     private var subjectId: String? = null
+    var retroArchCore: PreparedRetroArchCore? = null
     val active: Boolean get() = job?.isActive == true
 
     fun pending(id: String): Boolean = active && subjectId == id
@@ -27,6 +28,7 @@ internal class LaunchWork {
         job?.cancel()
         job = null
         subjectId = null
+        retroArchCore = null
     }
 
     fun current(ticket: Int): Boolean = ticket == generation

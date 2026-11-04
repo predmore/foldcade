@@ -9,7 +9,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody
 import java.io.IOException
+import java.io.File
 import java.time.Duration
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -68,6 +70,20 @@ class PublicHttps(
     /** One HEAD request's status, so a caller can check an image exists without its bytes. */
     suspend fun status(url: String, headers: Map<String, String> = emptyMap()): Int = withContext(Dispatchers.IO) {
         call(url, "HEAD", headers) { it.code }
+    }
+
+    /** Streams a bounded public download to [file]. Cancellation closes the response body. */
+    suspend fun download(
+        url: String,
+        file: File,
+        maxBytes: Long,
+        onProgress: (Long, Long?) -> Unit,
+    ) = withContext(Dispatchers.IO) {
+        call(url, "GET", emptyMap()) { response ->
+            if (!response.isSuccessful) throw PublicHttpsException("HTTP ${response.code}")
+            val body = response.body ?: throw PublicHttpsException("Empty download")
+            body.downloadTo(file, maxBytes, onProgress)
+        }
     }
 
     private suspend fun <T> call(url: String, method: String, headers: Map<String, String>, read: (Response) -> T): T {
@@ -134,4 +150,30 @@ internal suspend fun <T> Call.readResponse(read: (Response) -> T): T = suspendCa
             continuation.resumeWithException(e)
         }
     })
+}
+
+/** Enforces both declared and actual size limits; callers own response and partial-file cleanup. */
+internal fun ResponseBody.downloadTo(file: File, maxBytes: Long, onProgress: (Long, Long?) -> Unit) {
+    val total = contentLength().takeIf { it >= 0 }
+    if (total != null && total > maxBytes) throw PublicHttpsException("Download is too large")
+    byteStream().use { input ->
+        file.outputStream().use { output ->
+            var bytes = 0L
+            var lastPercent = -1
+            val buffer = ByteArray(64 * 1024)
+            onProgress(0, total)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                bytes += count
+                if (bytes > maxBytes) throw PublicHttpsException("Download is too large")
+                output.write(buffer, 0, count)
+                val percent = total?.takeIf { it > 0 }?.let { (bytes * 100 / it).toInt() } ?: (bytes / (256 * 1024)).toInt()
+                if (percent != lastPercent) { lastPercent = percent; onProgress(bytes, total) }
+            }
+            if (bytes == 0L || (total != null && bytes != total)) throw PublicHttpsException("Incomplete download")
+            output.fd.sync()
+            onProgress(bytes, total ?: bytes)
+        }
+    }
 }

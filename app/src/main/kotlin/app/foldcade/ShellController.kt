@@ -2023,6 +2023,21 @@ class ShellController(
         relisting[libraryId] = deviceEdits
     }
 
+    private val coreDownloadOwners = mutableMapOf<String, Any>()
+
+    /** The same progress treatment for a local game and a library game. Main thread only. */
+    fun noteCoreDownload(id: String, owner: Any, core: String, fraction: Float?) {
+        coreDownloadOwners[id] = owner
+        val next = TileActivity.Downloading(fraction, core = core)
+        if (activity[id] != next) activity = activity + (id to next)
+    }
+
+    fun endCoreDownload(id: String, owner: Any) {
+        if (coreDownloadOwners[id] !== owner) return
+        coreDownloadOwners.remove(id)
+        if ((activity[id] as? TileActivity.Downloading)?.core != null) activity = activity - id
+    }
+
     /** False when this game's download is already being deleted. */
     fun beginRemove(libraryId: String, remoteKey: String): Boolean {
         val id = homeGameId(libraryId, remoteKey)

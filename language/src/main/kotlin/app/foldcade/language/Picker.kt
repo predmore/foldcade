@@ -122,6 +122,7 @@ enum class DialogKind {
 
     /** Something RetroArch needs before the game can start, such as a core. */
     RetroArchSetup,
+    RetroArchDownload,
 
     /** The code to type on a computer while Foldcade pairs with it. Not now stops. */
     PairHost,
@@ -161,6 +162,7 @@ enum class DialogButton {
     ForgetKey,
     KeepKey,
     OpenRetroArch,
+    AllowFiles,
     Restart,
     ForgetHost,
 
@@ -193,6 +195,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.ForgetKey -> Copy.forgetKey
     DialogButton.KeepKey -> Copy.keepKey
     DialogButton.OpenRetroArch -> Copy.openRetroArch
+    DialogButton.AllowFiles -> Copy.allowFiles
     DialogButton.Restart -> Copy.restart
     DialogButton.ForgetHost -> Copy.forgetHost
     DialogButton.OpenPlayer -> openPlayerLabel(subject)
@@ -554,9 +557,21 @@ fun missingCoreDialog(platformName: String, coreName: String, screen: HostScreen
     screen = screen,
 )
 
+fun coreDownloadFailedDialog(coreName: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.RetroArchDownload,
+    title = Copy.coreDownloadFailed(coreName),
+    body = Copy.coreDownloadFailedBody,
+    buttons = listOf(DialogButton.TryAgain, DialogButton.OpenRetroArch, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 2,
+    screen = screen,
+)
+
 /** RetroArch has not been allowed to read the device's storage. */
 fun retroArchStorageDialog(screen: HostScreen): DialogState =
-    retroArchSetupDialog(Copy.retroArchStorageTitle, Copy.retroArchStorageBody, screen)
+    retroArchSetupDialog(Copy.retroArchStorageTitle, Copy.retroArchStorageBody, screen).copy(
+        buttons = listOf(DialogButton.AllowFiles, DialogButton.NotNow),
+    )
 
 /** A Google Play RetroArch, which cannot read storage at all. */
 fun retroArchStoreBuildDialog(screen: HostScreen): DialogState =

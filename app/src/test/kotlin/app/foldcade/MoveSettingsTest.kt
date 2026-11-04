@@ -45,7 +45,7 @@ class MoveSettingsTest {
         // A rescan while the page stays open must update its options too.
         ra.cores.update(mapOf(pkg to setOf("melondsds_libretro_android.so")))
         shell.setRetroArch(RetroArchSetting(1, pkg))
-        assertFalse(ds().selectedUsable)
+        assertTrue(ds().selectedUsable) // A missing selected core is fetched on launch.
         assertEquals(listOf("melondsds"), ds().options.filter { it.playerId == ra.id }.map { it.core })
         shell.setInstalledApps(emptyList(), host.playerPackageNames(), setOf(MelonDsPlayer.STABLE_PACKAGE))
         assertFalse(ds().options.any { it.playerId == ra.id })

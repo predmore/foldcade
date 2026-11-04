@@ -11,6 +11,10 @@ import app.foldcade.language.HomeBoard
 import app.foldcade.language.HostScreen
 import app.foldcade.language.TileActivity
 import app.foldcade.language.encodeHome
+import app.foldcade.language.activityLine
+import app.foldcade.language.cancellableTransfer
+import app.foldcade.language.Copy
+import app.foldcade.plugins.retroarch.Core
 import app.foldcade.plugins.romm.RommEntry
 import app.foldcade.plugins.romm.RommPlugins
 import app.foldcade.plugins.romm.RommTokenSource
@@ -22,7 +26,10 @@ import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
@@ -99,6 +106,47 @@ class CatalogWaitPresentationTest {
         assertNull(catalogWaitCover(id) { null })
         assertNull(catalogWaitCover(id) { throw IOException("Image removed") })
         assertNull(catalogWaitCover(id) { throw SecurityException("Image unavailable") })
+    }
+
+    @Test fun catalogCleanupPreservesCoreProgressAndTheSameLaunchCancelStopsIt() = runBlocking {
+        val shell = shell(remembered = { "Gain Ground" })
+        val work = LaunchWork()
+        val finding = work.begin(id)
+        val catalog = launch { CompletableDeferred<Unit>().await() }
+        work.job = catalog
+        shell.beginCatalogWait(id)
+
+        // The resolved route starts the normal launch, cancelling its old catalog job.
+        work.resolved(finding)
+        val downloading = work.begin(id)
+        val owner = Any()
+        val core = Core("genesis_plus_gx", "Genesis Plus GX")
+        val download = launch {
+            try {
+                shell.noteCoreDownload(id, owner, core.libraryName, .25f)
+                CompletableDeferred<Unit>().await()
+            } finally {
+                shell.endCoreDownload(id, owner)
+            }
+        }
+        work.job = download
+        yield()
+        shell.endCatalogWait(id) // The cancelled catalog's late finally must not erase core progress.
+        val status = shell.activityAt(index(shell))!!
+        assertEquals(TileActivity.Downloading(.25f, core = core.libraryName), status)
+        assertEquals("${Copy.gettingCore(core.libraryName)} 25%", activityLine(status))
+        assertTrue(status.cancellableTransfer)
+        assertTrue(work.pending(id))
+        work.retroArchCore = PreparedRetroArchCore("com.retroarch.aarch64", core, File("core.so"))
+
+        // Both Home activities' B path cancels this coordinator, including the prepared sideload.
+        work.cancel()
+        download.join()
+        catalog.join()
+        assertFalse(work.current(downloading))
+        assertFalse(work.pending(id))
+        assertNull(work.retroArchCore)
+        assertNull(shell.activityAt(index(shell)))
     }
 
     private fun shell(
