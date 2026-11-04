@@ -506,7 +506,6 @@ class HomeReturnFocusTest {
         val shell = shell(store)
         load(shell)
         shell.running = setOf(target)
-        shell.resumable = true
         repeat(2) {
             shell.noteGameLaunched(target)
             store.place(Panel.Bottom, ExternalApp(target))
