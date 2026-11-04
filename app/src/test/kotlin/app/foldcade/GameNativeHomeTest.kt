@@ -14,6 +14,22 @@ import org.junit.Test
 class GameNativeHomeTest {
     @After fun clearShelf() { Shelf.catalog = emptyList(); Shelf.gameNativeInstalled = false }
 
+    @Test fun aCompletedFolderScanCanRemoveAnExportWithoutShortcutHostPermission() {
+        val id = "gamenative.GOG_42"
+        val store = SessionStore(MemoryPrefs())
+        Shelf.catalog = listOf(ShelfGame(id, "Game", "", "pc", libraryId = "gamenative", remoteKey = "GOG_42", shortcut = false))
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        ShellController(store, plugins).apply { settleGameNative(); noteShelfChanged() }
+        assertTrue(onHome(decodeHome(store.homeBoardRaw()), id))
+        Shelf.catalog = emptyList()
+        val restarted = ShellController(store, plugins)
+        val read = GameNativeCatalogRead(shortcutsRead = false, hasGames = false, storedCatalog = false)
+        assertFalse(read.settles(foldersRead = false, hasFolders = true))
+        if (read.settles(foldersRead = true, hasFolders = true)) restarted.settleGameNative()
+        restarted.noteShelfChanged()
+        assertFalse(onHome(decodeHome(store.homeBoardRaw()), id))
+    }
+
     @Test fun aPinGoesHomeWithNewGamesOffAndKeepsItsPlaceUntilTheSourcesSettle() {
         val id = "gamenative.SHORTCUT_app.gamenative_42"
         val store = SessionStore(MemoryPrefs())

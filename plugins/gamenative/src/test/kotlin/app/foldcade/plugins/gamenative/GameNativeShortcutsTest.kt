@@ -34,8 +34,37 @@ class GameNativeShortcutsTest {
         val pin = gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, "game_42", "A Game", true, true)!!
         val same = CatalogGame("A Game", 42, "GOG")
         val other = CatalogGame("Another game", 42, "STEAM")
-        assertEquals(listOf(pin, other), mergeGameNativeGames(listOf(pin), listOf(same, other)))
+        assertEquals(listOf(same.copy(shortcutPackage = pin.shortcutPackage), other), mergeGameNativeGames(listOf(pin), listOf(same, other)))
         assertEquals(listOf(same, other), mergeGameNativeGames(emptyList(), listOf(same, other)))
+    }
+
+    @Test fun aMatchingPinKeepsTheSteamExportIdentityAndArtButLaunchesItsActualPublisher() = runBlocking {
+        val pin = gameNativeShortcut(GameNativePlayer.GOLD_PACKAGE, "game_42", "Game", true, true)!!
+        val export = CatalogGame("Game", 42, "STEAM")
+        val merged = mergeGameNativeGames(listOf(pin), listOf(export)).single()
+        assertEquals(export.remoteKey, merged.remoteKey)
+        assertEquals(42, steamAppId(merged.remoteKey))
+        assertEquals(merged, catalogGameFromLine(catalogLine(merged)))
+        val library = GameNativeLibrary().apply { confirm(listOf(merged)) }
+        val game = library.listGames(PcPlatform.ID, GameQuery()).games.single()
+        val launch = GameNativePlayer().launchIntent(LaunchRequest(game, library.ensureLocal(game), GameNativePlayer.VANILLA_PACKAGE))
+        assertEquals(GameNativePlayer.GOLD_PACKAGE, launch.packageName)
+        assertEquals(listOf(PlayerExtra.Text(GameNativePlayer.EXTRA_SHORTCUT_ID, "game_42")), launch.extras)
+    }
+
+    @Test fun aPinThatPredatesAnExportKeepsItsIdentityAcrossRefreshesAndExportRemoval() {
+        val pin = gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, "game_42", "Game", true, true)!!
+        val stored = listOf(catalogGameFromLine(catalogLine(pin))!!)
+        val live = restoreGameNativePins(listOf(pin), stored)
+        val merged = mergeGameNativeGames(live, listOf(CatalogGame("Game", 42, "STEAM"))).single()
+        assertEquals(pin.remoteKey, merged.remoteKey)
+        val library = GameNativeLibrary().apply { confirm(listOf(merged)) }
+        assertEquals(42, library.steamArtId(pin.remoteKey))
+        val reloaded = restoreGameNativePins(listOf(pin), listOf(catalogGameFromLine(catalogLine(merged))!!))
+        assertEquals(merged, reloaded.single())
+        assertEquals(merged, mergeGameNativeGames(reloaded, emptyList()).single())
+        assertEquals(reloaded, restoreGameNativePins(null, reloaded))
+        assertTrue(restoreGameNativePins(emptyList(), reloaded).isEmpty())
     }
 
     @Test fun everyExportSourceKeepsItsStoreInTheLaunchIntent() = runBlocking {

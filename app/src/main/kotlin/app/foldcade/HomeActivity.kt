@@ -2301,12 +2301,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val name = playerChoiceLabel(player) ?: "Player"
             if (gameNativePin) foldcade.shell.present(app.foldcade.language.gameNativeShortcutPrompt(hostScreen()))
             else presentMissing(name, generation)
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
             foldcade.launchBlooms.cancel()
             foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
             if (gameNativePin) {
-                foldcade.shell.present(app.foldcade.language.gameNativeShortcutPrompt(hostScreen()))
+                val prompt = if (failure is SecurityException) {
+                    app.foldcade.language.homePrompt(hostScreen(), listOf(app.foldcade.plugins.gamenative.GameNativePlayer.DISPLAY_NAME))
+                } else app.foldcade.language.gameNativeShortcutPrompt(hostScreen())
+                foldcade.shell.present(prompt)
             }
         }
     }

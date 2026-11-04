@@ -47,10 +47,19 @@ class RomRootsTest {
         val primary = volume("primary", "ROMs/GameNative", "GameNative", "Download/GameNative", "Emulation/roms/epic")
         File(primary.dir, "GameNative/A Game.gog").writeText("42")
         val roots = findRomRoots(listOf(primary))
-        assertEquals(setOf("ROMs", "GameNative", "Download/GameNative", "Emulation/roms"), roots.map { it.path }.toSet())
+        assertEquals(setOf("ROMs", "Emulation/roms"), roots.map { it.path }.toSet())
         assertTrue(roots.all { it.systems == listOf("GameNative") })
-        assertEquals(roots.filter { it.path != "GameNative" }, usableRomRoots(roots, emptyList(), setOf("primary:GameNative")))
+        assertEquals(roots, usableRomRoots(roots, emptyList(), setOf("primary:GameNative")))
         assertEquals(roots.filter { it.path != "ROMs" }, usableRomRoots(roots, listOf("primary:ROMs/GameNative"), emptySet()))
+    }
+
+    @Test
+    fun gameNativeInstallsAndContainerExportsAreNeverLibraryCandidates() {
+        val primary = volume("primary", "GameNative/huge-game", "Download/GameNative/container")
+        File(primary.dir, "GameNative/huge-game/bundled.nes").writeText("ROM-shaped PC asset")
+        File(primary.dir, "GameNative/accidental.steam").writeText("42")
+        File(primary.dir, "Download/GameNative/container/data.gog").writeText("42")
+        assertTrue(findRomRoots(listOf(primary)).isEmpty())
     }
 
     @Test

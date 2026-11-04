@@ -884,7 +884,10 @@ class FoldcadeApp : Application() {
             playMillis = { plays.shown(it).activeMillis },
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
-            onGameNativeRemoved = { key -> pluginLoad.launch { if (unpinGameNativeShortcut(this@FoldcadeApp, key)) refreshGameNative() } },
+            onGameNativeRemoved = { key -> pluginLoad.launch {
+                val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()?.firstOrNull { it.remoteKey == key }
+                if (game != null && unpinGameNativeShortcut(this@FoldcadeApp, game)) refreshGameNative()
+            } },
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
@@ -1256,7 +1259,7 @@ class FoldcadeApp : Application() {
             val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), files.route.gameNative)
             withContext(Dispatchers.Main.immediate) {
                 if (reported.releasesRestore(files.reported, libraryTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
-                if (reported.shortcutsRead && (files.reported || libraryTrees().isEmpty())) shell.settleGameNative()
+                if (reported.settles(files.reported, libraryTrees().isNotEmpty())) shell.settleGameNative()
                 shell.noteShelfChanged()
             }
         } catch (cancelled: CancellationException) {
@@ -1273,7 +1276,9 @@ class FoldcadeApp : Application() {
         pluginLoad.launch {
             pluginsReady.await()
             refreshGameNative()
-            withContext(Dispatchers.Main.immediate) { shell.placeGameNativePin("gamenative.${pin.remoteKey}") }
+            val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()
+                ?.firstOrNull { it.appId == pin.appId && it.shortcutPackage == packageName } ?: pin
+            withContext(Dispatchers.Main.immediate) { shell.placeGameNativePin("gamenative.${game.remoteKey}") }
         }
     }
 

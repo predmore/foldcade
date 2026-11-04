@@ -3159,7 +3159,9 @@ class ShellController(
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = when (libraryId) {
-                GameNativeLibrary.ID -> remoteKey?.let(::steamAppId)
+                GameNativeLibrary.ID -> remoteKey?.let { key ->
+                    (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.steamArtId(key) ?: steamAppId(key)
+                }
                 DroidDeckLibrary.ID -> remoteKey?.let(::droidDeckSteamAppId)
                 else -> null
             },

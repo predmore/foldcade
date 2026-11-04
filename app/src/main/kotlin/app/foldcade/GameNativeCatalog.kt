@@ -10,6 +10,7 @@ import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.plugins.gamenative.PcPlatform
 import app.foldcade.plugins.gamenative.gameNativeShortcut
 import app.foldcade.plugins.gamenative.mergeGameNativeGames
+import app.foldcade.plugins.gamenative.restoreGameNativePins
 import app.foldcade.plugins.gamenative.catalogGameFromLine
 import app.foldcade.plugins.gamenative.catalogLine
 import app.foldcade.romm.writeDurably
@@ -28,6 +29,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * game off the grid at the next scan.
  */
 data class GameNativeCatalogRead(val shortcutsRead: Boolean, val hasGames: Boolean, val storedCatalog: Boolean) {
+    /** Cached pins remain in the catalog on a denied shortcut read; finished file scans can still remove exports. */
+    fun settles(foldersRead: Boolean, hasFolders: Boolean): Boolean = foldersRead || !hasFolders
+
     fun releasesRestore(foldersRead: Boolean, hasFolders: Boolean): Boolean =
         shortcutsRead && (foldersRead || !hasFolders) && (hasGames || storedCatalog)
 }
@@ -41,11 +45,11 @@ fun refreshGameNativeCatalog(
     val storedCatalog = file.isFile
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
-    val pins = shortcuts ?: stored
+    val pins = restoreGameNativePins(shortcuts, stored)
     library.confirm(mergeGameNativeGames(pins, steamFiles))
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
     try {
-        keepGameNativeCatalog(file, pins, storedCatalog)
+        keepGameNativeCatalog(file, library.confirmed().filter { it.shortcutPackage != null }, storedCatalog)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -109,8 +113,7 @@ private fun CatalogGame.toShelfGame(): ShelfGame = ShelfGame(
 )
 
 /** Removes only this game's pin, preserving every other shortcut and package. */
-internal fun unpinGameNativeShortcut(context: Context, remoteKey: String): Boolean {
-    val game = readCatalog(File(context.filesDir, "gamenative/catalog.txt")).firstOrNull { it.remoteKey == remoteKey } ?: return false
+internal fun unpinGameNativeShortcut(context: Context, game: CatalogGame): Boolean {
     val publisher = game.shortcutPackage ?: return false
     val launcher = context.getSystemService(LauncherApps::class.java) ?: return false
     if (!launcher.hasShortcutHostPermission()) return false
