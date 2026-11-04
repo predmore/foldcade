@@ -35,7 +35,7 @@ internal object ShelfPreview {
     )
 
     private val folders = listOf("ROMs", "Emulation", "SD card", "Downloads", "Arcade", "Handhelds")
-    private val hosts = listOf("game-win", "living-room", "steam-deck")
+    private val hosts = listOf("den-pc", "living-room", "steam-deck")
 
     /** [model] with stand-ins topping its own emulators up to [count] tiles, and its library to [count] sources. */
     fun apply(model: PickerModel, count: Int): PickerModel {
@@ -46,16 +46,22 @@ internal object ShelfPreview {
             if (players.size == model.playerSaves.size && sources.size == model.folders.size && computers.size == model.streamHosts.size) return model
             return model.copy(playerSaves = players, folders = sources, streamHosts = computers)
         }
-        val real = players.count { it.installed }
-        val fakes = emulators.take((count - real).coerceAtLeast(0)).mapIndexed { index, (label, packageName) ->
-            PlayerSaveSetting("$ID$index", label, chosen = index % 3 != 1, installed = true, packages = listOf(packageName))
-        }
         // RomM, real folders and computers, and Add already take some of the library's places.
         val room = (count - 1 - sources.size - computers.size - model.signedIn.size).coerceAtLeast(0)
         val extraHosts = hosts.take(room / 3).mapIndexed { index, name -> StreamHostSetting("$ID$index", name, paired = index != 1) }
         val extraFolders = folders.take(room - extraHosts.size).mapIndexed { index, label ->
             LibraryFolder("$URI$index", label, pickAgain = index == 2, games = 12 + index * 7)
         }
-        return model.copy(playerSaves = players + fakes, folders = sources + extraFolders, streamHosts = computers + extraHosts)
+        return model.copy(playerSaves = players(players, count), folders = sources + extraFolders, streamHosts = computers + extraHosts)
+    }
+
+    /** [real] players topped up with stand-ins to [count] installed ones. The shell reads its players afresh for each key, so it adds them there too. */
+    fun players(real: List<PlayerSaveSetting>, count: Int): List<PlayerSaveSetting> {
+        val own = real.filterNot { it.playerId.startsWith(ID) }
+        if (count <= 0) return own
+        val fakes = emulators.take((count - own.count { it.installed }).coerceAtLeast(0)).mapIndexed { index, (label, packageName) ->
+            PlayerSaveSetting("$ID$index", label, chosen = index % 3 != 1, installed = true, packages = listOf(packageName))
+        }
+        return own + fakes
     }
 }

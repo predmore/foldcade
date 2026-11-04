@@ -436,7 +436,7 @@ private fun ShelfStrip(
     val reach = ringReach()
     val reachPx = with(density) { reach.toPx() }
     val roomPx = with(density) { BADGE_ROOM.toPx() }
-    val gapPx = with(density) { TILE_LINE_GAP.toPx() }
+    val gapPx = with(density) { SHELF_LINE_GAP.toPx() }
     val artPx = with(density) { TILE_ART.toPx() }
     val fadePx = with(density) { (reach + SHELF_FADE).toPx() }
     val anim = remember { Animatable(first.toFloat()) }
@@ -677,6 +677,9 @@ private val TILE_LABEL_GAP = 2.dp
 private val TILE_LINE_GAP = 6.dp
 private val TILE_BLOCK_GAP = 6.dp
 private val BADGE_SIZE = 22.dp
+
+/** Between the strip's two lines: a line's gap and a row's, as when each line was a row of the card. */
+private val SHELF_LINE_GAP = TILE_LINE_GAP + ROW_GAP
 
 /** Above the strip's first line, for the badge that sits over a tile's corner. */
 private val BADGE_ROOM = 8.dp

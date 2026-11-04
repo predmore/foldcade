@@ -3634,11 +3634,11 @@ class ShellController(
         val definitions = plugins.platformDefinitions()
         saveSettingsCache?.let {
             if (it.definitions === definitions && it.installed === installedPlayers &&
-                it.sync === saveSync && it.setup === setupSteps) return it.rows
+                it.sync === saveSync && it.setup === setupSteps) return if (shelfPreview > 0) ShelfPreview.players(it.rows, shelfPreview) else it.rows
         }
         return readPlayerSaveSettings().also {
             saveSettingsCache = SaveSettingsCache(definitions, installedPlayers, saveSync, setupSteps, it)
-        }
+        }.let { if (shelfPreview > 0) ShelfPreview.players(it, shelfPreview) else it }
     }
 
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
