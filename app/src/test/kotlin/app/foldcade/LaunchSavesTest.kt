@@ -4,6 +4,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GamePage
 import app.foldcade.api.plugin.GameQuery
+import app.foldcade.api.plugin.FirmwareBytes
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
@@ -205,6 +206,42 @@ class LaunchSavesTest {
     }
 
     @Test
+    fun decliningDuckStationCardSetupStillPreparesAndPlacesItsBios() = runBlocking {
+        val player = app.foldcade.plugins.duckstation.DuckStationPlayer().apply { bindSaveFolder(SAVES) }
+        val game = owner.copy(platformId = player.platformId)
+        assertTrue(saveLaunchOffer(player, onServer = true) is SaveLaunchOffer.Setup)
+        val continuation = saveLaunchContinuation(player.id, SaveFolderAnswer.PlayWithoutSyncing, false) as SaveLaunchContinuation.Launch
+        server.firmware = listOf(FirmwareBytes("SCPH1001.BIN", "content://firmware"))
+        docs.files["content://firmware"] = "library BIOS".toByteArray()
+
+        val prepared = LaunchSaves(saves, plugins, pickedFolder = { SAVES }) { awaiting += it }
+            .prepare(GameRoute("tile", game, game), player, local, syncing = saveSyncForLaunch(player, continuation.declinedFor))
+
+        assertEquals(listOf("prepareLaunch:12"), server.calls)
+        assertTrue(prepared.spots.isEmpty())
+        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertEquals("library BIOS", docs.files["$SAVES/bios/SCPH1001.BIN"]?.toString(Charsets.UTF_8))
+        assertTrue(awaiting.isEmpty())
+    }
+
+    @Test
+    fun decliningArmsX2CardSetupStillPreparesItsLaunch() = runBlocking {
+        val player = app.foldcade.plugins.armsx2.ArmsX2Player().apply { bindSaveFolder(SAVES) }
+        val game = owner.copy(platformId = player.platformId)
+        val continuation = saveLaunchContinuation(player.id, SaveFolderAnswer.PlayWithoutSyncing, false) as SaveLaunchContinuation.Launch
+
+        val prepared = LaunchSaves(saves, plugins, pickedFolder = { SAVES }) { awaiting += it }
+            .prepare(GameRoute("tile", game, game), player, local, syncing = saveSyncForLaunch(player, continuation.declinedFor))
+
+        assertEquals(listOf("prepareLaunch:12"), server.calls)
+        assertEquals("content://own", (prepared.target as LaunchTarget.ContentUri).uri)
+        assertTrue(prepared.spots.isEmpty())
+        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertTrue(docs.files.isEmpty())
+        assertTrue(awaiting.isEmpty())
+    }
+
+    @Test
     fun aDeclaredFolderWithNoSpotForThisGameIsReportedUnreachableBeforeSync() = runBlocking {
         val player = object : Player by Melon {
             override val id = "armsx2"
@@ -236,6 +273,7 @@ class LaunchSavesTest {
         var declarationsSeen: List<SaveDeclaration> = emptyList()
         var listingFails = false
         var listings = 0
+        var firmware: List<FirmwareBytes> = emptyList()
 
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
@@ -253,7 +291,7 @@ class LaunchSavesTest {
         override suspend fun prepareLaunch(game: Game, player: Player): Placement {
             declarationsSeen = player.saveDeclarations(game)
             calls += "prepareLaunch:${game.remoteKey}"
-            return Placement(LaunchTarget.ContentUri("content://own"), placed())
+            return Placement(LaunchTarget.ContentUri("content://own", firmware), placed())
         }
 
         override suspend fun prepareSaves(game: Game, player: Player, target: LaunchTarget): Placement {

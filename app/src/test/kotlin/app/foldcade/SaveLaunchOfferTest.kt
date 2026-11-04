@@ -21,7 +21,7 @@ class SaveLaunchOfferTest {
         for (answer in listOf(SaveFolderAnswer.PlayWithoutSyncing, SaveFolderAnswer.PickerCancelled)) {
             val continuation = saveLaunchContinuation(player.id, answer, needsFolderToStart = false) as SaveLaunchContinuation.Launch
             assertEquals(player.id, continuation.declinedFor)
-            assertFalse(saveSyncForLaunch(player, continuation.declinedFor))
+            assertTrue(saveSyncForLaunch(player, continuation.declinedFor))
             assertTrue(saveSyncForLaunch(player, null))
             assertNull(saveLaunchOffer(player, true, declinedFor = continuation.declinedFor))
             assertEquals(SaveLaunchOffer.Folder, saveLaunchOffer(player, true))
