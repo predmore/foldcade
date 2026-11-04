@@ -146,6 +146,9 @@ enum class DialogKind {
 
     /** Sign out of RomM, or remove a server that waits for a sign-in. Opens on Not now. */
     RommSignOut,
+
+    /** Once: ROM folders were seen, and Allow opens Android's all-files access. Opens on Allow. */
+    FindGames,
 }
 
 enum class DialogButton {
@@ -357,10 +360,11 @@ fun shouldOfferUsageAccess(
     dialogOpen: Boolean,
 ): Boolean = hasTrackedSession && !granted && !alreadyOffered && !dialogOpen
 
-fun homePrompt(screen: HostScreen = HostScreen.Bottom): DialogState = DialogState(
+/** [apps] are the installed apps that reach only the Home app, such as Moonlight, and the body names them. */
+fun homePrompt(screen: HostScreen = HostScreen.Bottom, apps: List<String> = emptyList()): DialogState = DialogState(
     kind = DialogKind.Home,
     title = Copy.homePromptTitle,
-    body = Copy.homePromptBody,
+    body = if (apps.isEmpty()) Copy.homePromptBody else FoundFolderCopy.homeBody(apps),
     buttons = listOf(DialogButton.UseAsHome, DialogButton.NotNow),
     index = 0,
     safeIndex = 1,
@@ -621,10 +625,23 @@ fun folderExplainer(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/** The one-time offer to read the ROM folders Foldcade saw: [places] and the [systems] their folders name. */
+fun findGamesPrompt(screen: HostScreen, places: List<String>, systems: List<String>): DialogState = DialogState(
+    kind = DialogKind.FindGames,
+    title = FoundFolderCopy.offerTitle,
+    body = FoundFolderCopy.offerBody(places, systems),
+    buttons = listOf(DialogButton.Allow, DialogButton.NotNow),
+    index = 0,
+    safeIndex = 1,
+    screen = screen,
+)
+
 /** Debug captures. Back still uses [DialogState.safeIndex]. Unknown names are ignored. */
 fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogState? {
     val dialog = when (kind) {
         "home" -> homePrompt(screen)
+        "home-streams" -> homePrompt(screen, listOf("Moonlight", "DroidDeck"))
+        "find-games" -> findGamesPrompt(screen, listOf("Emulation/roms"), listOf("Nintendo DS", "Sega Genesis"))
         "folder" -> folderExplainer(screen)
         "relogin" -> signInAgainPrompt(screen)
         "save-folder" -> saveFolderDialog(screen)
@@ -656,6 +673,9 @@ sealed interface Row {
     data object UsageAccess : Row
     /** Opens Android's optional all-files access page. Its value follows Android. */
     data object FindSaves : Row
+
+    /** Settings › Library's way to the same access, which finds ROM folders. Its value follows Android. */
+    data object FindGames : Row
 
     /** Opens Set up saves, which walks every emulator's remaining step. */
     data object SaveSetup : Row
@@ -999,6 +1019,8 @@ data class LibraryFolder(
     val path: String? = null,
     val games: Int = 0,
     val media: Boolean = false,
+    /** Foldcade found it by itself (`ROMs`, `Emulation/roms`). Remove keeps it away for good. */
+    val found: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1296,6 +1318,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
+    Row.FindGames -> RowText(FoundFolderCopy.findGames, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     // How many emulators still wait, in the attention colour, until every one syncs.
     Row.SaveSetup -> RowText(SaveSetupCopy.title, saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage()).takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
@@ -2548,7 +2571,7 @@ private fun activateRow(
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null
         // Android adds Undo from the current before-copy; leave presentation to that effect.
         Row.Backup -> model to Effect.OpenBackup
-        Row.FindSaves -> model to Effect.OpenAllFilesAccess
+        Row.FindSaves, Row.FindGames -> model to Effect.OpenAllFilesAccess
         Row.SaveSetup -> model.openSaveSetup(panel.screen, grid = panel.grid) to null
         Row.PlayActivity -> model.copy(
             panel = null,

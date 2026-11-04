@@ -1699,7 +1699,7 @@ HSPLapp/foldcade/ShellController;->libraryOf(Ljava/lang/String;)Ljava/lang/Strin
 HSPLapp/foldcade/ShellController;->libraryPlatformName(Ljava/lang/String;)Ljava/lang/String;
 HSPLapp/foldcade/ShellController;->logHomeTile()V
 PLapp/foldcade/ShellController;->matchedArtQuery(Lapp/foldcade/artwork/ArtQuery;)Lapp/foldcade/artwork/ArtQuery;
-HSPLapp/foldcade/ShellController;->maybeAskHome(Z)V
+HSPLapp/foldcade/ShellController;->maybeAskHome(ZLjava/util/List;)V
 HSPLapp/foldcade/ShellController;->maybeOfferUsageAccess(ZZLapp/foldcade/language/HostScreen;)V
 HSPLapp/foldcade/ShellController;->notePlayChanged()V
 HSPLapp/foldcade/ShellController;->noteShelfChanged()V

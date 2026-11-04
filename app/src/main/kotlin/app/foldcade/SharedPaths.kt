@@ -9,9 +9,11 @@ import java.nio.file.Path
  * The absolute path another app can open for a game's content URI, for a
  * player that opens games by path ([app.foldcade.api.plugin.Player.opensByPath]).
  *
- * Two kinds of URI have one:
+ * Three kinds of URI have one:
  * - a document of Android's external storage provider, which a local folder
  *   lists. Its document id is the volume and the path on it;
+ * - a document of [LibraryFilesProvider] at [libraryAuthority], a found ROM root's
+ *   game, whose ids are written the same way;
  * - a file Foldcade serves itself, through [ownFile], that lies in one of
  *   [sharedRoots]. RomM downloads live in Foldcade's shared media folder.
  *
@@ -21,10 +23,13 @@ import java.nio.file.Path
 internal class SharedPaths(
     private val ownFile: (String) -> Path?,
     private val sharedRoots: () -> List<Path>,
+    private val libraryAuthority: String? = null,
 ) {
     fun target(uri: String): LaunchTarget.SharedFile? = pathFor(uri)?.let { LaunchTarget.SharedFile(it, uri) }
 
-    fun pathFor(uri: String): String? = externalStoragePath(uri) ?: ownSharedPath(uri)
+    fun pathFor(uri: String): String? = externalStoragePath(uri)
+        ?: libraryAuthority?.let { storageDocumentPath(uri, it) }
+        ?: ownSharedPath(uri)
 
     private fun ownSharedPath(uri: String): String? {
         val file = ownFile(uri)?.toAbsolutePath()?.normalize() ?: return null
@@ -46,8 +51,11 @@ internal class SharedPaths(
          * same document inside a tree, `.../tree/<id>/document/<id>`. The id is
          * `primary:<path>`, `home:<path>` (the Documents folder), or `<volume>:<path>`.
          */
-        fun externalStoragePath(uri: String): String? {
-            val prefix = "content://$EXTERNAL_STORAGE_AUTHORITY/"
+        fun externalStoragePath(uri: String): String? = storageDocumentPath(uri, EXTERNAL_STORAGE_AUTHORITY)
+
+        /** The same path for a provider at [authority] whose document ids are written as the external storage provider's. */
+        fun storageDocumentPath(uri: String, authority: String): String? {
+            val prefix = "content://$authority/"
             if (!uri.startsWith(prefix)) return null
             val segments = uri.removePrefix(prefix).substringBefore('?').substringBefore('#').split('/')
             val documentId = when {

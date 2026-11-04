@@ -113,6 +113,44 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(KEY_FOLDER, trees.joinToString("\n")).apply()
     }
 
+    /**
+     * The ROM folders Foldcade found by itself, as document ids such as `primary:ROMs`.
+     * Separate from [folderTrees]: the player picked those, and they are never replaced.
+     */
+    fun foundRoots(): List<String> = idLines(KEY_FOUND_ROOTS)
+
+    fun setFoundRoots(ids: List<String>) {
+        prefs.edit().putString(KEY_FOUND_ROOTS, ids.distinct().joinToString("\n")).apply()
+    }
+
+    /** Found folders the player removed. They never come back by themselves. */
+    fun removedRoots(): Set<String> = idLines(KEY_REMOVED_ROOTS).toSet()
+
+    /** Stops reading a found folder for good, or a picked folder's place for finding. */
+    fun removeRoot(id: String) {
+        prefs.edit()
+            .putString(KEY_REMOVED_ROOTS, (idLines(KEY_REMOVED_ROOTS) + id).distinct().joinToString("\n"))
+            .putString(KEY_FOUND_ROOTS, (foundRoots() - id).joinToString("\n"))
+            .apply()
+    }
+
+    /** Found folders whose games R1 already announced. */
+    fun announcedRoots(): Set<String> = idLines(KEY_ANNOUNCED_ROOTS).toSet()
+
+    fun setAnnouncedRoots(ids: Set<String>) {
+        prefs.edit().putString(KEY_ANNOUNCED_ROOTS, ids.sorted().joinToString("\n")).apply()
+    }
+
+    /** The one-time offer to let Foldcade read the ROM folders it saw was answered. */
+    fun findGamesOffered(): Boolean = prefs.getBoolean(KEY_FIND_GAMES_OFFERED, false)
+
+    fun setFindGamesOffered() {
+        prefs.edit().putBoolean(KEY_FIND_GAMES_OFFERED, true).apply()
+    }
+
+    private fun idLines(key: String): List<String> =
+        prefs.getString(key, null).orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
     fun folderGrantPending(): Boolean = !prefs.getBoolean(KEY_FOLDER_EXPLAINED, false)
 
     fun setFolderGrantExplained() {
@@ -600,6 +638,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_HOME_PROMPTED = "home_prompted"
         private const val KEY_FOLDER = "folder_tree"
         private const val KEY_FOLDER_EXPLAINED = "folder_explained"
+        private const val KEY_FOUND_ROOTS = "found_roots"
+        private const val KEY_REMOVED_ROOTS = "removed_roots"
+        private const val KEY_ANNOUNCED_ROOTS = "announced_roots"
+        private const val KEY_FIND_GAMES_OFFERED = "find_games_offered"
         private const val KEY_ROMM_ORIGIN = "romm_origin"
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"

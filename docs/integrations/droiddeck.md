@@ -5,7 +5,7 @@ Add [DroidDeck](https://github.com/Droid-Deck/DroidDeck) games through individua
 ## Add an individual game
 
 1. Set up DroidDeck and check that the game plays there.
-2. In Foldcade, open **L1 › Settings › System › Home app** and choose Foldcade as the default home app.
+2. Make Foldcade the default home app. With DroidDeck installed, Foldcade asks once: choose **Use as Home**. Otherwise use **L1 › Settings › System › Set as Home**.
 3. Open the game's menu in DroidDeck and choose **Add to home screen**.
 4. Return to Foldcade. The game appears in the **DroidDeck** folder.
 

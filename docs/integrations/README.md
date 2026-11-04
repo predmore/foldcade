@@ -5,7 +5,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 | Your games | Guide | How Foldcade finds them |
 | --- | --- | --- |
 | A library on your RomM server | [RomM](romm.md) | Loads the server's catalog after sign-in, downloads games as you play them, and syncs saves. |
-| ROMs on internal storage or an SD card | [Local games](local-games.md) | Scans the folders you select. |
+| ROMs on internal storage or an SD card | [Local games](local-games.md) | Finds `ROMs` and `Emulation/roms` once you allow file access, and scans any folder you add. |
 | Games for Azahar, melonDS, Dolphin, PPSSPP, and other emulators | [Emulators](emulators.md) | Detects supported emulators; games come from folders or RomM. |
 | Games for RetroArch and its cores | [RetroArch](retroarch.md) | Uses the cores you install; games come from folders or RomM. |
 | Android games and apps | [Android](android.md) | Discovers installed apps automatically. |
@@ -15,7 +15,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 
 ## Start here
 
-Open **L1 › Settings › Library › Add** to add game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight, choose your computer's tile in the same place and turn on **Games** to list all its games. For Moonlight or DroidDeck shortcuts, first choose Foldcade under **Settings › System › Home app**; Android sends shortcut requests to its default home app.
+With a `ROMs` or `Emulation/roms` folder, Foldcade asks once at the start to read it, and its games fill Home. Open **L1 › Settings › Library › Add** to add other game folders or a RomM server. If your games are on a RomM server, start there: one sign-in brings the whole library, and with RomM 5.4 or newer your saves follow you between Thors. A game in a folder with the same system and file name as a RomM game joins its tile instead of doubling it. For Moonlight, choose your computer's tile in the same place and turn on **Games** to list all its games. Moonlight and DroidDeck shortcuts reach only Android's default home app, so with either installed Foldcade asks once to be Home; a Moonlight computer's page and **Settings › System** keep **Set as Home** until it is.
 
 Finish setup in the source app or emulator and check that your game plays there. In Foldcade, press **A** to play on the top screen or **X** on the bottom. Azahar, melonDS, PXPlay, and DroidDeck use both screens; configure their layout in the app.
 
@@ -23,7 +23,7 @@ Finish setup in the source app or emulator and check that your game plays there.
 
 | Source | When the list updates |
 | --- | --- |
-| Local folders, GameNative exports, and DroidDeck exports | At startup, when you add or remove a library folder, and in the background when you return to Foldcade. |
+| Local folders, GameNative exports, and DroidDeck exports | At startup, when you add or remove a library folder, and in the background when you return to Foldcade. Found ROM folders are looked for again at the same times, so a card put in later is found on your next return. |
 | RomM | At startup and when a connection is added or changed. |
 | Android apps | At startup, when you return to Foldcade, and when apps are installed, removed, or changed. |
 | Moonlight and DroidDeck pinned shortcuts | At startup, when you return to Foldcade, and after Foldcade accepts a new game shortcut. |

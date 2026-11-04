@@ -8,13 +8,18 @@ internal fun requireStorageAccess(callingUid: Int, ownUid: Int, granted: Boolean
     if (callingUid != ownUid || !granted) throw SecurityException("Shared storage is for Foldcade with all-files access")
 }
 
-/** Primary document ids stay on the volume, outside app data, without following links. */
-internal class SharedStorage(root: File) {
+/**
+ * Document ids of one volume, `<volume>:<path>` as Android's external storage provider
+ * writes them, stay on that volume, outside app data, without following links. [volume]
+ * is `primary`, or a removable volume's id such as `1A2B-3C4D`.
+ */
+internal class SharedStorage(root: File, private val volume: String = PRIMARY) {
     private val root = root.canonicalFile
+    private val prefix = "$volume:"
 
     fun fileOf(documentId: String): File {
-        if (!documentId.startsWith("primary:")) throw SecurityException("Only primary storage")
-        val path = documentId.removePrefix("primary:")
+        if (!documentId.startsWith(prefix)) throw SecurityException("Only $volume storage")
+        val path = documentId.removePrefix(prefix)
         val parts = if (path.isEmpty()) emptyList() else path.split('/')
         if (parts.any { it.isEmpty() || it == "." || it == ".." || it.any { char -> char == '\\' || char == '\u0000' } }) {
             throw SecurityException("A document stays on the volume")
@@ -42,10 +47,10 @@ internal class SharedStorage(root: File) {
 
     fun childId(parentId: String, name: String): String {
         HostedSavesProvider.plainName(name)
-        return (parentId.trimEnd('/') + if (parentId == "primary:") "" else "/") + name
+        return (parentId.trimEnd('/') + if (parentId == prefix) "" else "/") + name
     }
 
-    fun parentId(documentId: String): String = documentId.substringBeforeLast('/', "primary:")
+    fun parentId(documentId: String): String = documentId.substringBeforeLast('/', prefix)
 
     /** The volume and Android's app-data parent cannot be moved or removed. */
     fun requireMutable(documentId: String) {
@@ -55,3 +60,5 @@ internal class SharedStorage(root: File) {
         }
     }
 }
+
+private const val PRIMARY = "primary"
