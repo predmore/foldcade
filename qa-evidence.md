@@ -45,7 +45,7 @@ Flycast came from the project's official v2.7 GitHub release. EX APKs came from 
 
 The branch was rebased onto main after #367 merged as `975ca9c9`. Main uses plugin API minor 22; root archives now use minor 23, and format validation uses minor 24. The full forced suite passed again (187 tasks).
 
-GBA ZIP, GBC ZIP/RTC and SNES ZIP/named-slot routes were repeated. SNES included both its 20-byte root `.rtc` and `saves/run 2/auto.rtc`. Each archive round-tripped and placed twice through production ContentResolver/PlayerSaves/RommClient. The real Y › Saves screen also repeated the raw RetroArch refusal using the final shorter copy. Renamed-ROM opt-out and the distinction from a failed provider write have regression tests; unreadable or hash-invalid bytes do not grant that opt-out.
+GBA ZIP, GBC ZIP/RTC and SNES ZIP/named-slot routes were repeated. SNES included its 20-byte root `.rtc` and named `auto.srm`. A synthetic `saves/run 2/auto.rtc` also checked filter/placement behavior; upstream never writes a named RTC. GBA/GBC batteries and both clocks always remain at the root across named state slots. Each archive round-tripped and placed twice through production ContentResolver/PlayerSaves/RommClient. The real Y › Saves screen also repeated the raw RetroArch refusal using the final shorter copy. Renamed-ROM opt-out and the distinction from a failed provider write have regression tests; unreadable or hash-invalid bytes do not grant that opt-out.
 
 The official GBA.emu app initially had Content Folder saves and no recent content. Its Android picker was used to select `saves/GBA.emu`, matching Foldcade's root. A self-authored 128 KB GBA test ROM writes a counter and marker to a 32 KB SRAM file. The source is `smoke.s`; it uses no game assets or BIOS. Two copies, `Foldcade SRAM A.gba` and `Foldcade SRAM B.gba`, were opened through the production EX PlayerIntent and Android intent conversion, including NewTask/ClearTop/ClearTask and the FileProvider read grant.
 
@@ -67,3 +67,15 @@ Additional images:
 - `gba-no-state.png`: Main Slot (No State) used for the final fresh battery launch.
 - `gba-autosave-warning.png`: actual older-state warning after a placed battery.
 - `gba-format-refused.png`: final Y › Saves refusal copy.
+
+
+## Final small review fixes
+
+Round 3 found no P0–P2 issues and three P3 UI/docs issues. The renamed-ROM launch dialog now names the file-name check and offers only Play without syncing / Not now, initially focused on Not now. Each EX app’s Set up saves tile visibly lists Options › System › Launch Mode › Main Slot (No State), both before and after folder setup. The docs now distinguish NES/SNES SRAM/MD named batteries from GBA/GBC root batteries and root clocks. Tests also label synthetic nested clock fixtures accurately.
+
+A short Thor UI pass used temporary debug-only model seeding with the actual shell renderer, without connecting RomM, launching a game or writing any save. The requirement fits on the top screen in both missing-folder and configured-folder states. The bottom-screen mismatch dialog fits and has the safe focus. The harness was removed before the final forced suite and commit. The isolated build was uninstalled; it had no RomM device registration or save backups. The final 137 paths and hashes exactly equal the prior baseline. HOME remains app.foldcade, stayon is false and the turn is released.
+
+New screenshots:
+- `ex-setup-required.png`: required launch mode before picking a folder.
+- `ex-setup-found.png`: required launch mode remains visible on the configured tile (seeded UI state).
+- `renamed-save.png`: file-name explanation and Not now focused, with no setup dead end (seeded dialog).
