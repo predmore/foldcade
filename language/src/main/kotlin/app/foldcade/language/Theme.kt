@@ -160,7 +160,7 @@ object Copy {
     const val apiKey = "API key"
     const val saveKey = "Save key"
     const val checkingKey = "Checking key…"
-    const val artKeyHelp = "A free key from steamgriddb.com, under Preferences › API. It finds art for Moonlight, PC and DroidDeck games, and anything the other sources miss. Foldcade keeps the key on this device."
+    const val artKeyHelp = "A free key finds art for PC, Moonlight and DroidDeck games, and anything the other sources miss. It stays on this device."
     const val artKeyRefused = "SteamGridDB didn’t accept this key."
     const val artKeyUnreachable = "Couldn’t reach SteamGridDB. Try again in a moment."
     const val rommTokenHelp = "Foldcade keeps a token, never your password."

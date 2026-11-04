@@ -897,6 +897,15 @@ class FoldcadeApp : Application() {
         themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
         // R1's sign-in notice comes and goes with RomM's sign-in.
         scope.launch(Dispatchers.Main.immediate) { snapshotFlow { shell.model.rommSignIn }.collect { publishNotices() } }
+        // The SteamGridDB form's phone page listens while that form is open on a shown screen, and not a moment longer.
+        scope.launch(Dispatchers.Main.immediate) {
+            snapshotFlow { (homeShownNow && shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.ArtKey) to shell.model.connectBusy }
+                .collect { (wanted, busy) ->
+                    keyDrop.want(wanted)
+                    // A phone's key whose check ended, refused or set aside by an edit, gets a fresh phone page.
+                    keyDrop.checking(busy)
+                }
+        }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
@@ -1167,6 +1176,89 @@ class FoldcadeApp : Application() {
     }
 
     private val composedPaints = mutableMapOf<Pair<Int, Int?>, FoldPaint>()
+
+    /**
+     * Checks the SteamGridDB key, typed or sent from the phone, with one search, then keeps
+     * it in the credential store. A refused or unreachable key leaves the form open with a note.
+     */
+    internal fun saveArtKey() {
+        val key = shell.connectToken.trim()
+        if (key.isEmpty()) return
+        val ticket = shell.beginSetupValidation() ?: return
+        scope.launch {
+            try {
+                val accepted = checkSteamGridDbKey(key)
+                if (accepted != true) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (shell.setupValidationCurrent(ticket)) {
+                            shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
+                        }
+                    }
+                    return@launch
+                }
+                editCredentials {
+                    if (!withContext(Dispatchers.Main.immediate) { shell.setupValidationCurrent(ticket) }) return@editCredentials
+                    val saved = try {
+                        credentials.put(
+                            SteamGridDb.CREDENTIAL_ID,
+                            SteamGridDb.CREDENTIAL_KEY,
+                            Credential.ApiToken(key),
+                        )
+                        true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (saved) {
+                        steamGridDbKey = key
+                        art.forgetMisses()
+                    }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (saved) shell.setArtKeySaved(true)
+                        if (shell.setupValidationCurrent(ticket)) {
+                            if (saved) shell.closeConnect() else shell.showConnectNote(Copy.artKeyUnreachable)
+                        }
+                    }
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    shell.finishSetupValidation(ticket)
+                }
+            }
+        }
+    }
+
+    /**
+     * The SteamGridDB form's phone page. It listens only while that form is open on a shown
+     * screen; a key that arrives goes into the form and is checked at once.
+     */
+    internal val keyDrop by lazy {
+        KeyDropHost(
+            connectivity = getSystemService(ConnectivityManager::class.java),
+            scope = scope,
+            colors = {
+                val theme = paintFor(shell.model.themeIndex).theme
+                app.foldcade.language.KeyDropPage.Colors(
+                    background = KeyDropHost.hex(theme.background),
+                    surface = KeyDropHost.hex(theme.surface),
+                    text = KeyDropHost.hex(theme.onBackground),
+                    muted = KeyDropHost.hex(theme.muted),
+                    accent = KeyDropHost.hex(theme.focus),
+                )
+            },
+            onKey = { key ->
+                // The newest key wins: a different one retires a check of a typed key still running.
+                if (shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.ArtKey) {
+                    shell.editToken(key)
+                    saveArtKey()
+                }
+            },
+        )
+    }
+
+    /** True while any Home screen is shown, for what runs only then. */
+    private var homeShownNow by mutableStateOf(false)
 
     fun paintFor(themeIndex: Int): FoldPaint = composedPaints.getOrPut(themeIndex to shell.model.iconThemeIndex) {
         val base = themePacks.getOrNull(themeIndex - 1)
@@ -2472,6 +2564,7 @@ class FoldcadeApp : Application() {
     /** A Home screen was shown or covered. The resync and theme trial clocks run while any one is shown. */
     internal fun noteHomeShown() {
         val shown = homes.values.any { it.get()?.shellVisible == true }
+        homeShownNow = shown
         libraryResync.noteShown(shown)
         noteThemeTrialShown(shown)
         moonlightStreams.hosts.watch(shown)

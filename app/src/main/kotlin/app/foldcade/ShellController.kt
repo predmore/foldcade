@@ -66,6 +66,7 @@ import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
+import app.foldcade.language.scrolledShelf
 import app.foldcade.language.withFolders
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
@@ -473,8 +474,9 @@ class ShellController(
             val holdMoved = if (current.deleteHold?.row in pageHolds) next.playActivity != current.playActivity
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
+            val previewed = if (shelfPreview > 0 || current.playerSaves.any { it.playerId.startsWith("preview.") }) ShelfPreview.apply(prepared, shelfPreview) else prepared
             val stable = app.foldcade.language.retainSaveSetup(current,
-                app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared)))
+                app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, previewed))))
                 // Off the dark screen, and off one a game holds.
                 .onShownScreens { store.session.draws(it.panel()) }
             undo = when {
@@ -494,6 +496,14 @@ class ShellController(
             // Each game's name card starts closed: moving on folds the summary R3 opened.
             if (summaryOpenFor != null && summaryOpenFor != focusedHero()?.key) summaryOpenFor = null
         }
+
+    /** Debug builds: how many tiles [ShelfPreview] fills Settings' shelves to, or 0 for none. */
+    private var shelfPreview = 0
+
+    fun previewShelf(count: Int) {
+        shelfPreview = count.coerceIn(0, 32)
+        model = model
+    }
 
     /** Set up saves has been open in this process, so a saved one is from a Home that outlived it. */
     private var saveSetupSeen = false
@@ -2638,6 +2648,15 @@ class ShellController(
         return onMeaning(Meaning.MoveRight, screen)
     }
 
+    /** A swipe along a shelf's strip, to the column [first]. The focus stays on screen with it. */
+    fun scrollSettingsShelf(first: Int, screen: HostScreen) {
+        if (modalOpen()) return
+        val page = model.settings ?: return
+        if (page.screen != screen) return
+        val next = page.scrolledShelf(first, model)
+        if (next != page) publish(model.copy(settings = next))
+    }
+
     /** One tap on a settings row focuses it and acts on it, the same as a menu row. */
     fun touchSettingsRow(index: Int, screen: HostScreen): Effect? {
         if (modalOpen()) return null
@@ -3809,11 +3828,11 @@ class ShellController(
         val definitions = plugins.platformDefinitions()
         saveSettingsCache?.let {
             if (it.definitions === definitions && it.installed === installedPlayers &&
-                it.sync === saveSync && it.setup === setupSteps) return it.rows
+                it.sync === saveSync && it.setup === setupSteps) return if (shelfPreview > 0) ShelfPreview.players(it.rows, shelfPreview) else it.rows
         }
         return readPlayerSaveSettings().also {
             saveSettingsCache = SaveSettingsCache(definitions, installedPlayers, saveSync, setupSteps, it)
-        }
+        }.let { if (shelfPreview > 0) ShelfPreview.players(it, shelfPreview) else it }
     }
 
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */

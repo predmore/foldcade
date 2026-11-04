@@ -18,6 +18,9 @@ class HttpStackGuardTest {
             "openStream",
             "URL.readText",
             "URL.readBytes",
+            // Listening, too, belongs to :net, where LanDrop keeps it short-lived and LAN-only.
+            "ServerSocket",
+            "HttpServer",
         )
         val allowedRoot = "net/src/main/"
         val hits = mutableListOf<String>()
