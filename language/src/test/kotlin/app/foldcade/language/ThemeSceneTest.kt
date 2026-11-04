@@ -1,8 +1,12 @@
 package app.foldcade.language
 
+import java.io.File
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.round
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -42,7 +46,28 @@ class ThemeSceneTest {
         assertNotNull(pack.icons["app.com.android.chrome"])
         assertNotNull(pack.icons["app.org.azahar_emu.azahar"])
         assertNotNull(pack.icons["symbol.close"])
-        assertEquals(394, pack.icons.size)
+        assertEquals(afterglowIconSlots(), pack.icons.keys)
+    }
+
+    /** Slots in `themes/afterglow/theme.json`, which must name exactly the icon files on disk. */
+    private fun afterglowIconSlots(): Set<String> {
+        val root = repoRoot()
+        val slots = Json.parseToJsonElement(File(root, "themes/afterglow/theme.json").readText())
+            .jsonObject.getValue("icons").jsonObject
+        val onDisk = File(root, "themes/afterglow/icons")
+            .listFiles { file -> file.isFile && file.extension == "xml" }
+            .orEmpty()
+            .map { "icons/${it.name}" }
+            .toSet()
+        val referenced = slots.map { (_, icon) -> icon.jsonObject.getValue("file").jsonPrimitive.content }.toSet()
+        assertEquals("An icon file fills no slot, or a slot names a missing file", onDisk, referenced)
+        return slots.keys
+    }
+
+    private fun repoRoot(): File {
+        var dir = File(System.getProperty("user.dir") ?: error("user.dir"))
+        while (!File(dir, "settings.gradle.kts").isFile) dir = dir.parentFile ?: error("settings.gradle.kts not found")
+        return dir
     }
 
     @Test

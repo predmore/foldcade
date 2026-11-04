@@ -8,7 +8,7 @@ The current version exposes the launcher's presentation: colours, type, icons, s
 
 ## Compatibility
 
-A pack is written against a contract: the manifest fields, style tokens, icon slots, scene inputs, and sound cues of one Foldcade. [`themes/contract.json`](../themes/contract.json) lists every one, with each token's kind, unit, accepted values, the `base` scale it follows, and Afterglow's value. [`themes/theme.schema.json`](../themes/theme.schema.json) is a JSON Schema for `theme.json`. Point a manifest's `"$schema"` at it and an editor completes and checks the manifest as you write it. Both files are written from the engine by its tests, and a build fails when either is stale.
+A pack is written against a contract: the manifest fields, style tokens, icon slots, scene inputs, and sound cues of one Foldcade. [`themes/contract.json`](../themes/contract.json) lists every one, with each token's kind, unit, accepted values, the `base` scale it follows, and Afterglow's value. [`themes/theme.schema.json`](../themes/theme.schema.json) is a JSON Schema for `theme.json`. Point a manifest's `"$schema"` at it and an editor completes and checks the manifest as you write it. Both files are written from the engine. `./gradlew updateThemeContract` rewrites them. A test fails when either is stale and names that task.
 
 What Foldcade promises a pack:
 
