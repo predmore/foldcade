@@ -2,8 +2,11 @@ package app.foldcade.language
 
 object FirmwareCopy {
     fun ready(platform: String): String = "$platform BIOS ready"
-    fun missing(files: List<String>, place: String): String =
-        "Missing ${files.joinToString(", ")}. Put your BIOS in $place, then start the game again."
+    fun missing(system: String, files: List<String>, place: String, rommConnected: Boolean = false): String {
+        val detail = files.joinToString(", ").removePrefix("$system BIOS ").trim('(', ')')
+        val romm = if (rommConnected) " or RomM’s firmware" else ""
+        return "Missing the $system BIOS ($detail). Put it in $place$romm, then retry."
+    }
     fun folder(player: String, place: String, files: List<String> = emptyList()): String =
         (if (files.isEmpty()) "Your BIOS belongs in $place. " else "${files.joinToString(", ")} belongs in $place. ") +
             "Choose the $player folder once to let Foldcade check and place your BIOS."

@@ -109,6 +109,9 @@ internal interface SaveDocuments {
     /** MD5 of the document at [uri], or null when it cannot be read. */
     fun md5(uri: String): String? = read(uri)?.let(::md5Hex)
 
+    /** Firmware hashing participates in the launch's interruptible worker. */
+    fun firmwareMd5(uri: String): String? = md5(uri)
+
     /**
      * Copies [sourceUri] onto [targetUri], replacing it. False when the source
      * cannot be read or the copy cannot be written.
@@ -434,6 +437,8 @@ internal class PlayerSaves(
                     if (findFirmwareFile(docs, into, name) == null) onWrite()
                     placeFirmwareFile(into, name, file.contentUri, header)
                 }) name else null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 null
             }
@@ -442,7 +447,7 @@ internal class PlayerSaves(
 
     private fun placeFirmwareFile(folder: String, name: String, source: String, header: ByteArray): Boolean {
         val key = "firmware:$folder/$name"
-        val hash = docs.md5(source) ?: return false
+        val hash = docs.firmwareMd5(source) ?: return false
         val existing = findFirmwareFile(docs, folder, name)
         docs.publishFirmware(folder, name, source, hash, header)?.let { return it }
         val currentHash = existing?.let(docs::md5)
@@ -1061,15 +1066,33 @@ private fun readCapped(input: InputStream, limit: Long): ByteArray? {
 internal fun md5Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
 
-private fun digestHex(input: InputStream): String {
+private fun digestHex(input: InputStream, interruptible: Boolean = false): String {
     val digest = MessageDigest.getInstance("MD5")
     val buffer = ByteArray(64 * 1024)
     while (true) {
+        if (interruptible) checkFirmwareCancellation()
         val count = input.read(buffer)
         if (count < 0) break
         digest.update(buffer, 0, count)
     }
     return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+internal fun checkFirmwareCancellation() {
+    if (Thread.currentThread().isInterrupted) throw CancellationException("BIOS preparation cancelled")
+}
+
+/** Bounded chunks let B stop a local BIOS copy as well as a core download. */
+internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream) {
+    val buffer = ByteArray(64 * 1024)
+    while (true) {
+        checkFirmwareCancellation()
+        val count = input.read(buffer)
+        if (count < 0) break
+        checkFirmwareCancellation()
+        output.write(buffer, 0, count)
+    }
+    checkFirmwareCancellation()
 }
 
 /** A firmware file at most this large is held so a failed write can put it back. */
@@ -1167,6 +1190,11 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         null
     }
 
+    override fun firmwareMd5(uri: String): String? = try {
+        resolver.openInputStream(Uri.parse(uri))?.use { digestHex(it, interruptible = true) }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { checkFirmwareCancellation(); null }
+
     override fun copy(sourceUri: String, targetUri: String): Boolean = try {
         val source = resolver.openInputStream(Uri.parse(sourceUri)) ?: return false
         val target = resolver.openOutputStream(Uri.parse(targetUri), "wt") ?: run {
@@ -1192,12 +1220,13 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         resolver.openInputStream(Uri.parse(source))?.use { input ->
             val descriptor = resolver.openFileDescriptor(Uri.parse(target), "wt") ?: return false
             android.os.ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
-                input.copyTo(output)
+                copyFirmwareBytes(input, output)
                 output.flush()
                 output.fd.sync()
             }
         } != null
-    } catch (_: Exception) { false }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { checkFirmwareCancellation(); false }
 
     override fun renameFirmware(uri: String, leaf: String): String? =
         DocumentsContract.renameDocument(resolver, Uri.parse(uri), leaf)?.toString()
@@ -1391,6 +1420,7 @@ private fun findFirmwareFile(docs: SaveDocuments, folder: String, name: String):
 
 /** Publishes only a complete, checked new image. The player's existing image always wins. */
 internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: String, source: String, hash: String, header: ByteArray = byteArrayOf()): Boolean {
+    checkFirmwareCancellation()
     if (findFirmwareFile(docs, folder, name) != null) return false
     val parent = name.substringBeforeLast('/', "")
     val leaf = name.substringAfterLast('/')
@@ -1399,13 +1429,14 @@ internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: Strin
     var published = false
     var renamed: String? = null
     try {
-        if (!docs.copyFirmware(source, temp) || docs.md5(temp) != hash) return false
+        if (!docs.copyFirmware(source, temp) || docs.firmwareMd5(temp) != hash) return false
         // A background RomM refresh can replace the source after selection.
         // Publish only the image whose bytes selected this core's destination.
         if (header.isNotEmpty() && docs.head(temp, header.size)?.contentEquals(header) != true) return false
+        checkFirmwareCancellation()
         if (findFirmwareFile(docs, folder, name) != null) return false
         renamed = docs.renameFirmware(temp, leaf) ?: return false
-        if (docs.displayName(renamed) != leaf || docs.md5(renamed) != hash) return false
+        if (docs.displayName(renamed) != leaf || docs.firmwareMd5(renamed) != hash) return false
         published = true
         return true
     } finally {

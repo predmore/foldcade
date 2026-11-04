@@ -4,8 +4,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FirmwareTest {
+    @Test fun missingBiosNamesTheSystemAndOnlyOffersAnExistingRommConnection() {
+        val local = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
+        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system, then retry.", local)
+        assertFalse(local.contains("RomM"))
+        val connected = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true)
+        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system or RomM’s firmware, then retry.", connected)
+        assertTrue(connected.indexOf("Sega CD") < connected.indexOf("bios_CD_U.bin"))
+        assertTrue(connected.length < 120)
+        assertTrue(FirmwareCopy.missing("PlayStation", listOf("PlayStation BIOS (.bin)"), "DuckStation/bios").startsWith("Missing the PlayStation BIOS (.bin)."))
+    }
+
     @Test fun missingBiosNamesTheExactFileAndOneDestination() {
-        val message = FirmwareCopy.missing(listOf("bios_CD_U.bin"), "RetroArch/system")
+        val message = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
         assertTrue(message.contains("bios_CD_U.bin"))
         assertTrue(message.contains("RetroArch/system"))
         assertFalse(message.contains("RomM"))

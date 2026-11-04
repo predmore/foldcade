@@ -1591,6 +1591,11 @@ class FoldcadeApp : Application() {
     }
 
     internal val retroArchCoreReader: RetroArchCoreReader by lazy { RetroArchCoreReader(this, store::retroArchCoresFolder) }
+    internal val retroArchCoreDownload by lazy {
+        RetroArchCoreDownload {
+            java.io.File(externalMediaDirs.firstOrNull() ?: throw java.io.IOException("Shared storage unavailable"), "retroarch-cores")
+        }
+    }
 
     /** The granted Eden folder, per installed package. */
     internal val edenFolderReader: EdenFolderReader by lazy { EdenFolderReader(this, store::edenFolder) }
@@ -1715,7 +1720,8 @@ class FoldcadeApp : Application() {
     fun startIntent(player: Player, intent: PlayerIntent): PlayerIntent {
         if (LaunchFlag.ReplaceRunning !in intent.flags) return intent
         val other = (player as? RetroArchPlayer)?.freshStart(intent) ?: return intent
-        return chooseStart(intent, other, store.lastPlayerStart(intent.packageName), store.saveAwaitsLoad(player.saveFolderId()))
+        val normal = chooseStart(intent, other, store.lastPlayerStart(intent.packageName), store.saveAwaitsLoad(player.saveFolderId()))
+        return launchWork.retroArchCore?.sideload(normal) ?: normal
     }
 
     /**
@@ -1727,7 +1733,7 @@ class FoldcadeApp : Application() {
     fun noteStarted(player: Player, intent: PlayerIntent): Boolean {
         store.setSaveAwaitsLoad(player.saveFolderId(), false)
         if (LaunchFlag.ReplaceRunning !in intent.flags) return false
-        val key = startKey(intent)
+        val key = startKey(launchWork.retroArchCore?.installedIntent(intent) ?: intent)
         val replacing = store.lastPlayerStart(intent.packageName) != key
         store.setLastPlayerStart(intent.packageName, key)
         return replacing

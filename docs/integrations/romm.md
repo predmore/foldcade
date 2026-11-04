@@ -6,13 +6,13 @@ What you get:
 
 - **Sign-in with a code** you approve on your phone. Foldcade stores a token, not your password.
 - **Verified downloads** that resume after an interruption when the server allows it, and stay ready for offline play.
-- **[Save sync](#save-sync)** for melonDS, RetroArch, Azahar and DuckStation, with a choice and both copies kept when two devices disagree.
+- **[Save sync](#save-sync)** for melonDS, RetroArch, Azahar, DuckStation, ARMSX2, aPS3e and Eden, with a choice and both copies kept when two devices disagree.
 - **[Firmware](#firmware)**, such as a PlayStation BIOS, placed where the emulator looks for it.
 - **One tile** for a game that is in a [local folder](local-games.md) and on the server under the same system and file name, opening the copy already on your Thor.
 - **[Switch updates and DLC](#updates-and-dlc)** downloaded beside the game and loaded by Eden.
 - **[Switch keys and firmware](#switch-keys-and-firmware)** added to Eden when Eden is missing them.
 - **RetroAchievements progress** on the other screen during a single-screen game.
-- **Any number of servers**, each with its own sign-in, on one Home.
+- **New games on the server** appear within 15 minutes, or right away from **Sync games**.
 
 ## Before connecting
 
@@ -49,7 +49,7 @@ After restoring a setup backup, which leaves sign-ins out, or once RomM refuses 
 
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
 
-The catalog loads at startup and after connecting or editing a connection. After adding games, finish RomM's scan and [fully restart Foldcade](README.md#discovery-and-updates).
+The catalog loads at startup, after connecting or editing a connection, and again every 15 minutes while Home is shown. After adding games, let RomM finish its scan, then choose **Settings › Library › Sync games** to see them right away.
 
 ## Downloads and offline play
 
@@ -145,7 +145,7 @@ For Eden, choose its own data folder once for saves, keys and firmware. Slot `sa
 ## If something goes wrong
 
 - **Cannot connect:** Try the address from the Thor, check network access, and get a new code or check the token's permissions.
-- **Missing game:** Check RomM's scan and account access, then restart Foldcade. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
+- **Missing game:** Check RomM's scan and account access, then choose **Settings › Library › Sync games**. If it is already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
 - **Will not launch:** Check the [emulator and format](emulators.md). **aPS3e setup: Not syncing** in **Foldcade Settings › Emulators** means aPS3e still needs its first-run setup or PlayStation 3 firmware; select it for the steps.
 - **Saves do not sync:** Check the server version, the shared melonDS directory, that Azahar's save folder is its user folder, and that **Foldcade Settings › Emulators** shows DuckStation's memory cards and ARMSX2's memory card as **Syncing**. **Play without syncing** at the save-folder prompt allows this launch with the emulator's own saves. **Not syncing** on ARMSX2's row opens the steps for its folder card. The old file card stays untouched.
 

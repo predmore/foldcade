@@ -628,6 +628,12 @@
                             "default": 14.0,
                             "description": "sp; follows base.typeScale"
                         },
+                        "tileStatus": {
+                            "type": "number",
+                            "exclusiveMinimum": 0.0,
+                            "default": 10.0,
+                            "description": "sp; follows base.typeScale"
+                        },
                         "clock": {
                             "type": "number",
                             "exclusiveMinimum": 0.0,

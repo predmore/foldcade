@@ -63,7 +63,14 @@ Release publishing is specified in [releases.md](releases.md).
 
 ### Unit tests
 
-`.github/workflows/unit-tests.yml` runs on pull requests and on pushes to `main`. It checks `versionName` with `.github/release/check-version-bump.sh`, then runs `./gradlew testDebugUnitTest`. The Gradle configuration cache is read-only on pull requests and writable on pushes to `main`. A new push cancels a stale pull-request run. A push to `main` does not cancel. The Release workflow also keeps `cancel-in-progress` false.
+`.github/workflows/unit-tests.yml` runs on pull requests and on pushes to `main`.
+
+- **versionCode** checks `versionName` with `.github/release/check-version-bump.sh`.
+- **testDebugUnitTest** runs `./gradlew testDebugUnitTest`.
+- **lintDebug** runs `./gradlew lintDebug`, which is `:app:lintDebug` and `:language:lintDebug`. The build fails on lint errors. Existing warnings stay warnings.
+- **generated icons** runs `python3 tools/art/icons.py` and fails when `themes/afterglow/icons/`, `art/svg/`, or the icon slots in `themes/afterglow/theme.json` differ. The script uses the Python standard library only.
+
+The Gradle jobs use the configuration cache. It is read-only on pull requests and writable on pushes to `main`. They share the Android SDK package cache. A new push cancels a stale pull-request run. A push to `main` does not cancel. The Release workflow also keeps `cancel-in-progress` false.
 
 ### Release
 

@@ -31,13 +31,13 @@ Your games live on your own server, and Foldcade makes that server the Thor's li
 - **Sign in with a code.** Type your server's address, approve the code on your phone, and you are in. Foldcade keeps a token, never your password.
 - **The whole catalog, nothing to copy first.** Every game on the server appears in Foldcade, filed by system, with RomM's covers. Press **A**, and Foldcade downloads the game, checks it against RomM, and starts it. The tile and the top screen show the progress.
 - **Downloads you can trust.** Each file must match the size and checksum RomM lists before it plays. An archive is checked by size, since RomM's checksum describes what is inside it. A download that stops picks up where it left off when the server allows it. Downloaded games play offline, and **Y › Delete download** gives the space back without touching your saves.
-- **Saves that come with you.** With RomM 5.4 or newer, Foldcade fetches the newest melonDS or RetroArch save before a game starts and sends yours back when you return to Home. Stop on one Thor and keep going on another. A paused game resumes as you left it, without a sync. Offline play waits for the next sync.
+- **Saves that come with you.** With RomM 5.4 or newer, Foldcade fetches the newest save before a game starts and sends yours back when you return to Home. Stop on one Thor and keep going on another. A paused game resumes as you left it, without a sync. Offline play waits for the next sync.
 - **Saves are never lost to a sync.** Before a sync replaces a save on your Thor, Foldcade sets the old one aside. If two devices both saved, it asks which one to play and keeps both.
 - **Already have the files?** A game in a folder on your SD card with the same system and file name as on your server is one tile. It opens the copy on your Thor without downloading, and its saves still sync through RomM.
 - **BIOS in place.** Your own dumps from RomM or [local BIOS folders](docs/integrations/local-games.md#bios) follow your games into DuckStation, ARMSX2, aPS3e and [RetroArch](docs/integrations/retroarch.md#bios). Existing BIOS files stay yours.
 - **Switch updates and DLC, handled.** When RomM files a game's update and DLC beside it, Foldcade downloads them with the game, and [Eden](docs/integrations/emulators.md) loads them at start. There is nothing to install in Eden.
 - **Achievements on the other screen.** During a single-screen RomM game, the other screen shows your RetroAchievements progress for it.
-- **One home, any number of servers.** Add a server at home and a friend's; each keeps its own sign-in, and their games share one Home.
+- **New games show up by themselves.** Foldcade checks the server every 15 minutes while Home is shown. **Settings › Library › Sync games** checks right away.
 
 RomM games sit beside everything else, in the same folders, collections, and Find. Read the [RomM guide](docs/integrations/romm.md) to connect and set up save sync.
 
@@ -84,7 +84,7 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 
 ### One press, and you are playing
 
-Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once you install a core for it.
+Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
 
 ### Two drawers, always a press away
 
@@ -140,7 +140,7 @@ Track how long you played and when, see your week in L1, and open All games' **R
 
 **Settings › Look › Button labels** shows your current Confirm button. Open it to choose a different face button, or press Start to cancel. You can change it again at any time.
 
-<img src="docs/images/settings.webp" alt="Settings, with Look, Sound, Library, Saves, and System on the left, and Theme, Icons, Background, Motion, and Button labels on the right." width="640">
+<img src="docs/images/settings.webp" alt="Settings, with Look, Sound, Library, Emulators, and System on the left, and Theme, Icons, Background, Motion, and Button labels on the right." width="640">
 
 ## Get Foldcade
 
@@ -173,7 +173,7 @@ No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and M
 Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
 
 **Which saves sync?**
-melonDS `.sav` files and RetroArch `.srm` battery saves in RetroArch's default save layout. Cores that save another way, such as PPSSPP, and other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
+melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, and Eden account saves. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.

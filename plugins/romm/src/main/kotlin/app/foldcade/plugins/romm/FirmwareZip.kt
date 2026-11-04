@@ -290,6 +290,7 @@ fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, totalCap: Lo
     Files.newInputStream(zip).use { input ->
         val buffer = ByteArray(64 * 1024)
         while (true) {
+            if (Thread.currentThread().isInterrupted) throw CancellationException("BIOS archive check cancelled")
             val count = input.read(buffer)
             if (count < 0) break
             digest.update(buffer, 0, count)
