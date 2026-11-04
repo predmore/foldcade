@@ -69,4 +69,59 @@ class FoundFoldersTest {
             homePrompt(HostScreen.Bottom, listOf("Moonlight", "DroidDeck")).body,
         )
     }
+
+    private val offer = RomFolderOffer(listOf("ROMs"), listOf("Nintendo DS"), "primary:ROMs")
+
+    @Test
+    fun theEmptyLibraryLeadsWithFindGamesWhileFoldersWait() {
+        val model = PickerModel(count = 3, rowsPerPage = 1, gridKind = GridKind.NoLibrary, libraryGrid = true, romFolderOffer = offer)
+        assertEquals(listOf(NoLibraryAction.FindGames, NoLibraryAction.AddFolder, NoLibraryAction.AddRomm), noLibraryActions(model))
+        assertEquals(Effect.OpenAllFilesAccess, reduce(model, Meaning.Activate).second)
+        // Add a folder opens the picker at the folder seen, so it needs no explainer even the first time.
+        val onFolder = reduce(model, Meaning.MoveRight).first
+        assertEquals(1, onFolder.focus.cellIndex)
+        val (added, effect) = reduce(onFolder.copy(folderGrantPending = true), Meaning.Activate)
+        assertEquals(Effect.AddFolder, effect)
+        assertNull(added.dialog)
+        val onRomm = reduce(onFolder, Meaning.MoveRight).first
+        assertEquals(Effect.OpenAddRomm, reduce(onRomm, Meaning.Activate).second)
+        // Without anything seen, the buttons are as before.
+        val none = model.copy(count = 2, romFolderOffer = null)
+        assertEquals(listOf(NoLibraryAction.AddFolder, NoLibraryAction.AddRomm), noLibraryActions(none))
+        assertEquals(DialogKind.Folder, reduce(none.copy(folderGrantPending = true), Meaning.Activate).first.dialog?.kind)
+    }
+
+    @Test
+    fun addGamesPutsTheWayThatFitsFirst() {
+        val seen = addGamesDialog(HostScreen.Bottom, offer)
+        assertEquals(DialogKind.AddGames, seen.kind)
+        assertEquals(listOf(DialogButton.FindGames, DialogButton.AddFolder, DialogButton.SignInRomm), seen.buttons)
+        assertEquals(Copy.addGames, seen.title)
+        assertEquals(FoundFolderCopy.offerBody(offer.places, offer.systems), seen.body)
+        // From the tile, Back only closes.
+        val (closed, effect) = reduce(PickerModel(count = 1, rowsPerPage = 1, dialog = seen), Meaning.Back)
+        assertNull(closed.dialog)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.AddGames, null), effect)
+        // Nothing seen: RomM is a phone code away, then a folder. The first run's ask has Not now.
+        val asked = addGamesDialog(HostScreen.Bottom, null, ask = true)
+        assertEquals(listOf(DialogButton.SignInRomm, DialogButton.AddFolder, DialogButton.NotNow), asked.buttons)
+        assertEquals(FoundFolderCopy.noRomsTitle, asked.title)
+        assertEquals(2, asked.safeIndex)
+        assertEquals(FoundFolderCopy.signInRomm, dialogButtonLabel(DialogButton.SignInRomm))
+        assertEquals(FoundFolderCopy.findGames, dialogButtonLabel(DialogButton.FindGames))
+        assertEquals("Find games in ROMs, or add a folder", FoundFolderCopy.addGamesLine(offer))
+        assertEquals("Sign in to RomM, or add a folder", FoundFolderCopy.addGamesLine(null))
+    }
+
+    @Test
+    fun retroArchsCoresAskNamesItsSystems() {
+        val dialog = retroArchCoresFirstDialog(HostScreen.Bottom, listOf("Sega Genesis"))
+        assertEquals(DialogKind.RetroArchCores, dialog.kind)
+        assertEquals(listOf(DialogButton.ContinueGrant, DialogButton.NotNow), dialog.buttons)
+        assertEquals(
+            "RetroArch plays your Sega Genesis games. Let Foldcade see its cores and it gets any that are missing. Next, tap Use this folder, then Allow.",
+            dialog.body,
+        )
+        assertEquals(true, FoundFolderCopy.retroArchCoresBody(listOf("A", "B", "C")).startsWith("RetroArch plays your games."))
+    }
 }

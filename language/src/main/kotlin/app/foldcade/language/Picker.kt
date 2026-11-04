@@ -150,6 +150,12 @@ enum class DialogKind {
 
     /** Once: ROM folders were seen, and Allow opens Android's all-files access. Opens on Allow. */
     FindGames,
+
+    /**
+     * Ways to bring games: Find games while ROM folders wait for access, a folder, and RomM.
+     * Home's Add games tile opens it, and the first run asks it once when no ROM folder was seen.
+     */
+    AddGames,
 }
 
 enum class DialogButton {
@@ -182,6 +188,15 @@ enum class DialogButton {
     RestoreBackup,
     Library,
     SignOut,
+
+    /** Android's all-files access, for the ROM folders Foldcade saw. */
+    FindGames,
+
+    /** Android's folder picker, at the ROM folder Foldcade saw when it saw one. */
+    AddFolder,
+
+    /** RomM's sign-in form, with its phone code. */
+    SignInRomm,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -212,6 +227,9 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.RedoRestore -> BackupCopy.redo
     DialogButton.Library -> SettingsCopy.library
     DialogButton.SignOut -> if (subject == ROMM_REMOVE) Copy.remove else Copy.signOut
+    DialogButton.FindGames -> FoundFolderCopy.findGames
+    DialogButton.AddFolder -> Copy.addFolder
+    DialogButton.SignInRomm -> FoundFolderCopy.signInRomm
 }
 
 data class DialogState(
@@ -514,6 +532,13 @@ fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/**
+ * The same offer before any launch, once the library has games RetroArch plays ([systems]),
+ * so the first game starts without a stop. Continue opens the picker; Not now settles it.
+ */
+fun retroArchCoresFirstDialog(screen: HostScreen, systems: List<String>): DialogState =
+    retroArchCoresDialog(screen).copy(body = FoundFolderCopy.retroArchCoresBody(systems))
+
 /** An unplaced save stops the launch; unresolved save destinations offer an explicit per-launch opt-out. */
 fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false, incompatible: Boolean = false): DialogState = DialogState(
     kind = if (playAnyway) DialogKind.EdenSaveHold else DialogKind.Ok,
@@ -645,6 +670,31 @@ fun folderExplainer(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
+/**
+ * Ways to bring games, the recommended one first. While ROM folders Foldcade saw wait for
+ * access ([offer]) that is Find games; with none seen it is RomM, whose sign-in is a phone
+ * code away. [ask] is the first run's one-time question, which has Not now; Home's Add games
+ * tile opens it without one, and Back closes it.
+ */
+fun addGamesDialog(screen: HostScreen, offer: RomFolderOffer?, ask: Boolean = false): DialogState {
+    val buttons = buildList {
+        if (offer != null) add(DialogButton.FindGames)
+        if (offer == null) add(DialogButton.SignInRomm)
+        add(DialogButton.AddFolder)
+        if (offer != null) add(DialogButton.SignInRomm)
+        if (ask) add(DialogButton.NotNow)
+    }
+    return DialogState(
+        kind = DialogKind.AddGames,
+        title = if (ask) FoundFolderCopy.noRomsTitle else Copy.addGames,
+        body = if (offer != null) FoundFolderCopy.offerBody(offer.places, offer.systems) else FoundFolderCopy.noRomsBody,
+        buttons = buttons,
+        index = 0,
+        safeIndex = if (ask) buttons.lastIndex else BACK_CLOSES,
+        screen = screen,
+    )
+}
+
 /** The one-time offer to read the ROM folders Foldcade saw: [places] and the [systems] their folders name. */
 fun findGamesPrompt(screen: HostScreen, places: List<String>, systems: List<String>): DialogState = DialogState(
     kind = DialogKind.FindGames,
@@ -663,6 +713,9 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "home-streams" -> homePrompt(screen, listOf("Moonlight", "DroidDeck"))
         "find-games" -> findGamesPrompt(screen, listOf("Emulation/roms"), listOf("Nintendo DS", "Sega Genesis"))
         "folder" -> folderExplainer(screen)
+        "add-games" -> addGamesDialog(screen, RomFolderOffer(listOf("ROMs"), listOf("Nintendo DS", "Sega Genesis"), "primary:ROMs"))
+        "no-roms" -> addGamesDialog(screen, null, ask = true)
+        "retroarch-cores-first" -> retroArchCoresFirstDialog(screen, listOf("Sega Genesis", "Game Boy Advance"))
         "relogin" -> signInAgainPrompt(screen)
         "save-folder" -> saveFolderDialog(screen)
         "close-player" -> closeBothPanelDialog(screen)
@@ -1671,6 +1724,25 @@ sealed interface Effect {
     ) : Effect
 }
 
+/** The empty library's buttons, in order. Find games leads while ROM folders wait for access. */
+enum class NoLibraryAction {
+    FindGames,
+    AddFolder,
+    AddRomm,
+}
+
+fun noLibraryActions(model: PickerModel): List<NoLibraryAction> =
+    listOfNotNull(NoLibraryAction.FindGames.takeIf { model.romFolderOffer != null }, NoLibraryAction.AddFolder, NoLibraryAction.AddRomm)
+
+/**
+ * Add a folder: Android's picker. It opens at the ROM folder Foldcade saw when there is one,
+ * which says what to choose, so only a picker with nowhere obvious to start is explained first,
+ * and that only once.
+ */
+fun addFolder(model: PickerModel, screen: HostScreen): Pair<PickerModel, Effect?> =
+    if (model.folderGrantPending && model.romFolderOffer == null) model.copy(dialog = folderExplainer(screen)) to null
+    else model to Effect.AddFolder
+
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
 enum class GridKind {
     Games,
@@ -1790,6 +1862,10 @@ data class PickerModel(
     val usageGranted: Boolean = false,
     /** Android's current optional all-files access, shared by Settings and save setup. */
     val allFilesGranted: Boolean = false,
+    /** ROM folders Foldcade saw and may not read yet. Find games leads the ways to add games while it is set. */
+    val romFolderOffer: RomFolderOffer? = null,
+    /** Android's all-files page is open beside Foldcade. The command center says to tap its switch. */
+    val allFilesPage: Boolean = false,
     /** Mirrors the home board. Off keeps new scans out of the grid. */
     val addNewToHome: Boolean = true,
     /** Mirrors the home board: the Recently played tile is on the root. */
@@ -1843,7 +1919,9 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
-        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut) && repeatCount > 0 &&
+        // Asks that open by themselves, or under a held press, take only a fresh one.
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut,
+                DialogKind.AddGames, DialogKind.FindGames, DialogKind.RetroArchCores) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
@@ -2219,20 +2297,17 @@ private fun activate(model: PickerModel, screen: HostScreen, elsewhere: Boolean 
                 GridKind.Games -> model to Effect.Launch(model.focus.cellIndex, elsewhere)
                 GridKind.Platforms -> model to Effect.OpenPlatform(model.focus.cellIndex)
                 GridKind.Unreachable -> model to Effect.TryAgain
-                GridKind.NoLibrary -> if (model.focus.cellIndex == 0) {
-                    if (model.folderGrantPending) {
-                        model.copy(dialog = folderExplainer(screen)) to null
-                    } else {
-                        model to Effect.AddFolder
-                    }
-                } else {
-                    model.copy(
+                GridKind.NoLibrary -> when (noLibraryActions(model).getOrNull(model.focus.cellIndex)) {
+                    NoLibraryAction.FindGames -> model to Effect.OpenAllFilesAccess
+                    NoLibraryAction.AddFolder -> addFolder(model, screen)
+                    NoLibraryAction.AddRomm -> model.copy(
                         connectOpen = true,
                         connectScreen = model.layout.pageScreen,
                         connectIndex = 0,
                         connectKind = ConnectKind.Romm,
                         connectReturnPanel = null,
                     ) to Effect.OpenAddRomm
+                    null -> model to null
                 }
             }
         }
@@ -2617,12 +2692,7 @@ private fun activateRow(
         } else {
             model.copy(panel = panel, dialog = brightnessPrompt(panel.screen)) to null
         }
-        Row.AddFolder ->
-            if (model.folderGrantPending) {
-                model.copy(dialog = folderExplainer(screen)) to null
-            } else {
-                model to Effect.AddFolder
-            }
+        Row.AddFolder -> addFolder(model, screen)
         // The row stays in view and reads Syncing until every library has answered.
         Row.SyncLibrary -> model.copy(panel = panel) to Effect.SyncLibrary
         is Row.RommConnection -> model.copy(
