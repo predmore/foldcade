@@ -236,13 +236,13 @@ fun catalogGameFromLine(line: String): CatalogGame? {
     ).accepted()
 }
 
-private fun appRef(game: CatalogGame): LaunchTarget.AppRef = if (game.shortcutPackage != null) LaunchTarget.AppRef(
+private fun appRef(game: CatalogGame): LaunchTarget.AppRef = if (game.shortcutPackage != null && game.gameSource == "SHORTCUT") LaunchTarget.AppRef(
     mapOf(GameNativePlayer.EXTRA_SHORTCUT_PACKAGE to game.shortcutPackage, GameNativePlayer.EXTRA_SHORTCUT_ID to "game_${game.appId}"),
 ) else LaunchTarget.AppRef(
     values = mapOf(
         GameNativePlayer.EXTRA_APP_ID to game.appId.toString(),
         GameNativePlayer.EXTRA_GAME_SOURCE to game.gameSource,
-    ),
+    ) + (game.shortcutPackage?.let { mapOf(GameNativePlayer.EXTRA_SHORTCUT_PACKAGE to it) } ?: emptyMap()),
 )
 
 private fun CatalogGame.toGame(): Game = Game(

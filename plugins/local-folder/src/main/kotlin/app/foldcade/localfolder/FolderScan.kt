@@ -279,7 +279,7 @@ private fun toGame(
 ): FolderGame? {
     val name = entry.displayName.trim()
     if (name.isEmpty() || name.startsWith('.')) return null
-    val extension = fileExtension(name) ?: return null ?: return null
+    val extension = fileExtension(name) ?: return null
     if (extension == "md" && normalizeFolderName(fileStem(name)) in DOC_STEMS) {
         return null
     }

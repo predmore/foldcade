@@ -11,7 +11,7 @@ Foldcade adds games from [GameNative](https://github.com/utkarshdalal/GameNative
 
 No export or folder selection is needed. Pins belong to the launcher that accepted them; request the shortcut again after making Foldcade Home. Foldcade reads enabled pinned shortcuts at startup and when you return Home.
 
-Pins launch GameNative's original shortcut, preserving its store and whether it came from the standard or Gold build. **Y › Hide** keeps the Android shortcut. Hold **A** on **Delete shortcut** to remove Foldcade's pin; the installed game stays in GameNative. A matching export keeps the game in All.
+Pins preserve whether the game came from the standard or Gold build. Without an export they launch GameNative’s original shortcut; a matching export supplies the store and lets the game keep launching even if another app becomes Home. **Y › Hide** keeps the Android shortcut. Hold **A** on **Delete shortcut** to remove Foldcade's pin; the installed game stays in GameNative. A matching export keeps the game in All.
 
 ## Discover exported games
 

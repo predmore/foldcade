@@ -49,7 +49,9 @@ class GameNativeShortcutsTest {
         val game = library.listGames(PcPlatform.ID, GameQuery()).games.single()
         val launch = GameNativePlayer().launchIntent(LaunchRequest(game, library.ensureLocal(game), GameNativePlayer.VANILLA_PACKAGE))
         assertEquals(GameNativePlayer.GOLD_PACKAGE, launch.packageName)
-        assertEquals(listOf(PlayerExtra.Text(GameNativePlayer.EXTRA_SHORTCUT_ID, "game_42")), launch.extras)
+        assertTrue(PlayerExtra.Integer(GameNativePlayer.EXTRA_APP_ID, 42) in launch.extras)
+        assertTrue(PlayerExtra.Text(GameNativePlayer.EXTRA_GAME_SOURCE, "STEAM") in launch.extras)
+        assertFalse(launch.extras.any { it.key == GameNativePlayer.EXTRA_SHORTCUT_ID })
     }
 
     @Test fun aPinThatPredatesAnExportKeepsItsIdentityAcrossRefreshesAndExportRemoval() {
@@ -65,6 +67,20 @@ class GameNativeShortcutsTest {
         assertEquals(merged, mergeGameNativeGames(reloaded, emptyList()).single())
         assertEquals(reloaded, restoreGameNativePins(null, reloaded))
         assertTrue(restoreGameNativePins(emptyList(), reloaded).isEmpty())
+    }
+
+    @Test fun sanitizedNamesAndDuplicateExportsStillProduceOneGameAndKeepTheLearnedStore() {
+        for ((title, exported) in listOf("Who's Lila?" to "Who's Lila_", "FEAR:Game" to "FEAR Game", "A/B" to "A B")) {
+            val pin = gameNativeShortcut(GameNativePlayer.GOLD_PACKAGE, "game_42", title, true, true)!!
+            val file = CatalogGame(exported, 42, "GOG")
+            val library = GameNativeLibrary().apply { confirm(mergeGameNativeGames(listOf(pin), listOf(file, file))) }
+            val merged = library.confirmed().single()
+            assertEquals(file.remoteKey, merged.remoteKey)
+            assertEquals(pin.shortcutPackage, merged.shortcutPackage)
+            val restored = restoreGameNativePins(listOf(pin), listOf(merged)).single()
+            assertEquals("GOG", restored.gameSource)
+            assertEquals(file.remoteKey, restored.remoteKey)
+        }
     }
 
     @Test fun everyExportSourceKeepsItsStoreInTheLaunchIntent() = runBlocking {
