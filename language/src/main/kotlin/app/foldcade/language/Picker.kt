@@ -388,7 +388,13 @@ fun shouldOfferUsageAccess(
     dialogOpen: Boolean,
 ): Boolean = hasTrackedSession && !granted && !alreadyOffered && !dialogOpen
 
-/** [apps] are the installed apps that reach only the Home app, such as Moonlight, and the body names them. */
+/** A cached GameNative pin can outlive its launcher permission or its original shortcut. */
+fun gameNativeShortcutPrompt(screen: HostScreen): DialogState = playerNotice(
+    "Add that shortcut again",
+    "In GameNative, choose Add to home screen for this game again.",
+    screen,
+)
+
 fun homePrompt(screen: HostScreen = HostScreen.Bottom, apps: List<String> = emptyList()): DialogState = DialogState(
     kind = DialogKind.Home,
     title = Copy.homePromptTitle,

@@ -82,6 +82,14 @@ class DroidDeckHomeTest {
     }
 
     @Test
+    fun otherStoreExportsNeverGoToDroidDeck() {
+        val file = SteamShortcut("content://gog", "Game", "42", gameSource = "GOG")
+        val route = routeSteamFiles(listOf(file), gameNativeInstalled = false, droidDeckInstalled = true)
+        assertTrue(route.droidDeck.isEmpty())
+        assertEquals(listOf(CatalogGame("Game", 42, "GOG")), route.gameNative)
+    }
+
+    @Test
     fun hidingADroidDeckGameKeepsItsShortcut() {
         val removed = mutableListOf<String>()
         Shelf.droidDeckGames = listOf(tile(hades, "Hades II"))

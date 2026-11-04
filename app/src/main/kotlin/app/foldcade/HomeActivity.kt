@@ -803,6 +803,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let(foldcade.music::onHomeResume)
         foldcade.refreshMoonlightShelf()
         foldcade.refreshDroidDeckShelf()
+        foldcade.refreshGameNativeShelf()
         foldcade.refreshFolderQuietly()
         foldcade.refreshBrightness()
         foldcade.brightness.refreshOther()
@@ -2311,14 +2312,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else {
             foldcade.store.place(panel, external)
         }
+        val gameNativePin = player.id == app.foldcade.plugins.gamenative.GameNativePlayer.ID &&
+            ready.intent.extras.any { it.key == app.foldcade.plugins.gamenative.GameNativePlayer.EXTRA_SHORTCUT_ID }
         try {
             val intent = foldcade.startIntent(player, ready.intent)
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
                 if (still) bloomStart(start)
-                startActivity(start, options.toBundle())
-                if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
+                val shortcutId = intent.extras.filterIsInstance<app.foldcade.api.plugin.PlayerExtra.Text>()
+                    .firstOrNull { it.key == app.foldcade.plugins.gamenative.GameNativePlayer.EXTRA_SHORTCUT_ID }?.value
+                if (player.id == app.foldcade.plugins.gamenative.GameNativePlayer.ID && shortcutId != null) {
+                    getSystemService(android.content.pm.LauncherApps::class.java)
+                        .startShortcut(intent.packageName, shortcutId, null, options.toBundle(), android.os.Process.myUserHandle())
+                } else {
+                    startActivity(start, options.toBundle())
+                    if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
+                }
             }
             foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
@@ -2333,11 +2343,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
             val name = playerChoiceLabel(player) ?: "Player"
-            presentMissing(name, generation)
-        } catch (_: Exception) {
+            if (gameNativePin) foldcade.shell.present(app.foldcade.language.gameNativeShortcutPrompt(hostScreen()))
+            else presentMissing(name, generation)
+        } catch (failure: Exception) {
             foldcade.launchBlooms.cancel()
             foldcade.shell.forgetGameLaunch()
             foldcade.store.update { it.home(Panel.Top).home(Panel.Bottom) }
+            if (gameNativePin) {
+                val prompt = if (failure is SecurityException) {
+                    app.foldcade.language.homePrompt(hostScreen(), listOf(app.foldcade.plugins.gamenative.GameNativePlayer.DISPLAY_NAME))
+                } else app.foldcade.language.gameNativeShortcutPrompt(hostScreen())
+                foldcade.shell.present(prompt)
+            }
         }
     }
 

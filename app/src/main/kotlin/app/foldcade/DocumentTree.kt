@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets
  * Children of a folder the user picked with the system document-tree picker.
  * Document URIs only. This type does not read a filesystem path.
  * An .m3u body is read so the scan can hide the discs that playlist names,
- * and a .steam body for the app id it holds.
+ * and store-export bodies for the app ids they hold.
  */
 internal class DocumentTree(
     private val resolver: ContentResolver,
@@ -85,14 +85,14 @@ internal class DocumentTree(
             text = bodyText(document, displayName, mimeType),
         )
 
-    /** An .m3u or .steam body, or null for any other document or one that cannot be read. */
+    /** A playlist or store-export body, or null for any other document or one that cannot be read. */
     private fun bodyText(document: Uri, displayName: String, mimeType: String): String? {
         if (mimeType == DOCUMENT_DIRECTORY_MIME || mimeType == "inode/directory") return null
         val name = displayName.trim()
         if (name.isEmpty() || name.startsWith('.')) return null
         val limit = when {
             name.endsWith(".m3u", ignoreCase = true) -> MAX_PLAYLIST_BYTES
-            name.endsWith(".steam", ignoreCase = true) -> MAX_STEAM_BYTES
+            app.foldcade.localfolder.gameNativeExportSource(name.substringAfterLast('.')) != null -> MAX_STEAM_BYTES
             else -> return null
         }
         return try {
