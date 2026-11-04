@@ -2007,6 +2007,8 @@ private fun applyGrid(
     screen: HostScreen,
     repeatCount: Int,
 ): Pair<PickerModel, Effect?> {
+    // A held face button must not relaunch after a pending launch or dialog settles.
+    if (repeatCount > 0 && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return model to null
     val hold = model.hold
     if (model.arranging && hold != null &&
         (meaning == Meaning.MoveUp || meaning == Meaning.MoveDown ||

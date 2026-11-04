@@ -882,6 +882,7 @@ class FoldcadeApp : Application() {
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             playMillis = { plays.shown(it).activeMillis },
+            rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
@@ -2553,7 +2554,7 @@ class FoldcadeApp : Application() {
             model.emptyGrid == EmptyGrid.NoPlatforms -> reloadFolder()
             else -> null
         }
-        val romm = synchronized(rommTicket) { rommRefreshJob?.takeIf { it.isActive } } ?: syncRomm()
+        val romm = joinOrSyncRomm()
         withContext(Dispatchers.IO) {
             // After the folders, which route their .steam files into the catalog.
             folders?.join()
@@ -2652,6 +2653,11 @@ class FoldcadeApp : Application() {
      * once no server is saved. The grid does not change mode while this runs. A
      * server that cannot be reached leaves the board as it was, placed tiles included.
      */
+    /** Launch waits join startup's refresh instead of repeatedly cancelling it. */
+    fun joinOrSyncRomm(): Job = synchronized(rommTicket) {
+        rommRefreshJob?.takeIf { it.isActive } ?: syncRomm()
+    }
+
     fun syncRomm(): Job {
         synchronized(rommTicket) {
             val ticket = rommTicket.incrementAndGet()
