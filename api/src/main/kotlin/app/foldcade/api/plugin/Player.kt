@@ -89,6 +89,20 @@ interface Player {
     fun saveFolders(slot: String, romFileName: String, romHeader: ByteArray): List<SaveFolderPart>? = null
 
     /**
+     * Folder parts resolved using the game and the player's settings. Asked before
+     * [findSaveFolders] and [saveFolders]. Read only. Added in API minor 22.
+     * A single part with an empty name puts files directly at the zip's root.
+     */
+    fun findSaveFolderParts(slot: String, game: GameFileReader, folder: SaveFolderAccess): List<SaveFolderPart>? = null
+
+    /**
+     * Selects this game's files inside a shared folder, such as a Dolphin GCI
+     * card. Applied to both local files and incoming zip entries before writing.
+     * Null selects every file, as before. Added in API minor 22.
+     */
+    fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? = null
+
+    /**
      * Where this player looks for the firmware file [name], such as a console's
      * BIOS, below its save folder, with folders separated by `/`: the folder the
      * user picked for it, see [SaveFolderHolder], or else the one its save
@@ -199,6 +213,12 @@ data class SaveFolderPart(
     val name: String,
     val path: String,
 )
+
+/** A pure file selector. [path] is the zip entry name; [header] holds up to [headerSize] bytes. */
+interface SaveArchiveFilter {
+    val headerSize: Int
+    fun accepts(path: String, header: ByteArray): Boolean
+}
 
 /**
  * A firmware file the shell can write for a player, with its first

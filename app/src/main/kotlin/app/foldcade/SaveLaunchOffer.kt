@@ -5,17 +5,20 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.language.DialogButton
+import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.ppsspp.PpssppPlayer
 
-/** Eden's per-launch opt-out skips negotiation and read-back, even with a held grant. */
-internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean = player !is EdenPlayer || declinedFor != player.id
+/** Content-derived save players can bypass negotiation. Other players still prepare their firmware. */
+internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean =
+    declinedFor != player.id || (player !is EdenPlayer && player !is PpssppPlayer && player !is DolphinPlayer)
 
-/** Only an unresolved Eden spot offers a retry without syncing; failed writes must stop. */
-internal fun edenSaveHold(failure: SaveNotPlaced, pending: () -> PendingBackendLaunch): PendingBackendLaunch? =
-    if (failure is EdenSaveNotPlaced) pending() else null
+/** Only an unresolved save spot offers a retry without syncing; failed writes must stop. */
+internal fun unresolvedSaveHold(failure: SaveNotPlaced, pending: () -> PendingBackendLaunch): PendingBackendLaunch? =
+    if (failure is UnresolvedSaveNotPlaced) pending() else null
 
 /** Back and Not now cancel. Only the explicit opt-out retries the held launch. */
-internal fun answerEdenSaveHold(
+internal fun answerUnresolvedSaveHold(
     button: DialogButton,
     cancel: () -> Unit,
     openPlayer: () -> Unit,
