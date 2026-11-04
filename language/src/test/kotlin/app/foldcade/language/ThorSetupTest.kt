@@ -34,6 +34,17 @@ class ThorSetupTest {
         assertEquals(Effect.ShowThorSetup("azahar"), reduce(opened, Meaning.Activate).second)
     }
 
+    @Test fun `settings status does not swallow the first launch notice and restore has its own instructions`() {
+        val cached = ThorSetupSetting(ThorSetupStatus.CloseEmulator)
+        val notices = ThorSetupNotices()
+        assertNotNull(notices.update("azahar", cached.status, 1L))
+        assertNull(notices.update("azahar", cached.status, 2L))
+        assertNotNull(notices.update("azahar", ThorSetupStatus.Applied, 3L))
+        val restore = thorSetupDialog("azahar", cached.copy(canRestore = true), HostScreen.Top)
+        assertEquals(ThorSetupCopy.closeRestoreBody, restore.body)
+        assertFalse(restore.body.contains("next game"))
+    }
+
     @Test fun `file access and stopped emulator have clear next steps`() {
         assertEquals(DialogButton.ThorFileAccess, thorSetupDialog("azahar", ThorSetupSetting(ThorSetupStatus.FileAccess), HostScreen.Top).buttons.first())
         assertEquals(DialogButton.ThorAppInfo, thorSetupDialog("azahar", ThorSetupSetting(ThorSetupStatus.CloseEmulator), HostScreen.Top).buttons.first())

@@ -51,6 +51,7 @@ internal class AndroidThorPresets(private val context: Context) {
             val status = when {
                 // Reading a journal needs no external-storage permission. Undo asks for it if revoked.
                 operation == Operation.Read && hasRecord -> prior
+                operation == Operation.Apply && hasRecord && !presets.canRetry(identity) -> prior
                 !supported && !hasRecord -> ThorPresetStatus.Manual
                 !Files.isWritable(path.resolve("config")) -> {
                     // An already tuned file needs no replacement permission. Its grant suffices

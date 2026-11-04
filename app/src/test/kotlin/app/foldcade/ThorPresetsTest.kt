@@ -93,6 +93,7 @@ class ThorPresetsTest {
         assertEquals(ThorPresetStatus.Failed, presets.status("azahar", file))
         assertFalse(presets.canRestore("azahar"))
         assertTrue(file.hasPriorBackup())
+        assertTrue(presets.canRetry("azahar"))
         assertEquals(ThorPresetStatus.Applied, ThorPresets(folder.resolve("private")).apply("azahar", file) { true })
     }
 

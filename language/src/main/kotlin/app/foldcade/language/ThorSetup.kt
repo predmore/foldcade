@@ -24,6 +24,7 @@ object ThorSetupCopy {
     const val driver = "Turnip is installed privately by Azahar. Pick your GPU driver in Azahar; Foldcade keeps that choice."
     const val restoreBody = "Restore the whole original config file? Today’s settings are backed up beside it and in Foldcade first. The Thor setup won’t be applied again."
     const val closeBody = "Finish playing and save your game first. Then open App info and choose Force stop. Return here to Set up, or launch your next game to apply the preset."
+    const val closeRestoreBody = "Finish playing and save your game first. Then open App info and choose Force stop. Come back here to restore the original settings."
     const val accessBody = "This folder doesn’t allow a safe config replacement. For a local user folder, try Foldcade’s optional Find saves file access, then return here. You can also set the layout in Azahar."
     const val folderBody = "Choose the user folder Azahar uses, the one holding config, sdmc and nand."
     const val manualBody = "This preset is verified for Azahar 2126.2. Set up other versions in Azahar; Foldcade leaves them alone."
@@ -61,7 +62,7 @@ fun thorSetupDialog(playerId: String, setup: ThorSetupSetting, screen: HostScree
         ThorSetupStatus.Applied -> listOf(ThorSetupCopy.intro, setup.changes.joinToString("\n", transform = ThorSetupCopy::option), ThorSetupCopy.driver).filter { it.isNotBlank() }.joinToString("\n\n")
         ThorSetupStatus.Kept -> ThorSetupCopy.keptBody
         ThorSetupStatus.Restored -> ThorSetupCopy.restoredBody
-        ThorSetupStatus.CloseEmulator -> ThorSetupCopy.closeBody
+        ThorSetupStatus.CloseEmulator -> if (setup.canRestore) ThorSetupCopy.closeRestoreBody else ThorSetupCopy.closeBody
         ThorSetupStatus.FileAccess -> ThorSetupCopy.accessBody
         ThorSetupStatus.ChooseFolder -> ThorSetupCopy.folderBody
         ThorSetupStatus.Manual -> ThorSetupCopy.manualBody
@@ -90,3 +91,24 @@ fun restoreThorSetupDialog(playerId: String, screen: HostScreen): DialogState = 
     screen = screen,
     subject = playerId,
 )
+
+
+/** Launch notices have their own history; a Settings refresh must not count as a posted notice. */
+class ThorSetupNotices {
+    private val posted = mutableMapOf<String, ThorSetupStatus>()
+
+    fun update(playerId: String, status: ThorSetupStatus, nowMillis: Long): FoldNotice? {
+        val previous = posted.put(playerId, status)
+        if (previous == status) return null
+        val body = when (status) {
+            ThorSetupStatus.Applied -> ThorSetupCopy.intro
+            ThorSetupStatus.CloseEmulator -> ThorSetupCopy.closeBody
+            ThorSetupStatus.FileAccess -> ThorSetupCopy.accessBody
+            ThorSetupStatus.Failed -> ThorSetupCopy.failed
+            else -> return null
+        }
+        return FoldNotice(ThorSetupCopy.noticePrefix + playerId,
+            if (status == ThorSetupStatus.Applied) ThorSetupCopy.appliedNotice else ThorSetupCopy.needsNotice,
+            body, postedMillis = nowMillis, savePlayerId = playerId)
+    }
+}

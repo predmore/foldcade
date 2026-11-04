@@ -194,6 +194,9 @@ internal class ThorPresets(private val root: Path) {
     }
 
     @Synchronized
+    fun canRetry(identity: String): Boolean = record(identity)?.optString("phase") == "failed"
+
+    @Synchronized
     fun edits(identity: String): Set<String> = record(identity)?.optJSONArray("edits")?.let { edits ->
         (0 until edits.length()).map { edits.getJSONObject(it).getString("key") }.toSet()
     }.orEmpty()
