@@ -97,6 +97,7 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.Motion
 import app.foldcade.language.Copy
 import app.foldcade.language.EmptyGrid
+import app.foldcade.language.RomFolderOffer
 import app.foldcade.language.GridKind
 import app.foldcade.language.LibraryFolder
 import app.foldcade.language.SignedInBackend
@@ -2125,7 +2126,8 @@ class FoldcadeApp : Application() {
         romRootRefresh = pluginLoad.launch {
             startupRootsLooked.await()
             val look = romRootLook.withLock { lookForRomRoots() }
-            if (look.changed) reloadFolder(startup = true)
+            // Games found just now count for the asks: RetroArch's cores ask names their systems.
+            if (look.changed) reloadFolder(startup = true).join()
             val roleHeld = getSystemService(android.app.role.RoleManager::class.java)
                 .isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
             val apps = listOfNotNull(
@@ -2142,12 +2144,27 @@ class FoldcadeApp : Application() {
      */
     private fun offerSetupAsks(seen: List<RomRoot>, roleHeld: Boolean, apps: List<String>) {
         shell.setHomeRoleHeld(roleHeld)
-        if (setupBackups.hasNotice()) return
         val places = seen.map { romRootProse(it.documentId) }.distinct()
-        if (shell.maybeOfferFindGames(places, seen.flatMap { it.systems }.distinct())) return
+        val systems = seen.flatMap { it.systems }.distinct()
+        // What was seen but can't be read yet leads Home's ways to add games, until access is allowed.
+        shell.setRomFolderOffer(seen.firstOrNull()?.takeIf { !allFilesHeld }?.let { RomFolderOffer(places, systems, it.documentId) })
+        if (setupBackups.hasNotice()) return
+        if (shell.maybeOfferFindGames(places, systems)) return
         // The offer is still owed: it waits for a moment without a dialog rather than queue behind Home.
         if (!allFilesHeld && seen.isNotEmpty() && !store.findGamesOffered()) return
+        // No ROM folder to offer: RomM, a phone code away, or a folder of the player's own.
+        if (shell.maybeAskAddGames()) return
+        if (shell.maybeOfferRetroArchCores()) return
         shell.maybeAskHome(roleHeld, apps)
+    }
+
+    /**
+     * Games just arrived: RetroArch's cores ask, if their systems need it, comes now rather than
+     * at the first launch. Main thread. A restore's notice and a dialog already up go first.
+     */
+    private fun offerCoresForNewGames() {
+        if (setupBackups.hasNotice()) return
+        shell.maybeOfferRetroArchCores()
     }
 
     /**
@@ -2332,6 +2349,7 @@ class FoldcadeApp : Application() {
                 if (waiting && shell.hasLibraryGames()) shell.showCuratedHome()
                 // Games copied into a found folder that had none are told about now.
                 if (refresh.changed) announceFoundGames()
+                offerCoresForNewGames()
             }
             found?.let { useSteamFiles(it) }
         }
@@ -2378,7 +2396,12 @@ class FoldcadeApp : Application() {
             val read = readFolders(ticket, backend, saved)
             deliverLibrary(ticket, LocalFolderBackend.ID, read.library, startup = startup,
                 hasSteamFiles = read.steam?.files?.isNotEmpty() ?: steamFiles.files.isNotEmpty())
-            withContext(Dispatchers.Main.immediate) { if (ticket == libraryTicket.get()) announceFoundGames() }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != libraryTicket.get()) return@withContext
+                announceFoundGames()
+                // A folder just chosen: its games may need RetroArch's cores. Startup asks in its own order.
+                if (!startup) offerCoresForNewGames()
+            }
             read.steam?.let { useSteamFiles(it) }
         }).also { it.start() }
     }
@@ -2718,6 +2741,7 @@ class FoldcadeApp : Application() {
                             )
                             val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                             if (waiting && games.isNotEmpty()) shell.showCuratedHome()
+                            offerCoresForNewGames()
                         }
                     }
                 } catch (cancelled: CancellationException) {

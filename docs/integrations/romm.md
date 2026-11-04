@@ -22,7 +22,7 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 ## Connect with a code
 
-1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**.
+1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**. On a first start with no ROMs folder on the Thor, Foldcade asks where your games are: **Sign in to RomM** opens the same form. So does **Add games** at the end of Home while you have no folder or server.
 2. Enter its address, including `https://` or `http://`, such as `https://romm.example.com`.
 3. A code appears beside the fields, in groups of four, with a QR code. Scan it with your phone, or open the short address under it on any phone or computer, sign in, and approve the code. The button reads **Waiting for phone…** meanwhile.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.

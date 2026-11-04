@@ -35,6 +35,10 @@ internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { 
     else if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
 }
 
+/** A folder on Android's own storage by its document id (`primary:ROMs`, `1A2B-3C4D:roms`), where a picker can open. */
+internal fun storageFolderDocument(documentId: String): String =
+    "content://${SharedPaths.EXTERNAL_STORAGE_AUTHORITY}/document/${encodeDocumentId(documentId)}"
+
 internal fun primaryFolderDocument(path: String): String =
     "content://com.android.externalstorage.documents/document/${encodeDocumentId("primary:$path")}"
 
