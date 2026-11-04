@@ -1093,8 +1093,7 @@ class FoldcadeApp : Application() {
 
     private var androidNotices: List<FoldNotice> = emptyList()
     private var foldcadeNotices: List<FoldNotice> = emptyList()
-    /** Optional BIOS setup stays quiet after X, for this process. Saves keep their own stronger policy. */
-    private val offeredFirmwareFolders = mutableSetOf<String>()
+    private val firmwareNoticeDismissals = FirmwareNoticeDismissals()
 
     /** The device's notifications, from [NoticeListener]. Main thread. */
     fun setAndroidNotices(notices: List<FoldNotice>) {
@@ -1104,13 +1103,14 @@ class FoldcadeApp : Application() {
 
     /** A notice of Foldcade's own. One with the same id replaces it. */
     fun postNotice(notice: FoldNotice) {
-        if (notice.firmwarePlayerId != null && !offeredFirmwareFolders.add(notice.id)) return
+        if (!firmwareNoticeDismissals.allows(notice)) return
         foldcadeNotices = foldcadeNotices.filter { it.id != notice.id } + notice
         publishNotices()
     }
 
-    /** X on a notice. Android's go through the listener, which then publishes the rest. */
-    fun dismissNotice(id: String) {
+    /** Removes a notice; only explicit user actions suppress later optional BIOS guidance. */
+    fun dismissNotice(id: String, byUser: Boolean = false) {
+        firmwareNoticeDismissals.dismiss(foldcadeNotices.firstOrNull { it.id == id }, byUser)
         playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
         if (id.startsWith("foldcade:save-setup:")) {
@@ -1126,6 +1126,7 @@ class FoldcadeApp : Application() {
     }
 
     fun clearNotices() {
+        foldcadeNotices.filter { it.dismissable }.forEach { firmwareNoticeDismissals.dismiss(it, byUser = true) }
         saveSetupNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
         publishNotices()

@@ -458,7 +458,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.CopyDebugInfo -> copyDebugInfo()
             Effect.DismissButtonLabels -> Unit
             is Effect.OpenNotice -> openNotice(effect.id)
-            is Effect.DismissNotice -> foldcade.dismissNotice(effect.id)
+            is Effect.DismissNotice -> foldcade.dismissNotice(effect.id, byUser = true)
             Effect.ClearNotices -> foldcade.clearNotices()
             is Effect.OpenSaves -> openSaves(effect.gameId)
             is Effect.LoadSavePicker -> loadSavePicker(effect.target)
