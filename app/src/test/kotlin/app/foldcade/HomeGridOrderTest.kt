@@ -206,6 +206,19 @@ class HomeGridOrderTest {
         assertTrue(shell.activity.isEmpty())
     }
 
+    @Test fun coreDownloadCleanupCannotEraseAReplacementOnTheSameTile() {
+        val shell = shell()
+        val id = homeGameId("romm", "drift")
+        val first = Any()
+        val replacement = Any()
+        shell.noteCoreDownload(id, first, "Mesen", .1f)
+        shell.noteCoreDownload(id, replacement, "Mesen", .5f)
+        shell.endCoreDownload(id, first)
+        assertEquals(TileActivity.Downloading(.5f, core = "Mesen"), shell.activity[id])
+        shell.endCoreDownload(id, replacement)
+        assertFalse(id in shell.activity)
+    }
+
     @Test
     fun aSyncReadsAsWorkedOnlyWhenItRan() {
         assertEquals(SyncMark.Synced, syncMark(SyncResult(SyncOutcome.Downloaded)))
