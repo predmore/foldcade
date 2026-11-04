@@ -8,4 +8,5 @@
     <external-media-path name="romm-media" path="romm/" />
     <cache-path name="romm" path="romm/" />
     <files-path name="romm-data" path="romm/" />
+    <cache-path name="local-firmware" path="local-firmware/" />
 </paths>

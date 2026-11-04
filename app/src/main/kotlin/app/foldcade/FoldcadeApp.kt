@@ -199,6 +199,9 @@ class FoldcadeApp : Application() {
         ) { uri -> ContentGameFile(contentResolver, uri) }
     }
 
+    /** Launch-only firmware state; source versions avoid repeated BIOS reads and ZIP copies. */
+    internal val playerFirmware: PlayerFirmware by lazy { PlayerFirmware(this, playerSaves) { store.playerFirmwareFolder("retroarch") } }
+
     /**
      * Host-owned secrets. Plugins do not open this store.
      * RomM reads its token through [rommTokenSource], which looks up this
@@ -1116,6 +1119,7 @@ class FoldcadeApp : Application() {
 
     private var androidNotices: List<FoldNotice> = emptyList()
     private var foldcadeNotices: List<FoldNotice> = emptyList()
+    private val firmwareNoticeDismissals = FirmwareNoticeDismissals()
 
     /** The device's notifications, from [NoticeListener]. Main thread. */
     fun setAndroidNotices(notices: List<FoldNotice>) {
@@ -1125,12 +1129,14 @@ class FoldcadeApp : Application() {
 
     /** A notice of Foldcade's own. One with the same id replaces it. */
     fun postNotice(notice: FoldNotice) {
+        if (!firmwareNoticeDismissals.allows(notice)) return
         foldcadeNotices = foldcadeNotices.filter { it.id != notice.id } + notice
         publishNotices()
     }
 
-    /** X on a notice. Android's go through the listener, which then publishes the rest. */
-    fun dismissNotice(id: String) {
+    /** Removes a notice; only explicit user actions suppress later optional BIOS guidance. */
+    fun dismissNotice(id: String, byUser: Boolean = false) {
+        firmwareNoticeDismissals.dismiss(foldcadeNotices.firstOrNull { it.id == id }, byUser)
         playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
         if (id.startsWith("foldcade:save-setup:")) {
@@ -1146,6 +1152,7 @@ class FoldcadeApp : Application() {
     }
 
     fun clearNotices() {
+        foldcadeNotices.filter { it.dismissable }.forEach { firmwareNoticeDismissals.dismiss(it, byUser = true) }
         saveSetupNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
         publishNotices()
@@ -1526,7 +1533,9 @@ class FoldcadeApp : Application() {
     }
 
     internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
-        saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
+        (if (player is app.foldcade.plugins.retroarch.RetroArchPlayer)
+            app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER else null)
+            ?: saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
     }
 
     /** True when the picker opens at a folder that is there: a place found on the device, or the player's own. */

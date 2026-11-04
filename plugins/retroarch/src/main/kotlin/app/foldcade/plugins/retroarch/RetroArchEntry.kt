@@ -157,6 +157,51 @@ class RetroArchPlayer internal constructor(
         return "${core.libraryName}/$base.srm"
     }
 
+    // Firmware lands in the separately resolved system directory, never saves/.
+    override fun firmwareFileName(name: String): String? {
+        val leaf = biosLeaf(name) ?: return null
+        if (firmwareList().isEmpty()) return null
+        return leaf
+    }
+
+    /** Metadata-only warm-launch check. Existing files stay the player's choice. */
+    fun needsFirmwareFolder(game: Game): Boolean = requiredBios(game).isNotEmpty()
+
+    fun hasFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = hasScanningPs1Bios(folder) || firmwareList()
+        .groupBy { it.path.substringBeforeLast('/', "") }.any { (parent, files) ->
+            val names = files.mapTo(HashSet()) { it.path.substringAfterLast('/') }
+            folder.list(parent).orEmpty().any { !it.isFolder && names.any { name -> name.equals(it.name, true) } && it.size > 0 }
+        }
+
+    /** Reject unrelated images before reading a multi-megabyte header, while recognizing renamed dumps. */
+    fun localFirmwareCandidate(name: String, size: Long): Boolean {
+        val leaf = biosLeaf(name) ?: return false
+        if (size <= 0) return false
+        if (firmwareKeepsFolders) return blueMsxPath(name) != null
+        if (firmwareList().any { it.path.substringAfterLast('/').equals(leaf, true) }) return true
+        return when (platformId) {
+            "playstation" -> size == 524288L || size == 0x3E66F0L
+            "sega-cd" -> size == 131072L
+            "saturn" -> size == 524288L
+            "pc-engine-cd" -> size == 262144L
+            else -> firmwareList().any { it.size == size } ||
+                firmwareList().any { it.md5 != null && it.size == null } && size in 128..4194304
+        }
+    }
+
+    override val firmwareKeepsFolders: Boolean get() = firmwareCore() == "bluemsx"
+
+    override val firmwareHeaderSize: Int = FIRMWARE_HEADER_SIZE
+
+    override fun firmwareDestination(offer: app.foldcade.api.plugin.FirmwareOffer): String? =
+        if (firmwareKeepsFolders) blueMsxPath(offer.name) else identifyBios(firmwareList(), offer)?.path
+
+    override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>): List<app.foldcade.api.plugin.FirmwareOffer> =
+        offered.filter { firmwareDestination(it) != null }.distinctBy { firmwareDestination(it) }
+
+    override fun missingFirmware(game: Game, folder: app.foldcade.api.plugin.SaveFolderAccess): List<String> =
+        missingBios(game, folder)
+
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         val packageName = request.resolvedPackage
         if (packageName !in PACKAGES) throw PluginException.NotFound("RetroArch is not installed.")
@@ -245,6 +290,6 @@ const val SHARED_STORAGE: String = "/storage/emulated/0"
 
 /** RetroArch's default save directory, `RetroArch/saves` on primary shared storage, as a document. */
 const val DEFAULT_SAVE_FOLDER: String =
-    "content://com.android.externalstorage.documents/document/primary%3ARetroArch%2Fsaves"
+    "content://com.android.externalstorage.documents/document/primary%3ARetroArch"
 
 const val ACTION_MAIN: String = "android.intent.action.MAIN"

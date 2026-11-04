@@ -446,6 +446,96 @@ class RomFolderTest {
     }
 
     @Test
+    fun localDirectoryBundlesKeepSafePathsWithoutChangingFlatDumpArchives() {
+        val dir = Files.createTempDirectory("local-firmware-tree")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf(
+                "bundle/Databases/msxromdb.xml" to "database".toByteArray(),
+                "bundle/Machines/A/config.ini" to "A".toByteArray(),
+                "bundle/Machines/B/config.ini" to "B".toByteArray(),
+                "../escape.bin" to "unsafe".toByteArray(),
+            ))
+            val tree = unpackLocalFirmwareZip(zip, keepFolders = true) { true }
+            assertEquals(listOf("bios.zip/bundle/Databases/msxromdb.xml", "bios.zip/bundle/Machines/A/config.ini", "bios.zip/bundle/Machines/B/config.ini"), tree.map { it.first })
+            assertEquals(listOf("database", "A", "B"), tree.map { Files.readString(it.second) })
+            assertFalse(Files.exists(dir.parent.resolve("escape.bin")))
+            // Independent cache: an ARMSX2/DuckStation request still gets flattened names.
+            assertTrue(unpackLocalFirmwareZip(zip) { true }.any { it.first == "bios.zip/config.ini" })
+            Files.write(zip, zipOf("bundle/Machines/A/config.ini" to "new".toByteArray()))
+            val changed = unpackLocalFirmwareZip(zip, keepFolders = true) { true }
+            assertEquals("new", Files.readString(changed.single().second))
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
+    fun aSmallerLocalLaunchBudgetDoesNotOfferAnOversizedCachedUnpack() {
+        val dir = Files.createTempDirectory("local-firmware-budget")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("bios.bin" to ByteArray(800), "firmware.bin" to ByteArray(400)))
+            assertEquals(2, unpackLocalFirmwareZip(zip, totalCap = 1200) { true }.size)
+            assertTrue(unpackLocalFirmwareZip(zip, totalCap = 1000) { true }.isEmpty())
+            assertEquals(2, unpackLocalFirmwareZip(zip, totalCap = 1200) { true }.size)
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test fun measureAnUnchanged181MiBArchiveWithoutReadingItsPayloadAgain() {
+        val dir = Files.createTempDirectory("firmware-archive-speed")
+        try {
+            // Synthetic archive-sized data; CRC/extraction uses separate real-ZIP tests.
+            val zip = dir.resolve("collection.zip")
+            val size = 181L * 1024 * 1024
+            java.io.RandomAccessFile(zip.toFile(), "rw").use {
+                it.write(byteArrayOf(0x50, 0x4b, 3, 4)); it.setLength(size)
+            }
+            var read = 0L
+            val cold = System.nanoTime()
+            assertTrue(stampLocalFirmwareZip(zip) { path ->
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                Files.newInputStream(path).use { input ->
+                    val buffer = ByteArray(65536)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        read += count; digest.update(buffer, 0, count)
+                    }
+                }
+                digest.digest()
+            })
+            val coldNanos = System.nanoTime() - cold
+            assertEquals(size, read)
+            val warm = System.nanoTime()
+            assertTrue(stampLocalFirmwareZip(zip) { error("cached archive payload read") })
+            println("FIRMWARE_SPEED archive_181MiB: cold_ms=${coldNanos / 1000000.0}, stamped_ms=${(System.nanoTime() - warm) / 1000000.0}, cold_bytes=$read, stamped_bytes=0")
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test fun localArchiveStampsSkipFullReadsAndFilteredTreesKeepOnlyEachCoresFiles() {
+        val dir = Files.createTempDirectory("firmware-fast-cache")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("ps1.bin" to ByteArray(524288), "ps2.bin" to ByteArray(2097152), "cover.png" to ByteArray(4096)))
+            var hashes = 0
+            assertTrue(stampLocalFirmwareZip(zip) { path -> hashes++; java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)) })
+            assertTrue(stampLocalFirmwareZip(zip) { error("unchanged archive was read after restart") })
+            assertEquals(1, hashes)
+            val ps1 = unpackLocalFirmwareZip(zip, selectionKey = "ps1", candidate = { _, size -> size == 524288L }) { true }
+            assertEquals(listOf("bios.zip/ps1.bin"), ps1.map { it.first })
+            val ps2 = unpackLocalFirmwareZip(zip, selectionKey = "ps2", candidate = { _, size -> size == 2097152L }) { true }
+            assertEquals(listOf("bios.zip/ps2.bin"), ps2.map { it.first })
+            assertEquals(ps1, unpackLocalFirmwareZip(zip, selectionKey = "ps1", candidate = { _, _ -> error("replanned unchanged archive") }) { true })
+            // An app update may add a needed file or widen candidate rules.
+            assertEquals(2, unpackLocalFirmwareZip(zip, selectionKey = "new-version:ps1",
+                candidate = { _, size -> size in setOf(524288L, 2097152L) }) { true }.size)
+            Files.write(zip, zipOf("new.bin" to byteArrayOf(1)))
+            assertTrue(stampLocalFirmwareZip(zip) { path -> hashes++; java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)) })
+            assertEquals(2, hashes)
+            assertEquals(listOf("bios.zip/new.bin"), unpackLocalFirmwareZip(zip, selectionKey = "ps1", candidate = { _, _ -> true }) { true }.map { it.first })
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun aZipOverTheCapIsNotUnpacked() {
         assertEquals(32L * 1024 * 1024, FIRMWARE_ZIP_FILE_CAP)
         assertEquals(1024L * 1024 * 1024, FIRMWARE_ZIP_TOTAL_CAP)

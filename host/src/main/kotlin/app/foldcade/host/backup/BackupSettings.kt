@@ -34,7 +34,7 @@ object BackupSettings {
             "folder_tree", "folder_explained", "home_prompted",
             // Found again on each device, whose cards have their own ids.
             "found_roots", "announced_roots", "find_games_offered", "add_games_asked", "usage_prompted", "button_prompt_seen",
-            "player_save_folder:", "player_save_found:", "player_save_mark:", "pending_save_return:", "last_player_start:",
+            "player_save_folder:", "player_save_found:", "player_firmware_folder:", "player_save_mark:", "pending_save_return:", "last_player_start:",
             "players_holding_games", "save_awaits_load:", "retroarch_cores_folder:", "retroarch_cores_offered",
             "eden_folder:", "eden_restart_package", "eden_restart_boot", "refused_eden_firmware",
             "moonlight_pins", "moonlight_hosts", "moonlight_listed_apps", "moonlight_paired_hosts", "gamestream_client_id",

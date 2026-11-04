@@ -17,6 +17,7 @@ internal enum class FolderPurpose {
      */
     SaveOffer,
     Settings,
+    Firmware,
 
     /** RetroArch's data folder, so Foldcade can list its cores. */
     RetroArchCores,
@@ -68,6 +69,7 @@ internal enum class FolderPickResult {
     RememberSaveAndLaunch,
     RememberSaveForPlayer,
     ImportCores,
+    UseFirmwareFolder,
     UseEdenFolder,
     SkipSaveAndLaunch,
     ClearSettingsPlayer,
@@ -80,6 +82,7 @@ internal fun folderPickResult(state: FolderPickerState, choseFolder: Boolean): F
     FolderPurpose.Library -> if (choseFolder) FolderPickResult.UseAsLibrary else FolderPickResult.Ignore
     FolderPurpose.LaunchOffer, FolderPurpose.SaveOffer ->
         if (choseFolder) FolderPickResult.RememberSaveAndLaunch else FolderPickResult.SkipSaveAndLaunch
+    FolderPurpose.Firmware -> if (choseFolder) FolderPickResult.UseFirmwareFolder else FolderPickResult.Ignore
     FolderPurpose.Settings -> if (choseFolder) FolderPickResult.RememberSaveForPlayer else FolderPickResult.ClearSettingsPlayer
     FolderPurpose.RetroArchCores -> if (choseFolder) FolderPickResult.ImportCores else FolderPickResult.SettleCores
     FolderPurpose.EdenSaveOffer -> if (choseFolder) FolderPickResult.UseEdenFolder else FolderPickResult.SkipSaveAndLaunch

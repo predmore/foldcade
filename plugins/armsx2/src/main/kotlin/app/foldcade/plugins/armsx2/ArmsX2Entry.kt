@@ -132,6 +132,16 @@ class ArmsX2Player : Player, SaveFolderHolder {
     override fun chooseFirmware(offered: List<FirmwareOffer>): List<FirmwareOffer> =
         choosePs2Bios(offered, Locale.getDefault().country)
 
+    override fun needsFirmware(folder: SaveFolderAccess): Boolean = !hasBios(folder)
+
+    override fun missingFirmware(game: Game, folder: SaveFolderAccess): List<String> =
+        if (hasBios(folder)) emptyList() else listOf("PlayStation 2 BIOS (.bin)")
+
+    private fun hasBios(folder: SaveFolderAccess): Boolean =
+        folder.list(BIOS).orEmpty().filterNot { it.isFolder }.any { file ->
+            folder.read("$BIOS/${file.name}", 0L, firmwareHeaderSize)?.let(::parsePs2ConsoleBios) != null
+        }
+
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         if (request.resolvedPackage !in PACKAGES) {
             throw PluginException.NotFound("$DISPLAY_NAME is not installed.")

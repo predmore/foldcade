@@ -111,7 +111,7 @@ Games can be `.cue` sheets with their `.bin` tracks, `.chd`, or an `.m3u` of dis
 
 ### BIOS and memory cards
 
-DuckStation needs a PlayStation BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation. Foldcade then downloads it, checks it, and places it in DuckStation's `bios` folder before the game starts. You can also import one in DuckStation yourself.
+DuckStation needs a PlayStation BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation, individually or in a ZIP, or in a [local BIOS folder](local-games.md#bios). Foldcade identifies supported dumps by their known hashes, checks them, and places them in DuckStation's `bios` folder before the game starts. You can also import one in DuckStation yourself.
 
 DuckStation's data folder is optional for save sync. To let Foldcade place a BIOS there, choose it in **Foldcade Settings › Emulators › DuckStation**. The picker opens at DuckStation's own data folder, so tap **Use this folder** and **Allow**. Nothing in DuckStation has to change for it. A folder you pick has to hold DuckStation's `bios` or `memcards`.
 
@@ -141,7 +141,7 @@ To install the GitHub build with Obtainium and get its updates, open [this link]
 
 ### BIOS
 
-ARMSX2 needs a PlayStation 2 BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation 2, under any file name, or put a zip of dumps there. Foldcade downloads it, checks it, and places one BIOS in ARMSX2's `bios` folder before the game starts. From a zip it keeps one console BIOS: Japan on a device set to Japan, the Americas BIOS in the US, Canada, and Latin America, and the Europe BIOS everywhere else. A newer version of that region wins, and then the later date. Devkit dumps, arcade dumps, DVD-player firmware, and the MagicGate key files (`civ.bin`, `cks.bin`, `eks.bin`, `kek.bin`) are not written. Those keys are not used. You can also put a BIOS in the folder yourself. A file you put there stays.
+ARMSX2 needs a PlayStation 2 BIOS dumped from a console you own. Put it in RomM's firmware for the PlayStation 2, under any file name, or put a zip of dumps there. [Local BIOS folders](local-games.md#bios) work the same way without RomM. Foldcade downloads it, checks it, and places one BIOS in ARMSX2's `bios` folder before the game starts. From a zip it keeps one console BIOS: Japan on a device set to Japan, the Americas BIOS in the US, Canada, and Latin America, and the Europe BIOS everywhere else. A newer version of that region wins, and then the later date. Devkit dumps, arcade dumps, DVD-player firmware, and the MagicGate key files (`civ.bin`, `cks.bin`, `eks.bin`, `kek.bin`) are not written. Those keys are not used. You can also put a BIOS in the folder yourself. A file you put there stays.
 
 The first time you play a RomM game with ARMSX2, Foldcade asks for ARMSX2's folder. The picker opens at the GitHub build's data folder, so tap **Use this folder** and **Allow**. That is where the BIOS goes. You can change the folder later in **Foldcade Settings › Emulators › ARMSX2**. A folder you pick has to hold `bios` or `memcards`. The Play Store and nightly builds keep their own data folders. If you use one of those, pick that build's folder instead.
 

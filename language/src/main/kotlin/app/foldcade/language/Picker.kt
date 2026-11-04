@@ -92,6 +92,7 @@ enum class DialogKind {
     MissingPlayer,
     ClosePlayer,
     SaveFolder,
+    FirmwareFolder,
 
     /** Restart a game still open in its player. Not now leaves it paused. */
     RestartGame,
@@ -739,6 +740,9 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "eden-wrong-folder" -> edenWrongFolderDialog(screen)
         "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
         "retroarch-storage" -> retroArchStorageDialog(screen)
+        "missing-bios-romm" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true), screen)
+        "missing-bios" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system"), screen)
+        "firmware-folder" -> firmwareFolderDialog("retroarch.sega-cd", FirmwareCopy.folder("RetroArch", "RetroArch/system", listOf("bios_CD_U.bin")), screen)
         else -> return null
     }
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)
@@ -1303,7 +1307,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
                 val roles = actionFaces(model.faceMap)
                 if (notice.id.startsWith(ThorSetupCopy.noticePrefix)) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, NoticeCopy.open))
-                } else if (notice.savePlayerId != null || notice.settingsCategory != null) {
+                } else if (notice.savePlayerId != null || notice.settingsCategory != null || notice.firmwarePlayerId != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
                 if (notice.id == ROMM_SIGN_IN_NOTICE) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
@@ -1617,6 +1621,7 @@ sealed interface Effect {
     data object RequestHome : Effect
     data object OpenAllFilesAccess : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
+    data class ChooseFirmwareFolder(val playerId: String) : Effect
     /** How to point the player at the folder Foldcade hosts for its saves. */
     data class SetUpHostedSaves(val playerId: String) : Effect
 
@@ -2869,6 +2874,9 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
             return opened.copy(settings = opened.settings?.copy(inner = SettingsInner.Systems, onRows = true, row = row)) to null
         }
         return opened to null
+    }
+    notice.firmwarePlayerId?.let { playerId ->
+        return model.copy(panel = null, focus = panel.grid) to Effect.ChooseFirmwareFolder(playerId)
     }
     notice.settingsCategory?.let { category ->
         return model.openSettings(model.layout.pageScreen, category, panel.grid) to null

@@ -224,6 +224,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun playerSaveFolder(playerId: String): String? =
         prefs.getString(saveFolderKey(playerId), null)?.takeIf { it.isNotBlank() }
 
+    fun playerFirmwareFolder(playerId: String): String? =
+        prefs.getString(PLAYER_FIRMWARE_FOLDER_PREFIX + playerId, null)?.takeIf { it.isNotBlank() }
+
+    fun setPlayerFirmwareFolder(playerId: String, uri: String?) {
+        prefs.edit().putString(PLAYER_FIRMWARE_FOLDER_PREFIX + playerId, uri).apply()
+    }
+
     fun systemPlayerChoice(platformId: String): PlayerChoice? = readPlayerChoice("system_player:", platformId)
     fun gamePlayerChoice(gameId: String): PlayerChoice? = readPlayerChoice("game_player:", gameId)
     fun setSystemPlayerChoice(platformId: String, choice: PlayerChoice?) = writePlayerChoice("system_player:", platformId, choice)
@@ -258,7 +265,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun folderTreeInUse(uri: String): Boolean {
         val tree = folderGrantUri(uri)
         return folderTrees().any { folderGrantUri(it) == tree } || prefs.all.any { (key, value) ->
-            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX) || key.startsWith(EDEN_FOLDER_PREFIX)) &&
+            (key.startsWith(PLAYER_SAVE_FOLDER_PREFIX) || key.startsWith(PLAYER_FIRMWARE_FOLDER_PREFIX) || key.startsWith(CORES_FOLDER_PREFIX) || key.startsWith(EDEN_FOLDER_PREFIX)) &&
                 value is String && value.isNotBlank() && folderGrantUri(value) == tree
         }
     }
@@ -714,6 +721,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private fun buttonPromptDismissedKey(deviceKey: String) = "button_prompt_dismissed:$deviceKey"
 
         private const val PLAYER_SAVE_FOLDER_PREFIX = "player_save_folder:"
+        private const val PLAYER_FIRMWARE_FOLDER_PREFIX = "player_firmware_folder:"
 
         private fun saveFolderKey(playerId: String) = PLAYER_SAVE_FOLDER_PREFIX + playerId
 

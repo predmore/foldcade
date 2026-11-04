@@ -121,8 +121,8 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(24, PLUGIN_API_MINOR)
-        for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave")) {
+        assertEquals(25, PLUGIN_API_MINOR)
+        for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave", "firmwareDestination", "getFirmwareKeepsFolders", "missingFirmware")) {
             assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
         }
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
@@ -140,6 +140,9 @@ class PluginContractTest {
         assertTrue(Player::class.java.methods.single { it.name == "saveFolders" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "getRomHeaderSize" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "firmwareFileName" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "firmwareDestination" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "getFirmwareKeepsFolders" }.isDefault)
+        assertTrue(Player::class.java.methods.single { it.name == "missingFirmware" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "getFirmwareHeaderSize" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "chooseFirmware" }.isDefault)
         assertTrue(Player::class.java.methods.single { it.name == "findSaveFolders" }.isDefault)

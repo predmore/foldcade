@@ -19,6 +19,8 @@ data class FoldNotice(
     val savePlayerId: String? = null,
     /** A grouped setup notice opens this Settings category. */
     val settingsCategory: SettingsCategory? = null,
+    /** Optional BIOS setup: A opens its folder picker without holding a game launch. */
+    val firmwarePlayerId: String? = null,
 )
 
 object NoticeCopy {
