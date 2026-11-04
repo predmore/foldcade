@@ -41,12 +41,14 @@ class ThorPresetsTest {
     @Test fun `record is never reapplied even after player returns to defaults`() {
         val root = Files.createTempDirectory("thor-presets")
         val file = MemoryFile(defaults.toByteArray())
-        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).apply("azahar", file) { true })
+        var applied = 0
+        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).apply("azahar", file, onApplied = { applied++ }) { true })
         val original = Files.walk(root).use { it.filter { p -> p.fileName.toString() == "original.ini" }.findFirst().get() }
         assertArrayEquals(defaults.toByteArray(), Files.readAllBytes(original))
         assertArrayEquals(defaults.toByteArray(), file.backups.values.first())
         file.bytes = defaults.toByteArray()
-        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).apply("azahar", file) { true })
+        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).apply("azahar", file, onApplied = { applied++ }) { true })
+        assertEquals(1, applied)
         assertArrayEquals(defaults.toByteArray(), file.bytes)
         assertEquals(1, file.writes)
         assertEquals(4, ThorPresets(root).edits("azahar").size)

@@ -97,11 +97,11 @@ fun restoreThorSetupDialog(playerId: String, screen: HostScreen): DialogState = 
 class ThorSetupNotices {
     private val posted = mutableMapOf<String, ThorSetupStatus>()
 
-    fun update(playerId: String, status: ThorSetupStatus, nowMillis: Long): FoldNotice? {
+    fun update(playerId: String, status: ThorSetupStatus, nowMillis: Long, appliedNow: Boolean = false): FoldNotice? {
         val previous = posted.put(playerId, status)
         if (previous == status) return null
         val body = when (status) {
-            ThorSetupStatus.Applied -> ThorSetupCopy.intro
+            ThorSetupStatus.Applied -> if (appliedNow) ThorSetupCopy.intro else return null
             ThorSetupStatus.CloseEmulator -> ThorSetupCopy.closeBody
             ThorSetupStatus.FileAccess -> ThorSetupCopy.accessBody
             ThorSetupStatus.Failed -> ThorSetupCopy.failed

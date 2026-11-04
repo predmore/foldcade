@@ -1409,13 +1409,16 @@ class FoldcadeApp : Application() {
     /** Apply before launch; publishing one settings snapshot and a notice never delays Home drawing. */
     internal suspend fun applyThorPreset(player: Player) {
         if (player.id != "azahar") return
-        val result = withContext(Dispatchers.IO) { thorPresets.apply(player.id, playerSaveFolder(player)) } ?: return
+        var appliedNow = false
+        val result = withContext(Dispatchers.IO) {
+            thorPresets.apply(player.id, playerSaveFolder(player)) { appliedNow = true }
+        } ?: return
         withContext(Dispatchers.Main.immediate) {
             shell.setThorSetup(player.id, result)
-            if (result.status in setOf(app.foldcade.language.ThorSetupStatus.Kept, app.foldcade.language.ThorSetupStatus.Restored)) {
+            if (result.status in setOf(app.foldcade.language.ThorSetupStatus.Applied, app.foldcade.language.ThorSetupStatus.Kept, app.foldcade.language.ThorSetupStatus.Restored)) {
                 dismissNotice(app.foldcade.language.ThorSetupCopy.noticePrefix + player.id)
             }
-            thorSetupNotices.update(player.id, result.status, System.currentTimeMillis())?.let(::postNotice)
+            thorSetupNotices.update(player.id, result.status, System.currentTimeMillis(), appliedNow)?.let(::postNotice)
         }
     }
 

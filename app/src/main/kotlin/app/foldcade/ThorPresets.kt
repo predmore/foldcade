@@ -147,7 +147,7 @@ internal class ThorPresets(private val root: Path) {
     }
 
     @Synchronized
-    fun apply(identity: String, file: PresetFile, stopped: () -> Boolean): ThorPresetStatus {
+    fun apply(identity: String, file: PresetFile, onApplied: () -> Unit = {}, stopped: () -> Boolean): ThorPresetStatus {
         val previous = record(identity)
         // Only a failure observed before any replacement may retry. A prepared crash is
         // ambiguous (the player might have changed the applied value back), so never retry it.
@@ -190,6 +190,7 @@ internal class ThorPresets(private val root: Path) {
             throw failure
         }
         saveRecord(dir, journal.put("phase", "applied"))
+        onApplied()
         return ThorPresetStatus.Applied
     }
 

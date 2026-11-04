@@ -18,12 +18,12 @@ internal class AndroidThorPresets(private val context: Context) {
     private val packages = listOf("org.azahar_emu.azahar", "io.github.lime3ds.android")
 
     fun read(playerId: String, folder: String?): ThorSetupSetting? = operate(playerId, folder, Operation.Read)
-    fun apply(playerId: String, folder: String?): ThorSetupSetting? = operate(playerId, folder, Operation.Apply)
+    fun apply(playerId: String, folder: String?, onApplied: () -> Unit = {}): ThorSetupSetting? = operate(playerId, folder, Operation.Apply, onApplied)
     fun restore(playerId: String, folder: String?): ThorSetupSetting? = operate(playerId, folder, Operation.Restore)
     private enum class Operation { Read, Apply, Restore }
 
     @Synchronized
-    private fun operate(playerId: String, folder: String?, operation: Operation): ThorSetupSetting? {
+    private fun operate(playerId: String, folder: String?, operation: Operation, onApplied: () -> Unit = {}): ThorSetupSetting? {
         if (playerId != "azahar") return null
         fun state(status: ThorSetupStatus) = ThorSetupSetting(status)
         if (folder == null) return state(ThorSetupStatus.ChooseFolder)
@@ -52,7 +52,7 @@ internal class AndroidThorPresets(private val context: Context) {
                 // Reading a journal needs no external-storage permission. Undo asks for it if revoked.
                 operation == Operation.Read && hasRecord -> prior
                 operation == Operation.Apply && hasRecord && !presets.canRetry(identity) -> prior
-                !supported && !hasRecord -> ThorPresetStatus.Manual
+                !supported && operation != Operation.Restore -> ThorPresetStatus.Manual
                 !Files.isWritable(path.resolve("config")) -> {
                     // An already tuned file needs no replacement permission. Its grant suffices
                     // to record "kept yours", without asking for optional broader access.
@@ -66,12 +66,12 @@ internal class AndroidThorPresets(private val context: Context) {
                             override fun backup(name: String, bytes: ByteArray) = error("read only")
                             override fun replace(expected: ByteArray?, bytes: ByteArray?, stopped: () -> Boolean) = false
                         }
-                        presets.apply(identity, unchanged, ::stopped)
+                        presets.apply(identity, unchanged, stopped = ::stopped)
                     } else ThorPresetStatus.FileAccess
                 }
                 operation == Operation.Read -> if (stopped()) ThorPresetStatus.Ready else ThorPresetStatus.CloseEmulator
                 operation == Operation.Restore -> presets.restore(identity, file, ::stopped)
-                else -> presets.apply(identity, file, ::stopped)
+                else -> presets.apply(identity, file, onApplied = onApplied, stopped = ::stopped)
             }
             ThorSetupSetting(
                 ThorSetupStatus.valueOf(status.name),
