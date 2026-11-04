@@ -39,7 +39,7 @@ import org.junit.Test
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
     @Test fun unresolvedPspAndGameCubeSavesNeverAcknowledgeAnIncomingHead() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.flycast.FlycastPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.held = player.saveDeclarations(owner).map { it.slot }
@@ -54,7 +54,7 @@ class LaunchSavesTest {
     }
 
     @Test fun unresolvedPspAndGameCubePlayOfflineWithoutNegotiationAndRemainUnreachable() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.flycast.FlycastPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.listingFails = true
@@ -78,7 +78,7 @@ class LaunchSavesTest {
 
     @Test fun anUnavailableFirstListingDoesNotHideAnIncomingSaveFromAnotherCopy() = runBlocking {
         val second = owner.copy(backendId = "folder", remoteKey = "other")
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.flycast.FlycastPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.listingFails = true
@@ -99,7 +99,7 @@ class LaunchSavesTest {
     }
 
     @Test fun unresolvedPspAndGameCubeWithAnIncomingSaveRequireTheExplicitPerLaunchChoice() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.flycast.FlycastPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.remoteSlot = player.saveDeclarations(owner).single().slot

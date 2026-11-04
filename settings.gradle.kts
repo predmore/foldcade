@@ -29,7 +29,6 @@ include(
     ":plugins:duckstation",
     ":plugins:dolphin",
     ":plugins:ppsspp",
-    ":plugins:flycast",
     ":plugins:explus",
     ":plugins:eden",
     ":plugins:emulators",

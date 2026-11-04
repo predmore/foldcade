@@ -8,9 +8,9 @@ class ExPlusEntry : PluginEntry {
     override val apiMinor = PLUGIN_API_MINOR
     override val players: List<Player> = listOf(
         ExPlusPlayer("gba-emu", "GBA.emu", "com.explusalpha.GbaEmu", "GBA", "game-boy-advance"),
-        ExPlusPlayer("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", "GBC", "game-boy"),
-        ExPlusPlayer("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", "GBC", "game-boy-color"),
-        ExPlusPlayer("nes-emu", "NES.emu", "com.explusalpha.NesEmu", "NES", "nes"),
+        ExPlusPlayer("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", "GB", "game-boy"),
+        ExPlusPlayer("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", "GB", "game-boy-color"),
+        ExPlusPlayer("nes-emu", "NES.emu", "com.explusalpha.NesEmu", "FC-NES", "nes"),
         ExPlusPlayer("snes9x-ex", "Snes9x EX+", "com.explusalpha.Snes9xPlus", "SFC-SNES", "snes"),
         ExPlusPlayer("md-emu", "MD.emu", "com.explusalpha.MdEmu", "MD-Genesis", "genesis"),
         ExPlusPlayer("md-emu", "MD.emu", "com.explusalpha.MdEmu", "MD-Genesis", "master-system"),
@@ -77,10 +77,12 @@ class ExPlusPlayer(
         val base = filename.substringBeforeLast('.').takeIf { it.isNotBlank() && it !in setOf(".", "..") } ?: return null
         val extension = filename.substringAfterLast('.').lowercase()
         val suffixes = when (emulatorId) {
-            "gba-emu" -> if (extension in setOf("gba", "mb")) setOf(".sav") else null
-            "gbc-emu" -> if (extension in setOf("gb", "gbc")) setOf(".sav", ".rtc") else null
+            // EmuSystem::loadContentFromFile retains the archive's display-name
+            // basename when it selects an inner ROM. These apps have one battery type.
+            "gba-emu" -> if (extension in setOf("gba", "mb", "zip", "7z")) setOf(".sav") else null
+            "gbc-emu" -> if (extension in setOf("gb", "gbc", "zip", "7z")) setOf(".sav", ".rtc") else null
             "nes-emu" -> when (extension) { "nes", "unf", "unif" -> setOf(".sav"); "fds" -> setOf(".fds.sav"); else -> null }
-            "snes9x-ex" -> if (extension in setOf("sfc", "smc")) setOf(".srm") else null
+            "snes9x-ex" -> if (extension in setOf("sfc", "smc", "zip", "7z")) setOf(".srm") else null
             "md-emu" -> if (platformId == "sega-cd") {
                 if (extension in setOf("cue", "chd", "iso", "bin")) setOf(".brm") else null
             } else if (extension in setOf("gen", "smd", "md", "bin", "sms")) setOf(".srm") else null

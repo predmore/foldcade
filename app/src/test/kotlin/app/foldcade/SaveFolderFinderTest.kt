@@ -48,16 +48,6 @@ class SaveFolderFinderTest {
 
     @Test fun newPlayersDiscoverOnlyAnUnambiguousFolderTheirAppCanUse() {
         val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
-        val flycast = app.foldcade.plugins.flycast.FlycastPlayer()
-        directories += "primary:Flycast"
-        names["primary:Flycast"] = listOf("emu.cfg", "data")
-        assertNull(finder(allFiles).find(flycast).folder)
-        playerGrants += "primary:Flycast"
-        assertNotNull(finder(allFiles).find(flycast).folder)
-        directories += "primary:reicast"
-        names["primary:reicast"] = listOf("emu.cfg")
-        playerGrants += "primary:reicast"
-        assertNull(finder(allFiles).find(flycast).folder)
         val ex = app.foldcade.plugins.explus.ExPlusEntry().players.first() as SaveFolderHolder
         directories += "primary:saves/GBA.emu"
         assertNull(finder(allFiles).find(ex).folder)

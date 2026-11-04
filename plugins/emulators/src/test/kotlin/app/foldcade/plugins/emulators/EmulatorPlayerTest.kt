@@ -56,7 +56,7 @@ class EmulatorPlayerTest {
         assertFalse("dolphin.gamecube" in ids)
         assertFalse("ppsspp.psp" in ids)
         assertFalse("dolphin.wii" in ids)
-        assertFalse("flycast.dreamcast" in ids)
+        assertTrue("flycast.dreamcast" in ids)
         assertFalse("gba-emu.game-boy-advance" in ids)
         assertTrue("pizza-boy-sc.game-gear" in ids)
     }
@@ -91,7 +91,7 @@ class EmulatorPlayerTest {
         assertEquals(listOf("My Boy!", "Pizza Boy GBA"), order(GBA))
         assertEquals(listOf("Dolphin MMJR"), order(WII))
         assertEquals(listOf("NetherSX2", "EmuCoreX"), order(PLAYSTATION_2))
-        assertEquals(listOf("Redream"), order(DREAMCAST))
+        assertEquals(listOf("Flycast", "Redream"), order(DREAMCAST))
     }
 
     @Test

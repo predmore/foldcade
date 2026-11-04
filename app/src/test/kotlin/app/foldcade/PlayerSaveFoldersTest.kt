@@ -33,6 +33,31 @@ import org.junit.Test
 
 /** Saves a player keeps as folders, such as Azahar's, moved as one zip. */
 class PlayerSaveFoldersTest {
+    @Test fun nestedExBatterySlotsPlaceAndReadBackWithTheSameHash() {
+        val player = app.foldcade.plugins.explus.ExPlusEntry().players.first { it.platformId == "snes" }
+        (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(TREE)
+        docs.names[ROM_URI] = "Game.zip"
+        val rootDocs = object : SaveDocuments by docs {
+            override fun list(folderUri: String, name: String) = if (name.isEmpty())
+                docs.files.map { SaveEntry(it.key, "$TREE/${it.key}", false) } else docs.list(folderUri, name)
+            override fun children(folderUri: String, path: String) = list(folderUri, path)?.map {
+                SaveChild(it.path, it.uri, it.isFolder, docs.files[it.path]?.size?.toLong() ?: 0)
+            }
+        }
+        val sync = PlayerSaves(rootDocs, marks, backups, handover)
+        val spots = sync.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        val archive = zipOf("Game.srm" to "main", "Game/saves/run 2/auto.srm" to "named")
+        docs.library[SERVER] = archive
+        assertTrue(sync.canPlaceSave(spots, "battery", archive))
+        assertFalse(sync.canPlaceSave(spots, "battery", "raw RetroArch SRAM".toByteArray()))
+        assertFalse(sync.canPlaceSave(spots, "battery", zipOf("Other.srm" to "foreign")))
+        assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))
+        assertEquals("named", docs.text("Game/saves/run 2/auto.srm"))
+        assertEquals("main", docs.text("Game.srm"))
+        assertTrue(sync.changedSince("romm", GAME, player, spots).slots.isEmpty())
+        // A second placement from Y › Saves stays successful too.
+        assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))
+    }
     @Test fun exBatteryAndClockAreOneDurableFilteredSave() {
         val player = app.foldcade.plugins.explus.ExPlusEntry().players.first { it.platformId == "game-boy-color" }
         (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(TREE)

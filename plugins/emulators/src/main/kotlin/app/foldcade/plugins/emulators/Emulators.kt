@@ -132,6 +132,12 @@ val EMULATORS: List<Emulator> = listOf(
     ),
     explusAlpha("saturn-emu", "Saturn.emu", "com.explusalpha.SaturnEmu", SATURN),
     Emulator(
+        id = "flycast",
+        displayName = "Flycast",
+        platformIds = listOf(DREAMCAST),
+        activities = mapOf("com.flycast.emulator" to "com.flycast.emulator.MainActivity"),
+    ),
+    Emulator(
         id = "redream",
         displayName = "Redream",
         platformIds = listOf(DREAMCAST),

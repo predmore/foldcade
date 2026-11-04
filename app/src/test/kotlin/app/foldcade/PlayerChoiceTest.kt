@@ -14,7 +14,7 @@ import org.junit.Test
 
 class PlayerChoiceTest {
     @Test fun extractingSavePlayersPreservesStandalonePreference() {
-        val all = app.foldcade.plugins.explus.ExPlusEntry().players + app.foldcade.plugins.flycast.FlycastEntry().players +
+        val all = app.foldcade.plugins.explus.ExPlusEntry().players +
             app.foldcade.plugins.emulators.EmulatorsEntry().players
         fun ordered(platform: String) = all.filter { it.platformId == platform }.sortedBy(::playerRank).map { it.displayName }
         assertEquals(listOf("My Boy!", "Pizza Boy GBA", "GBA.emu"), ordered("game-boy-advance"))

@@ -8,7 +8,6 @@ import app.foldcade.host.PluginHost
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.ppsspp.PpssppPlayer
-import app.foldcade.plugins.flycast.FlycastPlayer
 import app.foldcade.plugins.explus.ExPlusPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -36,7 +35,7 @@ internal class LaunchSaves(
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
         if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
         val candidates = candidates(route)
-        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is FlycastPlayer || player is ExPlusPlayer
+        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is ExPlusPlayer
         val resolvedSpots = if (guarded) saves.spots(player, route.saves, local, forLaunch = true) else null
         // A profile or a content-derived game id can be unresolved. Do not let
         // negotiation acknowledge a save this device cannot place.

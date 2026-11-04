@@ -103,6 +103,14 @@ interface Player {
     fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? = null
 
     /**
+     * Whether downloaded bytes fit a reachable save slot. The host can supply
+     * its resolved archive filter here when choosing a server save. A library
+     * checks this before promoting the save or calling beforeCommit. Pure and
+     * called off Main. Added in API minor 23; default preserves older players.
+     */
+    fun canPlaceSave(slot: String, bytes: ByteArray): Boolean = true
+
+    /**
      * Where this player looks for the firmware file [name], such as a console's
      * BIOS, below its save folder, with folders separated by `/`: the folder the
      * user picked for it, see [SaveFolderHolder], or else the one its save

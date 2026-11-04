@@ -81,7 +81,6 @@ object Metrics {
 }
 
 object Copy {
-    const val flycastPerGameVmu = "In Flycast, turn on Settings › Controls › Per Game VMU A1 and turn off Use Physical VMU Storage. Choose its home folder in Foldcade; it holds emu.cfg and data. A custom VMU folder must be inside that home folder. Shared VMUs stay on the device."
     const val dolphinFiles = "Dolphin files"
     const val dolphinFolderCard = "Slot A needs a GCI Folder to sync. In Dolphin, open Settings › Config › GameCube and set GameCube Slot A Device to GCI Folder. Your old card keeps its saves, but games won’t see them in GCI Folder mode."
     const val usesBothScreens = "Both screens"

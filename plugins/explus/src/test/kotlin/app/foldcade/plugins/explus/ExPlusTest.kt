@@ -36,9 +36,20 @@ class ExPlusTest {
             assertFalse(path, accepts("gbc-emu", "Pokemon.gbc", path))
     }
     @Test fun unsupportedNamesAndUnknownSlotsCannotResolve() {
-        for (name in listOf("Game.zip", "Game.7z", "Game", "../Game.gba", "Game.gba\u0000", ".gba"))
+        for (name in listOf("Game.rar", "Game", "../Game.gba", "Game.gba\u0000", ".gba"))
             assertNull(name, player("gba-emu").saveArchiveFilter("battery",reader(name)))
         assertNull(player("gba-emu").saveArchiveFilter("sav",reader("Game.gba")))
         assertTrue(accepts("gba-emu", "One.Two.GBA", "One.Two.sav"))
+    }
+    @Test fun archivesUseTheOuterBasenameForSingleBatteryTypeSystems() {
+        for (archive in listOf("Pokemon.zip", "Pokemon.7z")) {
+            assertTrue(accepts("gba-emu", archive, "Pokemon.sav"))
+            assertTrue(accepts("gbc-emu", archive, "Pokemon.rtc"))
+            assertTrue(accepts("snes9x-ex", archive, "Pokemon.srm"))
+            assertFalse(accepts("gbc-emu", archive, "Inner ROM.sav"))
+        }
+        assertNull(player("nes-emu").saveArchiveFilter("battery", reader("Game.zip")))
+        assertTrue((player("gbc-emu") as SaveFolderHolder).saveFolderPlaces.any { it == "EmuEx/GB/saves" })
+        assertTrue((player("nes-emu") as SaveFolderHolder).saveFolderPlaces.any { it == "EmuEx/FC-NES/saves" })
     }
 }

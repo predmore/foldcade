@@ -18,7 +18,6 @@ import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.SaveArchiveFilter
 import app.foldcade.plugins.dolphin.DolphinPlayer
-import app.foldcade.plugins.flycast.FlycastPlayer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
@@ -553,30 +552,40 @@ internal class PlayerSaves(
         return Placing.Written
     }
 
-    /**
-     * Makes the folders [zip] holds match it. A folder it does not hold keeps
-     * what it has, and the hash checked and marked is that of the whole spot.
-     */
-    private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
+    /** Pure format check before a server save becomes this player's slot head. */
+    fun canPlaceSave(spots: List<SaveSpot>, slot: String, bytes: ByteArray): Boolean {
+        val spot = spots.singleOrNull { it.slot == slot } ?: return false
+        return if (spot.folders.isNotEmpty() || spot.search != null) incomingFolderEntries(spot, bytes) != null else true
+    }
+
+    private fun incomingFolderEntries(spot: SaveSpot, zip: ByteArray): java.util.SortedMap<String, ByteArray?>? {
         val allowed = spot.search?.let { search ->
-            val roots = saveZipRoots(zip) ?: return Placing.Failed
+            val roots = saveZipRoots(zip) ?: return null
             if (savePathParts(search.parent) == null || roots.isEmpty() ||
                 roots.any { savePathParts(it)?.size != 1 || !saveFolderNameMatches(it, search.nameContains) }
             ) {
-                return Placing.Failed
+                return null
             }
             roots
         } ?: spot.folders.map { it.name }.toSet()
-        val incoming = saveEntries(zip, allowed) ?: return Placing.Failed
+        val incoming = saveEntries(zip, allowed) ?: return null
         if (spot.filter?.let { filter -> incoming.any { (name, bytes) ->
                 bytes != null && !filter.accepts(name, bytes.copyOf(minOf(bytes.size, filter.headerSize)))
-            } } == true) return Placing.Failed
+            } } == true) return null
+        // Filtered reads contain files only. Drop implicit ZIP directories too,
+        // so read-back hashes match nested battery slots; create() makes parents.
+        return if (spot.filter == null) incoming else incoming.filterValues { it != null }.toSortedMap()
+    }
+
+    /** Makes each folder in [zip] match it; other folders stay. Hashes the whole spot. */
+    private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
+        val incoming = incomingFolderEntries(spot, zip) ?: return Placing.Failed
         val current = when (val held = readFolders(spot)) {
             Held.Unreadable -> return Placing.Failed
             Held.Missing -> FolderSave.EMPTY
             is Held.Found -> held.save
         }
-        fun part(name: String) = if ("" in allowed) "" else partOf(name)
+        fun part(name: String) = if (spot.folders.singleOrNull()?.name == "") "" else partOf(name)
         val parts = incoming.filterValues { it != null }.keys.map(::part).toSet()
         val wanted = sortedMapOf<String, ByteArray?>()
         current.entries.filterKeys { part(it) !in parts }.let(wanted::putAll)
@@ -673,13 +682,8 @@ internal class PlayerSaves(
     fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
         DocumentSaveFolder(docs, folderUri, allowWrite = false, reuseReads = true, backup = { _, _ -> })
             .use { player.saveSyncState(it) }?.let { state ->
-                when {
-                    state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == DolphinPlayer.SETUP ->
-                        app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.dolphinFolderCard)
-                    state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == FlycastPlayer.SETUP ->
-                        app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.flycastPerGameVmu)
-                    else -> state
-                }
+                if (state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == DolphinPlayer.SETUP)
+                    app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.dolphinFolderCard) else state
             }
     } catch (_: Exception) {
         null
