@@ -127,7 +127,8 @@ class Aps3ePlayer : Player, SaveFolderHolder {
 
     override fun chooseFirmware(offered: List<FirmwareOffer>): List<FirmwareOffer> = choosePs3Pup(offered)
 
-    override fun needsFirmware(folder: SaveFolderAccess): Boolean = !folderHas(folder, INSTALLED)
+    override fun needsFirmware(folder: SaveFolderAccess): Boolean =
+        !folderHas(folder, INSTALLED) && !folderHas(folder, FIRMWARE_FILE)
 
     /**
      * Ready once aPS3e's first-run setup has written `default_config.yml` and it has

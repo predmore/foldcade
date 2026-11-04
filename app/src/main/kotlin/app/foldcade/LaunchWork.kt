@@ -1,6 +1,8 @@
 package app.foldcade
 
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** One pending launch shared by both Home activities. Called on the main thread. */
 internal class LaunchWork {
@@ -32,6 +34,15 @@ internal class LaunchWork {
     }
 
     fun current(ticket: Int): Boolean = ticket == generation
+
+    /** Core preparation and BIOS placement share this launch and its cancellation boundary. */
+    suspend fun prepare(ticket: Int, step: suspend () -> Boolean): Boolean {
+        currentCoroutineContext().ensureActive()
+        if (!current(ticket)) return false
+        val ready = step()
+        currentCoroutineContext().ensureActive()
+        return ready && current(ticket)
+    }
 }
 
 /**

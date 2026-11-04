@@ -20,6 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.Assert.assertArrayEquals
 
 class PlayerSavesTest {
     private lateinit var backups: Path
@@ -448,6 +449,32 @@ class PlayerSavesTest {
     }
 
     @Test
+    fun choosingALocalOfferNeverInstallsRejectedRommBytesWithTheSameName() {
+        docs.library["lib://bad-romm"] = byteArrayOf(2)
+        docs.library["lib://good-local"] = byteArrayOf(1)
+        val target = LaunchTarget.ContentUri(ROM_URI, listOf(
+            FirmwareBytes("SCPH1001.BIN", "lib://bad-romm"), FirmwareBytes("SCPH1001.BIN", "lib://good-local")))
+        val player = object : Player by Melon(FOLDER, firmware = setOf("SCPH1001.BIN")) {
+            override val firmwareHeaderSize = 1
+            override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>) =
+                offered.filter { it.header.contentEquals(byteArrayOf(1)) }
+        }
+        assertEquals(listOf("SCPH1001.BIN"), saves.placeFirmware(player, GAME, target))
+        assertArrayEquals(byteArrayOf(1), docs.bytes(FOLDER, "SCPH1001.BIN"))
+    }
+
+    @Test
+    fun newOnlyFirmwarePublicationChecksExistenceBeforeHashingALargeSource() {
+        docs.firmwareNewOnly = true
+        docs.put(FOLDER, "PS3UPDAT.PUP", "player firmware")
+        val target = LaunchTarget.ContentUri(ROM_URI, listOf(FirmwareBytes("PS3UPDAT.PUP", "lib://absent-source")))
+        val player = Melon(FOLDER, firmware = setOf("PS3UPDAT.PUP"))
+        assertTrue(saves.placeFirmware(player, GAME, target).isEmpty())
+        assertEquals(0, docs.firmwareHashes)
+        assertEquals("player firmware", docs.text(FOLDER, "PS3UPDAT.PUP"))
+    }
+
+    @Test
     fun aPlayerThatThrowsWritesNoFirmware() {
         docs.library["lib://bios"] = "bios".toByteArray()
         val target = LaunchTarget.ContentUri(ROM_URI, firmware = listOf(FirmwareBytes("SCPH1001.BIN", "lib://bios")))
@@ -576,6 +603,9 @@ class PlayerSavesTest {
     private fun placed(text: String) = PlacedSave("sav", "lib://sav", md5Hex(text.toByteArray()))
 
     private class FakeDocuments : SaveDocuments {
+        override var firmwareNewOnly = false
+        var firmwareHashes = 0
+        override fun firmwareMd5(uri: String): String? { firmwareHashes++; return md5(uri) }
         val names = mutableMapOf<String, String>()
         val folders = mutableMapOf<String, MutableMap<String, ByteArray>>()
         val library = mutableMapOf<String, ByteArray>()

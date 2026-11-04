@@ -128,7 +128,7 @@ internal class DocumentSaveFolder(
         val name = path.substringAfterLast('/')
         val file = list(parent)?.firstOrNull { it.name == name && !it.isFolder } ?: return null
         if (file.size > limit) return null
-        val bytes = docs.find(folderUri, path)?.let(docs::read) ?: return null
+        val bytes = docs.find(folderUri, path)?.let { docs.readBounded(it, limit) } ?: return null
         return bytes.takeIf { it.size <= limit }
     }
 

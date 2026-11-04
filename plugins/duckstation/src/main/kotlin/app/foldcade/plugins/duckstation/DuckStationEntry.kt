@@ -142,11 +142,30 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
      * goes there under its own name.
      */
     override fun firmwareFileName(name: String): String? {
-        if (name.isBlank() || name == "." || name == ".." || name.any { it == '/' || it == '\\' || it.code <= 31 }) {
-            return null
-        }
-        return "$BIOS/$name"
+        val parts = name.split('/')
+        if (parts.any { it.isBlank() || it == "." || it == ".." || it.any { c -> c == '\\' || c.code <= 31 } }) return null
+        return "$BIOS/${parts.last()}"
     }
+
+    override val firmwareHeaderSize: Int = 4 * 1024 * 1024 + 1
+
+    // DuckStation's own database, pinned in bios-md5.txt. Hash the entire image:
+    // the filename alone cannot distinguish a renamed dump from unrelated data.
+    override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>) =
+        offered.filter { biosHash(it.header) in knownBiosHashes }.distinctBy { biosHash(it.header) }
+
+    override fun needsFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = !hasBios(folder)
+
+    override fun missingFirmware(game: Game, folder: app.foldcade.api.plugin.SaveFolderAccess): List<String> =
+        if (hasBios(folder)) emptyList() else listOf("PlayStation BIOS (.bin)")
+
+    private fun hasBios(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean =
+        folder.list(BIOS).orEmpty().filterNot { it.isFolder }.any { file ->
+            // DuckStation also accepts patched/unknown revisions of these image
+            // sizes. Keep an existing choice; only incoming dumps require a known hash.
+            (file.size in setOf(524288L, 4194304L, 0x3E66F0L) && folder.read("$BIOS/${file.name}", 0L, 1)?.isNotEmpty() == true) ||
+                file.size <= 0 && folder.read("$BIOS/${file.name}", firmwareHeaderSize)?.let { biosHash(it) in knownBiosHashes } == true
+        }
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         if (request.resolvedPackage != PACKAGE) {
@@ -254,3 +273,11 @@ private fun percentDecode(text: String): String? {
 private const val CONTENT: String = "content://"
 private const val TREE: String = "tree"
 private const val DOCUMENT: String = "document"
+
+private val knownBiosHashes: Set<String> by lazy {
+    requireNotNull(DuckStationPlayer::class.java.getResourceAsStream("/bios-md5.txt"))
+        .bufferedReader().useLines { it.filter { line -> !line.startsWith('#') && line.isNotBlank() }.toSet() }
+}
+
+private fun biosHash(bytes: ByteArray): String = java.security.MessageDigest.getInstance("MD5").digest(bytes)
+    .joinToString("") { "%02x".format(it.toInt() and 255) }

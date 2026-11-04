@@ -93,9 +93,20 @@ class DuckStationPlayerTest {
     fun anyFirmwareGoesInTheBiosFolderUnderItsOwnName() {
         assertEquals("bios/SCPH1001.BIN", player.firmwareFileName("SCPH1001.BIN"))
         assertEquals("bios/scph5501.bin", player.firmwareFileName("scph5501.bin"))
-        for (name in listOf("", " ", ".", "..", "psx/SCPH1001.BIN", "..\\SCPH1001.BIN", "bios\u0000")) {
+        assertEquals("bios/scph5501.bin", player.firmwareFileName("bios.zip/psx/scph5501.bin"))
+        for (name in listOf("", " ", ".", "..", "..\\SCPH1001.BIN", "bios\u0000")) {
             assertNull(name, player.firmwareFileName(name))
         }
+    }
+
+    @Test
+    fun zipContainersAndUnknownBytesAreNeverInstalledAsBios() {
+        val offers = listOf(
+            app.foldcade.api.plugin.FirmwareOffer("BIOS.zip", byteArrayOf(0x50, 0x4b, 3, 4)),
+            app.foldcade.api.plugin.FirmwareOffer("BIOS.zip/scph5501.bin", byteArrayOf(1, 2, 3)),
+        )
+        assertTrue(player.chooseFirmware(offers).isEmpty())
+        assertNull(player.firmwareFileName("BIOS.zip/../scph5501.bin"))
     }
 
     @Test
