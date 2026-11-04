@@ -103,7 +103,7 @@ internal suspend fun PluginHost.droidDeckShelfGames(): List<ShelfGame> {
             title = game.label,
             shortText = Copy.progressInDroidDeck,
             platformId = game.platformId,
-            occupiesBothDisplays = false,
+            occupiesBothDisplays = true,
             mark = "droiddeck",
             libraryId = game.backendId,
             remoteKey = game.remoteKey,

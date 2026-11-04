@@ -19,7 +19,9 @@ import app.foldcade.language.encodeHome
 import app.foldcade.language.onHome
 import app.foldcade.language.panelRows
 import app.foldcade.localfolder.SteamShortcut
+import app.foldcade.plugins.droiddeck.DroidDeckEntry
 import app.foldcade.plugins.droiddeck.DroidDeckGame
+import app.foldcade.plugins.droiddeck.DroidDeckPlayer
 import app.foldcade.plugins.gamenative.CatalogGame
 import kotlinx.coroutines.Dispatchers
 import org.junit.After
@@ -117,6 +119,35 @@ class DroidDeckHomeTest {
         assertEquals(listOf(androidHomeId("com.droiddeck.launcher")), placed.folders[HOME_EMULATORS]?.slots)
         assertFalse(placed.folders.containsKey(HOME_ANDROID_GAMES))
         assertEquals(listOf(androidHomeId("com.example.notes")), placed.folders[HOME_ANDROID_APPS]?.slots)
+    }
+
+    @Test
+    fun droidDeckTakesBothScreensFromItsOwnTileAndFromAGame() {
+        // DroidDeck draws on the bottom screen too, so Foldcade leaves it there.
+        val plugins = plugins().apply { register(DroidDeckEntry()) }
+        Shelf.droidDeckGames = listOf(tile(hades, "Hades II"))
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.settleDroidDeck()
+        shell.setInstalledApps(
+            listOf(LaunchableApp(DroidDeckPlayer.PACKAGE, "DroidDeck", systemGame = true)),
+            setOf(DroidDeckPlayer.PACKAGE),
+        )
+        assertTrue(Shelf.games.single { it.id == Shelf.DROIDDECK_TILE }.occupiesBothDisplays)
+
+        focus(shell, titles(shell).indexOf("Emulators"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("DroidDeck"))
+        assertEquals(DroidDeckPlayer.PACKAGE, shell.focusedGame()?.androidPackage)
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+        assertFalse(shell.focusedLaunchesOnOneScreen())
+
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("DroidDeck"))
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        focus(shell, titles(shell).indexOf("Hades II"))
+        assertEquals(hades, shell.focusedGame()?.id)
+        assertTrue(shell.focusedGame()!!.occupiesBothDisplays)
+        assertFalse(shell.focusedLaunchesOnOneScreen())
     }
 
     @Test

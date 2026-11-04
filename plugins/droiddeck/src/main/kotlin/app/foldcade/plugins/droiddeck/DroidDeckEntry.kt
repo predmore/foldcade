@@ -66,6 +66,8 @@ object DroidDeckPlatform : Platform {
  *
  * With no game id, the intent opens DroidDeck's own front end, as the built-in
  * DroidDeck tile does.
+ * DroidDeck draws on the bottom screen too, so it opens on the top screen and
+ * takes both, as a 3DS game does, and Foldcade leaves the bottom screen to it.
  * Saves stay in Steam Cloud. This player declares no save location.
  */
 class DroidDeckPlayer : Player {
@@ -74,8 +76,8 @@ class DroidDeckPlayer : Player {
     override val platformId: String = DroidDeckPlatform.ID
     override val packageNames: List<String> = PACKAGES
     override val needsLocalFile: Boolean = false
-    override val startDisplay: StartDisplay = StartDisplay.PickerChoice
-    override val occupiesBothDisplays: Boolean = false
+    override val startDisplay: StartDisplay = StartDisplay.Primary
+    override val occupiesBothDisplays: Boolean = true
     override val requiresImportedGame: Boolean = true
 
     override fun saveDeclarations(game: Game): List<SaveDeclaration> = emptyList()

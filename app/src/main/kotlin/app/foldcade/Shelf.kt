@@ -91,7 +91,7 @@ object Shelf {
             title = "DroidDeck",
             shortText = Copy.steamInDroidDeck,
             platformId = "droiddeck",
-            occupiesBothDisplays = false,
+            occupiesBothDisplays = true,
             mark = "droiddeck",
         ),
     )

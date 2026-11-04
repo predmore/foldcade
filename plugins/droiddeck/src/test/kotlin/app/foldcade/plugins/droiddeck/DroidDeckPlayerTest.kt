@@ -40,8 +40,8 @@ class DroidDeckPlayerTest {
     fun oneScreenAndOneApplicationId() {
         val player = DroidDeckPlayer()
         assertEquals(listOf("com.droiddeck.launcher"), player.packageNames)
-        assertFalse(player.occupiesBothDisplays)
-        assertEquals(StartDisplay.PickerChoice, player.startDisplay)
+        assertTrue(player.occupiesBothDisplays)
+        assertEquals(StartDisplay.Primary, player.startDisplay)
         assertFalse(player.needsLocalFile)
         assertTrue(player.requiresImportedGame)
         assertEquals(DroidDeckPlatform.ID, player.platformId)
