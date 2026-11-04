@@ -35,6 +35,16 @@ import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
+    @Test fun unresolvedPspAndGameCubeSavesNeverAcknowledgeAnIncomingHead() = runBlocking {
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        for (player in players) {
+            (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+            server.held = player.saveDeclarations(owner).map { it.slot }
+            val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local) }.exceptionOrNull()
+            assertTrue(failure is SaveNotPlaced)
+            assertTrue(server.calls.isEmpty())
+        }
+    }
     private val libraries = HashMap<String, RecordingLibrary>()
     private val folder = RecordingLibrary("folder")
     private val server = RecordingLibrary("server")

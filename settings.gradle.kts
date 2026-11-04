@@ -27,6 +27,8 @@ include(
     ":plugins:azahar",
     ":plugins:droiddeck",
     ":plugins:duckstation",
+    ":plugins:dolphin",
+    ":plugins:ppsspp",
     ":plugins:eden",
     ":plugins:emulators",
     ":plugins:gamenative",

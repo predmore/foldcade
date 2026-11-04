@@ -81,6 +81,8 @@ object Metrics {
 }
 
 object Copy {
+    const val dolphinFiles = "Dolphin files"
+    const val dolphinFolderCard = "Dolphin needs its default Slot A GCI folder to sync. Open Dolphin’s Settings › Config › GameCube and choose GCI Folder for Slot A. Keep your old memory card: use Dolphin’s desktop Memory Card Manager to export its saves as GCI files into the matching GC region’s Card A folder. Custom card folders and card overrides don’t sync yet."
     const val usesBothScreens = "Both screens"
     /** The command center's button: the grid on that screen, to open a second app there. */
     const val openAnApp = "Open an app"

@@ -6,6 +6,8 @@ import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.dolphin.DolphinPlayer
+import app.foldcade.plugins.ppsspp.PpssppPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -32,17 +34,22 @@ internal class LaunchSaves(
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
         if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
         val candidates = candidates(route)
-        val edenSpots = if (player is EdenPlayer) saves.spots(player, route.saves, local, forLaunch = true) else null
-        // Eden may not have made its user yet. Do not let negotiation acknowledge
-        // a server save this device cannot place, even if the player starts anyway.
-        if (player is EdenPlayer && edenSpots?.isEmpty() == true) {
+        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer
+        val resolvedSpots = if (guarded) saves.spots(player, route.saves, local, forLaunch = true) else null
+        // A profile or a content-derived game id can be unresolved. Do not let
+        // negotiation acknowledge a save this device cannot place.
+        if (guarded && resolvedSpots?.isEmpty() == true) {
             onSpots(route.saves, player, emptyList())
-            if (player.hasSaveFolder()) {
+            if (player is app.foldcade.api.plugin.SaveFolderHolder && player.hasSaveFolder()) {
                 try {
+                    val slots = player.saveDeclarations(route.saves).map { it.slot }.toSet()
                     for (owner in candidates) {
-                        val held = plugins.saves(owner.backendId, owner).slots.any { it.slot == EdenPlayer.SLOT }
-                        val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot == EdenPlayer.SLOT }
-                        if (incoming) throw EdenSaveNotPlaced(needsUser = !saves.edenHasUser(player, owner))
+                        val held = plugins.saves(owner.backendId, owner).slots.any { it.slot in slots }
+                        val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot in slots }
+                        if (incoming) {
+                            if (player is EdenPlayer) throw EdenSaveNotPlaced(needsUser = !saves.edenHasUser(player, owner))
+                            throw SaveNotPlaced()
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -50,7 +57,8 @@ internal class LaunchSaves(
                     throw failure
                 } catch (_: Exception) {
                     // An unavailable listing cannot prove there is no incoming save.
-                    throw EdenSaveNotPlaced(needsUser = false)
+                    if (player is EdenPlayer) throw EdenSaveNotPlaced(needsUser = false)
+                    throw SaveNotPlaced()
                 }
             }
             // With no incoming save, first boot can make a user and save. Return
@@ -61,7 +69,7 @@ internal class LaunchSaves(
         var chosen: Negotiated? = null
         for (owner in candidates) {
             val negotiated = try {
-                negotiate(route, owner, player, local, setup, edenSpots)
+                negotiate(route, owner, player, local, setup, resolvedSpots)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -75,7 +83,7 @@ internal class LaunchSaves(
                 break
             }
         }
-        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, edenSpots)
+        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, resolvedSpots)
         try {
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)

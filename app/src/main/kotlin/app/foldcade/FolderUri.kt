@@ -16,7 +16,7 @@ internal fun folderGrantUri(uri: String): String {
 /** A save folder roots at its document, or at its tree when no document is named. */
 internal fun folderDocumentId(uri: String): String {
     val parts = URI(uri).rawPath.orEmpty().split('/')
-    val document = parts.indexOf("document").takeIf { it >= 0 } ?: parts.indexOf("tree")
+    val document = parts.indexOf("document").takeIf { it >= 0 } ?: parts.indexOf("tree").takeIf { it >= 0 } ?: parts.indexOf("root")
     require(document >= 0 && document + 1 < parts.size)
     return decodeDocumentId(parts[document + 1])
 }
@@ -28,7 +28,8 @@ internal fun folderDocumentUri(tree: String, documentId: String): String =
 
 /** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
 internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
-    if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
+    if (URI(uri).authority == "org.dolphinemu.dolphinemu.user" && id.trimEnd('/') == "root") app.foldcade.language.Copy.dolphinFiles
+    else if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
 }
 
 internal fun primaryFolderDocument(path: String): String =

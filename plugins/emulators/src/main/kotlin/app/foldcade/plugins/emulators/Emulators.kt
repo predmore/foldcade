@@ -79,17 +79,6 @@ val EMULATORS: List<Emulator> = listOf(
         activities = mapOf("org.mupen64plusae.v3.alpha" to MUPEN_SPLASH),
     ),
     Emulator(
-        id = "dolphin",
-        displayName = "Dolphin",
-        platformIds = listOf(GAMECUBE, WII),
-        // ES-DE starts TvMainActivity, not MainActivity, with AutoStartFile.
-        activities = mapOf(
-            "org.dolphinemu.dolphinemu" to "org.dolphinemu.dolphinemu.ui.main.TvMainActivity",
-        ),
-        action = ACTION_MAIN,
-        handoff = RomHandoff.Extra("AutoStartFile"),
-    ),
-    Emulator(
         id = "dolphin-mmjr",
         displayName = "Dolphin MMJR",
         platformIds = listOf(GAMECUBE, WII),
@@ -121,13 +110,6 @@ val EMULATORS: List<Emulator> = listOf(
         action = "com.sbro.emucorex.action.LAUNCH_GAME",
         handoff = RomHandoff.Extra("com.sbro.emucorex.extra.GAME_PATH"),
         flags = RELAUNCH,
-    ),
-    Emulator(
-        id = "ppsspp",
-        displayName = "PPSSPP",
-        platformIds = listOf(PSP),
-        activities = listOf("org.ppsspp.ppssppgold", "org.ppsspp.ppsspp")
-            .associateWith { "org.ppsspp.ppsspp.PpssppActivity" },
     ),
 
     // Sega.

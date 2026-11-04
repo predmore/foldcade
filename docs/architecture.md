@@ -15,7 +15,9 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:gamestream` | The parts of the GameStream protocol Sunshine and Apollo hosts speak that Foldcade uses: host status, pairing, app lists, and box art. On `LanHttp` from `:net`, which reaches LAN hosts only and pins a paired host's certificate. |
 | `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:droiddeck` | DroidDeck player and library: Steam on the device. Games from DroidDeck's Add to home screen and synced `.steam` files. |
-| `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
+| `:plugins:emulators` | Launch-only standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
+| `:plugins:ppsspp` | PSP player and per-game savedata folder sync. |
+| `:plugins:dolphin` | Dolphin GameCube player and filtered Slot A GCI sync. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, its platform ids, and a deferred index of existing local art and game facts. See [local media](local-media.md). |
 | `:plugins:melonds` | Nintendo DS player for upstream melonDS Android. |

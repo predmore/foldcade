@@ -25,7 +25,7 @@ The service file name is `META-INF/services/app.foldcade.api.plugin.PluginEntry`
 
 `PluginHost.load` reads every entry that class loader advertises. The caller supplies the loader. This is the path for a bundled jar and for an out-of-tree jar. It does not discover or open an installed package. `load` runs off the main thread. One bad provider is recorded in `rejected` and does not stop the providers that follow. `load` does not throw, except `VirtualMachineError`.
 
-`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (20). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
+`apiVersion` must equal `PLUGIN_API_VERSION` (1). The host rejects a different major. Set `apiMinor` to `PLUGIN_API_MINOR` (21). That is the additive revision this plugin was compiled against. The host loads a minor less than or equal to its own and rejects a newer minor. The interface default is 0, so a plugin that does not declare a minor still loads, marked as an older minor.
 
 Public value types in `:api` are frozen data classes, or sealed interfaces whose leaves are frozen data classes. Adding, removing, reordering, or changing the type of a constructor property bumps the major. Adding an interface member with a default body bumps the minor and does not bump the major. Open enums and sealed types must be branched with an `else`. Adding a value there bumps the minor. Any other enum or sealed type in the module is closed. Adding a value there bumps the major.
 
@@ -87,7 +87,7 @@ Plugin authors may choose any license for their original work. The API, bundled 
 
 `:plugins:emulators` (`EmulatorsEntry`) holds the standalone emulators for the platforms the local-folder catalog classifies, other than the DS and 3DS. `EMULATORS` is one table: application ids, activities, the intent action, and whether the game URI goes in the intent data or in a string extra. Package ids, activities, and handoffs are read from ES-DE's Android find rules and system list.
 
-- Each emulator becomes one player per platform. The player id is `emulator.platform`, such as `dolphin.wii`.
+- Each emulator becomes one player per platform. The player id is `emulator.platform`, such as `flycast.dreamcast`.
 - Players for one platform keep the table order. The shell launches the first one with an installed package (`preferredPlayer`). With none installed, the missing-player dialog names the first one and lists every package.
 - The game is always a content URI with a read grant. When the emulator reads it from an extra, the same URI is also the intent data, because the shell grants read on the data only.
 - A launch that needs a file path is not in the table. RetroArch has its own plugin.
@@ -100,9 +100,23 @@ Eden's `savedata` search reads the game title id and current profile without cha
 
 Before either library launch path places saves, the shell checks Eden's pending restart, then adds missing keys and firmware through the existing installer. `keys/prod.keys` is added only when absent or empty. Firmware `.nca` files go under `nand/system/Contents/registered/` only when Eden has none. `keys/title.keys` can be added in the same pass; missing title keys alone do not contact RomM. Existing files stay. Adding files stops the launch with the restart prompt, before save placement. The pending package and boot count survive process death. The prompt clears after a reboot or Force stop; the stopped-state check runs before opening Eden's provider, because that starts Eden and clears the stopped state. Continue opens App info; Not now only closes. Once this check allows the launch, saves are placed and read back through the ordinary pipeline. Settings › Emulators › Eden › Saves, keys & firmware opens the same picker.
 
+### PSP and GameCube saves
+
+`:plugins:ppsspp` owns `ppsspp.psp`; `:plugins:dolphin` owns `dolphin.gamecube`. Their former table IDs stay stable so existing game/system choices still work. Dolphin’s Wii player stays launch-only in the Dolphin plugin; MMJR remains in the shared table. Slots are `savedata` and `gci`, with the player ID as RomM's emulator name, following the existing Foldcade slot convention. The ZIP layout follows Argosy; slots are intentionally separate from Argosy's `autosave`.
+
+API minor 21 adds defaulted `findSaveFolderParts(slot, game, folder)` and `saveArchiveFilter(slot, game)`. The first resolves parts from the game and read-only player settings before the older search/header hooks. A **single** `SaveFolderPart` with an empty `name` archives its files at the ZIP root. The optional `SaveArchiveFilter` checks each local file's bounded header and every incoming ZIP file before any write. Filtered-out files are never deleted; an incoming filename already owned by a filtered-out file is refused. Flat archives use the same durable backup, pending/torn marks, rollback, and read-back checks as other folder saves.
+
+PSP reads `PSP_GAME/PARAM.SFO` from ISO 9660, CSO v1 metadata frames (raw DEFLATE or plain), or the PBP SFO section. `DISC_ID` must be four uppercase letters and five digits; malformed/unreadable metadata has no destination. `SAVEDATA/<DISC_ID…>/…` folders are zipped under their original folder names. The folder search's broad serial match is narrowed to an exact prefix before reading or placing. No filename/title guess or save states are used.
+
+Dolphin reads the six-byte GameCube ID, GC magic, and region word at `0x458` from an ISO/GCM. It syncs only files in the default `GC/{USA,JAP,EUR}/Card A` whose GCI header has that full ID. The archive has flat `.gci` entries, as [Argosy's GCI bundles](https://github.com/rommapp/argosy-launcher/blob/dbe576f3cfa5dfb9db7001f3d2de7f473e5238fe/app/src/main/kotlin/com/nendo/argosy/data/sync/platform/GciSaveHandler.kt) do. Raw cards, custom card paths and per-game card overrides stay untouched. RVZ and Wii saves remain unresolved in this revision.
+
+Both plugins use `SaveFolderHolder`, so Settings tiles, Y › Saves, standing R1 notices and amber save-health marks follow the existing paths. A held exact writable grant for an emulator's suggested DocumentsProvider root can now be reused after its markers pass. Ambiguous provider/shared copies ask. PPSSPP checks `PSP` and the package-specific external `files/PSP` folders, requiring PPSSPP's exact grant for automatic shared discovery; markers are `SAVEDATA`/`SYSTEM`. Dolphin checks legacy `dolphin-emu` and its external `files` folder, or reuses its own `org.dolphinemu.dolphinemu.user` root; markers are `GC`/`Config`. Its own provider is suggested because all-files access cannot open `Android/data`.
+
+An unresolved PSP/GameCube destination is reported as not syncing. An incoming save, or an unavailable server listing while a destination is unresolved, blocks the sync launch without acknowledging the save. The usual per-launch **Play without syncing** remains available. Remote saves stay visible in Y › Saves.
+
 ### Table or own plugin
 
-An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:eden`, `:plugins:aps3e`, `:plugins:azahar`, `:plugins:armsx2`, `:plugins:duckstation`, and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
+An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:eden`, `:plugins:aps3e`, `:plugins:azahar`, `:plugins:armsx2`, `:plugins:duckstation`, `:plugins:ppsspp`, `:plugins:dolphin`, and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
 
 The host stores an entry whole or not at all. One bad row in the table drops every emulator in it. `EmulatorPlayerTest` checks that ids are unique, and `ShellHostTest` checks that no bundled entry is rejected.
 

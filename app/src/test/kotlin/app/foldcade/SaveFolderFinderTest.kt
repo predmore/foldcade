@@ -8,6 +8,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveFolderFinderTest {
+    @Test fun emulatorProviderReusesOnlyAnExactWritableRootWithMarkers() {
+        val uri = "content://org.dolphinemu.dolphinemu.user/tree/root"
+        val holder = object : SaveFolderHolder {
+            override fun bindSaveFolder(contentUri: String) = Unit
+            override fun hasSaveFolder() = false
+            override val suggestedSaveFolder = "content://org.dolphinemu.dolphinemu.user/root/root"
+            override val saveFolderMarkers = setOf("GC")
+        }
+        directories += "root"
+        names["root"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(uri, "root"), finder(SaveFolderGrant(uri, true, true)).find(holder).folder)
+        val slash = "$uri%2F"
+        directories += "root/"
+        names["root/"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(slash, "root/"), finder(SaveFolderGrant(slash, true, true)).find(holder).folder)
+        assertEquals("Dolphin files", folderPathLabel(folderDocumentUri(slash, "root/")))
+        assertNull(finder(SaveFolderGrant(uri, true, false)).find(holder).folder)
+        assertNull(finder(SaveFolderGrant("content://other/tree/root", true, true)).find(holder).folder)
+        assertNull(finder(SaveFolderGrant("$uri%2FGC", true, true)).find(holder).folder)
+    }
     private val directories = mutableSetOf<String>()
     private val names = mutableMapOf<String, List<String>>()
     private val playerGrants = mutableSetOf<String>()

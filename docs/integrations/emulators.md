@@ -168,16 +168,38 @@ Before launch, Foldcade checks keys and firmware and any required Eden restart, 
 
 Only account saves for Eden's current profile sync. Other profiles, device-save-data, BCAT, and save caches do not sync. A remote-only game's saves still appear in **Y › Saves**, but placing one on this device requires downloading the ROM when its title id cannot be resolved by name. Copies to other server slots do not need that ROM.
 
+## PPSSPP: PSP
+
+Install [official PPSSPP](https://www.ppsspp.org/download/) and finish its first-run Memory Stick setup. Free and Gold builds are recognized, with Gold first when both are installed.
+
+Foldcade looks for the **PSP** folder using access it already holds, including **Find saves** all-files access. PPSSPP must hold access to that exact folder before Foldcade chooses it automatically. A stale or ambiguous copy asks. If needed, use **Settings › Emulators › PPSSPP** and choose the PSP folder that holds **SAVEDATA** and **SYSTEM**. Custom Memory Stick locations can be picked there too. The found path is shown in Settings and announced in R1.
+
+Game saves sync through RomM as slot `savedata`. ISO, CSO v1, and PBP games are identified by `DISC_ID` in `PARAM.SFO`; a save archive contains all matching `SAVEDATA/<DISC_ID…>/` folders, under their original names. Games with unreadable metadata or nonstandard save-directory IDs cannot be matched by filename or title. Their files stay on the device; unsupported game images show **Saves not syncing**. Save states do not sync.
+
+## Dolphin: GameCube
+
+Install [official Dolphin](https://dolphin-emu.org/download/) and open it once. Its default **GameCube Slot A Device: GCI Folder** keeps one or more `.gci` files per game. Foldcade syncs those for **ISO/GCM** games through RomM, in slot `gci`. It reads the game ID and region from the disc, then checks the GCI headers. Other games on that card and Slot B stay untouched.
+
+Foldcade reuses access to Dolphin's own folder when available. Otherwise choose **Settings › Emulators › Dolphin › Save folder**: the picker opens in Dolphin's own provider, so choose **Use this folder** and **Allow**. Held grants and **Find saves** also cover the old shared `dolphin-emu` folder. All-files access cannot open Dolphin's `Android/data` folder, so its provider is the manual fallback. A folder holding **GC** or **Config** is required.
+
+A zip contains the game's `.gci` files directly at the root, matching Argosy's GameCube bundle layout. Foldcade keeps its own slot/emulator names; other clients' slots remain available through **Y › Saves**. A loose GCI must be packaged in this layout before it can be placed through this folder-archive slot.
+
+Raw `.raw` cards can hold many games and are never uploaded as one game's save. With a raw card or custom card settings, Settings shows **Set up** and the game's saves remain not syncing. In Dolphin, choose **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder**. Keep the old card; Dolphin's desktop **Memory Card Manager** can export its saves as GCI files into the matching `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A` folder. Foldcade never changes Dolphin's card settings for you.
+
+**RVZ, Wii NAND saves, custom card paths, per-game card overrides, MMJR, Slot B, and save states do not sync yet.** They still launch through their existing paths. An unresolved game keeps the amber not-syncing signal. If a server save is waiting and Foldcade cannot resolve a destination, the launch offers **Play without syncing** for that launch; both copies stay intact.
+
+The [candidate audit](../save-sync-candidates.md) lists the next emulators and verified formats.
+
 ## Other systems
 
 Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade.
 
-Disc tracks and other related files may need the emulator's own game-directory access. These emulators keep their own saves; Foldcade does not currently transfer them to RomM.
+Disc tracks and other related files may need the emulator's own game-directory access. The remaining launch-only emulators in the table keep their saves on the device; Foldcade does not transfer those saves to RomM.
 
 ## If Foldcade does not find an installed emulator
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [PPSSPP](../../plugins/ppsspp/src/main/kotlin/app/foldcade/plugins/ppsspp/PpssppEntry.kt), [Dolphin](../../plugins/dolphin/src/main/kotlin/app/foldcade/plugins/dolphin/DolphinEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 [All integration guides](README.md)
