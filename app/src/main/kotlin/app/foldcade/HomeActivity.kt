@@ -729,8 +729,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
-        // Usage access may have changed while Home was away, and without it no game reads Paused.
-        foldcade.pruneRunningGames()
         val displayId = display?.displayId
         val ending = displayId != null &&
             foldcade.externalPlay.sessionId != null &&
@@ -1090,7 +1088,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return
         }
         // Only a player that would ask for its folder looks first, so other launches start at once.
-        if (!foldersChecked && player is SaveFolderHolder && player !is EdenPlayer && !player.hasSaveFolder()) {
+        if (!foldersChecked && player is SaveFolderHolder && !player.hasSaveFolder()) {
             // A library game already preparing keeps going, as before.
             if (game.libraryId != null && game.remoteKey != null && foldcade.launchWork.active) return
             val generation = beginLaunch()
@@ -1550,7 +1548,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 throw cancelled
             }
         }
-        if (first is SaveFolderHolder && first !is EdenPlayer && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
+        if (first is SaveFolderHolder && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
@@ -1710,7 +1708,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className)) {
+        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
@@ -1738,7 +1736,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * closed since without Android saying so; the same start then opens the game anew.
      */
     private fun resumeRunning(tileId: String, title: String, platformId: String?, startAnew: () -> Unit): Boolean {
-        foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
         if (running.packageName in foldcade.closingPlayers) return true
         // A chosen save must load even when the old game is still paused behind Home.
@@ -1766,8 +1763,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             return true
         }
-        // Behind Home, a player that may have closed unseen would open its own menu, not the game.
-        if (!foldcade.closesVisible) return false
+        // Preserve a known run even without usage access. Guessing it has closed
+        // would send a fresh start and discard its unsaved progress. Without
+        // exit observations, Restart remains the explicit way to start it over.
         cancelLaunches()
         if (running.resumeStart != null) {
             // The same start boots the game again when it had closed, and it writes the saves the read-back
@@ -1897,8 +1895,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val id = gameId ?: return
         if (!foldcade.shell.isPaused(id) || !foldcade.canCloseGame(id)) return
         val running = foldcade.runningOn(id) ?: return
-        if (foldcade.shell.present(closeGameDialog(hostScreen(), running.companions.map { it.title }))) {
-            foldcade.closeGameAsk = running
+        val closable = running.copy(companions = running.companions.filter { canClearPlayerTask(it.packageName) })
+        if (foldcade.shell.present(closeGameDialog(hostScreen(), closable.companions.map { it.title }))) {
+            foldcade.closeGameAsk = closable
         }
     }
 
@@ -1953,6 +1952,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Task identity stays with its creator. A task first created by the player's menu on another screen can take this clear. */
     private fun clearBehindHome(playerPackage: String, displayId: Int): Boolean {
+        if (!canClearPlayerTask(playerPackage)) return false
         val front = packageManager.getLaunchIntentForPackage(playerPackage) ?: return false
         val home = foldcade.homeOnDisplay(displayId) ?: return false
         front.flags = CLOSE_FLAGS
@@ -2922,8 +2922,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 // A launch replaced during the install still leaves the restart pending.
                 if (foldcade.edenRestartPending()?.packageName != packageName) return false
-                withContext(Dispatchers.Main.immediate) { presentEdenRestart(packageName, generation) }
-                return true
+                // A held external-storage grant need not start Eden's provider.
+                // If Eden is still stopped, it has not cached the old files.
+                return edenRestartBlocks(packageName, generation)
             }
             EdenGate.Ready -> return false
         }

@@ -308,7 +308,6 @@ HSPLapp/foldcade/FoldcadeApp;->packageInstalled(Ljava/lang/String;)Z
 HSPLapp/foldcade/FoldcadeApp;->paintFor(I)Lapp/foldcade/ui/FoldPaint;
 HSPLapp/foldcade/FoldcadeApp;->playerSaveFolder$app(Lapp/foldcade/api/plugin/Player;)Ljava/lang/String;
 HSPLapp/foldcade/FoldcadeApp;->processExits()Ljava/util/List;
-HSPLapp/foldcade/FoldcadeApp;->pruneRunningGames$app()V
 HSPLapp/foldcade/FoldcadeApp;->publicArt_delegate$lambda$12()Lapp/foldcade/net/PublicHttps;
 HSPLapp/foldcade/FoldcadeApp;->publishDroidDeck(Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 HSPLapp/foldcade/FoldcadeApp;->publishNotices()V
@@ -1661,7 +1660,6 @@ HSPLapp/foldcade/ShellController;->getInstalledPlayers()Ljava/util/Set;
 HSPLapp/foldcade/ShellController;->getModel()Lapp/foldcade/language/PickerModel;
 HSPLapp/foldcade/ShellController;->getMoonlightHosts$app()Ljava/util/Map;
 HSPLapp/foldcade/ShellController;->getRemoving()Ljava/util/Set;
-HSPLapp/foldcade/ShellController;->getResumable()Z
 HSPLapp/foldcade/ShellController;->getRevealPulse()I
 HSPLapp/foldcade/ShellController;->getRunning()Ljava/util/Set;
 HSPLapp/foldcade/ShellController;->getSaveHealthEpoch()I
