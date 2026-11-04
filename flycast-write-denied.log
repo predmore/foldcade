@@ -1,0 +1,13 @@
+11-04 12:27:09.620 17439 17800 W DocumentsContract: java.lang.IllegalStateException: Failed to touch /storage/emulated/0/Android/data/com.flycast.emulator/files/data/FCQA261104_vmu_save_A1.bin: java.io.IOException: Permission denied
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3019)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.os.Parcel.createException(Parcel.java:2995)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.os.Parcel.readException(Parcel.java:2978)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:190)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:142)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.content.ContentProviderProxy.call(ContentProviderNative.java:732)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.content.ContentResolver.call(ContentResolver.java:2453)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at android.provider.DocumentsContract.createDocument(DocumentsContract.java:1380)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at app.foldcade.AndroidSaveDocuments.create(PlayerSaves.kt:1141)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at app.foldcade.SaveQaActivity$runQa$1.invokeSuspend$write(SaveQaActivity.kt:62)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at app.foldcade.SaveQaActivity$runQa$1.invokeSuspend(SaveQaActivity.kt:94)
+11-04 12:27:09.620 17439 17800 W DocumentsContract: 	at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
