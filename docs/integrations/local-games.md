@@ -1,8 +1,27 @@
 # Games in local folders
 
-Foldcade scans folders on your Thor's internal storage or SD card. You can add several folders, and it remembers them for future starts.
+Foldcade scans folders on your Thor's internal storage or SD card. It finds the usual ROM folders by itself, you can add any other folder, and it remembers them for future starts.
+
+## Let Foldcade find your ROMs
+
+Foldcade looks for these folders at the top of internal storage and of each SD card, in any case:
+
+- `ROMs` (ES-DE's default) and `roms` (Batocera's);
+- `Emulation/roms` (EmuDeck's).
+
+A folder counts when it holds at least one system folder, such as `gba`, `psx`, `megadrive` or `Nintendo - Game Boy Advance` (ES-DE, Batocera and RetroArch names all work). A `ROMs` folder that holds only Moonlight's `moonlight` shortcuts is left alone.
+
+1. Set up a [supported emulator](emulators.md) and check that your game plays there.
+2. Open Foldcade. When it sees one of these folders it asks once, naming the folder and its systems. Choose **Allow**, turn on **Allow access to manage all files** on Android's page, and press Back.
+3. Foldcade scans the folders in the background. R1 says **Found 214 games in ROMs**, and the games join Home and **Games**, sorted by system.
+
+You can also allow it later in **L1 › Settings › Library › Find games**, which is the same Android switch as **Settings › Emulators › Find saves**. Each found folder gets a tile in **Settings › Library**, with where it is and how many games it holds. Its **Remove** stops reading it for good: Foldcade never finds that folder again by itself. Its files stay on the device. Turning all-files access off takes the found folders' games off Home until you allow it again.
+
+Foldcade reads found folders and hands games to emulators read-only. It skips a found folder that a folder you added already covers.
 
 ## Add a folder
+
+Use this for a folder Foldcade doesn't find, or to keep all-files access off.
 
 1. Set up a [supported emulator](emulators.md) and check that your game plays there.
 2. Put your games in folders named for their systems. For example:
@@ -57,7 +76,7 @@ The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the sa
 
 ## If a game is missing or will not start
 
-- **Missing from All:** Check the extension, system folder, and Android folder grant, then return to Foldcade.
+- **Missing from All:** Check the extension, system folder, and Android folder grant, then return to Foldcade. A folder Foldcade should find needs a system folder at its top, and **Find games** set to **Allowed**.
 - **In All but missing from Home:** Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) or add the tile back with Y.
 - **Wrong system:** Move a shared-format file into the correct system folder and return to Foldcade.
 - **Will not launch:** Check the [supported emulator](emulators.md) and try the game directly in it.

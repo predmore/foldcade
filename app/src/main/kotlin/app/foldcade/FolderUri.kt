@@ -27,6 +27,9 @@ internal fun folderDocumentUri(tree: String, documentId: String): String =
     "${folderGrantUri(tree)}/document/${encodeDocumentId(documentId)}"
 
 /** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
+/** A tree on [authority] rooted at [documentId], encoded as `DocumentsContract.buildTreeDocumentUri` encodes it. */
+internal fun treeUri(authority: String, documentId: String): String = "content://$authority/tree/${encodeDocumentId(documentId)}"
+
 internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
     if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
 }
