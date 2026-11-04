@@ -368,10 +368,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenPlatform -> foldcade.openPlatform(effect.index)
             Effect.LeavePlatform -> foldcade.leavePlatform()
             Effect.TryAgain -> foldcade.retryLibrary()
-            Effect.AddFolder -> {
-                folderPurpose = FolderPurpose.Library
-                folderPicker.launch(null)
-            }
+            Effect.AddFolder -> pickLibraryFolder()
             is Effect.PickFolderAgain -> {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
@@ -426,7 +423,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
-            Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
+            Effect.OpenAllFilesAccess -> openAllFilesAccess()
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
             Effect.OpenBackup -> {
@@ -726,6 +723,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
+        foldcade.shell.setAllFilesPage(false)
         // Android's all-files page may have been answered, or a card put in: look for ROM folders again.
         foldcade.refreshRomRoots()
         foldcade.refreshEdenSetting()
@@ -2321,15 +2319,35 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** The first of [intents] this device can open. */
-    private fun startFirst(intents: List<Intent>) {
+    /**
+     * Android's folder picker for a library folder. It opens at the ROM folder Foldcade saw and
+     * may not read yet, so choosing it is Use this folder and Allow. Otherwise Android picks.
+     */
+    private fun pickLibraryFolder() {
+        folderPurpose = FolderPurpose.Library
+        folderPicker.launch(foldcade.shell.model.romFolderOffer?.start?.let { Uri.parse(storageFolderDocument(it)) })
+    }
+
+    /**
+     * Android's all-files page for Foldcade. Its switch takes a touch: with the D-pad, focus
+     * starts on the app's header, or on nothing in touch mode, so Foldcade's other screen says
+     * what to do until the player comes back.
+     */
+    private fun openAllFilesAccess() {
+        if (startFirst(AllFilesAccess(this).settingsIntents())) foldcade.shell.setAllFilesPage(true)
+    }
+
+    /** Starts the first of [intents] Android can open. False when it has none of them. */
+    private fun startFirst(intents: List<Intent>): Boolean {
         for (intent in intents) {
             try {
                 startActivity(intent)
-                return
+                return true
             } catch (_: ActivityNotFoundException) {
                 continue
             }
         }
+        return false
     }
 
     private fun hostScreen(): HostScreen {
@@ -2439,12 +2457,30 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             DialogKind.FindGames -> {
                 foldcade.store.setFindGamesOffered()
-                if (effect.button == DialogButton.Allow) startFirst(AllFilesAccess(this).settingsIntents())
+                if (effect.button == DialogButton.Allow) openAllFilesAccess()
+            }
+            DialogKind.AddGames -> {
+                foldcade.store.setAddGamesAsked()
+                when (effect.button) {
+                    DialogButton.FindGames -> {
+                        foldcade.store.setFindGamesOffered()
+                        openAllFilesAccess()
+                    }
+                    // The dialog said what to choose, so the picker needs no explainer of its own.
+                    DialogButton.AddFolder -> {
+                        foldcade.shell.noteFolderExplained()
+                        pickLibraryFolder()
+                    }
+                    DialogButton.SignInRomm -> {
+                        foldcade.shell.openAddRomm()
+                        beginRommDeviceCode()
+                    }
+                    else -> Unit
+                }
             }
             DialogKind.Folder -> if (effect.button == DialogButton.ContinueGrant) {
                 foldcade.shell.noteFolderExplained()
-                folderPurpose = FolderPurpose.Library
-                folderPicker.launch(null)
+                pickLibraryFolder()
             }
             DialogKind.Ok -> cancelLaunches()
             DialogKind.ReLogin -> {

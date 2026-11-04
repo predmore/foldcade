@@ -163,6 +163,7 @@ import app.foldcade.Displays
 import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
 import app.foldcade.BloomFrom
+import app.foldcade.ADD_GAMES_GLYPH
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
@@ -214,6 +215,7 @@ import app.foldcade.language.dialogButtonLabel
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.EmptyGrid
+import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroBlend
 import app.foldcade.language.HeroItem
@@ -976,6 +978,14 @@ private fun CommandCenterScreen(
                 if (line != null) {
                     BasicText(text = line, style = text(theme.focus, LocalFoldTheme.current.theme.style.type.heroMeta, theme), maxLines = 1)
                 }
+                // Android's all-files page beside: its switch takes a touch, and Back returns here.
+                if (subject is CenterSubject.App && app.shell.model.allFilesPage) {
+                    BasicText(
+                        text = FoundFolderCopy.allFilesHint,
+                        style = text(theme.focus, LocalFoldTheme.current.theme.style.type.heroMeta, theme),
+                        maxLines = 1,
+                    )
+                }
                 Spacer(Modifier.height(px(12f)))
                 // Beside an app the keys press these buttons. Beside a page they drive the page.
                 val keyed = subject is CenterSubject.App
@@ -1293,6 +1303,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                     packageName = layer.item.packageName,
                                     record = records[layer.key],
                                     query = queries[layer.key],
+                                    control = layer.item.control,
                                 )
                                 is HeroSubject.Folder -> HeroArt(app, screen, null, layer.folder.name, layer.folder.mark, null, null, null)
                             }
@@ -2043,6 +2054,7 @@ private fun HeroArt(
     packageName: String?,
     record: Game?,
     query: ArtQuery?,
+    control: String? = null,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -2176,6 +2188,14 @@ private fun HeroArt(
             )
             icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
             glyph != null -> MarkIcon(glyph, glyph.heroScale(theme))
+            control != null -> themeIconOrNull(control, HERO_CONTROL_PX)?.let { ink ->
+                Image(
+                    painter = ink.painter,
+                    contentDescription = title,
+                    colorFilter = ink.tint(theme.onBackground),
+                    modifier = Modifier.fillMaxSize(design.hero.markScale * CONTROL_FILL),
+                )
+            }
             else -> BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(4f),
@@ -3205,6 +3225,11 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null && shell.emptyCollection() != null) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
+    // Home's Add games tile, named on A.
+    val addGamesTile = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
+        model.focus.chrome == null && shell.homeKeys() == HomeKeys.Idle && model.focus.cellIndex == shell.addGamesSlot()) {
+        listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
+    } else emptyList()
     // A restored place waiting for RomM signs in on A.
     // The same guards as the press itself: on the gap, not on a pill above it, with nothing held.
     val signIn = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
@@ -3218,7 +3243,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
-    } else addGames + signIn + normalKeys
+    } else addGames + addGamesTile + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
@@ -3589,6 +3614,7 @@ private fun StripColumn(
     val editing = shell.homeEditing()
     val lifted = shell.homeLiftedIndex()
     val foldersOpen = shell.homeFoldersOpen()
+    val addGames = if (showingHome) shell.addGamesSlot() else null
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until Metrics.rows) {
             val index = GridStrip.index(column, row)
@@ -3610,7 +3636,25 @@ private fun StripColumn(
                     },
                 ),
             ) {
-                if (past) {
+                if (past && index == addGames) {
+                    // Past the last tile, while nothing brings games: the way to add some.
+                    val focused = shell.model.dialog == null && shell.model.panel == null && !shell.model.connectOpen &&
+                        focus.chrome == null && focus.cellIndex == index && carry == null
+                    Cell(
+                        title = Copy.addGames,
+                        mark = null,
+                        control = ADD_GAMES_GLYPH,
+                        showTitle = showTitle,
+                        focused = focused,
+                        size = cell,
+                        titleWidth = titleWidth,
+                        corner = radius,
+                        icon = null,
+                        favorite = false,
+                        offHome = true,
+                        onClick = { tap() },
+                    )
+                } else if (past) {
                     // A tap rests the cursor here, as on any empty slot.
                     Box(Modifier.size(cell).hostPress { tap() })
                 } else {
@@ -4126,6 +4170,10 @@ private const val LIFT_GLOW_FLAT = 0.42f
 private const val INTO_SCALE = 0.3f
 
 /** How far up a held tile reaches toward the Home target, in rows. */
+private const val CONTROL_PX = 128
+private const val HERO_CONTROL_PX = 256
+private const val CONTROL_FILL = 0.5f
+
 private const val HOME_REACH = 0.12f
 
 /** The Home target, in panel pixels, and how far above the top row it sits. */
@@ -4306,6 +4354,8 @@ private fun Cell(
     shortTitle: String? = null,
     /** The theme's object for an app ([appGlyph]), drawn in place of [mark] and its launcher [icon]. */
     themedApp: MarkGlyph? = null,
+    /** A one-ink control glyph by its slot, for a tile that is an action rather than a thing, as Add games. */
+    control: String? = null,
     art: Painter? = null,
     showTitle: Boolean,
     focused: Boolean,
@@ -4542,6 +4592,15 @@ private fun Cell(
                     }
                 } else if (glyph != null) {
                     MarkIcon(glyph, theme.artScale, glyphAlpha)
+                } else if (control != null) {
+                    themeIconOrNull(control, CONTROL_PX)?.let { ink ->
+                        Image(
+                            painter = ink.painter,
+                            contentDescription = null,
+                            colorFilter = ink.tint(theme.onBackground),
+                            modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
+                        )
+                    }
                 } else {
                     BasicText(
                         text = monogram(title),
@@ -4706,7 +4765,13 @@ private fun emptyTitle(model: app.foldcade.language.PickerModel): String? = when
 }
 
 private fun emptyActions(model: app.foldcade.language.PickerModel): List<String> = when (model.gridKind) {
-    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.addRommServer)
+    GridKind.NoLibrary -> app.foldcade.language.noLibraryActions(model).map { action ->
+        when (action) {
+            app.foldcade.language.NoLibraryAction.FindGames -> app.foldcade.language.FoundFolderCopy.findGames
+            app.foldcade.language.NoLibraryAction.AddFolder -> Copy.addFolder
+            app.foldcade.language.NoLibraryAction.AddRomm -> Copy.addRommServer
+        }
+    }
     GridKind.Unreachable -> listOf(Copy.tryAgain)
     else -> emptyList()
 }

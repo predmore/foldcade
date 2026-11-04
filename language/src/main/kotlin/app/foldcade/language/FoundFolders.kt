@@ -1,6 +1,13 @@
 package app.foldcade.language
 
 /**
+ * ROM folders Foldcade saw but may not read yet: their [places] and the [systems] their
+ * folders name, and [start], the first one's storage document id (`primary:ROMs`), where
+ * Android's folder picker opens. Null on the model once all-files access is allowed.
+ */
+data class RomFolderOffer(val places: List<String>, val systems: List<String>, val start: String)
+
+/**
  * Copy for the ROM folders Foldcade finds by itself (`ROMs`, `Emulation/roms`, the same on
  * an SD card), and for asking to be Home when Moonlight or DroidDeck would use it.
  */
@@ -27,6 +34,25 @@ object FoundFolderCopy {
         val what = if (systems.size <= MAX_SYSTEMS) "${and(systems)} games" else "games for ${systems.size} systems"
         return "${and(places)} $verb $what. Allow file access once and they’re on Home."
     }
+
+    /** The first run's ask when no ROM folder was found and no RomM server is saved. */
+    const val noRomsTitle = "Where are your games?"
+    const val noRomsBody = "Sign in to your RomM server with your phone, or choose the folder that holds your games."
+    const val signInRomm = "Sign in to RomM"
+
+    /** RetroArch's cores ask before the first launch: "RetroArch plays your Sega Genesis games." */
+    fun retroArchCoresBody(systems: List<String>): String {
+        val what = if (systems.size in 1..MAX_SYSTEMS) "your ${and(systems)} games" else "your games"
+        return "RetroArch plays $what. Foldcade gets the cores they need: on the next screen, " +
+            "tap Use this folder, then Allow, so it sees the ones you have."
+    }
+
+    /** Under Add games on the top screen: the way that fits first. */
+    fun addGamesLine(offer: RomFolderOffer?): String =
+        if (offer != null) "Find games in ${and(offer.places)}, or add a folder" else "Sign in to RomM, or add a folder"
+
+    /** On the free screen while Android's all-files page is open: its switch takes a touch. */
+    const val allFilesHint = "Tap the switch, then press Back"
 
     /** R1 after a scan: "Found 214 games in ROMs", or "Found 230 games in 2 folders". */
     fun foundTitle(games: Int, places: List<String>): String {

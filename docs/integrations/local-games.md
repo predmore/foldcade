@@ -12,10 +12,10 @@ Foldcade looks for these folders at the top of internal storage and of each SD c
 A folder counts when it holds at least one system folder, such as `gba`, `psx`, `megadrive` or `Nintendo - Game Boy Advance` (ES-DE, Batocera and RetroArch names all work). A `ROMs` folder that holds only Moonlight's `moonlight` shortcuts is left alone.
 
 1. Set up a [supported emulator](emulators.md) and check that your game plays there.
-2. Open Foldcade. When it sees one of these folders it asks once, naming the folder and its systems. Choose **Allow**, turn on **Allow access to manage all files** on Android's page, and press Back.
+2. Open Foldcade. When it sees one of these folders it asks once, naming the folder and its systems. Choose **Allow**. Android's page opens on that screen: tap **Allow access to manage all files**, then press Back. Foldcade's other screen says so while the page is open. With the D-pad, move down to the switch first, then press A.
 3. Foldcade scans the folders in the background. R1 says **Found 214 games in ROMs**, and the games join Home and **Games**, sorted by system.
 
-You can also allow it later in **L1 › Settings › Library › Find games**, which is the same Android switch as **Settings › Emulators › Find saves**. Each found folder gets a tile in **Settings › Library**, with where it is and how many games it holds. Its **Remove** stops reading it for good: Foldcade never finds that folder again by itself. Its files stay on the device. Turning all-files access off takes the found folders' games off Home until you allow it again.
+You can also allow it later. Until you have a folder, Home ends in an **Add games** tile with **Find games** first. **L1 › Settings › Library › Find games** is the same Android switch as **Settings › Emulators › Find saves**. Each found folder gets a tile in **Settings › Library**, with where it is and how many games it holds. Its **Remove** stops reading it for good: Foldcade never finds that folder again by itself. Its files stay on the device. Turning all-files access off takes the found folders' games off Home until you allow it again.
 
 Foldcade reads found folders and hands games to emulators read-only. It skips a found folder that a folder you added already covers.
 
@@ -39,8 +39,8 @@ Use this for a folder Foldcade doesn't find, or to keep all-files access off.
        Racing.iso
    ```
 
-3. In Foldcade, open **L1 › Settings › Library › Add › Add a folder**.
-4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access.
+3. In Foldcade, choose **Add a folder** on Home's **Add games** tile, or open **L1 › Settings › Library › Add › Add a folder**.
+4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When Foldcade has seen a ROMs folder, the picker opens there, so **Use this folder** and **Allow** are all it takes.
 5. Wait for the scan, then open the system's folder on Home or find the game in **All**.
 
 Foldcade scans subfolders too. It needs access only to the tree you choose.
