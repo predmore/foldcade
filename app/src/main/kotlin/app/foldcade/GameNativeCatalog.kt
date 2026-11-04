@@ -8,9 +8,10 @@ import app.foldcade.plugins.gamenative.CatalogGame
 import app.foldcade.plugins.gamenative.GameNativeLibrary
 import app.foldcade.plugins.gamenative.GameNativePlayer
 import app.foldcade.plugins.gamenative.PcPlatform
-import app.foldcade.plugins.gamenative.ShortcutLaunch
+import app.foldcade.plugins.gamenative.gameNativeShortcut
+import app.foldcade.plugins.gamenative.mergeGameNativeGames
+import app.foldcade.plugins.gamenative.restoreGameNativePins
 import app.foldcade.plugins.gamenative.catalogGameFromLine
-import app.foldcade.plugins.gamenative.catalogGameFromShortcut
 import app.foldcade.plugins.gamenative.catalogLine
 import app.foldcade.romm.writeDurably
 import java.io.File
@@ -18,17 +19,19 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Reads shortcuts GameNative already published and keeps the confirmed list.
- * v1 does not offer a screen for typing app ids.
  *
  * Android exposes another app's shortcuts to the default launcher. A security
  * failure leaves the list already stored. This does not read GameNative's
  * database and does not request every installed package.
  *
- * [steamFiles] are the games .steam files in the library folders name. They
+ * [steamFiles] are the games named by all five store export formats in library folders. They
  * join the catalog but are not stored with it, so a deleted file takes its
  * game off the grid at the next scan.
  */
 data class GameNativeCatalogRead(val shortcutsRead: Boolean, val hasGames: Boolean, val storedCatalog: Boolean) {
+    /** Cached pins remain in the catalog on a denied shortcut read; finished file scans can still remove exports. */
+    fun settles(foldersRead: Boolean, hasFolders: Boolean): Boolean = foldersRead || !hasFolders
+
     fun releasesRestore(foldersRead: Boolean, hasFolders: Boolean): Boolean =
         shortcutsRead && (foldersRead || !hasFolders) && (hasGames || storedCatalog)
 }
@@ -42,11 +45,11 @@ fun refreshGameNativeCatalog(
     val storedCatalog = file.isFile
     val stored = readCatalog(file)
     val shortcuts = readGameNativeShortcuts(context, GameNativePlayer.PACKAGES)
-    library.confirm(stored + shortcuts.orEmpty() + steamFiles)
+    val pins = restoreGameNativePins(shortcuts, stored)
+    library.confirm(mergeGameNativeGames(pins, steamFiles))
     Shelf.catalog = library.confirmed().map { it.toShelfGame() }
-    val kept = (stored + shortcuts.orEmpty()).map { it.remoteKey }.toSet()
     try {
-        keepGameNativeCatalog(file, library.confirmed().filter { it.remoteKey in kept }, storedCatalog)
+        keepGameNativeCatalog(file, library.confirmed().filter { it.shortcutPackage != null }, storedCatalog)
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -81,11 +84,7 @@ internal fun readGameNativeShortcuts(context: Context, packages: List<String>): 
     for (packageName in packages) {
         val query = LauncherApps.ShortcutQuery()
         query.setPackage(packageName)
-        query.setQueryFlags(
-            LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED or
-                LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
-                LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST,
-        )
+        query.setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
         val shortcuts = try {
             launcher.getShortcuts(query, user).orEmpty()
         } catch (_: SecurityException) {
@@ -94,17 +93,8 @@ internal fun readGameNativeShortcuts(context: Context, packages: List<String>): 
             return null
         }
         for (shortcut in shortcuts) {
-            val intent = shortcut.intents?.lastOrNull() ?: continue
-            val game = catalogGameFromShortcut(
-                ShortcutLaunch(
-                    action = intent.action,
-                    appIdExtra = intent.getIntExtra(GameNativePlayer.EXTRA_APP_ID, -1),
-                    gameSourceExtra = intent.getStringExtra(GameNativePlayer.EXTRA_GAME_SOURCE),
-                    viewAppId = intent.data?.getQueryParameter("appid"),
-                    viewGameSource = intent.data?.getQueryParameter("gamesource"),
-                    label = shortcut.shortLabel?.toString().orEmpty(),
-                ),
-            )
+            val game = gameNativeShortcut(packageName, shortcut.id,
+                shortcut.longLabel?.toString() ?: shortcut.shortLabel?.toString(), shortcut.isPinned, shortcut.isEnabled)
             if (game != null) found += game
         }
     }
@@ -119,4 +109,22 @@ private fun CatalogGame.toShelfGame(): ShelfGame = ShelfGame(
     occupiesBothDisplays = false,
     libraryId = GameNativeLibrary.ID,
     remoteKey = remoteKey,
+    shortcut = shortcutPackage != null,
 )
+
+/** Removes only this game's pin, preserving every other shortcut and package. */
+internal fun unpinGameNativeShortcut(context: Context, game: CatalogGame): Boolean {
+    val publisher = game.shortcutPackage ?: return false
+    val launcher = context.getSystemService(LauncherApps::class.java) ?: return false
+    if (!launcher.hasShortcutHostPermission()) return false
+    return try {
+        val user = Process.myUserHandle()
+        val query = LauncherApps.ShortcutQuery().apply {
+            setPackage(publisher)
+            setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
+        }
+        val ids = launcher.getShortcuts(query, user).orEmpty().filter { it.isPinned }.map { it.id }
+        val keep = ids.filter { it != "game_${game.appId}" }
+        if (keep == ids) false else { launcher.pinShortcuts(publisher, keep, user); true }
+    } catch (_: SecurityException) { false } catch (_: IllegalStateException) { false }
+}

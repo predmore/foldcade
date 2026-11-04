@@ -9,7 +9,7 @@ Choose a guide for where your games live. You can combine sources on the same Ho
 | Games for Azahar, melonDS, Dolphin, PPSSPP, and other emulators | [Emulators](emulators.md) | Detects supported emulators; games come from folders or RomM. |
 | Games for RetroArch and its cores | [RetroArch](retroarch.md) | Uses the cores you install; games come from folders or RomM. |
 | Android games and apps | [Android](android.md) | Discovers installed apps automatically. |
-| Steam games installed in GameNative | [GameNative](gamenative.md) | Scans exported `.steam` files. |
+| PC games installed in GameNative | [GameNative](gamenative.md) | Home shortcuts and automatically found store exports. |
 | Steam and added games in DroidDeck | [DroidDeck](droiddeck.md) | Reads pinned game shortcuts or scans its synced export folder. |
 | Games streamed from your computer | [Moonlight](moonlight.md) | Reads the game shortcuts you create in Moonlight. |
 

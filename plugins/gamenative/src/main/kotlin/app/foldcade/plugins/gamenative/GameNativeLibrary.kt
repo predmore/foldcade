@@ -36,6 +36,11 @@ class GameNativeLibrary : LibraryBackend {
     @Volatile
     private var catalog: List<CatalogGame> = emptyList()
 
+    @Volatile private var steamIds: Map<String, Int> = emptyMap()
+
+    /** A pin can learn its Steam art from an export without changing its Home identity. */
+    fun steamArtId(remoteKey: String): Int? = steamIds[remoteKey]
+
     /** Games accepted by the last [confirm], in that order. */
     fun confirmed(): List<CatalogGame> = catalog
 
@@ -51,6 +56,7 @@ class GameNativeLibrary : LibraryBackend {
             next[game.remoteKey] = game
         }
         catalog = next.values.toList()
+        steamIds = catalog.filter { it.gameSource == "STEAM" }.associate { it.remoteKey to it.appId }
     }
 
     override suspend fun connect() {
@@ -144,14 +150,24 @@ data class CatalogGame(
     val title: String,
     val appId: Int,
     val gameSource: String,
+    /** Actual publisher for a pin: its store is hidden from launchers. */
+    val shortcutPackage: String? = null,
+    /** Once a pin is on Home, learning its store must not change its id. */
+    val stableKey: String? = null,
 ) {
-    val remoteKey: String get() = "${gameSource}_$appId"
+    val remoteKey: String get() = stableKey ?: if (gameSource == "SHORTCUT" && shortcutPackage != null) "SHORTCUT_${shortcutPackage}_$appId" else "${gameSource}_$appId"
 
     fun accepted(): CatalogGame? {
         val source = gameSource.trim().uppercase(Locale.ROOT)
-        if (appId <= 0 || source !in GAME_SOURCES) return null
+        if (appId <= 0) return null
+        if (shortcutPackage != null) {
+            if (shortcutPackage !in GameNativePlayer.PACKAGES) return null
+            if (source != "SHORTCUT" && source !in GAME_SOURCES) return null
+        } else if (source !in GAME_SOURCES) return null
+        if (stableKey != null && (shortcutPackage == null ||
+            stableKey !in setOf("${source}_$appId", "SHORTCUT_${shortcutPackage}_$appId"))) return null
         val name = title.trim().replace('\n', ' ').replace('\r', ' ').ifEmpty { "$source $appId" }
-        return CatalogGame(title = name, appId = appId, gameSource = source)
+        return CatalogGame(title = name, appId = appId, gameSource = source, shortcutPackage = shortcutPackage, stableKey = stableKey)
     }
 }
 
@@ -203,26 +219,30 @@ fun catalogGameFromShortcut(launch: ShortcutLaunch): CatalogGame? {
 fun catalogLine(game: CatalogGame): String {
     val accepted = game.accepted() ?: return ""
     val title = accepted.title.replace('\t', ' ')
-    return "${accepted.gameSource}\t${accepted.appId}\t$title"
+    return "${accepted.gameSource}\t${accepted.appId}\t$title" + (accepted.shortcutPackage?.let { "\t$it" + (accepted.stableKey?.let { key -> "\t$key" } ?: "") } ?: "")
 }
 
 /** The inverse of [catalogLine]. A bad source or app id is dropped. */
 fun catalogGameFromLine(line: String): CatalogGame? {
-    val parts = line.split('\t', limit = 3)
-    if (parts.size != 3) return null
+    val parts = line.split('\t', limit = 5)
+    if (parts.size < 3) return null
     val appId = parts[1].trim().toIntOrNull() ?: return null
     return CatalogGame(
         title = parts[2],
         appId = appId,
         gameSource = parts[0],
+        shortcutPackage = parts.getOrNull(3),
+        stableKey = parts.getOrNull(4),
     ).accepted()
 }
 
-private fun appRef(game: CatalogGame): LaunchTarget.AppRef = LaunchTarget.AppRef(
+private fun appRef(game: CatalogGame): LaunchTarget.AppRef = if (game.shortcutPackage != null && game.gameSource == "SHORTCUT") LaunchTarget.AppRef(
+    mapOf(GameNativePlayer.EXTRA_SHORTCUT_PACKAGE to game.shortcutPackage, GameNativePlayer.EXTRA_SHORTCUT_ID to "game_${game.appId}"),
+) else LaunchTarget.AppRef(
     values = mapOf(
         GameNativePlayer.EXTRA_APP_ID to game.appId.toString(),
         GameNativePlayer.EXTRA_GAME_SOURCE to game.gameSource,
-    ),
+    ) + (game.shortcutPackage?.let { mapOf(GameNativePlayer.EXTRA_SHORTCUT_PACKAGE to it) } ?: emptyMap()),
 )
 
 private fun CatalogGame.toGame(): Game = Game(

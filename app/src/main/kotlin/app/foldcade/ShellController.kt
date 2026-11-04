@@ -194,6 +194,7 @@ class ShellController(
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
+    private val onGameNativeRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
     private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
@@ -447,6 +448,9 @@ class ShellController(
 
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
+
+    /** A pin-first game's export must inherit Delete shortcut, including merges before Android answers. */
+    private val deletedGameNativeExports = mutableSetOf<String>()
 
     private var committedHome: String? = store.homeBoardRaw()
     private var saveHealthReady = false
@@ -1197,11 +1201,23 @@ class ShellController(
                 effect.gameId?.let { id ->
                     val removed = homeShelf(home.faceOf(id))
                     home.deleteShortcut(id)
+                    if (removed.libraryId == GameNativeLibrary.ID) {
+                        val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()
+                            ?.firstOrNull { it.remoteKey == removed.remoteKey }
+                        if (game != null && game.gameSource != "SHORTCUT") {
+                            val exportId = "gamenative.${game.gameSource}_${game.appId}"
+                            if (exportId != id) {
+                                deletedGameNativeExports += exportId
+                                home.deleteShortcut(exportId)
+                            }
+                        }
+                    }
                     commitHome()
                     removed.remoteKey?.let { key ->
                         when (removed.libraryId) {
                             MoonlightLibrary.ID -> onMoonlightRemoved(key)
                             DroidDeckLibrary.ID -> onDroidDeckRemoved(key)
+                            GameNativeLibrary.ID -> onGameNativeRemoved(key)
                         }
                     }
                     showBoard(model.focus, keepDialog = false)
@@ -2800,9 +2816,15 @@ class ShellController(
     }
 
     /**
-     * A game the user just added to the home screen in DroidDeck goes on Home in
-     * the DroidDeck folder, even with Add new games off and even if it was removed before.
+     * A game just pinned in GameNative goes on Home even with Add new games off.
      */
+    fun placeGameNativePin(shelfId: String) {
+        if (!home.place(shelfId)) return
+        commitHome()
+        noteShelfChanged()
+    }
+
+    /** A game just pinned in DroidDeck goes on Home even with Add new games off. */
     fun placeDroidDeckPin(shelfId: String) {
         if (!home.place(shelfId)) return
         commitHome()
@@ -3314,7 +3336,9 @@ class ShellController(
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = when (libraryId) {
-                GameNativeLibrary.ID -> remoteKey?.let(::steamAppId)
+                GameNativeLibrary.ID -> remoteKey?.let { key ->
+                    (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.steamArtId(key) ?: steamAppId(key)
+                }
                 DroidDeckLibrary.ID -> remoteKey?.let(::droidDeckSteamAppId)
                 else -> null
             },
@@ -4150,6 +4174,12 @@ class ShellController(
             sameGames = sameAliases,
             copies = copies,
         )
+        // Apply before persisting/publishing: an export may acquire its own id after unpin.
+        // Retain the request across unrelated or deferred merges until that id actually exists.
+        if (deletedGameNativeExports.isNotEmpty()) {
+            deletedGameNativeExports.forEach(home::deleteShortcut)
+            deletedGameNativeExports.removeAll(home.catalog().mapTo(HashSet()) { it.id })
+        }
         commitHome(catalog = true)
         find?.refresh(findEntries())
         refreshSaveHealth()

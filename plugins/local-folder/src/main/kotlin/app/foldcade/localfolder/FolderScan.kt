@@ -58,10 +58,10 @@ data class FolderScan(
 )
 
 /**
- * A `.steam` file: the convention frontends such as Cocoon, Daijishou, and
+ * A store export file (`.steam`, `.epic`, `.gog`, `.amazon`, `.pcgame`): the convention frontends such as Cocoon, Daijishou, and
  * ES-DE read, and GameNative and DroidDeck export. The body is the game id.
  * The file name is the game's name, with `_` where the store name had a `:`.
- * The shell plays these through GameNative or DroidDeck, not as a folder game.
+ * The shell plays these through GameNative, or Steam exports through DroidDeck.
  *
  * [gameId] is canonical decimal: a Steam app id, or the 64-bit id Steam gives a
  * game added outside Steam, which only DroidDeck writes. [fromDroidDeck] is true
@@ -72,6 +72,7 @@ data class SteamShortcut(
     val title: String,
     val gameId: String,
     val fromDroidDeck: Boolean = false,
+    val gameSource: String = "STEAM",
 ) {
     /** [gameId] as a Steam app id. Null for an id too large to be one. */
     val appId: Int? get() = gameId.toIntOrNull()
@@ -84,16 +85,36 @@ data class SteamShortcut(
 const val DROIDDECK_INVENTORY: String = ".droiddeck-sync.json"
 
 /**
- * The [SteamShortcut] in [entry], or null when it is not a `.steam` file with a game id.
+ * The store export in [entry], or null when it has no supported store and game id.
  * The id is the first run of digits, without leading zeros, up to the largest unsigned 64-bit value.
  */
 fun steamShortcutOf(entry: FolderEntry, fromDroidDeck: Boolean = false): SteamShortcut? {
     val name = entry.displayName.trim()
-    if (fileExtension(name) != "steam") return null
+    val extension = fileExtension(name) ?: return null
+    val source = gameNativeExportSource(extension) ?: return null
+    if (source != "STEAM") {
+        val id = entry.text?.trim()?.toIntOrNull()?.takeIf { it > 0 } ?: return null
+        val title = titleFromFileName(name).replace("_ ", ": ").trim().ifEmpty { return null }
+        return SteamShortcut(entry.documentUri, title, id.toString(), gameSource = source)
+    }
     val digits = Regex("""\d+""").find(entry.text.orEmpty())?.value?.trimStart('0') ?: return null
     val gameId = digits.takeIf { it.isNotEmpty() && it.length <= 20 && it.toULongOrNull() != null } ?: return null
     val title = titleFromFileName(name).replace("_ ", ": ").trim().ifEmpty { return null }
     return SteamShortcut(documentUri = entry.documentUri, title = title, gameId = gameId, fromDroidDeck = fromDroidDeck)
+}
+
+/**
+ * Upstream FrontendSyncManager.extensionFor + syncGame: decimal Int body, store in
+ * extension. CUSTOM_GAME uses .pcgame. No path or executable belongs in these files.
+ * https://github.com/utkarshdalal/GameNative/blob/a2a121bb477070026fed8f6ee66f8d3e8b350971/app/src/main/java/app/gamenative/sync/FrontendSyncManager.kt#L107-L114
+ */
+fun gameNativeExportSource(extension: String): String? = when (extension.lowercase(Locale.ROOT)) {
+    "steam" -> "STEAM"
+    "epic" -> "EPIC"
+    "gog" -> "GOG"
+    "amazon" -> "AMAZON"
+    "pcgame" -> "CUSTOM_GAME"
+    else -> null
 }
 
 /**
