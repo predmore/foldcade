@@ -29,6 +29,7 @@ include(
     ":plugins:duckstation",
     ":plugins:dolphin",
     ":plugins:ppsspp",
+    ":plugins:explus",
     ":plugins:eden",
     ":plugins:emulators",
     ":plugins:gamenative",

@@ -33,6 +33,7 @@ Saves stay with each emulator. Switching does not move a save from one emulator 
 | PlayStation 2 | `ps2` | `.iso`, `.chd`, `.m3u` | ARMSX2, NetherSX2 / AetherSX2, EmuCoreX |
 | PlayStation 3 | `ps3` | `.iso` (decrypted) | aPS3e |
 | PSP | `psp` | `.cso`, `.iso`, `.pbp` | PPSSPP |
+| Sega CD | `segacd` | `.cue`, `.chd`, `.iso` | MD.emu |
 | Genesis / Mega Drive | `genesis` | `.gen`, `.smd`, `.md` | MD.emu, Pizza Boy SC |
 | Master System | `sms` | `.sms` | MD.emu, Pizza Boy SC |
 | Game Gear | `gg` | `.gg` | Pizza Boy SC |
@@ -235,6 +236,44 @@ Raw `.raw` cards can hold many games and are never uploaded as one game's save. 
 
 The [candidate audit](../save-sync-candidates.md) lists the next emulators and verified formats.
 
+## Flycast: Dreamcast
+
+**Flycast stays launch-only.** The official Android app’s live home is `Android/data/com.flycast.emulator/files`; Home Folder Import/Export only makes shared copies. It cannot be redirected to a live shared folder through that UI. All-files access cannot open the private home. On Thor, Android’s picker granted read/write access to the exact live home, but creating a throwaway VMU through that grant failed with **Permission denied**. No root-free writable route was verified, so Foldcade does not claim that a shared export or a nominal grant is syncing.
+
+The format audit confirms `<sanitized IP.BIN product number>_vmu_save_A1.bin`; upstream isolates only A1, and every other port remains shared. Flycast also buffers VMU writes until game unload, so safe replacement needs an unload handoff as well as writable access. Shared VMUs must never be assigned to one game. The verified paths, formats and source links are kept in the [candidate audit](../save-sync-candidates.md#flycast) for a follow-up. Use RetroArch for supported Dreamcast save sync.
+
+## EX family: Nintendo and Sega
+
+Foldcade syncs **GBA.emu**, **GBC.emu**, **NES.emu**, **Snes9x EX+** and **MD.emu** through RomM, in slot `battery`. Every file in a bundle is matched by the exact game basename, with its case preserved. Keep ROM filenames the same across devices. If you rename a ROM, its older bundle stays on RomM and launch offers **Play without syncing** for that launch. Restore the original name to reconnect those saves; Foldcade never renames or reassigns them by guessing.
+
+| App | Battery files |
+| --- | --- |
+| GBA.emu | `<game>.sav` |
+| GBC.emu | `<game>.sav` and the four-byte `<game>.rtc` clock companion |
+| NES.emu | `<game>.sav`; FDS disk changes use `<game>.fds.sav` |
+| Snes9x EX+ | `<game>.srm` and the 20-byte `<game>.rtc` companion for S-RTC/SPC7110 clocks |
+| MD.emu | `<game>.srm` for cartridges; `<game>.brm` for Sega CD |
+
+For NES, SNES SRAM and MD, the bundle also keeps named battery slots at `<game>/saves/<slot>/auto.<extension>`. GBA/GBC batteries and both clock companions stay at the game’s root, even when a named state slot is active. Save states, cheats, other games and all other files stay out. GBA.emu, GBC.emu and Snes9x EX+ also sync ZIP/7z games using the archive’s basename, matching upstream. NES.emu and MD.emu archives remain unresolved because their battery type depends on the file inside; multi-disc playlists remain unresolved too. An unreachable folder or unsupported mapping says **Saves aren’t syncing** in Y › Saves and names the folder, file type and layout checks.
+
+EX defaults to the ROM’s directory, unless you select a save directory. **App Folder** uses `Android/data/<package>/files/EmuEx/<system>/saves` on current Android, which all-files access cannot open. The system names are `GBA`, `GB`, `FC-NES`, `SFC-SNES` and `MD-Genesis`. This private app folder has no public documents provider.
+
+For a shared save directory, open the emulator’s **Options › File Paths › Saves › Select Folder**, choose a shared folder such as `saves/GBC.emu`, and choose that same folder in **Foldcade Settings › Emulators › GBC.emu** (or the matching app). Existing saves stay where you put them; move copies using your file manager if needed. Known `saves/<app>` and legacy shared `EmuEx/<system>/saves` locations can be found through held grants or **Find saves** when the emulator holds that exact folder too. Custom locations can always be picked manually. A retained grant cannot reveal EX’s private active-path setting, so confirm the selected folder in EX if you have changed its paths. Foldcade never rewrites it.
+
+Y › Saves refuses raw saves or incompatible archives before making them this emulator’s slot head, with a format explanation. Such saves remain available on RomM to copy to another server slot.
+
+For battery sync, set EX’s **Options › System › Launch Mode** to **Main Slot (No State)**. An autosave state can resume older runtime progress, and its older-state warning does not cover every resume. Foldcade cannot read or change this private setting. **Set up saves** shows this requirement on each EX app’s tile. NES, SNES SRAM and MD can keep separate named batteries; Foldcade carries those files together. Save states stay local.
+
+**Saturn.emu is still launch-only.** Its `.bkr`, `.smpc` clock and cartridge saves require a separate, MD5-aware mapping.
+
+## Deferred: M64Plus and Pizza Boy
+
+**M64Plus FZ / Mupen64Plus AE:** upstream writes `.eep`, `.sra`, `.fla` and `.mpk` inside private `files/GameData`. The manifest has no exported save documents provider. FZ’s external-storage mode copies into that private working directory before play and copies back only after the emulation session exits. A crash or a still-running game can leave newer private progress and a stale external copy; Foldcade cannot inspect or back up the private copy without root. This revision does not treat a backup/export as active storage or declare it syncing. Use RetroArch for supported N64 battery sync.
+
+**Pizza Boy GBA/GBC:** no public upstream save writer or RTC implementation was found. The official distribution links lead to Google Play; no official free standalone APK was available for a store-free QA install. Reports of `.sav` and RTC files do not verify current Basic/Pro naming, contents or active folder. These apps stay launch-only; no guessed declarations are added. Use GBA.emu/GBC.emu or RetroArch for supported sync.
+
+Verified implementation sources and the remaining candidates are linked in the [candidate audit](../save-sync-candidates.md).
+
 ## Other systems
 
 Complete the emulator's firmware, game-directory, controller, and graphics setup, and check that the game plays there before adding it to Foldcade.
@@ -245,7 +284,7 @@ Disc tracks and other related files may need the emulator's own game-directory a
 
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
-Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [PPSSPP](../../plugins/ppsspp/src/main/kotlin/app/foldcade/plugins/ppsspp/PpssppEntry.kt), [Dolphin](../../plugins/dolphin/src/main/kotlin/app/foldcade/plugins/dolphin/DolphinEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [PPSSPP](../../plugins/ppsspp/src/main/kotlin/app/foldcade/plugins/ppsspp/PpssppEntry.kt), [Dolphin](../../plugins/dolphin/src/main/kotlin/app/foldcade/plugins/dolphin/DolphinEntry.kt), [EX family](../../plugins/explus/src/main/kotlin/app/foldcade/plugins/explus/ExPlusEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
 
 

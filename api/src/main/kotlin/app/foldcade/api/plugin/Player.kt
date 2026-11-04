@@ -103,6 +103,14 @@ interface Player {
     fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? = null
 
     /**
+     * Whether downloaded bytes fit a reachable save slot. The host can supply
+     * its resolved archive filter here when choosing a server save. A library
+     * checks this before promoting the save or calling beforeCommit. Pure and
+     * called off Main. Added in API minor 24; default preserves older players.
+     */
+    fun canPlaceSave(slot: String, bytes: ByteArray): Boolean = true
+
+    /**
      * Where this player looks for the firmware file [name], such as a console's
      * BIOS, below its save folder, with folders separated by `/`: the folder the
      * user picked for it, see [SaveFolderHolder], or else the one its save
@@ -208,6 +216,8 @@ data class SaveDeclaration(
  * One folder of a save kept as folders. [path] is below the player's save
  * folder, with folders separated by `/`. [name] is the folder the zip keeps
  * its files under, one name with no `/`. Added in API minor 11.
+ * A single part with empty [name] puts files at the archive root (minor 22).
+ * That part may also have empty [path], meaning the granted save folder itself (minor 23).
  */
 data class SaveFolderPart(
     val name: String,

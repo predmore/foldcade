@@ -33,6 +33,74 @@ import org.junit.Test
 
 /** Saves a player keeps as folders, such as Azahar's, moved as one zip. */
 class PlayerSaveFoldersTest {
+    @Test fun nestedExBatterySlotsPlaceAndReadBackWithTheSameHash() {
+        val player = app.foldcade.plugins.explus.ExPlusEntry().players.first { it.platformId == "snes" }
+        (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(TREE)
+        docs.names[ROM_URI] = "Game.zip"
+        val rootDocs = object : SaveDocuments by docs {
+            override fun list(folderUri: String, name: String) = if (name.isEmpty())
+                docs.files.map { SaveEntry(it.key, "$TREE/${it.key}", false) } else docs.list(folderUri, name)
+            override fun children(folderUri: String, path: String) = list(folderUri, path)?.map {
+                SaveChild(it.path, it.uri, it.isFolder, docs.files[it.path]?.size?.toLong() ?: 0)
+            }
+        }
+        val sync = PlayerSaves(rootDocs, marks, backups, handover)
+        val spots = sync.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        val archive = zipOf("Game.srm" to "main", "Game.rtc" to "01234567890123456789", "Game/saves/run 2/auto.srm" to "named", "Game/saves/run 2/auto.rtc" to "98765432109876543210")
+        docs.library[SERVER] = archive
+        assertTrue(sync.canPlaceSave(spots, "battery", archive))
+        assertFalse(sync.canPlaceSave(spots, "battery", "raw RetroArch SRAM".toByteArray()))
+        assertFalse(sync.canPlaceSave(spots, "battery", zipOf("Other.srm" to "foreign")))
+        docs.library[SERVER] = zipOf("Old.srm" to "old name")
+        assertTrue(sync.hasIncompatibleSave(spots, listOf(PlacedSave("battery", SERVER, md5Hex(docs.library[SERVER]!!)))))
+        assertFalse(sync.hasIncompatibleSave(spots, listOf(PlacedSave("battery", SERVER, "0".repeat(32)))))
+        docs.library[SERVER] = archive
+        assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))
+        assertEquals("named", docs.text("Game/saves/run 2/auto.srm"))
+        assertEquals("main", docs.text("Game.srm"))
+        assertEquals("01234567890123456789", docs.text("Game.rtc"))
+        assertEquals("98765432109876543210", docs.text("Game/saves/run 2/auto.rtc"))
+        assertTrue(sync.changedSince("romm", GAME, player, spots).slots.isEmpty())
+        // A second placement from Y › Saves stays successful too.
+        assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))
+    }
+    @Test fun exBatteryAndClockAreOneDurableFilteredSave() {
+        val player = app.foldcade.plugins.explus.ExPlusEntry().players.first { it.platformId == "game-boy-color" }
+        (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(TREE)
+        docs.names[ROM_URI] = "Pokemon.gbc"
+        docs.folders += ""
+        docs.files["Pokemon.sav"] = "old battery".toByteArray()
+        docs.files["Pokemon.rtc"] = "old clock".toByteArray()
+        docs.files["Other.sav"] = "precious".toByteArray()
+        docs.files["Pokemon.0A.gqs"] = "state stays".toByteArray()
+        // TreeDocuments models recursive entries. Empty root uses paths as-is.
+        val rootDocs = object : SaveDocuments by docs {
+            override fun list(folderUri: String, name: String): List<SaveEntry>? = if (name.isEmpty())
+                docs.files.map { SaveEntry(it.key, "$TREE/${it.key}", false) } else docs.list(folderUri, name)
+            override fun children(folderUri: String, path: String): List<SaveChild>? = list(folderUri, path)?.map {
+                SaveChild(it.path, it.uri, it.isFolder, docs.files[it.path]?.size?.toLong() ?: 0)
+            }
+        }
+        val sync = PlayerSaves(rootDocs, marks, backups, handover)
+        val spots = sync.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        val observed = sync.changedSince("romm", GAME, player, spots)
+        val bytes = Files.readAllBytes(Paths.get(URI(observed.slots.single().contentUri!!)))
+        assertEquals(setOf("Pokemon.sav", "Pokemon.rtc"), saveEntries(bytes, setOf(""))!!.keys)
+        sync.noteHandedOver("romm", GAME, player, spots, observed)
+        docs.library[SERVER] = zipOf("Other.sav" to "foreign")
+        assertFalse(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(docs.library[SERVER]!!)))))
+        assertEquals(0, docs.writes)
+        docs.library[SERVER] = zipOf("Pokemon.sav" to "new battery", "Pokemon.rtc" to "new clock")
+        docs.dieWritingTo = "Pokemon.sav"
+        assertThrows(AppDied::class.java) { sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(docs.library[SERVER]!!)))) }
+        val originals = Files.walk(backups).use { it.filter(Files::isRegularFile).toList() }.flatMap {
+            saveEntries(Files.readAllBytes(it), setOf(""))!!.values.filterNotNull().map { data -> String(data) }
+        }
+        assertTrue(originals.containsAll(listOf("old battery", "old clock")))
+        assertEquals("precious", docs.text("Other.sav"))
+        assertEquals("state stays", docs.text("Pokemon.0A.gqs"))
+        assertTrue(sync.changedSince("romm", GAME, player, spots).slots.isEmpty())
+    }
     private lateinit var backups: Path
     private lateinit var handover: Path
     private val docs = TreeDocuments()
@@ -444,6 +512,7 @@ class PlayerSaveFoldersTest {
 
         override fun write(uri: String, bytes: ByteArray) {
             val path = path(uri)
+            if (path == dieWritingTo) throw AppDied()
             if (path == failWritesTo) {
                 files[path] = bytes.copyOf(1)
                 throw IOException("disk full")

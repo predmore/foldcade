@@ -13,6 +13,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PlayerChoiceTest {
+    @Test fun extractingSavePlayersPreservesStandalonePreference() {
+        val all = app.foldcade.plugins.explus.ExPlusEntry().players +
+            app.foldcade.plugins.emulators.EmulatorsEntry().players
+        fun ordered(platform: String) = all.filter { it.platformId == platform }.sortedBy(::playerRank).map { it.displayName }
+        assertEquals(listOf("My Boy!", "Pizza Boy GBA", "GBA.emu"), ordered("game-boy-advance"))
+        assertEquals(listOf("My OldBoy!", "Pizza Boy GBC", "GBC.emu"), ordered("game-boy"))
+        assertEquals(listOf("MD.emu", "Pizza Boy SC"), ordered("genesis"))
+        assertEquals(listOf("Flycast", "Redream"), ordered("dreamcast"))
+    }
     private val retro = RetroArchEntry()
     private val ds = retro.players.filterIsInstance<RetroArchPlayer>().first { it.platformId == "nintendo-ds" }
     private val melon = MelonDsPlayer()

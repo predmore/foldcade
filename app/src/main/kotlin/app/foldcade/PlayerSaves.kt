@@ -552,30 +552,47 @@ internal class PlayerSaves(
         return Placing.Written
     }
 
-    /**
-     * Makes the folders [zip] holds match it. A folder it does not hold keeps
-     * what it has, and the hash checked and marked is that of the whole spot.
-     */
-    private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
+    /** Pure format check before a server save becomes this player's slot head. */
+    fun canPlaceSave(spots: List<SaveSpot>, slot: String, bytes: ByteArray): Boolean {
+        val spot = spots.singleOrNull { it.slot == slot } ?: return false
+        return if (spot.folders.isNotEmpty() || spot.search != null) incomingFolderEntries(spot, bytes) != null else true
+    }
+
+    /** Verified bytes with no compatible mapping can offer a per-launch opt-out before any write. */
+    fun hasIncompatibleSave(spots: List<SaveSpot>, placed: List<PlacedSave>): Boolean = placed.any { save ->
+        if (spots.none { it.slot == save.slot }) return@any false
+        val bytes = docs.read(save.contentUri) ?: return@any false
+        md5Hex(bytes) == save.contentHash && !canPlaceSave(spots, save.slot, bytes)
+    }
+
+    private fun incomingFolderEntries(spot: SaveSpot, zip: ByteArray): java.util.SortedMap<String, ByteArray?>? {
         val allowed = spot.search?.let { search ->
-            val roots = saveZipRoots(zip) ?: return Placing.Failed
+            val roots = saveZipRoots(zip) ?: return null
             if (savePathParts(search.parent) == null || roots.isEmpty() ||
                 roots.any { savePathParts(it)?.size != 1 || !saveFolderNameMatches(it, search.nameContains) }
             ) {
-                return Placing.Failed
+                return null
             }
             roots
         } ?: spot.folders.map { it.name }.toSet()
-        val incoming = saveEntries(zip, allowed) ?: return Placing.Failed
+        val incoming = saveEntries(zip, allowed) ?: return null
         if (spot.filter?.let { filter -> incoming.any { (name, bytes) ->
                 bytes != null && !filter.accepts(name, bytes.copyOf(minOf(bytes.size, filter.headerSize)))
-            } } == true) return Placing.Failed
+            } } == true) return null
+        // Filtered reads contain files only. Drop implicit ZIP directories too,
+        // so read-back hashes match nested battery slots; create() makes parents.
+        return if (spot.filter == null) incoming else incoming.filterValues { it != null }.toSortedMap()
+    }
+
+    /** Makes each folder in [zip] match it; other folders stay. Hashes the whole spot. */
+    private fun placeFolders(key: String, player: Player, spot: SaveSpot, zip: ByteArray): Placing {
+        val incoming = incomingFolderEntries(spot, zip) ?: return Placing.Failed
         val current = when (val held = readFolders(spot)) {
             Held.Unreadable -> return Placing.Failed
             Held.Missing -> FolderSave.EMPTY
             is Held.Found -> held.save
         }
-        fun part(name: String) = if ("" in allowed) "" else partOf(name)
+        fun part(name: String) = if (spot.folders.singleOrNull()?.name == "") "" else partOf(name)
         val parts = incoming.filterValues { it != null }.keys.map(::part).toSet()
         val wanted = sortedMapOf<String, ByteArray?>()
         current.entries.filterKeys { part(it) !in parts }.let(wanted::putAll)
@@ -793,7 +810,9 @@ internal class PlayerSaves(
 
     /** Where the entry [name] of [spot]'s zip lives, below the player's folder. */
     private fun documentPath(spot: SaveSpot, name: String): String {
-        spot.folders.singleOrNull()?.takeIf { it.name.isEmpty() }?.let { return it.path + "/" + name.removeSuffix("/") }
+        spot.folders.singleOrNull()?.takeIf { it.name.isEmpty() }?.let {
+            return (if (it.path.isEmpty()) "" else it.path + "/") + name.removeSuffix("/")
+        }
         val partName = partOf(name)
         val base = spot.folders.firstOrNull { it.name == partName }?.path
             ?: spot.search?.takeIf { saveFolderNameMatches(partName, it.nameContains) }?.let { "${it.parent}/$partName" }
@@ -935,7 +954,8 @@ private object UnreadableGameFile : GameFileReader {
 private fun validFolders(folders: List<SaveFolderPart>): Boolean =
     folders.isNotEmpty() &&
         folders.map { it.name }.distinct().size == folders.size &&
-        folders.all { (savePathParts(it.name)?.size == 1 || (folders.size == 1 && it.name.isEmpty())) && savePathParts(it.path) != null }
+        folders.all { (savePathParts(it.name)?.size == 1 || (folders.size == 1 && it.name.isEmpty())) &&
+            (savePathParts(it.path) != null || (folders.size == 1 && it.name.isEmpty() && it.path.isEmpty())) }
 
 /** The part an entry of a save zip is in: its first folder. */
 private fun partOf(name: String): String = name.substringBefore('/')
@@ -1287,7 +1307,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun list(folderUri: String, name: String): List<SaveEntry>? {
         val tree = Uri.parse(folderUri)
-        val parts = savePathParts(name) ?: return null
+        val parts = if (name.isEmpty()) emptyList() else savePathParts(name) ?: return null
         var folder = folderDocumentId(tree.toString())
         for (part in parts) {
             folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null

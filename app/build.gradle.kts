@@ -183,6 +183,7 @@ dependencies {
     implementation(project(":plugins:duckstation"))
     implementation(project(":plugins:dolphin"))
     implementation(project(":plugins:ppsspp"))
+    implementation(project(":plugins:explus"))
     implementation(project(":plugins:eden"))
     implementation(project(":plugins:emulators"))
     implementation(project(":plugins:gamenative"))

@@ -17,6 +17,7 @@ class ServerSaveFailureTest {
         }
         assertEquals(SavePickerCopy.downloadFirst, serverSaveFailure(SaveNeedsDownload()))
         assertEquals(SavePickerCopy.unreadable, serverSaveFailure(SaveNotPlaced()))
+        assertEquals(SavePickerCopy.incompatible, serverSaveFailure(PluginCallException("romm", PluginException.SaveFormatMismatch())))
         assertFalse(SavePickerCopy.failed.contains("Connect"))
     }
 }
