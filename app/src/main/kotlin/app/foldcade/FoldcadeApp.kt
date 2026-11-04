@@ -917,8 +917,12 @@ class FoldcadeApp : Application() {
         scope.launch(Dispatchers.Main.immediate) { snapshotFlow { shell.model.rommSignIn }.collect { publishNotices() } }
         // The SteamGridDB form's phone page listens while that form is open on a shown screen, and not a moment longer.
         scope.launch(Dispatchers.Main.immediate) {
-            snapshotFlow { homeShownNow && shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.ArtKey }
-                .collect { keyDrop.want(it) }
+            snapshotFlow { (homeShownNow && shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.ArtKey) to shell.model.connectBusy }
+                .collect { (wanted, busy) ->
+                    keyDrop.want(wanted)
+                    // A phone's key whose check ended, refused or set aside by an edit, gets a fresh phone page.
+                    keyDrop.checking(busy)
+                }
         }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
@@ -1227,8 +1231,6 @@ class FoldcadeApp : Application() {
                 }
             } finally {
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    // A key from the phone that was refused gets a fresh phone page, once no newer check runs.
-                    if (shell.setupValidationCurrent(ticket)) keyDrop.checked()
                     shell.finishSetupValidation(ticket)
                 }
             }

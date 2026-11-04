@@ -48,9 +48,12 @@ internal class KeyDropHost(
         if (on) arm() else disarm()
     }
 
-    /** The form finished checking a key. One the phone sent and the form refused gets a fresh page. */
-    fun checked() {
-        if (wanted && state == KeyDrop.Sent) arm()
+    /**
+     * The form is checking a key, or no longer is. A key the phone sent whose check ended
+     * without closing the form, refused or set aside by an edit, gets a fresh page.
+     */
+    fun checking(busy: Boolean) {
+        if (!busy && wanted && state == KeyDrop.Sent) arm()
     }
 
     private fun disarm() {
@@ -68,7 +71,8 @@ internal class KeyDropHost(
         opening = scope.launch(Dispatchers.IO) {
             // Without Wi-Fi the form shows SteamGridDB's own page; it looks again now and then.
             while (true) {
-                val opened = lanAddress()?.let { open(it, pageColors) }
+                val address = lanAddress()
+                val opened = address?.let { open(it, pageColors) }
                 if (opened != null) {
                     // A drop this job opened is held or closed, even if the job is cancelled on the way.
                     var held = false
@@ -82,6 +86,14 @@ internal class KeyDropHost(
                         }
                     } finally {
                         if (!held) opened.close()
+                    }
+                    // A move to another network, or off Wi-Fi, takes the page's address with it: a fresh page follows.
+                    while (opened.isOpen) {
+                        delay(ADDRESS_CHECK_MILLIS)
+                        if (opened.isOpen && lanAddress() != address) {
+                            withContext(Dispatchers.Main.immediate) { if (wanted && drop === opened) arm() }
+                            return@launch
+                        }
                     }
                     return@launch
                 }
@@ -146,6 +158,8 @@ internal class KeyDropHost(
             val networks = listOfNotNull(manager.activeNetwork) + manager.allNetworks
             networks.distinct().firstNotNullOfOrNull { network ->
                 val capabilities = manager.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
+                // A VPN reports the Wi-Fi under it as its transport, but its address is the tunnel's, which no phone beside this one reaches.
+                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@firstNotNullOfOrNull null
                 val local = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
                     capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
                 if (!local) return@firstNotNullOfOrNull null
@@ -160,6 +174,7 @@ internal class KeyDropHost(
 
     companion object {
         private const val OFFLINE_RETRY_MILLIS = 5_000L
+        private const val ADDRESS_CHECK_MILLIS = 5_000L
 
         fun hex(color: Color): String = "#%06x".format(color.toArgb() and 0xffffff)
     }
