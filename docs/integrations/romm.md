@@ -53,7 +53,11 @@ The catalog loads at startup and after connecting or editing a connection. After
 
 ## Downloads and offline play
 
-Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused.
+Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused. Brief connection failures and temporary server errors retry automatically with backoff. **B** cancels a launch while it waits or downloads. Pressing A again on the same pending game keeps its single launch.
+
+Press a saved tile before the startup catalog arrives and **Finding your game…** appears above it, with **Finding** on the tile. Foldcade waits up to a minute for the existing sync or starts one, then launches as soon as the game resolves.
+
+If RomM answers that it is preparing a file, the tile reads **Preparing** and the top screen says **Warming up on RomM…**. Foldcade respects the server’s retry delay, or backs off from two to thirty seconds without one, for up to thirty minutes, then opens the game automatically. **B** cancels that wait too.
 
 Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
@@ -73,7 +77,7 @@ Every game is handed to its emulator as a file in its own download folder, and t
 
 A folder that RomM does not split in one of these ways still downloads as RomM sends it.
 
-Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
+Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not request a different format, but waits if the server says its file is still being prepared.
 
 ## Switch keys and firmware
 
@@ -118,6 +122,8 @@ For aPS3e, pick its own folder, the one the picker opens on. Foldcade syncs the 
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
 Other emulators and sources manage their own saves. Save-state sync is not implemented.
+
+Temporary failures reading a save or preparing its sync retry briefly. Save uploads are never blindly repeated: a failed upload stays queued for a fresh negotiation, and failed downloads leave the existing save intact. The not-syncing and waiting-to-upload notices remain visible.
 
 Offline changes stay on the device for a later sync. When copies conflict, Foldcade asks which to play and keeps both.
 

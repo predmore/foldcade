@@ -358,6 +358,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     fun dispatch(effect: Effect?) {
         when (effect) {
             is Effect.Launch -> {
+                // A second A/X keeps the original request, including its screen and bloom subject.
+                val focused = foldcade.shell.focusedGame()?.id?.let(foldcade.shell::tileOf)
+                if (focused != null && foldcade.launchWork.pending(focused)) return
                 launchScreen = foldcade.store.session.playOn.let { if (effect.elsewhere) it.flip() else it }
                 launchSubject = foldcade.shell.focusedRunningApp()
                 bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
@@ -1403,7 +1406,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
-        if (game.emptyShelfHint) return
+        if (game.emptyShelfHint || foldcade.launchWork.pending(game.id)) return
         if (game.androidPackage != null) {
             launchInstalled(game)
             return
@@ -1419,19 +1422,47 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return
         }
         if (game.id.startsWith("lib:") || game.id.startsWith(SAME_PREFIX)) {
-            foldcade.shell.present(DialogState(
-                kind = DialogKind.Ok,
-                title = "Game unavailable",
-                body = "This game's library details are not available yet. Reconnect the library and try again.",
-                buttons = listOf(DialogButton.Ok),
-                index = 0,
-                safeIndex = 0,
-                screen = hostScreen(),
-            ))
-            foldcade.syncRomm()
+            waitForCatalogGame(game)
             return
         }
         launchStandIn(game)
+    }
+
+    private fun waitForCatalogGame(game: ShelfGame) {
+        val tileId = game.id
+        if (foldcade.launchWork.pending(tileId)) return
+        val generation = beginLaunch(tileId)
+        val screen = launchScreen
+        foldcade.shell.beginCatalogWait(tileId)
+        foldcade.launchWork.job = foldcade.scope.launch(Dispatchers.Main.immediate) {
+            try {
+                val route = awaitCatalogGame(
+                    resolve = { foldcade.shell.launchRoute(tileId) },
+                    sync = foldcade::joinOrSyncRomm,
+                )
+                if (!launchCurrent(generation)) return@launch
+                foldcade.shell.endCatalogWait(tileId)
+                if (route != null) {
+                    foldcade.launchWork.resolved(generation)
+                    launchScreen = screen
+                    launchBackendGame(game.title, route.play.platformId, route)
+                } else {
+                    foldcade.shell.present(DialogState(
+                        kind = DialogKind.Ok,
+                        title = Copy.gameUnavailable,
+                        body = Copy.gameUnavailableBody,
+                        buttons = listOf(DialogButton.Ok),
+                        index = 0,
+                        safeIndex = 0,
+                        screen = hostScreen(),
+                    ))
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.endCatalogWait(tileId)
+                }
+            }
+        }
     }
 
     private fun launchLibraryGame(index: Int) {
@@ -1451,6 +1482,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         fresh: Boolean = false,
         saveSyncDeclinedFor: String? = null,
     ) {
+        if (foldcade.launchWork.pending(route.tileId)) return
         if (waitForSavePreparation {
             val preparedRoute = foldcade.shell.launchRoute(route.tileId, pressed = route.play) ?: route
             launchBackendGame(title, platformId, preparedRoute, fresh, saveSyncDeclinedFor)
@@ -1469,7 +1501,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
         // A game on the device pulses while Eden's firmware downloads for it. A second press waits for that too.
         if (!fetching && homeGameId(libraryId, game.remoteKey) in foldcade.shell.downloading) return
-        val generation = beginLaunch()
+        val generation = beginLaunch(route.tileId)
         foldcade.suppressSaveConflict = true
         foldcade.launchWork.job = foldcade.scope.launch {
             try {
@@ -2397,7 +2429,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The generation this activity started, so its destruction does not cancel a later one. */
     private var ownedLaunch: Int? = null
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
+    private fun beginLaunch(subject: String? = null): Int = foldcade.launchWork.begin(subject).also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {

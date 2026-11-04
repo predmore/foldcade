@@ -266,6 +266,8 @@ import app.foldcade.language.SaveHealth
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
 import app.foldcade.language.saveHealthLeads
+import app.foldcade.language.cancellableTransfer
+import app.foldcade.language.pendingChip
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -3216,7 +3218,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
-    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
+    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it.cancellableTransfer })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
     } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
@@ -4209,6 +4211,9 @@ private fun TileStatus(
         horizontalArrangement = Arrangement.spacedBy(px(8f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        pendingChip(activity)?.let { label ->
+            BasicText(text = label, style = text(theme.focus, theme.style.type.hint, theme), maxLines = 1)
+        }
         if (showsBar) {
             // Before the size is known the bar waits empty; the cloud beside it breathes.
             DownloadBar(

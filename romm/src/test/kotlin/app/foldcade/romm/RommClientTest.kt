@@ -46,6 +46,93 @@ class RommClientTest {
         dir.toFile().deleteRecursively()
     }
 
+    @Test fun conversion202KeepsThePartialAndHonorsItsHeaderBeforeResuming() {
+        val cache = dir.resolve("cache")
+        val partial = cache.resolve("roms/1234/mario.cci.partial")
+        Files.createDirectories(partial.parent)
+        Files.writeString(partial, "hello")
+        Files.writeString(partial.resolveSibling("mario.cci.partial.validator"), "\"v1\"")
+        var requests = 0
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            if (requests++ == 0) {
+                exchange.responseHeaders.add("Retry-After", "9")
+                exchange.sendResponseHeaders(202, -1)
+                exchange.close()
+            } else {
+                exchange.responseHeaders.add("Content-Range", "bytes 5-8/9")
+                bytes(exchange, 206, "-rom".toByteArray())
+            }
+        }
+        val waits = mutableListOf<Long>()
+        runClient(token = { "rmm_test" }) { client ->
+            val target = RommReadRetry(pause = {
+                waits += it
+                assertEquals("hello", Files.readString(partial))
+            }).run(allowConversion = true) {
+                client.downloadRom(1234, "mario.cci", cache, expectedSize = 9, expectedMd5 = md5Hex("hello-rom".toByteArray()))
+            }
+            assertEquals("hello-rom", Files.readString(target))
+        }
+        assertEquals(listOf(9_000L), waits)
+        assertEquals(listOf("bytes=5-", "bytes=5-"), server.recorded.map { header(it, "Range") })
+        assertTrue(server.recorded.all { !it.query.orEmpty().contains("format=") })
+    }
+
+    @Test fun aDroppedRomStreamRetriesFromItsValidatedPartial() {
+        var requests = 0
+        server.route("GET", "/api/roms/1234/content/mario.cci") { exchange, _ ->
+            if (requests++ == 0) {
+                exchange.responseHeaders.add("ETag", "\"v1\"")
+                exchange.sendResponseHeaders(200, 9)
+                exchange.responseBody.write("hello".toByteArray())
+                exchange.responseBody.flush()
+                exchange.close()
+            } else {
+                assertEquals("bytes=5-", header(exchange))
+                exchange.responseHeaders.add("Content-Range", "bytes 5-8/9")
+                bytes(exchange, 206, "-rom".toByteArray())
+            }
+        }
+        val waits = mutableListOf<Long>()
+        runClient(token = { "rmm_test" }, readTimeout = Duration.ofMillis(500)) { client ->
+            val target = RommReadRetry(pause = { waits += it }).run {
+                client.downloadRom(1234, "mario.cci", dir.resolve("cache"), expectedSize = 9, expectedMd5 = md5Hex("hello-rom".toByteArray()))
+            }
+            assertEquals("hello-rom", Files.readString(target))
+        }
+        assertEquals(listOf(1_000L), waits)
+        assertEquals(2, requests)
+    }
+
+    @Test fun transientSaveDownloadRetriesWithoutReplacingTheExistingCopyEarly() {
+        val destination = dir.resolve("save.srm")
+        Files.writeString(destination, "local-progress")
+        var requests = 0
+        server.route("GET", "/api/saves/17/content") { exchange, _ ->
+            assertEquals("local-progress", Files.readString(destination))
+            if (requests++ == 0) json(exchange, 503, "{}") else bytes(exchange, 200, "server-save".toByteArray())
+        }
+        runClient(token = { "rmm_test" }) { client ->
+            client.downloadSave(17, "device-1", null, destination, md5Hex("server-save".toByteArray()))
+        }
+        assertEquals(2, requests)
+        assertEquals("server-save", Files.readString(destination))
+    }
+
+    @Test fun failedSaveUploadIsNeverAutomaticallyRepeated() {
+        syncRoutes(operation("upload", saveId = null, serverHash = null))
+        server.route("POST", "/api/saves") { exchange, _ -> json(exchange, 503, "{}") }
+        val save = localSave("local-progress")
+        val ledger = SaveLedger(dir.resolve("ledger.json"))
+        runClient(token = { "rmm_test" }) { client ->
+            val report = client.syncSaves("device-1", listOf(save), destination = { save.file }, ledger = ledger)
+            assertTrue(report.failed.isNotEmpty())
+        }
+        assertEquals(1, server.recorded.count { it.path == "/api/saves" })
+        assertEquals("local-progress", Files.readString(save.file))
+        assertTrue(ledger.unsynced("autosave", md5Hex("local-progress".toByteArray())))
+    }
+
     @Test
     fun parsesThePinnedSpecVersion() {
         val version = RommVersion.parse("5.4.0-alpha.2")
@@ -1099,7 +1186,7 @@ class RommClientTest {
         var downloads = 0
         server.route("GET", "/api/saves/99/content") { exchange, _ ->
             downloads += 1
-            if (downloads == 1) json(exchange, 503, """{"detail":"down"}""") else bytes(exchange, 200, SERVER_SAVE.toByteArray())
+            if (downloads <= 4) json(exchange, 503, """{"detail":"down"}""") else bytes(exchange, 200, SERVER_SAVE.toByteArray())
         }
         val save = localSave("local")
         val ledger = SaveLedger(dir.resolve("ledger.json"))
@@ -1251,7 +1338,7 @@ class RommClientTest {
     }
 
     @Test
-    fun aReadTimeoutFailsInsteadOfHanging() {
+    fun readTimeoutsAndBackoffRemainBounded() {
         val release = CountDownLatch(1)
         server.route("GET", "/api/platforms") { exchange, _ ->
             release.await(30, TimeUnit.SECONDS)
@@ -1264,7 +1351,7 @@ class RommClientTest {
             }
             val elapsedMs = (System.nanoTime() - started) / 1_000_000
             assertTrue(error is RommUnavailable)
-            assertTrue("timed out too slowly: ${elapsedMs}ms", elapsedMs < 5_000)
+            assertTrue("timed out too slowly: ${elapsedMs}ms", elapsedMs < 12_000)
         } finally {
             release.countDown()
         }

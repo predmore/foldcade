@@ -103,6 +103,7 @@ import app.foldcade.language.homeGameId
 import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
+import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
@@ -1981,7 +1982,7 @@ class ShellController(
 
     private fun busyOnDevice(id: String): Boolean = isRunning(id) || tileIds(id).any { one ->
         one in downloading || one in removing || libraryOf(one) in relisting ||
-            activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+            activity[one]?.cancellableTransfer == true
     }
 
     /** True while the game on [id]'s tile is still open in its player, in front or behind Home. */
@@ -2070,6 +2071,8 @@ class ShellController(
                 },
                 firmware = true,
             )
+            GameActivity.PreparingOnServer -> TileActivity.PreparingOnServer
+            GameActivity.Retrying -> TileActivity.Retrying
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
             is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)
@@ -2081,6 +2084,14 @@ class ShellController(
         }
         if (activity[id] != next) activity = activity + (id to next)
         return (next as? TileActivity.Synced)?.untilMillis
+    }
+
+    fun beginCatalogWait(tileId: String) {
+        activity = activity + (tileId to TileActivity.LoadingLibrary)
+    }
+
+    fun endCatalogWait(tileId: String) {
+        if (activity[tileId] == TileActivity.LoadingLibrary) activity = activity - tileId
     }
 
     /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */
