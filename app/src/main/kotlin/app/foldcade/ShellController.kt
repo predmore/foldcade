@@ -182,6 +182,7 @@ class ShellController(
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
+    private val onGameNativeRemoved: (remoteKey: String) -> Unit = {},
     /** The R1 slider moved to this position. The app stores it. */
     private val onBrightness: (position: Int) -> Unit = {},
     private val onArtApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> },
@@ -1173,6 +1174,7 @@ class ShellController(
                         when (removed.libraryId) {
                             MoonlightLibrary.ID -> onMoonlightRemoved(key)
                             DroidDeckLibrary.ID -> onDroidDeckRemoved(key)
+                            GameNativeLibrary.ID -> onGameNativeRemoved(key)
                         }
                     }
                     showBoard(model.focus, keepDialog = false)
@@ -2726,9 +2728,15 @@ class ShellController(
     }
 
     /**
-     * A game the user just added to the home screen in DroidDeck goes on Home in
-     * the DroidDeck folder, even with Add new games off and even if it was removed before.
+     * A game just pinned in GameNative goes on Home even with Add new games off.
      */
+    fun placeGameNativePin(shelfId: String) {
+        if (!home.place(shelfId)) return
+        commitHome()
+        noteShelfChanged()
+    }
+
+    /** A game just pinned in DroidDeck goes on Home even with Add new games off. */
     fun placeDroidDeckPin(shelfId: String) {
         if (!home.place(shelfId)) return
         commitHome()

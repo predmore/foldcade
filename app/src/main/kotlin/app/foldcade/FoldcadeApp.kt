@@ -884,6 +884,7 @@ class FoldcadeApp : Application() {
             playMillis = { plays.shown(it).activeMillis },
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
+            onGameNativeRemoved = { key -> pluginLoad.launch { if (unpinGameNativeShortcut(this@FoldcadeApp, key)) refreshGameNative() } },
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
@@ -1255,13 +1256,24 @@ class FoldcadeApp : Application() {
             val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), files.route.gameNative)
             withContext(Dispatchers.Main.immediate) {
                 if (reported.releasesRestore(files.reported, libraryTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
-                shell.settleGameNative()
+                if (reported.shortcutsRead && (files.reported || libraryTrees().isEmpty())) shell.settleGameNative()
                 shell.noteShelfChanged()
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             Unit
+        }
+    }
+
+    fun refreshGameNativeShelf() { pluginLoad.launch { pluginsReady.await(); refreshGameNative() } }
+
+    fun acceptedGameNativePin(packageName: String, shortcutId: String) {
+        val pin = app.foldcade.plugins.gamenative.gameNativeShortcut(packageName, shortcutId, null, true, true) ?: return
+        pluginLoad.launch {
+            pluginsReady.await()
+            refreshGameNative()
+            withContext(Dispatchers.Main.immediate) { shell.placeGameNativePin("gamenative.${pin.remoteKey}") }
         }
     }
 
@@ -2133,6 +2145,7 @@ class FoldcadeApp : Application() {
                 .isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
             val apps = listOfNotNull(
                 MoonlightLibrary.DISPLAY_NAME.takeIf { packageInstalled(app.foldcade.plugins.moonlight.MoonlightPlayer.OFFICIAL_PACKAGE) },
+                GameNativeLibrary.DISPLAY_NAME.takeIf { gameNativePackagePresent() },
                 DroidDeckLibrary.DISPLAY_NAME.takeIf { packageInstalled(DroidDeckPlayer.PACKAGE) },
             )
             withContext(Dispatchers.Main.immediate) { offerSetupAsks(look.seen, roleHeld, apps) }

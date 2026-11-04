@@ -43,6 +43,17 @@ class RomRootsTest {
     }
 
     @Test
+    fun gameNativeExportsNeedNoSystemFolderAndRespectRemoval() {
+        val primary = volume("primary", "ROMs/GameNative", "GameNative", "Download/GameNative", "Emulation/roms/epic")
+        File(primary.dir, "GameNative/A Game.gog").writeText("42")
+        val roots = findRomRoots(listOf(primary))
+        assertEquals(setOf("ROMs", "GameNative", "Download/GameNative", "Emulation/roms"), roots.map { it.path }.toSet())
+        assertTrue(roots.all { it.systems == listOf("GameNative") })
+        assertEquals(roots.filter { it.path != "GameNative" }, usableRomRoots(roots, emptyList(), setOf("primary:GameNative")))
+        assertEquals(roots.filter { it.path != "ROMs" }, usableRomRoots(roots, listOf("primary:ROMs/GameNative"), emptySet()))
+    }
+
+    @Test
     fun anyCaseCountsAndALinkIsNotFollowed() {
         val primary = volume("primary", "EMULATION/Roms/3ds", "elsewhere/snes")
         Files.createSymbolicLink(File(primary.dir, "roms").toPath(), File(primary.dir, "elsewhere").toPath())

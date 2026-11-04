@@ -1,0 +1,50 @@
+package app.foldcade.plugins.gamenative
+
+import app.foldcade.api.plugin.GameQuery
+import app.foldcade.api.plugin.LaunchRequest
+import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.PlayerExtra
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Test
+
+class GameNativeShortcutsTest {
+    @Test fun pinsKeepTheirPublisherAndLaunchTheOriginalIntentWithoutGuessingStore() = runBlocking {
+        val pin = gameNativeShortcut(GameNativePlayer.GOLD_PACKAGE, "game_42", "A GOG game", true, true)!!
+        assertNull(steamAppId(pin.remoteKey))
+        assertEquals(pin, catalogGameFromLine(catalogLine(pin)))
+        val library = GameNativeLibrary().apply { confirm(listOf(pin)) }
+        val game = library.listGames(PcPlatform.ID, GameQuery()).games.single()
+        val target = library.ensureLocal(game) as LaunchTarget.AppRef
+        val launch = GameNativePlayer().launchIntent(LaunchRequest(game, target, GameNativePlayer.VANILLA_PACKAGE))
+        assertEquals(GameNativePlayer.GOLD_PACKAGE, launch.packageName)
+        assertEquals(listOf(PlayerExtra.Text(GameNativePlayer.EXTRA_SHORTCUT_ID, "game_42")), launch.extras)
+    }
+
+    @Test fun disabledUnpinnedOrMalformedShortcutsAreIgnored() {
+        for (id in listOf("game_0", "game_-2", "game_2147483648", "other_42", "game_42_extra")) {
+            assertNull(gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, id, "Game", true, true))
+        }
+        assertNull(gameNativeShortcut("other.app", "game_42", "Game", true, true))
+        assertNull(gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, "game_42", "Game", true, false))
+        assertNull(gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, "game_42", "Game", false, true))
+    }
+
+    @Test fun onlyAnExportWithTheSameIdAndNameIsDeduplicated() {
+        val pin = gameNativeShortcut(GameNativePlayer.VANILLA_PACKAGE, "game_42", "A Game", true, true)!!
+        val same = CatalogGame("A Game", 42, "GOG")
+        val other = CatalogGame("Another game", 42, "STEAM")
+        assertEquals(listOf(pin, other), mergeGameNativeGames(listOf(pin), listOf(same, other)))
+        assertEquals(listOf(same, other), mergeGameNativeGames(emptyList(), listOf(same, other)))
+    }
+
+    @Test fun everyExportSourceKeepsItsStoreInTheLaunchIntent() = runBlocking {
+        for (source in GAME_SOURCES) {
+            val library = GameNativeLibrary().apply { confirm(listOf(CatalogGame("Game", 42, source))) }
+            val game = library.listGames(PcPlatform.ID, GameQuery()).games.single()
+            val intent = GameNativePlayer().launchIntent(LaunchRequest(game, library.ensureLocal(game), GameNativePlayer.VANILLA_PACKAGE))
+            assertTrue(PlayerExtra.Text(GameNativePlayer.EXTRA_GAME_SOURCE, source) in intent.extras)
+            assertEquals(if (source == "STEAM") 42 else null, steamAppId(game.remoteKey))
+        }
+    }
+}

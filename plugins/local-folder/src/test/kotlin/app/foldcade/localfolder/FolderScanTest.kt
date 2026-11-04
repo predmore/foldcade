@@ -583,6 +583,24 @@ class FolderScanTest {
     }
 
     @Test
+    fun everyGameNativeExportStoreReachesTheCatalogWithItsSource() {
+        val root = dir("content://root", "GameNative", listOf(
+            file("content://epic", "Epic Game.epic", "42\n"),
+            file("content://gog", "GOG Game.gog", "0042"),
+            file("content://amazon", "Amazon Game.amazon", "42"),
+            file("content://custom", "Custom Game.pcgame", "42"),
+            file("content://negative", "Negative.gog", "-42"),
+            file("content://overflow", "Overflow.gog", "2147483648"),
+            file("content://command", "Command.pcgame", "C:/game42.exe"),
+        ))
+        val found = scan(root)
+        assertTrue(found.games.isEmpty())
+        assertEquals(listOf("AMAZON", "CUSTOM_GAME", "EPIC", "GOG"), found.steamShortcuts.map { it.gameSource })
+        assertEquals(listOf(42, 42, 42, 42), found.steamShortcuts.map { it.appId })
+        assertTrue(found.steamShortcuts.none { it.fromDroidDeck })
+    }
+
+    @Test
     fun droidDeckSyncFolderMarksItsSteamFilesAndKeepsWholeIds() {
         val root = dir(
             "content://root",

@@ -136,11 +136,11 @@ internal fun routeSteamFiles(
 ): SteamFileRoute {
     val droidDeckOnly = droidDeckInstalled && !gameNativeInstalled
     val (toDroidDeck, toGameNative) = files.partition { file ->
-        file.fromDroidDeck || file.appId == null || droidDeckOnly
+        file.gameSource == "STEAM" && (file.fromDroidDeck || file.appId == null || droidDeckOnly)
     }
     return SteamFileRoute(
         gameNative = toGameNative.mapNotNull { file ->
-            file.appId?.let { CatalogGame(title = file.title, appId = it, gameSource = GameNativePlayer.DEFAULT_SOURCE) }
+            file.appId?.let { CatalogGame(title = file.title, appId = it, gameSource = file.gameSource) }
         },
         droidDeck = toDroidDeck.mapNotNull { droidDeckGame(it.gameId, it.title) },
     )
