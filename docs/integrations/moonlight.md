@@ -23,7 +23,7 @@ If you clear Foldcade's data, reinstall it, or move to another Thor, turn the sw
 
 This works without pairing Foldcade, and for a computer on another network that Moonlight reaches.
 
-1. In Foldcade, open **L1 › Settings › System › Home app** and make Foldcade the default home app.
+1. Make Foldcade the default home app. With Moonlight installed, Foldcade asks once: choose **Use as Home**. Otherwise use **Set as Home** on your computer's page in **Settings › Library**, or in **Settings › System**.
 2. In Moonlight's game list, open the game's menu, such as by long-pressing its tile, and choose **Create shortcut**.
 3. Return to Foldcade. The game appears in the **Moonlight** folder, even when **New games on Home** is off.
 

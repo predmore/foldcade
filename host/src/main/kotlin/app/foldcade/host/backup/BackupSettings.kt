@@ -23,13 +23,17 @@ data class BackupKey(val name: String, val disposition: BackupDisposition, val t
 object BackupSettings {
     private val backedStrings = listOf("music_track", "background_motion", "motion_speed", "theme", "icon_theme_id",
         "home_board", "same_games", "romm_origin", "button_prompt_confirm:", "screen_layout", "play_on",
-        "system_player:", "game_player:")
+        "system_player:", "game_player:",
+        // Found ROM folders the player removed stay removed after a restore.
+        "removed_roots")
     private val backedBooleans = listOf("primary_top", "music_enabled", "music_default_night_route", "artwork", "button_prompt_dismissed:")
     val keys: List<BackupKey> = backedStrings.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.StringValue) } +
         backedBooleans.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.BooleanValue) } +
         BackupKey("music_volume", BackupDisposition.BackedUp, PreferenceType.FloatValue) +
         listOf(
-            "folder_tree", "folder_explained", "home_prompted", "usage_prompted", "button_prompt_seen",
+            "folder_tree", "folder_explained", "home_prompted",
+            // Found again on each device, whose cards have their own ids.
+            "found_roots", "announced_roots", "find_games_offered", "usage_prompted", "button_prompt_seen",
             "player_save_folder:", "player_save_found:", "player_save_mark:", "pending_save_return:", "last_player_start:",
             "players_holding_games", "save_awaits_load:", "retroarch_cores_folder:", "retroarch_cores_offered",
             "eden_folder:", "eden_restart_package", "eden_restart_boot", "refused_eden_firmware",

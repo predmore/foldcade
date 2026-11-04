@@ -345,7 +345,7 @@ class FoldcadeApp : Application() {
                             isMoonlightPosterUri(uri) -> readMoonlightPoster(this@FoldcadeApp, uri)
                             moonlightStreams.isHostArt(uri) -> readHostArt(uri)
                             uri.startsWith("content://") -> readLibraryArtwork(contentResolver, uri,
-                                store.folderTrees(), localMedia?.index()?.artworkUris.orEmpty())
+                                libraryTrees(), localMedia?.index()?.artworkUris.orEmpty())
                             !publicArt.allows(uri) -> romm.load(uri)
                             shell.model.artwork -> artBytes.load(uri)
                             else -> null
@@ -801,7 +801,7 @@ class FoldcadeApp : Application() {
             perfMark("history-prepare-start")
             PlaySessions.open(File(filesDir, "play-sessions/events.log")).also { perfMark("history-prepare-end") }
         }
-        store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
+        store = SessionStore(getSharedPreferences(SessionStore.PREFS_NAME, MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
@@ -1053,8 +1053,18 @@ class FoldcadeApp : Application() {
                 } finally {
                     playersLoaded.complete(Unit)
                 }
-                // Listing games needs entries, not save-folder providers or old ROM copies.
-                if (store.folderTrees().isNotEmpty()) reloadFolder(startup = true)
+                // Found ROM folders join the first scan, so their games never arrive in a second pass.
+                val rootsChanged = try {
+                    perfMark("rom-roots-start")
+                    romRootLook.withLock { lookForRomRoots() }.changed.also { perfMark("rom-roots-end") }
+                } finally {
+                    startupRootsLooked.complete(Unit)
+                }
+                // Listing games needs entries, not save-folder providers or old ROM copies. Found
+                // folders whose access was turned off (Android restarts Foldcade then) still reload,
+                // so their games leave the board rather than stay as tiles that cannot open.
+                // A found folder deleted while Foldcade was closed leaves the set too, and its games with it.
+                if (libraryTrees().isNotEmpty() || store.foundRoots().isNotEmpty() || rootsChanged) reloadFolder(startup = true)
                 perfMark("save-prepare-start")
                 saveFoldersReady.await()
                 readRetroArchCores()
@@ -1244,7 +1254,7 @@ class FoldcadeApp : Application() {
         try {
             val reported = refreshGameNativeCatalog(this, library, File(filesDir, "gamenative/catalog.txt"), files.route.gameNative)
             withContext(Dispatchers.Main.immediate) {
-                if (reported.releasesRestore(files.reported, store.folderTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
+                if (reported.releasesRestore(files.reported, libraryTrees().isNotEmpty()) && Shelf.gameNativeInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("gamenative"))
                 shell.settleGameNative()
                 shell.noteShelfChanged()
             }
@@ -1877,7 +1887,7 @@ class FoldcadeApp : Application() {
         Shelf.droidDeckInstalled = packageInstalled(DroidDeckPlayer.PACKAGE)
         Shelf.droidDeckGames = plugins.droidDeckShelfGames()
         // With no folder there is no scan to wait for.
-        val settled = pinsRead && (files.reported || store.folderTrees().isEmpty())
+        val settled = pinsRead && (files.reported || libraryTrees().isEmpty())
         withContext(Dispatchers.Main.immediate) {
             if (settled) {
                 if (Shelf.droidDeckInstalled && store.restoreFolders().isEmpty()) shell.reportRestoreSources(setOf("droiddeck"))
@@ -1973,6 +1983,7 @@ class FoldcadeApp : Application() {
                     .pathFor(uri)
             },
             sharedRoots = { listOfNotNull(rommSharedRoot()) },
+            libraryAuthority = libraryAuthority,
         )
     }
 
@@ -1986,13 +1997,29 @@ class FoldcadeApp : Application() {
 
     /** Adds the picked tree to the folders the library reads, and scans them all. */
     fun useFolder(uri: Uri) {
-        store.addFolderTree(uri.toString())
+        // A pick that covers a found folder, or sits in one, lists those games itself.
+        synchronized(foundRootsLock) {
+            store.addFolderTree(uri.toString())
+            val picked = pickedStorageFolders(store.folderTrees())
+            store.setFoundRoots(store.foundRoots().filter { id -> picked.none { containsFolder(it, id) || containsFolder(id, it) } })
+        }
         reloadFolder()
         refreshFoundSaveFolders()
     }
 
-    /** Stops reading [uri]. Its games, and its .steam files, leave the grid. */
+    /**
+     * Stops reading [uri]. Its games, and its .steam files, leave the grid. A found folder,
+     * or a picked one in Android's own storage, is never found again by itself.
+     */
     fun forgetFolder(uri: String) {
+        val found = synchronized(foundRootsLock) {
+            store.foundRoots().firstOrNull { romRootTree(libraryAuthority, it) == uri }?.also(store::removeRoot)
+                ?: run { pickedStorageFolders(listOf(uri)).forEach(store::removeRoot); null }
+        }
+        if (found != null) {
+            reloadFolder()
+            return
+        }
         shell.removeFolderTree(uri)
         releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         reloadFolder()
@@ -2016,7 +2043,7 @@ class FoldcadeApp : Application() {
         val grantOf = { uri: String -> runCatching { folderGrantUri(uri) }.getOrNull() }
         val gamesIn = gameUris.groupingBy(grantOf).eachCount()
         val mediaIn = sources.mapNotNullTo(HashSet(), grantOf)
-        return store.libraryFolders().map { folder ->
+        val picked = store.libraryFolders().map { folder ->
             val grant = grantOf(folder.uri)
             folder.copy(
                 artAndInfo = isMediaOnlyLibraryTree(folder.uri, sources, gameUris),
@@ -2025,6 +2052,130 @@ class FoldcadeApp : Application() {
                 media = grant in mediaIn,
             )
         }
+        val found = foundRootIds().map { id ->
+            val tree = romRootTree(libraryAuthority, id)
+            // The tile already names a card, so the page's line gives only its folder.
+            LibraryFolder(tree, romRootTileLabel(id), path = id.substringAfter(':'), games = gamesIn[tree] ?: 0, media = tree in mediaIn, found = true)
+        }
+        return picked + found
+    }
+
+    /** [LibraryFilesProvider]'s authority in this build. */
+    internal val libraryAuthority: String by lazy { packageName + LibraryFilesProvider.AUTHORITY_SUFFIX }
+
+    /** Android's all-files access when Foldcade last looked for ROM folders. Only [lookForRomRoots] writes it. */
+    @Volatile
+    private var allFilesHeld = false
+
+    /** The found folders the library reads now: none without all-files access. Any thread. */
+    internal fun foundRootIds(): List<String> = if (allFilesHeld) store.foundRoots() else emptyList()
+
+    /** Every folder the library reads: the player's picks, then the ROM folders Foldcade found. */
+    internal fun libraryTrees(): List<String> = store.folderTrees() + foundRootIds().map { romRootTree(libraryAuthority, it) }
+
+    /** What one look for ROM folders saw, and whether the folders the library reads changed. */
+    private class RomRootLook(val seen: List<RomRoot>, val changed: Boolean)
+
+    private val romRootLook = Mutex()
+    private val startupRootsLooked = CompletableDeferred<Unit>()
+    private var romRootRefresh: Job? = null
+
+    /**
+     * Looks for `ROMs`, `roms` and `Emulation/roms` on every volume ([findRomRoots]). With
+     * all-files access the ones no pick covers and the player has not removed become found
+     * folders; a card that is out keeps its folders, so their games come back with it. Without
+     * it nothing changes, and what was seen is only offered. Reads the disk: under [romRootLook],
+     * never on Main.
+     */
+    private fun lookForRomRoots(): RomRootLook {
+        val held = Environment.isExternalStorageManager()
+        val wasHeld = allFilesHeld
+        val volumes = try {
+            mountedVolumes(this)
+        } catch (failure: RuntimeException) {
+            Log.w("Foldcade", "Storage volumes unreadable", failure)
+            emptyList()
+        }
+        val listed = findRomRoots(volumes)
+        // The disk is read; picks and removals are read now, under the lock Remove and Add a folder take.
+        val (seen, before, next) = synchronized(foundRootsLock) {
+            val picked = pickedStorageFolders(store.folderTrees())
+            val removed = store.removedRoots()
+            val seen = usableRomRoots(listed, picked, removed)
+            val before = store.foundRoots()
+            val next = if (!held) before else {
+                val mounted = volumes.mapTo(HashSet()) { it.id }
+                val away = before.filter { it.substringBefore(':') !in mounted && romRootUsable(it, picked, removed) }
+                (seen.map { it.documentId } + away).distinct()
+            }
+            if (next != before) store.setFoundRoots(next)
+            Triple(seen, before, next)
+        }
+        allFilesHeld = held
+        return RomRootLook(seen, next != before || held != wasHeld && next.isNotEmpty())
+    }
+
+    /** Guards the found folders' store against a look that read the disk before a Remove or a pick. */
+    private val foundRootsLock = Any()
+
+    /**
+     * Back on Home: Android's all-files page may have been answered, or a card put in. Looks
+     * again off Main and scans only when the found folders changed, keeping the grid as it is
+     * meanwhile. Then the one-time asks get their turn, see [offerSetupAsks].
+     */
+    internal fun refreshRomRoots() {
+        if (romRootRefresh?.isActive == true) return
+        romRootRefresh = pluginLoad.launch {
+            startupRootsLooked.await()
+            val look = romRootLook.withLock { lookForRomRoots() }
+            if (look.changed) reloadFolder(startup = true)
+            val roleHeld = getSystemService(android.app.role.RoleManager::class.java)
+                .isRoleHeld(android.app.role.RoleManager.ROLE_HOME)
+            val apps = listOfNotNull(
+                MoonlightLibrary.DISPLAY_NAME.takeIf { packageInstalled(app.foldcade.plugins.moonlight.MoonlightPlayer.OFFICIAL_PACKAGE) },
+                DroidDeckLibrary.DISPLAY_NAME.takeIf { packageInstalled(DroidDeckPlayer.PACKAGE) },
+            )
+            withContext(Dispatchers.Main.immediate) { offerSetupAsks(look.seen, roleHeld, apps) }
+        }
+    }
+
+    /**
+     * At most one ask per return Home, each once: first reading the ROM folders Foldcade saw,
+     * then being Home. A restore's notice goes first.
+     */
+    private fun offerSetupAsks(seen: List<RomRoot>, roleHeld: Boolean, apps: List<String>) {
+        shell.setHomeRoleHeld(roleHeld)
+        if (setupBackups.hasNotice()) return
+        val places = seen.map { romRootProse(it.documentId) }.distinct()
+        if (shell.maybeOfferFindGames(places, seen.flatMap { it.systems }.distinct())) return
+        // The offer is still owed: it waits for a moment without a dialog rather than queue behind Home.
+        if (!allFilesHeld && seen.isNotEmpty() && !store.findGamesOffered()) return
+        shell.maybeAskHome(roleHeld, apps)
+    }
+
+    /**
+     * Tells R1 once how many games found folders brought, after the scan that first sees
+     * games in them. A folder with none yet waits, so games copied in later are told then.
+     * Main thread.
+     */
+    private fun announceFoundGames() {
+        val announced = store.announcedRoots()
+        val fresh = foundRootIds().filter { it !in announced }
+        if (fresh.isEmpty()) return
+        val scan = (plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan() ?: return
+        val uris = scan.games.map { it.documentUri } + scan.steamShortcuts.map { it.documentUri }
+        val counts = uris.groupingBy { runCatching { folderGrantUri(it) }.getOrNull() }.eachCount()
+        val told = fresh.mapNotNull { id -> counts[romRootTree(libraryAuthority, id)]?.takeIf { it > 0 }?.let { id to it } }
+        if (told.isEmpty()) return
+        store.setAnnouncedRoots(announced + told.map { it.first })
+        val places = told.map { romRootPlace(it.first) }
+        postNotice(FoldNotice(
+            id = FOUND_GAMES_NOTICE_ID,
+            title = app.foldcade.language.FoundFolderCopy.foundTitle(told.sumOf { it.second }, places),
+            body = app.foldcade.language.FoundFolderCopy.foundBody(places),
+            postedMillis = System.currentTimeMillis(),
+            settingsCategory = app.foldcade.language.SettingsCategory.Library,
+        ))
     }
 
     /** Routed games and their completed-folder report travel together, including across an in-flight shortcut read. */
@@ -2085,7 +2236,7 @@ class FoldcadeApp : Application() {
                 val context = coroutineContext
                 val index = buildLocalMediaIndex(scan, forest::children, forest::readText) { !context.isActive }
                 withContext(Dispatchers.Main.immediate) {
-                    if (boundForest !== forest || backend.mediaScan() !== scan || store.folderTrees().isEmpty()) return@withContext
+                    if (boundForest !== forest || backend.mediaScan() !== scan || libraryTrees().isEmpty()) return@withContext
                     if (localMedia?.replace(index) == true) {
                         covers.forget(LocalFolderBackend.ID) { true }
                         gameInfo.forget(LocalFolderBackend.ID)
@@ -2114,7 +2265,7 @@ class FoldcadeApp : Application() {
     fun refreshFolderQuietly(force: Boolean = false): Job = folderRefreshes.quietly(force) {
         pluginLoad.launch {
             playersLoaded.await()
-            val saved = store.folderTrees()
+            val saved = libraryTrees()
             if (saved.isEmpty()) return@launch
             val backend = plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend ?: return@launch
             val forest = boundForest ?: return@launch
@@ -2143,7 +2294,7 @@ class FoldcadeApp : Application() {
                 if (boundForest !== forest) return@withLock null
                 val scan = backend.mediaScan()
                 FoundSteamFiles(backend.steamShortcuts()) {
-                    boundForest === forest && backend.mediaScan() === scan && store.folderTrees() == saved
+                    boundForest === forest && backend.mediaScan() === scan && libraryTrees() == saved
                 }
             }
             // loadPlatforms uses the completed rescan, so the media index uses that same snapshot.
@@ -2161,7 +2312,7 @@ class FoldcadeApp : Application() {
             }
             withContext(Dispatchers.Main.immediate) {
                 // The last folder was forgotten meanwhile, and its games already left.
-                if (store.folderTrees().isEmpty() || boundForest !== forest) return@withContext
+                if (libraryTrees().isEmpty() || boundForest !== forest) return@withContext
                 if (!refresh.changed) {
                     // The cached catalog is still current. Report a reconnected empty tree
                     // without republishing a scan and invalidating an in-flight media index.
@@ -2182,6 +2333,8 @@ class FoldcadeApp : Application() {
                 }
                 val waiting = shell.model.libraryGrid && shell.model.emptyGrid != EmptyGrid.Loading
                 if (waiting && shell.hasLibraryGames()) shell.showCuratedHome()
+                // Games copied into a found folder that had none are told about now.
+                if (refresh.changed) announceFoundGames()
             }
             found?.let { useSteamFiles(it) }
         }
@@ -2193,7 +2346,7 @@ class FoldcadeApp : Application() {
         return folderRefreshes.record(pluginLoad.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             playersLoaded.await()
             if (ticket != libraryTicket.get()) return@launch
-            val saved = store.folderTrees()
+            val saved = libraryTrees()
             withContext(Dispatchers.Main.immediate) { shell.setFolders(libraryFolders()) }
             if (saved.isEmpty()) {
                 withContext(Dispatchers.Main.immediate) {
@@ -2207,10 +2360,11 @@ class FoldcadeApp : Application() {
                     infoRevision++
                     // The last folder was forgotten: its games leave the board.
                     shell.dropLibrary(LocalFolderBackend.ID)
-                    // RomM's games are on the same board, so no folder is not no library.
-                    if (shell.hasLibraryGames()) shell.showCuratedHome() else shell.showNoLibrary()
+                    // RomM's games are on the same board, so no folder is not no library. At startup
+                    // (found folders whose access was turned off) Home keeps its board, as a fresh one does.
+                    if (shell.hasLibraryGames() || startup) shell.showCuratedHome(fromStartup = startup) else shell.showNoLibrary()
                 }
-                useSteamFiles(FoundSteamFiles(emptyList()) { boundForest == null && store.folderTrees().isEmpty() })
+                useSteamFiles(FoundSteamFiles(emptyList()) { boundForest == null && libraryTrees().isEmpty() })
                 return@launch
             }
             // Home can draw its saved places before this scan finishes. An early startup read
@@ -2227,6 +2381,7 @@ class FoldcadeApp : Application() {
             val read = readFolders(ticket, backend, saved)
             deliverLibrary(ticket, LocalFolderBackend.ID, read.library, startup = startup,
                 hasSteamFiles = read.steam?.files?.isNotEmpty() ?: steamFiles.files.isNotEmpty())
+            withContext(Dispatchers.Main.immediate) { if (ticket == libraryTicket.get()) announceFoundGames() }
             read.steam?.let { useSteamFiles(it) }
         }).also { it.start() }
     }
@@ -2255,7 +2410,7 @@ class FoldcadeApp : Application() {
                 refreshLocalMedia(backend, forest)
                 val scan = backend.mediaScan()
                 if (forest.complete) FoundSteamFiles(backend.steamShortcuts()) {
-                    boundForest === forest && backend.mediaScan() === scan && store.folderTrees() == saved
+                    boundForest === forest && backend.mediaScan() === scan && libraryTrees() == saved
                 } else null
             } else null
             FolderRead(loaded, found)
@@ -2391,7 +2546,7 @@ class FoldcadeApp : Application() {
         Log.i("Foldcade", "library-resync start")
         val model = shell.model
         val folders = when {
-            store.folderTrees().isEmpty() -> null
+            libraryTrees().isEmpty() -> null
             !model.libraryGrid -> refreshFolderQuietly(force = true)
             // A failed read tries again, and an empty folder looks again. An open platform is left alone.
             model.gridKind == GridKind.Unreachable -> retryLibrary()
@@ -2611,6 +2766,7 @@ class FoldcadeApp : Application() {
         }
         withContext(Dispatchers.Main.immediate) {
             if (ticket != libraryTicket.get()) return@withContext
+            val onlyFound = libraryId == LocalFolderBackend.ID && store.folderTrees().isEmpty() && foundRootIds().isNotEmpty()
             val folderReported = libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
                 (loaded !is LoadedLibrary.Platforms || games != null) && shell.finishFolderReport(
                     boundForest?.complete == true, boundForest?.reportedTrees?.toSet().orEmpty(),
@@ -2630,13 +2786,19 @@ class FoldcadeApp : Application() {
                     perfMark("library-published games=${games.size}")
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
-                LoadedLibrary.NoPlatforms -> if (hasSteamFiles && folderReported) {
+                // Folders Foldcade found by itself never take Home over: an empty one (ES-DE makes
+                // every system folder) has no games yet, and an unreachable one is a card that is out.
+                LoadedLibrary.NoPlatforms -> if ((hasSteamFiles || onlyFound) && folderReported) {
                     shell.dropLibrary(libraryId)
+                    shell.showCuratedHome(fromStartup = startup)
+                } else if (onlyFound) {
+                    // A card that is out may still hold games: they stay until a complete scan says otherwise.
                     shell.showCuratedHome(fromStartup = startup)
                 } else {
                     shell.showNoPlatforms(libraryId)
                 }
-                LoadedLibrary.Unreachable, null -> shell.showUnreachable(insidePlatform = false)
+                LoadedLibrary.Unreachable, null -> if (onlyFound) shell.showCuratedHome(fromStartup = startup)
+                    else shell.showUnreachable(insidePlatform = false)
             }
         }
     }
@@ -2680,6 +2842,7 @@ private const val PLAYERS_LOAD_WAIT_MS = 10_000L
 
 /** One notice for every folder found without asking; a later find replaces it. */
 private const val SAVES_FOUND_NOTICE_ID = "foldcade:saves-found"
+private const val FOUND_GAMES_NOTICE_ID = "foldcade:found-games"
 
 /** How often a shown Home adds to the trial of the packs in use. */
 private const val THEME_TRIAL_TICK_MILLIS = 15_000L

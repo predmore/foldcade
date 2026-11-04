@@ -668,7 +668,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val roleManager = getSystemService(RoleManager::class.java)
         val held = roleManager.isRoleHeld(RoleManager.ROLE_HOME)
         foldcade.shell.setHomeRoleHeld(held)
-        if (!foldcade.setupBackups.hasNotice()) foldcade.shell.maybeAskHome(held)
         if (launchesCompanion) showRestoredSetup()
         foldcade.onSaveConflicts = { refreshSaveConflict() }
         applyDialogPreview(intent)
@@ -727,6 +726,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
+        // Android's all-files page may have been answered, or a card put in: look for ROM folders again.
+        foldcade.refreshRomRoots()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         // Usage access may have changed while Home was away, and without it no game reads Paused.
@@ -2435,6 +2436,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.Home -> {
                 foldcade.store.setHomePromptSettled()
                 if (effect.button == DialogButton.UseAsHome) requestHome()
+            }
+            DialogKind.FindGames -> {
+                foldcade.store.setFindGamesOffered()
+                if (effect.button == DialogButton.Allow) startFirst(AllFilesAccess(this).settingsIntents())
             }
             DialogKind.Folder -> if (effect.button == DialogButton.ContinueGrant) {
                 foldcade.shell.noteFolderExplained()

@@ -126,6 +126,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         addAll(librarySources(model))
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
+        // All-files access lets Foldcade find ROMs, ROMs on the card, and Emulation/roms by itself.
+        add(Row.FindGames)
         addAll(listOf(Row.Artwork, Row.ArtKey))
     }
     SettingsCategory.Players -> buildList {
@@ -238,7 +240,9 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
         listOfNotNull(Row.PickFolderAgain(it.uri).takeIf { _ -> it.pickAgain }, Row.ForgetFolder(it.uri, it.label))
     }.orEmpty()
-    is SettingsInner.Host -> model.streamHosts.filter { it.key == inner.key }.take(1).map { Row.StreamHost(it.key) }
+    // Moonlight names its computers, and pins their games, only for the Home app.
+    is SettingsInner.Host -> model.streamHosts.filter { it.key == inner.key }.take(1)
+        .flatMap { listOfNotNull(Row.StreamHost(it.key), Row.SetAsHome.takeIf { _ -> !model.homeRoleHeld }) }
     is SettingsInner.Backend -> model.signedIn.filter { it.pluginId == inner.pluginId }.take(1).map { Row.SignOut(it.pluginId, it.label) }
     // One RomM server at a time: once one is saved, its own tile edits it or signs out.
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
@@ -400,7 +404,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.Music -> RowControl.Toggle(model.music.enabled)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
     // Android owns the switch: A opens its all-files page, and the switch shows what it says.
-    Row.FindSaves -> RowControl.Toggle(model.allFilesGranted)
+    Row.FindSaves, Row.FindGames -> RowControl.Toggle(model.allFilesGranted)
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.FolderOnHome -> RowControl.Toggle(model.tileActions?.folderOnHome?.on == true)
     Row.Artwork -> RowControl.Toggle(model.artwork)
