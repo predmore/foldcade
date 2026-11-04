@@ -15,9 +15,14 @@ object RommPhoneCopy {
     const val hint = "Paste the address from your bookmark or RomM app. Sign in on RomM next."
     const val send = "Continue to RomM"
     const val approve = "Approve Foldcade on RomM"
+    const val changeServerToken = "To change servers, enter its token."
     const val failed = "Check Foldcade for the next step. If there’s a new QR code, scan it to try again."
     const val invalid = "Use an http:// or https:// server address, without a password or token. Scan the new code on Foldcade to try again."
 }
+
+/** A known address goes straight to its approval code; only a failed address needs another handoff. */
+fun rommNeedsAddress(model: PickerModel): Boolean =
+    model.connectOrigin.isBlank() || model.connectHint == Copy.rommCodeUnavailable
 
 /** Address only. The continuation holds RomM's public user code, never its secret device code or token. */
 object RommPhonePage {
@@ -33,7 +38,7 @@ object RommPhonePage {
     """, RommPhoneCopy.title)
 
     fun done(url: String?, invalid: Boolean, colors: KeyDropPage.Colors): String = KeyDropPage.page(colors,
-        if (url == null) "<h1>${if (invalid) RommPhoneCopy.invalid else RommPhoneCopy.failed}</h1>"
+        if (url == null) "<h1>${RommPhoneCopy.title}</h1><p>${if (invalid) RommPhoneCopy.invalid else RommPhoneCopy.failed}</p>"
         else "<h1>${RommPhoneCopy.title}</h1><a class=\"button\" href=\"${KeyDropPage.escape(url)}\" rel=\"noreferrer\">${RommPhoneCopy.approve}</a>",
         RommPhoneCopy.title,
     )

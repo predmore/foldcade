@@ -6,6 +6,16 @@ import org.junit.Test
 class RommPhoneTest {
     private val colors = KeyDropPage.Colors("#000000", "#111111", "#ffffff", "#888888", "#ffaa00")
 
+    @Test fun onlyMissingAndUnreachableAddressesOfferTheAddressQr() {
+        val model = PickerModel(count = 0, rowsPerPage = 2)
+        assertTrue(rommNeedsAddress(model))
+        val known = model.copy(connectOrigin = "https://romm.example")
+        assertFalse(rommNeedsAddress(known))
+        assertFalse(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeExpired, connectRetry = true)))
+        assertFalse(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeDenied, connectRetry = true)))
+        assertTrue(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeUnavailable, connectRetry = true)))
+    }
+
     @Test fun phoneAsksOnlyForAnAddressAndContinuesToApprovalWithoutAnotherScan() {
         val form = RommPhonePage.form("/token", colors)
         assertTrue(form.contains("type=\"url\""))

@@ -301,18 +301,18 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                         )
                     } else {
                         val waitingForCode = model.connectOrigin.isNotBlank() && !model.connectRetry && !model.connectBusy
-                        val phoneUrl = (phone as? app.foldcade.language.KeyDrop.Open)?.url
+                        val phoneUrl = (phone as? app.foldcade.language.KeyDrop.Open)?.url?.takeIf { app.foldcade.language.rommNeedsAddress(model) }
                         if (phoneUrl != null) QrSquare(phoneUrl, RommPhoneCopy.scan, theme, Modifier.size(square))
                         else EmptySquare(theme, pulse = waitingForCode, scale = scale, modifier = Modifier.size(square))
                         val hint = model.connectHint?.takeIf(::pairingNote)
                         BasicText(
                             when {
                                 hint != null -> hint
-                                phone is app.foldcade.language.KeyDrop.Open -> if (phone.phoneHere) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
-                                phone == app.foldcade.language.KeyDrop.Offline -> RommPhoneCopy.offline
+                                waitingForCode -> Copy.rommGettingCode
+                                phoneUrl != null -> if ((phone as? app.foldcade.language.KeyDrop.Open)?.phoneHere == true) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
+                                phone == app.foldcade.language.KeyDrop.Offline && app.foldcade.language.rommNeedsAddress(model) -> RommPhoneCopy.offline
                                 phone == app.foldcade.language.KeyDrop.Sent -> RommPhoneCopy.sent
                                 model.connectOrigin.isBlank() -> RommPhoneCopy.opening
-                                waitingForCode -> Copy.rommGettingCode
                                 else -> Copy.rommPairAgain
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -327,7 +327,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                             maxLines = 2,
                         )
                         if (hint != null) BasicText(
-                            Copy.rommPairAgain,
+                            if (phoneUrl != null) RommPhoneCopy.scan else Copy.rommPairAgain,
                             modifier = Modifier.fillMaxWidth(),
                             style = formStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
                             maxLines = 3,

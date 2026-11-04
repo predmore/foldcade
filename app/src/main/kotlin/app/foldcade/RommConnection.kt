@@ -4,6 +4,12 @@ import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialStore
 import app.foldcade.api.plugin.CredentialLookup
 import app.foldcade.language.SignedInBackend
+import app.foldcade.romm.normalizeSetupOrigin
+
+/** A token for the saved server must never follow an unapproved address on the form. IO. */
+internal suspend fun mayPairRommOrigin(saved: String?, origin: String, credentials: CredentialStore): Boolean =
+    saved?.let(::normalizeSetupOrigin) == origin ||
+        lookupOrUnreadable(credentials, RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN) == CredentialLookup.Absent
 
 /** Replacing a token keeps the connection's identity, tiles, and save ownership. */
 internal suspend fun saveRommConnection(

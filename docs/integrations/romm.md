@@ -43,6 +43,8 @@ Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 
 Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**. Sign out asks first: saves stop syncing and RomM's games leave Home.
 
+While signed in, changing to a different server address asks for that server's token. Your existing token stays on its own server until the new connection is checked. A setup restored without a sign-in can use phone pairing for a different address.
+
 ## Signed out
 
 After restoring a setup backup, which leaves sign-ins out, or once RomM refuses the saved token, RomM waits for a sign-in, and saves wait on the device until then. Foldcade says so everywhere RomM shows:

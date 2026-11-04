@@ -913,7 +913,7 @@ class FoldcadeApp : Application() {
             snapshotFlow {
                 val model = shell.model
                 Triple(homeShownNow && model.connectOpen && model.connectKind == app.foldcade.language.ConnectKind.Romm &&
-                    !model.connectBusy && model.connectCode == null && shell.connectToken.isBlank(), model.connectRetry, model.connectOrigin)
+                    !model.connectBusy && model.connectCode == null && shell.connectToken.isBlank() && app.foldcade.language.rommNeedsAddress(model), model.connectRetry, model.connectOrigin)
             }.collect { (wanted, retry, _) -> rommPhone.want(wanted, retry) }
         }
         scope.launch(Dispatchers.Main.immediate) {

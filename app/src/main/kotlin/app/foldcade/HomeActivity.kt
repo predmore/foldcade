@@ -2804,6 +2804,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 delay(400)
                 if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, revision) }) continue
                 pairedRevision = revision
+                // Pairing configures the live library. Keep its saved token on its own server;
+                // restoring a backup hides old credentials and can still pair a new address.
+                val mayConfigure = mayPairRommOrigin(foldcade.store.rommOrigin(), origin, foldcade.store.restoreCredentials(foldcade.credentials))
+                if (!withContext(Dispatchers.Main.immediate) {
+                    if (!foldcade.shell.deviceCodeFormCurrent(visit, revision)) false
+                    else if (!mayConfigure) {
+                        foldcade.shell.showSetupHint(app.foldcade.language.RommPhoneCopy.changeServerToken, retry = true)
+                        false
+                    } else true
+                }) continue
                 try {
                     foldcade.plugins.configure(instanceId, mapOf(ROMM_ORIGIN_KEY to origin))
                     val outcome = pollRommDeviceCode(instanceId, visit, revision)

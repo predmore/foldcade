@@ -2326,7 +2326,16 @@ class ShellController(
 
     fun showNearbyRomm(origin: String?, searching: Boolean) {
         if (!model.connectOpen || model.connectKind != ConnectKind.Romm || model.connectOrigin.isNotBlank()) return
-        model = model.copy(connectFoundOrigin = origin, connectSearching = searching)
+        val inserted = model.connectFoundOrigin == null && origin != null
+        model = model.copy(
+            connectFoundOrigin = origin,
+            connectSearching = searching,
+            connectIndex = when {
+                inserted && model.connectIndex > 0 -> model.connectIndex + 1
+                model.connectFoundOrigin != null && origin == null -> (model.connectIndex - 1).coerceAtLeast(0)
+                else -> model.connectIndex
+            },
+        )
     }
 
     fun editToken(value: String) {

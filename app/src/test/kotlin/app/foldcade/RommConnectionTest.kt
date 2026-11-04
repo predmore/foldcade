@@ -28,6 +28,25 @@ import org.junit.Test
 
 class RommConnectionTest {
     @Test
+    fun devicePairingCannotRepointALiveOrRefusedTokenToAnUnapprovedServer() = runBlocking {
+        val credentials = MemoryCredentialStore()
+        val saved = "https://one.example"
+        val other = "http://192.168.1.2"
+        credentials.put(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN, Credential.ApiToken("rmm_one"))
+        assertFalse(mayPairRommOrigin(saved, other, credentials))
+        assertTrue(mayPairRommOrigin(saved, saved, credentials))
+        assertFalse(mayPairRommOrigin(null, other, credentials))
+        assertEquals("rmm_one", token(credentials, RommCredentials.ACCESS_TOKEN))
+        // Restoring a backup intentionally hides the old device's token. The phone can choose a new address.
+        val prefs = MemoryPrefs()
+        prefs.edit().putBoolean("restore_romm_sign_in", true).commit()
+        val restored = SessionStore(prefs)
+        assertTrue(mayPairRommOrigin(saved, other, restored.restoreCredentials(credentials)))
+        credentials.forget(RommCredentials.PLUGIN_ID, RommCredentials.ACCESS_TOKEN)
+        assertTrue(mayPairRommOrigin(saved, other, credentials))
+    }
+
+    @Test
     fun aHeldAThatAnswersNotNowDoesNotAskToSignOutAgain() = runBlocking {
         val session = SessionStore(MemoryPrefs())
         val credentials = MemoryCredentialStore()

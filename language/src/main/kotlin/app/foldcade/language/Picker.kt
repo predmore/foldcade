@@ -1143,7 +1143,8 @@ data class PairingCode(val code: String, val url: String) {
  */
 fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
     busy -> Copy.connecting
-    tokenTyped || !originTyped -> Copy.connect
+    tokenTyped -> Copy.connect
+    !originTyped -> Copy.waitingForPhone
     code != null && !retry -> Copy.waitingForPhone
     else -> Copy.pairWithPhone
 }
