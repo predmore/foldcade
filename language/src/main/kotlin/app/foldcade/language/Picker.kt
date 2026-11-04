@@ -146,9 +146,12 @@ enum class DialogKind {
 
     /** Sign out of RomM, or remove a server that waits for a sign-in. Opens on Not now. */
     RommSignOut,
+    ThorSetup,
+    RestoreThorSetup,
 }
 
 enum class DialogButton {
+    ApplyThorSetup, RestoreThorSetup, ThorAppInfo, ThorFileAccess,
     ChooseSaveFolder,
     PlayWithoutSyncing,
     SetUpSaves,
@@ -181,6 +184,10 @@ enum class DialogButton {
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
 fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = when (button) {
+    DialogButton.ApplyThorSetup -> ThorSetupCopy.apply
+    DialogButton.RestoreThorSetup -> ThorSetupCopy.restore
+    DialogButton.ThorAppInfo -> ThorSetupCopy.appInfo
+    DialogButton.ThorFileAccess -> ThorSetupCopy.fileAccess
     DialogButton.ChooseSaveFolder -> Copy.playerSavesUnset
     DialogButton.PlayWithoutSyncing -> Copy.playWithoutSyncing
     DialogButton.SetUpSaves -> Copy.setUp
@@ -700,6 +707,7 @@ sealed interface Row {
 
     /** One-time setup in the player, such as firmware, before a game can start. */
     data class PlayerSetup(val playerId: String) : Row
+    data class ThorSetup(val playerId: String) : Row
 
     /** Whether Foldcade can see RetroArch's cores. A shows them. */
     data object RetroArchCores : Row
@@ -929,6 +937,7 @@ data class PlayerSaveSetting(
     val hostedSteps: String? = null,
     /** Where Foldcade found the folder on its own, such as `saves/Azahar`, so it is never bound unseen. Null for a chosen one. */
     val foundIn: String? = null,
+    val thorSetup: ThorSetupSetting? = null,
 )
 
 /**
@@ -1370,6 +1379,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         }
         RowText(Copy.memoryCard, state)
     }
+    is Row.ThorSetup -> RowText(ThorSetupCopy.title, model.playerSaves.firstOrNull { it.playerId == row.playerId }?.thorSetup?.status?.let(ThorSetupCopy::status).orEmpty())
     is Row.PlayerSetup -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         RowText(Copy.setup, if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
@@ -1508,6 +1518,7 @@ sealed interface Effect {
 
     /** What the player needs once before it can start a game. */
     data class ShowPlayerSetup(val playerId: String) : Effect
+    data class ShowThorSetup(val playerId: String) : Effect
 
     /** Opens the player, as Open on the memory-card dialog does. */
     data class OpenPlayer(val playerId: String) : Effect
@@ -1800,7 +1811,7 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
-        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut) && repeatCount > 0 &&
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut, DialogKind.ThorSetup, DialogKind.RestoreThorSetup) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
@@ -2634,6 +2645,7 @@ private fun activateRow(
                 else -> model.copy(panel = panel) to null
             }
         }
+        is Row.ThorSetup -> model.copy(panel = panel) to Effect.ShowThorSetup(row.playerId)
         is Row.PlayerSetup -> model.copy(panel = null, focus = panel.grid) to Effect.ShowPlayerSetup(row.playerId)
         Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
         Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
@@ -2731,6 +2743,14 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     }
     notice.settingsCategory?.let { category ->
         return model.openSettings(model.layout.pageScreen, category, panel.grid) to null
+    }
+    if (notice.id.startsWith(ThorSetupCopy.noticePrefix)) {
+        val playerId = notice.id.removePrefix(ThorSetupCopy.noticePrefix)
+        val inner = SettingsInner.Emulator(playerId)
+        val row = settingsInnerRows(inner, model).indexOf(Row.ThorSetup(playerId))
+        val opened = model.openSettings(model.layout.pageScreen, SettingsCategory.Players, panel.grid)
+        return if (row < 0) opened to null else
+            opened.copy(settings = opened.settings?.copy(inner = inner, onRows = true, row = row)) to null
     }
     notice.savePlayerId?.let { playerId ->
         if (saveSetupTiles(model, SaveSetupPage()).any { it.key == playerId }) {

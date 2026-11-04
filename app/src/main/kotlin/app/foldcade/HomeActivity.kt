@@ -383,6 +383,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ShowSaveSync -> showSaveSync(effect.playerId)
             is Effect.ShowPlayerSetup -> showPlayerSetup(effect.playerId)
+            is Effect.ShowThorSetup -> showThorSetup(effect.playerId)
             is Effect.OpenPlayer -> {
                 cancelLaunches()
                 openPlayerApp(effect.playerId)
@@ -2414,7 +2415,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun onDialog(effect: Effect.DialogChoice) {
+        if (effect.kind == DialogKind.ThorSetup || effect.kind == DialogKind.RestoreThorSetup) {
+            val playerId = effect.subject ?: return
+            when (effect.button) {
+                DialogButton.ApplyThorSetup -> changeThorSetup(playerId, restore = false)
+                DialogButton.RestoreThorSetup -> if (effect.kind == DialogKind.ThorSetup)
+                    foldcade.shell.showDialog(app.foldcade.language.restoreThorSetupDialog(playerId, hostScreen()))
+                    else changeThorSetup(playerId, restore = true)
+                DialogButton.ThorAppInfo -> foldcade.thorPresets.packageToClose()?.let { name ->
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", name, null)))
+                }
+                DialogButton.ThorFileAccess -> startFirst(AllFilesAccess(this).settingsIntents())
+                DialogButton.ChooseSaveFolder -> choosePlayerSave(playerId)
+                else -> Unit
+            }
+            return
+        }
+
         when (effect.kind) {
+            DialogKind.ThorSetup, DialogKind.RestoreThorSetup -> Unit
             DialogKind.Brightness -> if (effect.button == DialogButton.Allow) {
                 startActivity(foldcade.brightness.accessIntent())
             }
@@ -3243,6 +3262,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (shown) foldcade.hostedAsk = HostedAsk(player.id, null)
     }
 
+    private fun showThorSetup(playerId: String) {
+        foldcade.scope.launch {
+            val player = foldcade.plugins.player(playerId) ?: return@launch
+            val setup = withContext(Dispatchers.IO) { foldcade.thorPresets.read(playerId, foldcade.playerSaveFolder(player)) } ?: return@launch
+            foldcade.shell.setThorSetup(playerId, setup)
+            foldcade.shell.showDialog(app.foldcade.language.thorSetupDialog(playerId, setup, hostScreen()))
+        }
+    }
+
+    private fun changeThorSetup(playerId: String, restore: Boolean) {
+        foldcade.scope.launch {
+            val player = foldcade.plugins.player(playerId) ?: return@launch
+            val setup = withContext(Dispatchers.IO) {
+                if (restore) foldcade.thorPresets.restore(playerId, foldcade.playerSaveFolder(player))
+                else foldcade.thorPresets.apply(playerId, foldcade.playerSaveFolder(player))
+            } ?: return@launch
+            foldcade.shell.setThorSetup(playerId, setup)
+            foldcade.shell.showDialog(app.foldcade.language.thorSetupDialog(playerId, setup, hostScreen()))
+        }
+    }
+
     /**
      * What [player] needs once before it starts, read off the main thread from the
      * folder the user picked for it, or asked with none when none is picked.
@@ -3251,6 +3291,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private suspend fun playerSetupSteps(player: Player): String? {
         if (player !is SaveFolderHolder) return null
         val folder = foldcade.playerSaveFolder(player)
+        foldcade.applyThorPreset(player)
         return withContext(Dispatchers.IO) { foldcade.playerSaves.setupSteps(player, folder) }
     }
 
