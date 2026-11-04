@@ -1914,7 +1914,9 @@ fun reduce(
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
-        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut) && repeatCount > 0 &&
+        // Asks that open by themselves, or under a held press, take only a fresh one.
+        if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut,
+                DialogKind.AddGames, DialogKind.FindGames, DialogKind.RetroArchCores) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null

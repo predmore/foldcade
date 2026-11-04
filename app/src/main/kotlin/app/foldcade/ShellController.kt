@@ -2873,6 +2873,9 @@ class ShellController(
 
     private fun undoOffered(): Boolean = model.tileActions?.undo == true
 
+    /** Home with nothing over it and no tool holding the keys, where an ask can come up by itself. */
+    private fun homeIdle(): Boolean = homeActive() && find == null && homeKeys() == HomeKeys.Idle
+
     /** The cursor rests on Home's Add games tile, with nothing open over Home. */
     fun onAddGamesTile(): Boolean =
         homeActive() && find == null && homeKeys() == HomeKeys.Idle && model.focus.chrome == null &&
@@ -2884,7 +2887,8 @@ class ShellController(
      * Never over another dialog. Returns whether it showed.
      */
     fun maybeAskAddGames(): Boolean {
-        if (store.addGamesAsked() || model.dialog != null || model.romFolderOffer != null) return false
+        // Owed while anything else has the keys: a page, a form, a menu, or a Home tool.
+        if (store.addGamesAsked() || !homeIdle() || model.romFolderOffer != null) return false
         if (hasGameSource()) {
             store.setAddGamesAsked()
             return false
@@ -2908,8 +2912,8 @@ class ShellController(
      * never while Foldcade can already see the cores. Returns whether it showed.
      */
     fun maybeOfferRetroArchCores(): Boolean {
-        // Only over Home itself: a page, a menu, or the sign-in form finishes first.
-        if (store.retroArchCoresOffered() || !homeActive()) return false
+        // Only over Home itself: a page, a menu, the sign-in form, or a Home tool finishes first.
+        if (store.retroArchCoresOffered() || !homeIdle()) return false
         val retroArch = model.retroArch ?: return false
         if (retroArch.cores != null) return false
         val systems = retroArchSystems().takeIf { it.isNotEmpty() } ?: return false

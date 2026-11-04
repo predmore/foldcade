@@ -93,6 +93,19 @@ class AddGamesHostTest {
         assertFalse(shell.maybeAskAddGames())
     }
 
+    @Test fun theFirstRunAskWaitsForAnOpenFormAndTakesOnlyAFreshPress() {
+        val shell = shell()
+        shell.openAddRomm()
+        assertFalse(shell.maybeAskAddGames())
+        assertFalse(store.addGamesAsked())
+        shell.closeConnect()
+        assertTrue(shell.maybeAskAddGames())
+        // A held from before the ask opened does not press Sign in to RomM.
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 3))
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        assertEquals(Effect.DialogChoice(DialogButton.SignInRomm, DialogKind.AddGames, null), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+    }
+
     @Test fun theFirstRunAskWaitsForFindGamesAndSkipsAPlayerWithASource() {
         val waiting = shell()
         waiting.setRomFolderOffer(offer)
