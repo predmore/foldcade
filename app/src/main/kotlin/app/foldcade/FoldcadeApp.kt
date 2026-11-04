@@ -1061,8 +1061,10 @@ class FoldcadeApp : Application() {
                 } finally {
                     startupRootsLooked.complete(Unit)
                 }
-                // Listing games needs entries, not save-folder providers or old ROM copies.
-                if (libraryTrees().isNotEmpty()) reloadFolder(startup = true)
+                // Listing games needs entries, not save-folder providers or old ROM copies. Found
+                // folders whose access was turned off (Android restarts Foldcade then) still reload,
+                // so their games leave the board rather than stay as tiles that cannot open.
+                if (libraryTrees().isNotEmpty() || store.foundRoots().isNotEmpty()) reloadFolder(startup = true)
                 perfMark("save-prepare-start")
                 saveFoldersReady.await()
                 readRetroArchCores()
@@ -2043,7 +2045,8 @@ class FoldcadeApp : Application() {
         }
         val found = foundRootIds().map { id ->
             val tree = romRootTree(libraryAuthority, id)
-            LibraryFolder(tree, romRootTileLabel(id), path = romRootPlace(id), games = gamesIn[tree] ?: 0, media = tree in mediaIn, found = true)
+            // The tile already names a card, so the page's line gives only its folder.
+            LibraryFolder(tree, romRootTileLabel(id), path = id.substringAfter(':'), games = gamesIn[tree] ?: 0, media = tree in mediaIn, found = true)
         }
         return picked + found
     }
@@ -2126,7 +2129,7 @@ class FoldcadeApp : Application() {
     private fun offerSetupAsks(seen: List<RomRoot>, roleHeld: Boolean, apps: List<String>) {
         shell.setHomeRoleHeld(roleHeld)
         if (setupBackups.hasNotice()) return
-        val places = seen.map { romRootPlace(it.documentId) }
+        val places = seen.map { romRootProse(it.documentId) }.distinct()
         if (shell.maybeOfferFindGames(places, seen.flatMap { it.systems }.distinct())) return
         // The offer is still owed: it waits for a moment without a dialog rather than queue behind Home.
         if (!allFilesHeld && seen.isNotEmpty() && !store.findGamesOffered()) return
@@ -2340,8 +2343,9 @@ class FoldcadeApp : Application() {
                     infoRevision++
                     // The last folder was forgotten: its games leave the board.
                     shell.dropLibrary(LocalFolderBackend.ID)
-                    // RomM's games are on the same board, so no folder is not no library.
-                    if (shell.hasLibraryGames()) shell.showCuratedHome() else shell.showNoLibrary()
+                    // RomM's games are on the same board, so no folder is not no library. At startup
+                    // (found folders whose access was turned off) Home keeps its board, as a fresh one does.
+                    if (shell.hasLibraryGames() || startup) shell.showCuratedHome(fromStartup = startup) else shell.showNoLibrary()
                 }
                 useSteamFiles(FoundSteamFiles(emptyList()) { boundForest == null && libraryTrees().isEmpty() })
                 return@launch

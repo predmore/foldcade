@@ -73,7 +73,11 @@ internal fun romRootTileLabel(documentId: String): String =
     if (documentId.substringBefore(':') == PRIMARY_VOLUME) documentId.substringAfter(':').substringAfterLast('/')
     else FoundFolderCopy.sdCard
 
-/** Where the root is, for its page and its notice: `Emulation/roms`, or `SD card · roms`. */
+/** Where the root is in a sentence: its path, or the card when the card has it. */
+internal fun romRootProse(documentId: String): String =
+    if (documentId.substringBefore(':') == PRIMARY_VOLUME) documentId.substringAfter(':') else FoundFolderCopy.yourCard
+
+/** Where the root is, for its notice: `Emulation/roms`, or `SD card · roms`. */
 internal fun romRootPlace(documentId: String): String {
     val path = documentId.substringAfter(':')
     return if (documentId.substringBefore(':') == PRIMARY_VOLUME) path else FoundFolderCopy.onCard(path)

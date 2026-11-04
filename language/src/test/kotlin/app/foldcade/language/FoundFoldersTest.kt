@@ -13,8 +13,8 @@ class FoundFoldersTest {
             FoundFolderCopy.offerBody(listOf("ROMs"), listOf("Nintendo DS", "Sega Genesis")),
         )
         assertEquals(
-            "ROMs and SD card · roms have Game Boy, PSP and more games. Allow file access once and they’re on Home.",
-            FoundFolderCopy.offerBody(listOf("ROMs", "SD card · roms"), listOf("Game Boy", "PSP", "Sega Genesis", "SNES")),
+            "Emulation/roms and your SD card have games for 4 systems. Allow file access once and they’re on Home.",
+            FoundFolderCopy.offerBody(listOf("Emulation/roms", FoundFolderCopy.yourCard), listOf("Game Boy", "PSP", "Sega Genesis", "SNES")),
         )
         val prompt = findGamesPrompt(HostScreen.Bottom, listOf("ROMs"), listOf("PSP"))
         assertEquals(DialogKind.FindGames, prompt.kind)
@@ -56,6 +56,8 @@ class FoundFoldersTest {
         assertEquals("ROMs", settingsTileLabel(SettingsInner.Folder(found.uri), model))
         assertEquals(listOf(Row.ForgetFolder(found.uri, "ROMs")), settingsInnerRows(SettingsInner.Folder(found.uri), model))
         assertEquals("214 games", libraryFolderDetail(found))
+        // A card's page is named for the card, so its line says only the folder.
+        assertEquals("roms · 1 game", libraryFolderDetail(found.copy(label = "SD card", path = "roms", games = 1)))
     }
 
     @Test

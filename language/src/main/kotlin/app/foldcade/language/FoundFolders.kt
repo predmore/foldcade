@@ -12,16 +12,20 @@ object FoundFolderCopy {
     /** A found folder on a removable card: `SD card · roms`. */
     fun onCard(path: String) = "$sdCard · $path"
 
+    /** The card in a sentence, where its folder's own name says nothing more. */
+    const val yourCard = "your SD card"
+
     const val offerTitle = "Found your ROMs"
 
     /**
      * The one-time offer, naming what Foldcade saw without any access: the folders and the
-     * systems their folders are named for. "ROMs has Genesis and Nintendo DS games."
+     * systems their folders are named for. "ROMs has Nintendo DS and Sega Genesis games.",
+     * or "… has games for 4 systems." past two, which would run to a third line.
      */
     fun offerBody(places: List<String>, systems: List<String>): String {
-        val shown = if (systems.size > MAX_SYSTEMS) systems.take(MAX_SYSTEMS - 1) + "more" else systems
         val verb = if (places.size == 1) "has" else "have"
-        return "${and(places)} $verb ${and(shown)} games. Allow file access once and they’re on Home."
+        val what = if (systems.size <= MAX_SYSTEMS) "${and(systems)} games" else "games for ${systems.size} systems"
+        return "${and(places)} $verb $what. Allow file access once and they’re on Home."
     }
 
     /** R1 after a scan: "Found 214 games in ROMs", or "Found 230 games in 2 folders". */
@@ -44,5 +48,5 @@ object FoundFolderCopy {
         else -> items.dropLast(1).joinToString(", ") + " and " + items.last()
     }
 
-    private const val MAX_SYSTEMS = 3
+    private const val MAX_SYSTEMS = 2
 }
