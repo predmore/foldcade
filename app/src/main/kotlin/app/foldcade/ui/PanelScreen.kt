@@ -268,7 +268,6 @@ import app.foldcade.language.saveHealthLine
 import app.foldcade.language.saveHealthLeads
 import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.pendingChip
-import app.foldcade.language.pendingGameTitle
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -285,6 +284,7 @@ import app.foldcade.HomeCarry
 import app.foldcade.language.SelectionCopy
 import app.foldcade.HomeFace
 import app.foldcade.ShelfGame
+import app.foldcade.catalogWaitCover
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -2058,7 +2058,8 @@ private fun HeroArt(
         ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val glyph = themedApp ?: mark?.let { markGlyph(it, 640) }
     val accent = glyph?.accent ?: theme.focus
-    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
+    val kept = rememberCatalogWaitCover(app, key)
+    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) } ?: kept
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
     // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
     // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
@@ -2193,6 +2194,25 @@ private fun HeroArt(
 internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null, val crossfadeMillis: Int = 0) {
     // PNG art can let the backdrop show through. Only a known opaque bitmap can hide it.
     val opaque: Boolean get() = (image as? coil3.BitmapImage)?.bitmap?.hasAlpha() == false
+}
+
+/** Only the waiting hero checks history's kept image; the grid gains no work or subscriptions. */
+@Composable
+private fun rememberCatalogWaitCover(app: FoldcadeApp, gameId: String?): LoadedCover? {
+    val waiting = gameId != null && app.shell.activityFor(gameId) == TileActivity.LoadingLibrary
+    var file by remember(gameId) { mutableStateOf<java.io.File?>(null) }
+    LaunchedEffect(gameId, waiting) {
+        if (waiting && gameId != null) file = catalogWaitCover(gameId, app.plays::keptCover)
+    }
+    val saved = file ?: return null
+    val context = LocalContext.current
+    val request = remember(saved) { ImageRequest.Builder(context).data(saved).size(COVER_PX).build() }
+    val painter = rememberAsyncImagePainter(request, app.images)
+    val state by painter.state.collectAsState()
+    val result = (state as? AsyncImagePainter.State.Success)?.result ?: return null
+    val image = result.image
+    if (image.width <= 0 || image.height <= 0) return null
+    return LoadedCover(painter, image.width.toFloat() / image.height, image)
 }
 
 /** Coil's success bitmap can be opaque before its painter has finished fading it in. */
@@ -3630,7 +3650,7 @@ private fun StripColumn(
                         focus.cellIndex == index &&
                         carry == null
                     val activity = shell.activityAt(source)
-                    val label = game?.let { pendingGameTitle(it.title, it.id, activity) }.orEmpty()
+                    val label = game?.let { shell.displayTitle(it, activity) }.orEmpty()
                     val libraryTile = library && face == null
                     // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
                     // its Not on Home tab, since every game is in its folder on Home.

@@ -78,6 +78,16 @@ val TileActivity.pendingLaunch: Boolean get() = pendingChip(this) != null
 
 val TileActivity.cancellableTransfer: Boolean get() = pendingLaunch || this is TileActivity.Downloading || this == TileActivity.Checking
 
-/** No catalog title yet: never show an internal library key as the waiting game's name. */
-fun pendingGameTitle(title: String, id: String, activity: TileActivity?): String =
-    if (activity == TileActivity.LoadingLibrary && title == id) Copy.yourGame else title
+/** Keep the best known name while a catalog arrives, never an internal library key. */
+fun pendingGameTitle(
+    title: String,
+    id: String,
+    activity: TileActivity?,
+    remembered: String? = null,
+    cached: String? = null,
+): String {
+    if (activity != TileActivity.LoadingLibrary) return title
+    return sequenceOf(title, remembered, cached)
+        .mapNotNull { it?.trim()?.takeIf { name -> name.isNotEmpty() && name != id } }
+        .firstOrNull() ?: Copy.yourGame
+}

@@ -882,6 +882,7 @@ class FoldcadeApp : Application() {
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             playMillis = { plays.shown(it).activeMillis },
+            rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },

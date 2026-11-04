@@ -12,6 +12,17 @@ class TileActivityTest {
         assertEquals("Gain Ground", pendingGameTitle("Gain Ground", "lib:romm:23", null))
     }
 
+    @Test fun aCatalogWaitPrefersTheCatalogThenHistoryThenTheOfflineTitle() {
+        val id = "lib:romm:23"
+        val wait = TileActivity.LoadingLibrary
+        assertEquals("Live title", pendingGameTitle("Live title", id, wait, "Played title", "Cached title"))
+        assertEquals("Played title", pendingGameTitle(id, id, wait, "Played title", "Cached title"))
+        assertEquals("Cached title", pendingGameTitle(id, id, wait, "  ", "Cached title"))
+        assertEquals(Copy.yourGame, pendingGameTitle(id, id, wait, id, "  "))
+        assertEquals("Played title", pendingGameTitle("  ", id, wait, " Played title ", null))
+        assertEquals("Live title", pendingGameTitle("Live title", id, TileActivity.PreparingOnServer, "Played title", "Cached title"))
+    }
+
     @Test
     fun theTopScreenSaysWhatTheLibraryIsDoing() {
         assertEquals("Downloading", activityLine(TileActivity.Downloading(null)))

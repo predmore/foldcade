@@ -1,10 +1,25 @@
 package app.foldcade
 
+import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+
+/** Play history's kept cover is optional; even its file checks belong off Main. */
+internal suspend fun catalogWaitCover(tileId: String, read: (String) -> File?): File? = withContext(Dispatchers.IO) {
+    try {
+        read(tileId)
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+}
 
 /**
  * Wait for the existing refresh (or start one), accepting an early cached route
