@@ -30,7 +30,7 @@ Installing DroidDeck alone adds its app tile to **Emulators**; Foldcade does not
 
 ## Launching, saves, and removal
 
-Press **A** or **X** to launch on the chosen screen. DroidDeck starts Steam if needed and manages game settings and saves. Foldcade does not sync these saves through RomM.
+DroidDeck opens on the top screen and takes both, so Foldcade leaves the bottom screen to it instead of covering it. Press **A** to play, from a game's tile or DroidDeck's own. DroidDeck starts Steam if needed and manages game settings and saves. Foldcade does not sync these saves through RomM.
 
 A game found through both a pin and an export gets one entry. See the shared [artwork setup](README.md#artwork) for more art.
 

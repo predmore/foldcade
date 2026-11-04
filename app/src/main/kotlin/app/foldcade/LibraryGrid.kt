@@ -9,6 +9,7 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.host.PluginCallException
 import app.foldcade.host.PluginHost
 import app.foldcade.language.Copy
+import app.foldcade.plugins.droiddeck.DroidDeckPlayer
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
@@ -145,8 +146,9 @@ internal fun availabilityCopy(availability: Availability): String = when (availa
  * Installed apps that draw on the bottom screen while they run, so Foldcade leaves it to them:
  * no command center there, and so no dim over what they draw. PXPlay (PS Play) puts the
  * DualSense touchpad and buttons there during a stream, as a Presentation over Foldcade's window.
+ * DroidDeck uses both screens too, opened from its own tile as from a game.
  */
-internal val BOTH_SCREEN_APPS: Set<String> = setOf("psplay.grill.com")
+internal val BOTH_SCREEN_APPS: Set<String> = setOf("psplay.grill.com", DroidDeckPlayer.PACKAGE)
 
 /**
  * Installed apps filed with the emulators though no player launches games in them: streaming
