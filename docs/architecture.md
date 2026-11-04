@@ -16,6 +16,8 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:droiddeck` | DroidDeck player and library: Steam on the device. Games from DroidDeck's Add to home screen and synced `.steam` files. |
 | `:plugins:emulators` | Launch-only standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
+| `:plugins:flycast` | Dreamcast player and isolated per-game A1 VMU sync. |
+| `:plugins:explus` | EX-family battery saves and clock companions. |
 | `:plugins:ppsspp` | PSP player and per-game savedata folder sync. |
 | `:plugins:dolphin` | Dolphin GameCube player and filtered Slot A GCI sync. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |

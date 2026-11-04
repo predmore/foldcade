@@ -208,6 +208,8 @@ data class SaveDeclaration(
  * One folder of a save kept as folders. [path] is below the player's save
  * folder, with folders separated by `/`. [name] is the folder the zip keeps
  * its files under, one name with no `/`. Added in API minor 11.
+ * A single part with empty [name] puts files at the archive root (minor 21).
+ * That part may also have empty [path], meaning the granted save folder itself (minor 22).
  */
 data class SaveFolderPart(
     val name: String,

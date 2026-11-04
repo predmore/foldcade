@@ -56,6 +56,8 @@ class EmulatorPlayerTest {
         assertFalse("dolphin.gamecube" in ids)
         assertFalse("ppsspp.psp" in ids)
         assertFalse("dolphin.wii" in ids)
+        assertFalse("flycast.dreamcast" in ids)
+        assertFalse("gba-emu.game-boy-advance" in ids)
         assertTrue("pizza-boy-sc.game-gear" in ids)
     }
 
@@ -86,10 +88,10 @@ class EmulatorPlayerTest {
     @Test
     fun platformOrderFollowsTheCatalog() {
         fun order(platformId: String) = entry.players.filter { it.platformId == platformId }.map { it.displayName }
-        assertEquals(listOf("My Boy!", "Pizza Boy GBA", "GBA.emu"), order(GBA))
+        assertEquals(listOf("My Boy!", "Pizza Boy GBA"), order(GBA))
         assertEquals(listOf("Dolphin MMJR"), order(WII))
         assertEquals(listOf("NetherSX2", "EmuCoreX"), order(PLAYSTATION_2))
-        assertEquals(listOf("Flycast", "Redream"), order(DREAMCAST))
+        assertEquals(listOf("Redream"), order(DREAMCAST))
     }
 
     @Test

@@ -6,14 +6,14 @@ This covers all 21 emulator rows in the original shared table. Foldcade collects
 | --- | --- | --- | --- |
 | 1 | PPSSPP | High / medium | **Implemented:** `PSP/SAVEDATA/<DISC_ID…>/` folders, one prefix bundle. ISO, CSO v1 and PBP PARAM.SFO; no title/filename guesses. [PSP source](#psp). |
 | 2 | Dolphin | High / medium | **Implemented:** GameCube ISO/GCM, default Slot A, per-game GCI files. Shared raw cards remain untouched. Next: RVZ blob reader and Wii TMD/title-ID resolution. [Dolphin source](#dolphin). |
-| 3 | Flycast | Medium / medium | Per-game A1 VMU `<sanitized gameId>_vmu_save_A1.bin` when `PerGameVmu` is on; other ports/shared mode use `vmu_save_<port>.bin`. Read `Dreamcast.VMUPath`, data/config fallbacks, and legacy ROM-name paths; never assign a shared VMU to one game. [Flycast source](#flycast). |
+| 3 | Flycast | Medium / medium | **Implemented:** GDI/ISO product-number A1 VMU, global/per-game `PerGameVmu`, and custom VMU directories inside the home. Shared ports and legacy/compressed images remain unresolved. [Flycast source](#flycast). |
 | 4 | M64Plus FZ | High / medium-high | `.eep`, `.sra`, `.fla`, `.mpk` named from the core's `goodname`, below the game's `SramData`, or flat mode. Game directory uses header name + country + ROM MD5, with MD5-only fallback. Current app keeps GameData private; export/import access must be solved before auto-sync. [N64 source](#n64). |
 | 5 | Mupen64Plus AE (M64Plus) | Lower / medium-high | Same four SRAM/controller-pak formats and directory derivation in its own package; do not infer FZ's private folder from the AE package. [N64 source](#n64). |
-| 6 | GBA.emu | Medium / low-medium | `<contentName>.sav`; selected save directory, writable content directory, or `EmuEx/<shortSystemName>/saves` fallback. Need active-directory discovery before declaring sync. [EX source](#ex-family). |
-| 7 | GBC.emu | Medium / low-medium | `<contentName>.sav`, same directory policy. [EX source](#ex-family). |
-| 8 | Snes9x EX+ | Medium / low-medium | `<contentName>.srm`, same directory policy. [EX source](#ex-family). |
-| 9 | NES.emu | Medium / low-medium | `.sav` battery file, `.fds.sav` for FDS disk changes, same directory policy. [EX source](#ex-family). |
-| 10 | MD.emu | Medium / medium | `.srm` for cartridges; `.brm` for CD backup RAM, same directory policy. Check any auxiliary files and ROM naming before packaging. [EX source](#ex-family). |
+| 6 | GBA.emu | Medium / low-medium | **Implemented:** `<contentName>.sav` and named battery slots in the selected folder. Current Android App Folder is private external-files storage. [EX source](#ex-family). |
+| 7 | GBC.emu | Medium / low-medium | **Implemented:** `<contentName>.sav` plus the separate four-byte `.rtc` companion, together with named battery slots. [EX source](#ex-family). |
+| 8 | Snes9x EX+ | Medium / low-medium | **Implemented:** `<contentName>.srm` and named battery slots, same directory policy. [EX source](#ex-family). |
+| 9 | NES.emu | Medium / low-medium | **Implemented:** `.sav` battery file, `.fds.sav` for FDS disk changes and named battery slots. [EX source](#ex-family). |
+| 10 | MD.emu | Medium / medium | **Implemented:** `.srm` for cartridges and `.brm` for Sega CD backup RAM, plus named battery slots. No shared Saturn RAM declarations. [EX source](#ex-family). |
 | 11 | Pizza Boy GBA | High / unverified | No public upstream implementation was available to verify the current Basic/Pro save format, active folder or RTC companions. Investigate official APK behavior; do not ship a guessed `.sav` path. |
 | 12 | Pizza Boy GBC | Medium / unverified | Same source/access blocker; verify RTC and Basic/Pro behavior together. |
 | 13 | Pizza Boy SC | Lower / unverified | Same source/access blocker; verify cartridge and CD behavior separately. |
@@ -26,7 +26,7 @@ This covers all 21 emulator rows in the original shared table. Foldcade collects
 | 20 | NetherSX2 / AetherSX2 | Medium / high | On this Thor, verified PCSX2-lineage cards are `files/memcards/*.ps2`; they can hold many games. No current upstream Android writer/configuration source is available to verify a safe per-game implementation. ARMSX2 already provides supported PS2 folder-card sync. |
 | 21 | EmuCoreX | Lower / high | Same shared-card problem; its current Android writer/configuration lacks verifiable public upstream source. ARMSX2 remains the supported PS2 route. |
 
-Do not turn the unverified rows into declarations based on these estimates. A format without a reachable active folder still cannot sync safely. No implementation in this PR reads another app's private files by bypassing Android permissions.
+The Flycast/EX follow-up preserves this ranking; EX is implemented before N64 as requested. Do not turn the unverified rows into declarations based on these estimates. A format without a reachable active folder still cannot sync safely. No implementation in this PR reads another app's private files by bypassing Android permissions.
 
 ## PSP
 
@@ -51,7 +51,9 @@ Wii's `Wii/title/<type>/<title-id>/data` is a different save unit ([upstream Nan
 
 ## Flycast
 
-Checked at `7adbf3caef251b153e348df3f469a0f35878339d`: [oslib.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/oslib/oslib.cpp) `getVmuPath` owns the filename and fallback policy; [option.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/cfg/option.cpp) defines `Dreamcast.VMUPath` and per-game VMU defaults. An active per-game VMU is promising; a shared VMU is not one game's save.
+Checked at `7adbf3caef251b153e348df3f469a0f35878339d`: [oslib.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/oslib/oslib.cpp) `getVmuPath` owns the filename and fallback policy; [option.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/cfg/option.cpp) defines `Dreamcast.VMUPath` and per-game VMU defaults. The implementation syncs only A1: upstream does not create per-game files for the other ports. `UsePhysicalVmuMemory` also leaves the disk VMU unresolved. Shared VMUs never belong to one game. [settings_controls.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/ui/settings_controls.cpp) puts Per Game VMU A1 and Use Physical VMU Storage under Controls.
+
+[reios.h](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/reios/reios.h) and [emulator.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/emulator.cpp) define the IP.BIN product-number field and trimming; [gdi.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/imgread/gdi.cpp) and [common.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/core/imgread/common.cpp) define track offsets and raw sector layout. [Android.cpp](https://github.com/flyinghead/flycast/blob/7adbf3caef251b153e348df3f469a0f35878339d/shell/android-studio/flycast/src/main/jni/src/Android.cpp) maps a selected home to `data/`. Legacy root/ROM-name copies are refused when they would be a different read location than the next write. The same holds for a custom VMU directory whose fallback still holds the save.
 
 ## N64
 
@@ -66,3 +68,17 @@ Checked at `1c12fac5ce49badaadff2e2f210dcc30b89f4943`:
 - [Snes9x](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/Snes9x/src/main/Main.cc): `.srm`; [NES.emu](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/NES.emu/src/main/Main.cc): `.sav` / `.fds.sav`.
 - [MD.emu](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/MD.emu/src/main/Main.cc): `.srm` / `.brm`.
 - [Saturn.emu](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/Saturn.emu/src/main/Main.cc) and [MDFNUtils.hh](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/EmuFramework/src/shared/mednafen-emuex/MDFNUtils.hh): backup/RTC/cartridge saves and optional MD5 filename components.
+
+### N64 access decision for the follow-up
+
+[CoreService.java](https://github.com/fzurita/mupen64plus-ae/blob/f3c381bcc58e4adce897aba323193d3f407e30e3/app/src/main/java/paulscode/android/mupen64plusae/jni/CoreService.java) shows external-storage mode importing to private GameData at startup and exporting at shutdown. Import keeps existing private files; export deletes the private copy only after successful copying. Thus external storage is not a safely authoritative active save after a crash, failed export, or while the game remains open. The [manifest](https://github.com/fzurita/mupen64plus-ae/blob/f3c381bcc58e4adce897aba323193d3f407e30e3/app/src/main/AndroidManifest.xml) exports no save-tree provider. Without root or a new upstream handoff, Foldcade cannot back up the potentially newer private copy before replacement. FZ/AE remain launch-only.
+
+### EX storage and companions corrected in the follow-up
+
+[Android ApplicationContext.cc](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/imagine/src/base/android/ApplicationContext.cc) makes `storagePath()` the package external-files directory on current Android. Therefore App Folder is `Android/data/<package>/files/EmuEx/<shortSystemName>/saves`, not shared `/sdcard/EmuEx`. The framework uses the ROM directory when no explicit save path is selected; a failed write is an error, not an automatic relocation. Foldcade discovers known shared choices only with the emulator’s exact grant; private App Folder requires a reachable SAF grant or a manual shared-directory choice. Retained grants cannot prove the private current-path setting, so custom choices must match in both apps.
+
+[GBC Main.cc](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/GBC.emu/src/main/Main.cc) separately loads and writes `.rtc` as four big-endian bytes. [EmuApp.cc](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/EmuFramework/src/EmuApp.cc) and [EmuSystem.hh](https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/EmuFramework/include/emuframework/EmuSystem.hh) map named battery slots to `<contentName>/saves/<slot>/auto.<extension>`; bundles include those batteries and omit state files. These files travel as one durable archive so the clock is never acknowledged independently of SRAM.
+
+### Pizza Boy verification limit
+
+The official [Pizza Boy GBA](https://play.google.com/store/apps/details?id=it.dbtecno.pizzaboygba) and [GBC](https://play.google.com/store/apps/details?id=it.dbtecno.pizzaboy) distribution pages point to Play. No public upstream writer or official standalone APK was available for this batch’s store-free QA. `.sav` and `.rtc` names from secondary reports cannot establish current Basic/Pro encoding, clock semantics or active path. The follow-up adds no Pizza Boy declarations and installs no mirrored APK.

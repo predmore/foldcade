@@ -174,7 +174,7 @@ No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and M
 Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
 
 **Which saves sync?**
-melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, Eden account saves, PPSSPP game saves, and Dolphin’s GameCube Slot A GCI saves (ISO/GCM games). Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
+melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, Eden account saves, PPSSPP game saves, Dolphin’s GameCube Slot A GCI saves (ISO/GCM games), Flycast per-game A1 VMUs (GDI/ISO), and GBA.emu, GBC.emu (including RTC), NES.emu/FDS, Snes9x EX+ and MD.emu battery saves. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.

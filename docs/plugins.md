@@ -102,6 +102,12 @@ Eden's `savedata` search reads the game title id and current profile without cha
 
 Before either library launch path places saves, the shell checks Eden's pending restart, then adds missing keys and firmware through the existing installer. `keys/prod.keys` is added only when absent or empty. Firmware `.nca` files go under `nand/system/Contents/registered/` only when Eden has none. `keys/title.keys` can be added in the same pass; missing title keys alone do not contact RomM. Existing files stay. Adding files stops the launch with the restart prompt, before save placement. The pending package and boot count survive process death. The prompt clears after a reboot or Force stop; the stopped-state check runs before opening Eden's provider, because that starts Eden and clears the stopped state. Continue opens App info; Not now only closes. Once this check allows the launch, saves are placed and read back through the ordinary pipeline. Settings › Emulators › Eden › Saves, keys & firmware opens the same picker.
 
+### Dreamcast and EX saves
+
+`:plugins:flycast` and `:plugins:explus` keep the former table player IDs and package handoffs. EX players share one folder key per app. Save slots are `vmu` and `battery`, both ZIP bundles, with the player ID as RomM’s emulator name. All declarations use the existing durable backup/conflict/unsynced pipeline, Settings badge and Y › Saves. Unresolved mapping bypasses negotiation until the explicit per-launch opt-out or a supported destination is available, using the PSP/GameCube guard.
+
+API minor 22 permits a single flat `SaveFolderPart("", "")` to refer to the granted root. Paths to individual files retain their traversal checks. The archive filter applies to every local file and incoming entry before writes; unrelated files survive replacement. EX needs this for batteries in the chosen save folder itself. It includes GBC `.rtc` and named-slot batteries, excluding states. Flycast reads IP.BIN and `emu.cfg`, selects only its exact product-number A1 file, and refuses shared VMUs or inaccessible custom paths. See the [source audit](save-sync-candidates.md#flycast).
+
 ### PSP and GameCube saves
 
 `:plugins:ppsspp` owns `ppsspp.psp`; `:plugins:dolphin` owns `dolphin.gamecube`. Their former table IDs stay stable so existing game/system choices still work. Dolphin’s Wii player stays launch-only in the Dolphin plugin; MMJR remains in the shared table. Slots are `savedata` and `gci`, with the player ID as RomM's emulator name, following the existing Foldcade slot convention. The ZIP layout follows Argosy; slots are intentionally separate from Argosy's `autosave`.
@@ -122,7 +128,7 @@ An unresolved PSP/GameCube destination is reported as not syncing. A locally hel
 
 ### Table or own plugin
 
-An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:eden`, `:plugins:aps3e`, `:plugins:azahar`, `:plugins:armsx2`, `:plugins:duckstation`, `:plugins:ppsspp`, `:plugins:dolphin`, and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
+An emulator goes in the table when its launch is data only: application ids, activities, an action, a handoff, fixed extras, and flags. An emulator that needs its own code gets its own plugin, the way `:plugins:eden`, `:plugins:aps3e`, `:plugins:azahar`, `:plugins:armsx2`, `:plugins:duckstation`, `:plugins:ppsspp`, `:plugins:dolphin`, `:plugins:flycast`, `:plugins:explus`, and `:plugins:melonds` do. Own code means save slots or a save folder, both displays, extension rules, or a launch the table cannot express. An emulator in the table that gains one of these moves out to its own plugin.
 
 The host stores an entry whole or not at all. One bad row in the table drops every emulator in it. `EmulatorPlayerTest` checks that ids are unique, and `ShellHostTest` checks that no bundled entry is rejected.
 

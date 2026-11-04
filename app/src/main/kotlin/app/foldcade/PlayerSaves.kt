@@ -18,6 +18,7 @@ import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.SaveArchiveFilter
 import app.foldcade.plugins.dolphin.DolphinPlayer
+import app.foldcade.plugins.flycast.FlycastPlayer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
@@ -672,8 +673,13 @@ internal class PlayerSaves(
     fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
         DocumentSaveFolder(docs, folderUri, allowWrite = false, reuseReads = true, backup = { _, _ -> })
             .use { player.saveSyncState(it) }?.let { state ->
-                if (state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == DolphinPlayer.SETUP)
-                    app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.dolphinFolderCard) else state
+                when {
+                    state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == DolphinPlayer.SETUP ->
+                        app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.dolphinFolderCard)
+                    state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == FlycastPlayer.SETUP ->
+                        app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.flycastPerGameVmu)
+                    else -> state
+                }
             }
     } catch (_: Exception) {
         null
@@ -793,7 +799,9 @@ internal class PlayerSaves(
 
     /** Where the entry [name] of [spot]'s zip lives, below the player's folder. */
     private fun documentPath(spot: SaveSpot, name: String): String {
-        spot.folders.singleOrNull()?.takeIf { it.name.isEmpty() }?.let { return it.path + "/" + name.removeSuffix("/") }
+        spot.folders.singleOrNull()?.takeIf { it.name.isEmpty() }?.let {
+            return (if (it.path.isEmpty()) "" else it.path + "/") + name.removeSuffix("/")
+        }
         val partName = partOf(name)
         val base = spot.folders.firstOrNull { it.name == partName }?.path
             ?: spot.search?.takeIf { saveFolderNameMatches(partName, it.nameContains) }?.let { "${it.parent}/$partName" }
@@ -935,7 +943,8 @@ private object UnreadableGameFile : GameFileReader {
 private fun validFolders(folders: List<SaveFolderPart>): Boolean =
     folders.isNotEmpty() &&
         folders.map { it.name }.distinct().size == folders.size &&
-        folders.all { (savePathParts(it.name)?.size == 1 || (folders.size == 1 && it.name.isEmpty())) && savePathParts(it.path) != null }
+        folders.all { (savePathParts(it.name)?.size == 1 || (folders.size == 1 && it.name.isEmpty())) &&
+            (savePathParts(it.path) != null || (folders.size == 1 && it.name.isEmpty() && it.path.isEmpty())) }
 
 /** The part an entry of a save zip is in: its first folder. */
 private fun partOf(name: String): String = name.substringBefore('/')
@@ -1287,7 +1296,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 
     override fun list(folderUri: String, name: String): List<SaveEntry>? {
         val tree = Uri.parse(folderUri)
-        val parts = savePathParts(name) ?: return null
+        val parts = if (name.isEmpty()) emptyList() else savePathParts(name) ?: return null
         var folder = folderDocumentId(tree.toString())
         for (part in parts) {
             folder = listChildren(tree, folder).firstOrNull { it.name == part && it.isFolder }?.id ?: return null

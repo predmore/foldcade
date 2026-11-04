@@ -180,6 +180,9 @@ internal fun runnableWith(player: Player, installedPackage: String?): Boolean {
 internal fun playerRank(player: Player): Int = when {
     player is RetroArchPlayer && player.system.aheadOfStandalone -> 0
     player is ArmsX2Player -> 1
-    player is RetroArchPlayer -> 3
+    // Preserve the old table order after the save-capable apps moved to plugins.
+    player.id.startsWith("md-emu.") || player.id.startsWith("flycast.") -> 1
+    player.id.startsWith("gba-emu.") || player.id.startsWith("gbc-emu.") -> 3
+    player is RetroArchPlayer -> 4
     else -> 2
 }
