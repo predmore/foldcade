@@ -801,7 +801,7 @@ class FoldcadeApp : Application() {
             perfMark("history-prepare-start")
             PlaySessions.open(File(filesDir, "play-sessions/events.log")).also { perfMark("history-prepare-end") }
         }
-        store = SessionStore(getSharedPreferences("foldcade", MODE_PRIVATE))
+        store = SessionStore(getSharedPreferences(SessionStore.PREFS_NAME, MODE_PRIVATE))
         runningGames.restore(store.playersHoldingGames())
         runningGames.onPlayersChange = store::setPlayersHoldingGames
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
@@ -1991,10 +1991,12 @@ class FoldcadeApp : Application() {
 
     /** Adds the picked tree to the folders the library reads, and scans them all. */
     fun useFolder(uri: Uri) {
-        store.addFolderTree(uri.toString())
         // A pick that covers a found folder, or sits in one, lists those games itself.
-        val picked = pickedStorageFolders(store.folderTrees())
-        store.setFoundRoots(store.foundRoots().filter { id -> picked.none { containsFolder(it, id) || containsFolder(id, it) } })
+        synchronized(foundRootsLock) {
+            store.addFolderTree(uri.toString())
+            val picked = pickedStorageFolders(store.folderTrees())
+            store.setFoundRoots(store.foundRoots().filter { id -> picked.none { containsFolder(it, id) || containsFolder(id, it) } })
+        }
         reloadFolder()
         refreshFoundSaveFolders()
     }
@@ -2004,13 +2006,14 @@ class FoldcadeApp : Application() {
      * or a picked one in Android's own storage, is never found again by itself.
      */
     fun forgetFolder(uri: String) {
-        val found = store.foundRoots().firstOrNull { romRootTree(libraryAuthority, it) == uri }
+        val found = synchronized(foundRootsLock) {
+            store.foundRoots().firstOrNull { romRootTree(libraryAuthority, it) == uri }?.also(store::removeRoot)
+                ?: run { pickedStorageFolders(listOf(uri)).forEach(store::removeRoot); null }
+        }
         if (found != null) {
-            store.removeRoot(found)
             reloadFolder()
             return
         }
-        pickedStorageFolders(listOf(uri)).forEach(store::removeRoot)
         shell.removeFolderTree(uri)
         releaseUnusedFolderGrant(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         reloadFolder()
@@ -2087,19 +2090,27 @@ class FoldcadeApp : Application() {
             Log.w("Foldcade", "Storage volumes unreadable", failure)
             emptyList()
         }
-        val picked = pickedStorageFolders(store.folderTrees())
-        val removed = store.removedRoots()
-        val seen = usableRomRoots(findRomRoots(volumes), picked, removed)
-        val before = store.foundRoots()
-        val next = if (!held) before else {
-            val mounted = volumes.mapTo(HashSet()) { it.id }
-            val away = before.filter { it.substringBefore(':') !in mounted && romRootUsable(it, picked, removed) }
-            (seen.map { it.documentId } + away).distinct()
+        val listed = findRomRoots(volumes)
+        // The disk is read; picks and removals are read now, under the lock Remove and Add a folder take.
+        val (seen, before, next) = synchronized(foundRootsLock) {
+            val picked = pickedStorageFolders(store.folderTrees())
+            val removed = store.removedRoots()
+            val seen = usableRomRoots(listed, picked, removed)
+            val before = store.foundRoots()
+            val next = if (!held) before else {
+                val mounted = volumes.mapTo(HashSet()) { it.id }
+                val away = before.filter { it.substringBefore(':') !in mounted && romRootUsable(it, picked, removed) }
+                (seen.map { it.documentId } + away).distinct()
+            }
+            if (next != before) store.setFoundRoots(next)
+            Triple(seen, before, next)
         }
-        if (next != before) store.setFoundRoots(next)
         allFilesHeld = held
         return RomRootLook(seen, next != before || held != wasHeld && next.isNotEmpty())
     }
+
+    /** Guards the found folders' store against a look that read the disk before a Remove or a pick. */
+    private val foundRootsLock = Any()
 
     /**
      * Back on Home: Android's all-files page may have been answered, or a card put in. Looks
@@ -2749,6 +2760,7 @@ class FoldcadeApp : Application() {
         }
         withContext(Dispatchers.Main.immediate) {
             if (ticket != libraryTicket.get()) return@withContext
+            val onlyFound = libraryId == LocalFolderBackend.ID && store.folderTrees().isEmpty() && foundRootIds().isNotEmpty()
             val folderReported = libraryId == LocalFolderBackend.ID && loaded != LoadedLibrary.Unreachable && loaded != null &&
                 (loaded !is LoadedLibrary.Platforms || games != null) && shell.finishFolderReport(
                     boundForest?.complete == true, boundForest?.reportedTrees?.toSet().orEmpty(),
@@ -2768,13 +2780,16 @@ class FoldcadeApp : Application() {
                     perfMark("library-published games=${games.size}")
                 }
                 // A folder of .steam files has games, just none of its own: GameNative's, DroidDeck's, or both.
-                LoadedLibrary.NoPlatforms -> if (hasSteamFiles && folderReported) {
+                // Folders Foldcade found by itself never take Home over: an empty one (ES-DE makes
+                // every system folder) has no games yet, and an unreachable one is a card that is out.
+                LoadedLibrary.NoPlatforms -> if ((hasSteamFiles || onlyFound) && folderReported) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome(fromStartup = startup)
                 } else {
                     shell.showNoPlatforms(libraryId)
                 }
-                LoadedLibrary.Unreachable, null -> shell.showUnreachable(insidePlatform = false)
+                LoadedLibrary.Unreachable, null -> if (onlyFound) shell.showCuratedHome(fromStartup = startup)
+                    else shell.showUnreachable(insidePlatform = false)
             }
         }
     }

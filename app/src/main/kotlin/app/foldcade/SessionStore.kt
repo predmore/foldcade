@@ -117,25 +117,25 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
      * The ROM folders Foldcade found by itself, as document ids such as `primary:ROMs`.
      * Separate from [folderTrees]: the player picked those, and they are never replaced.
      */
-    fun foundRoots(): List<String> = idLines(KEY_FOUND_ROOTS)
+    fun foundRoots(): List<String> = idLines(prefs, KEY_FOUND_ROOTS)
 
     fun setFoundRoots(ids: List<String>) {
         prefs.edit().putString(KEY_FOUND_ROOTS, ids.distinct().joinToString("\n")).apply()
     }
 
     /** Found folders the player removed. They never come back by themselves. */
-    fun removedRoots(): Set<String> = idLines(KEY_REMOVED_ROOTS).toSet()
+    fun removedRoots(): Set<String> = idLines(prefs, KEY_REMOVED_ROOTS).toSet()
 
     /** Stops reading a found folder for good, or a picked folder's place for finding. */
     fun removeRoot(id: String) {
         prefs.edit()
-            .putString(KEY_REMOVED_ROOTS, (idLines(KEY_REMOVED_ROOTS) + id).distinct().joinToString("\n"))
+            .putString(KEY_REMOVED_ROOTS, (idLines(prefs, KEY_REMOVED_ROOTS) + id).distinct().joinToString("\n"))
             .putString(KEY_FOUND_ROOTS, (foundRoots() - id).joinToString("\n"))
             .apply()
     }
 
     /** Found folders whose games R1 already announced. */
-    fun announcedRoots(): Set<String> = idLines(KEY_ANNOUNCED_ROOTS).toSet()
+    fun announcedRoots(): Set<String> = idLines(prefs, KEY_ANNOUNCED_ROOTS).toSet()
 
     fun setAnnouncedRoots(ids: Set<String>) {
         prefs.edit().putString(KEY_ANNOUNCED_ROOTS, ids.sorted().joinToString("\n")).apply()
@@ -148,8 +148,6 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putBoolean(KEY_FIND_GAMES_OFFERED, true).apply()
     }
 
-    private fun idLines(key: String): List<String> =
-        prefs.getString(key, null).orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
     fun folderGrantPending(): Boolean = !prefs.getBoolean(KEY_FOLDER_EXPLAINED, false)
 
@@ -624,6 +622,18 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     }
 
     companion object {
+        /**
+         * The found folders as stored, for [LibraryFilesProvider]: Android starts a provider before
+         * the application, so a player resuming into a cold Foldcade reads them without a [SessionStore].
+         */
+        fun foundRoots(prefs: SharedPreferences): List<String> = idLines(prefs, KEY_FOUND_ROOTS)
+
+        private fun idLines(prefs: SharedPreferences, key: String): List<String> =
+            prefs.getString(key, null).orEmpty().lines().map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+
+        /** The preferences file [SessionStore] reads. */
+        const val PREFS_NAME = "foldcade"
+
         private fun safeMusicVolume(volume: Float): Float =
             if (volume.isFinite()) volume.coerceIn(0f, 1f) else HomeMusicSetting.DEFAULT_VOLUME
 

@@ -31,7 +31,10 @@ class LibraryFilesProvider : DocumentsProvider() {
 
     private fun fileOf(documentId: String): File {
         if (!Environment.isExternalStorageManager()) throw SecurityException("Found folders need all-files access")
-        val roots = (context?.applicationContext as? FoldcadeApp)?.foundRootIds().orEmpty()
+        // Read as stored, not from the application: a player can resume into a cold Foldcade whose
+        // first look for folders has not finished, and its grant must still open the game.
+        val prefs = context?.getSharedPreferences(SessionStore.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val roots = prefs?.let(SessionStore::foundRoots).orEmpty()
         if (roots.none { containsFolder(it, documentId) }) throw FileNotFoundException(documentId)
         val volume = documentId.substringBefore(':')
         val dir = volumeDir(volume) ?: throw FileNotFoundException(documentId)
