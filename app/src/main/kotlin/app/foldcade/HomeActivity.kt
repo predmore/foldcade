@@ -260,8 +260,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 FolderPurpose.Firmware -> {
                     val player = settingsPlayerId?.let(foldcade.plugins::player)
                     settingsPlayerId = null
-                    val document = folderDocumentId(uri.toString())
-                    if (!containsFolder(document, "primary:RetroArch/system")) {
+                    val docs = AndroidSaveDocuments(contentResolver)
+                    val destination = withContext(Dispatchers.IO) {
+                        pickedFirmwareFolder(uri.toString(), AndroidSaveFolderFinder(foldcade)::isDirectory) { root ->
+                            if (docs.createFolder(root, "system")) docs.children(root, "")?.firstOrNull { it.isFolder && it.name == "system" }?.uri else null
+                        }
+                    }
+                    if (destination == null) {
                         if (player != null) foldcade.shell.showDialog(app.foldcade.language.firmwareFolderDialog(
                             player.id, app.foldcade.language.FirmwareCopy.wrongFolder, hostScreen()))
                         return@launch
@@ -269,7 +274,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
                         foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
                     } else if (player != null) {
+                        val previous = foldcade.store.playerFirmwareFolder("retroarch")
+                        foldcade.store.setPlayerFirmwareFolder("retroarch", destination)
                         foldcade.dismissNotice("firmware-folder:${player.saveFolderId()}")
+                        if (previous != null && previous != destination) foldcade.releaseUnusedFolderGrant(previous,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     }
                 }
                 FolderPurpose.Settings -> {
@@ -2136,7 +2145,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private suspend fun prepareFirmwareFiles(player: Player, game: Game, target: LaunchTarget, generation: Int, firmwareBackendId: String): Boolean {
         val libraries = foldcade.store.libraryFolders().map { it.uri }
         val interested = withContext(Dispatchers.IO) {
-            player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
+            firmwareRequired(player, game)
         }
         if (!interested) return true
         val progress = TileDownload(foldcade.shell, game.backendId, game.remoteKey)
@@ -2205,7 +2214,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             LaunchSaves(
                 foldcade.playerSaves,
                 foldcade.plugins,
-                firmwareAvailable = { picked, game -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked)) },
+                firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
                 onSpots = { game, picked, spots ->
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(game, picked.id, spots.isNotEmpty()) }
@@ -2985,7 +2994,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         settingsPlayerId = player.id
         if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
             folderPurpose = FolderPurpose.Firmware
-            folderPicker.launch(Uri.parse(app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
+            folderPicker.launch(Uri.parse(foldcade.store.playerFirmwareFolder("retroarch") ?: app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
         } else {
             folderPurpose = FolderPurpose.Settings
             openSaveFolderPicker(player)
@@ -3407,9 +3416,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (player is EdenPlayer) return uri
         val narrowed = withContext(Dispatchers.IO) {
             val holder = player as? SaveFolderHolder ?: return@withContext uri
-            if (player is RetroArchPlayer && folderDocumentId(uri.toString()) == "primary:RetroArch") {
+            if (player is RetroArchPlayer && folderDocumentId(uri.toString()).substringAfter(':').substringAfterLast('/').equals("RetroArch", true)) {
                 val docs = AndroidSaveDocuments(contentResolver)
                 if (!docs.createFolder(uri.toString(), "saves")) return@withContext null
+                return@withContext docs.children(uri.toString(), "")?.firstOrNull { it.isFolder && it.name == "saves" }?.uri?.let(Uri::parse)
             }
             AndroidSaveFolderFinder(foldcade).finder(player, emptyList()).narrow(holder, uri.toString())?.let(Uri::parse)
                 // A folder the provider cannot list yet passes, as it always has.

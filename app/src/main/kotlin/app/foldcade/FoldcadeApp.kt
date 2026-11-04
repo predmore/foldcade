@@ -194,7 +194,7 @@ class FoldcadeApp : Application() {
     }
 
     /** Launch-only firmware state; source versions avoid repeated BIOS reads and ZIP copies. */
-    internal val playerFirmware: PlayerFirmware by lazy { PlayerFirmware(this, playerSaves) }
+    internal val playerFirmware: PlayerFirmware by lazy { PlayerFirmware(this, playerSaves) { store.playerFirmwareFolder("retroarch") } }
 
     /**
      * Host-owned secrets. Plugins do not open this store.

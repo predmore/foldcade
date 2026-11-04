@@ -165,7 +165,7 @@ class RetroArchPlayer internal constructor(
     }
 
     /** Metadata-only warm-launch check. Existing files stay the player's choice. */
-    fun needsFirmwareFolder(game: Game, firmwareOffered: Boolean): Boolean = firmwareOffered || requiredBios(game).isNotEmpty()
+    fun needsFirmwareFolder(game: Game): Boolean = requiredBios(game).isNotEmpty()
 
     fun hasFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = hasScanningPs1Bios(folder) || firmwareList()
         .groupBy { it.path.substringBeforeLast('/', "") }.any { (parent, files) ->
@@ -176,7 +176,8 @@ class RetroArchPlayer internal constructor(
     /** Reject unrelated images before reading a multi-megabyte header, while recognizing renamed dumps. */
     fun localFirmwareCandidate(name: String, size: Long): Boolean {
         val leaf = biosLeaf(name) ?: return false
-        if (size <= 0) return true
+        if (size <= 0) return false
+        if (firmwareKeepsFolders) return blueMsxPath(name) != null
         if (firmwareList().any { it.path.substringAfterLast('/').equals(leaf, true) }) return true
         return when (platformId) {
             "playstation" -> size == 524288L || size == 0x3E66F0L

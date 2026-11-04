@@ -32,8 +32,10 @@ class FirmwareSourceCacheTest {
             val reopened = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version) { error("copied again after restart") }
             assertEquals(first, reopened)
             assertEquals(listOf<Byte>(1, 2, 3, 4), reopened.readBytes().toList())
+            java.io.File(first.parentFile, "bios.zip.local-version").writeText("old-stamp")
             val changed = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version.copy(modifiedMillis = 12346)) { it.writeBytes(byteArrayOf(5, 6, 7, 8)) }
             assertEquals(listOf<Byte>(5, 6, 7, 8), changed.readBytes().toList())
+            assertFalse(java.io.File(first.parentFile, "bios.zip.local-version").exists())
         } finally { root.deleteRecursively() }
     }
 

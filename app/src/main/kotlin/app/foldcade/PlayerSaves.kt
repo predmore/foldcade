@@ -67,7 +67,7 @@ internal data class SaveEntry(
     val isFolder: Boolean,
 )
 
-/** One document directly inside a folder. [size] is zero when the provider does not say. */
+/** One document directly inside a folder. [size] is -1 when the provider does not say. */
 internal data class SaveChild(
     val name: String,
     val uri: String,
@@ -100,6 +100,9 @@ internal interface SaveDocuments {
 
     fun read(uri: String): ByteArray?
 
+    /** Whole-file read within a caller's limit, including when the provider has no size. */
+    fun readBounded(uri: String, limit: Int): ByteArray? = read(uri)?.takeIf { it.size <= limit }
+
     /** Replaces the whole document. */
     fun write(uri: String, bytes: ByteArray)
 
@@ -114,6 +117,9 @@ internal interface SaveDocuments {
 
     /** Firmware hashing participates in the launch's interruptible worker. */
     fun firmwareMd5(uri: String): String? = md5(uri)
+
+    /** Android publishes new files only. Older document adapters retain their marked-write contract. */
+    val firmwareNewOnly: Boolean get() = false
 
     /**
      * Copies [sourceUri] onto [targetUri], replacing it. False when the source
@@ -432,12 +438,12 @@ internal class PlayerSaves(
             FirmwareOffer(file.name, header)
         }
         val chosen = try {
-            player.chooseFirmware(offers).map { it.name }.toSet()
+            player.chooseFirmware(offers).toSet()
         } catch (_: Exception) {
             return emptyList()
         }
         val destinations = try {
-            named.zip(offers).filter { (file, _) -> file.name in chosen }.mapNotNull { (file, offer) ->
+            named.zip(offers).filter { (_, offer) -> offer in chosen }.mapNotNull { (file, offer) ->
                 player.firmwareDestination(offer)?.takeIf { savePathParts(it) != null }?.let { Triple(file, it, offer.header) }
             }.distinctBy { it.second }
         } catch (_: Exception) { return emptyList() }
@@ -457,8 +463,9 @@ internal class PlayerSaves(
 
     private fun placeFirmwareFile(folder: String, name: String, source: String, header: ByteArray): Boolean {
         val key = "firmware:$folder/$name"
-        val hash = docs.firmwareMd5(source) ?: return false
         val existing = findFirmwareFile(docs, folder, name)
+        if (existing != null && docs.firmwareNewOnly) return false
+        val hash = docs.firmwareMd5(source) ?: return false
         docs.publishFirmware(folder, name, source, hash, header)?.let { return it }
         val currentHash = existing?.let(docs::md5)
         val mine = marks.mark(key)
@@ -713,8 +720,17 @@ internal class PlayerSaves(
      * asked with no folder when none is picked. Never writes. A throw means it
      * does not say, so the launch goes on.
      */
-    fun firmwareFolder(player: Player, folderUri: String): app.foldcade.api.plugin.SaveFolderAccess =
-        folderAccess(player, folderUri, allowWrite = false)
+    fun firmwareFolder(player: Player, folderUri: String): app.foldcade.api.plugin.SaveFolderAccess {
+        val access = folderAccess(player, folderUri, allowWrite = false)
+        return object : app.foldcade.api.plugin.SaveFolderAccess by access {
+            // One metadata snapshot per check. Publication gets a fresh access afterward.
+            private val listings = HashMap<String, List<app.foldcade.api.plugin.SaveFolderEntry>?>()
+            override fun list(path: String): List<app.foldcade.api.plugin.SaveFolderEntry>? {
+                if (listings.containsKey(path)) return listings[path]
+                return access.list(path).also { listings[path] = it }
+            }
+        }
+    }
 
     fun missingFirmware(player: Player, game: Game, folderUri: String): List<String> =
         player.missingFirmware(game, folderAccess(player, folderUri, allowWrite = false))
@@ -1094,13 +1110,16 @@ private fun readCapped(input: InputStream, limit: Long): ByteArray? {
 internal fun md5Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("MD5").digest(bytes).joinToString("") { "%02x".format(it) }
 
-private fun digestHex(input: InputStream, interruptible: Boolean = false): String {
+internal fun digestHex(input: InputStream, interruptible: Boolean = false, limit: Long = Long.MAX_VALUE): String {
     val digest = MessageDigest.getInstance("MD5")
     val buffer = ByteArray(64 * 1024)
+    var total = 0L
     while (true) {
         if (interruptible) checkFirmwareCancellation()
         val count = input.read(buffer)
         if (count < 0) break
+        total += count
+        check(total <= limit) { "firmware exceeds size limit" }
         digest.update(buffer, 0, count)
     }
     return digest.digest().joinToString("") { "%02x".format(it) }
@@ -1111,12 +1130,15 @@ internal fun checkFirmwareCancellation() {
 }
 
 /** Bounded chunks let B stop a local BIOS copy as well as a core download. */
-internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream) {
+internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream, limit: Long = MAX_FIRMWARE_BYTES) {
     val buffer = ByteArray(64 * 1024)
+    var total = 0L
     while (true) {
         checkFirmwareCancellation()
         val count = input.read(buffer)
         if (count < 0) break
+        total += count
+        check(total <= limit) { "firmware exceeds size limit" }
         checkFirmwareCancellation()
         output.write(buffer, 0, count)
     }
@@ -1125,9 +1147,13 @@ internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream)
 
 /** A firmware file at most this large is held so a failed write can put it back. */
 private const val FIRMWARE_RESTORE_LIMIT = 16 * 1024 * 1024
+internal const val MAX_FIRMWARE_BYTES = 512L * 1024 * 1024
 
 /** [SaveDocuments] over a [ContentResolver] and the tree grants the user gave. */
 internal class AndroidSaveDocuments(private val resolver: ContentResolver) : SaveDocuments {
+    override val firmwareNewOnly = true
+    override fun readBounded(uri: String, limit: Int): ByteArray? =
+        if (limit < 0) null else head(uri, if (limit == Int.MAX_VALUE) limit else limit + 1)?.takeIf { it.size <= limit }
     override fun displayName(uri: String): String? = try {
         resolver.query(Uri.parse(uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
@@ -1219,7 +1245,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
     }
 
     override fun firmwareMd5(uri: String): String? = try {
-        resolver.openInputStream(Uri.parse(uri))?.use { digestHex(it, interruptible = true) }
+        resolver.openInputStream(Uri.parse(uri))?.use { digestHex(it, interruptible = true, limit = MAX_FIRMWARE_BYTES) }
     } catch (cancelled: CancellationException) { throw cancelled }
     catch (_: Exception) { checkFirmwareCancellation(); null }
 
@@ -1427,7 +1453,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
         return cursor.use {
             buildList {
                 while (it.moveToNext()) {
-                    val size = if (it.isNull(3)) 0L else it.getLong(3)
+                    val size = if (it.isNull(3)) -1L else it.getLong(3)
                     val modified = if (it.isNull(4)) 0L else it.getLong(4)
                     add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR, size, modified))
                 }

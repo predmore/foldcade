@@ -130,7 +130,7 @@ internal fun RetroArchPlayer.hasScanningPs1Bios(folder: SaveFolderAccess): Boole
         else -> return false
     }
     return folder.list("").orEmpty().any { file ->
-        !file.isFolder && file.size in sizes && folder.read(file.name, 0L, 1)?.isNotEmpty() == true
+        !file.isFolder && file.size in sizes
     }
 }
 
@@ -142,8 +142,7 @@ internal fun RetroArchPlayer.missingBios(game: Game, folder: SaveFolderAccess): 
             .firstOrNull { !it.isFolder && it.name.equals(path.substringAfterLast('/'), true) }
         // Hashes identify incoming dumps. An already installed alternate BIOS
         // revision is the player's choice, not proof that the BIOS is missing.
-        entry != null && (entry.size <= 0 || spec?.size == null || entry.size == spec.size) &&
-            folder.read(listOf(path.substringBeforeLast('/', ""), entry.name).filter { it.isNotEmpty() }.joinToString("/"), 0L, 1)?.isNotEmpty() == true
+        entry != null && entry.size != 0L && (entry.size < 0 || spec?.size == null || entry.size == spec.size)
     } }.map { if (firmwareCore() == "picodrive" && platformId == "sega-cd") it.first() else it.joinToString(" / ") }
 
 /** Full bytes for hashing normal BIOS dumps, plus one byte to reject oversized lookalikes. */

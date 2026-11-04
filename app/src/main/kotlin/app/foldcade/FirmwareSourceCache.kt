@@ -40,6 +40,9 @@ internal fun reuseFirmwareArchive(
     try {
         copy(partial)
         check(version.size <= 0 || partial.length() == version.size)
+        // A replacement may have the same length and filesystem millisecond.
+        // Force the local unpacker to stamp this new complete source again.
+        java.io.File(folder, "$name.local-version").delete()
         check(partial.renameTo(target))
         if (version.modifiedMillis > 0) stamp.writeText(expected) else stamp.delete()
         return target

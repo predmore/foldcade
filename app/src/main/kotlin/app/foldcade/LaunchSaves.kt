@@ -18,7 +18,7 @@ import kotlin.coroutines.cancellation.CancellationException
 internal class LaunchSaves(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
-    private val firmwareAvailable: (Player, Game) -> Boolean = { player, _ -> canPrepareFirmware(player) },
+    private val firmwareAvailable: (Player, Game, LaunchTarget) -> Boolean = { player, game, _ -> firmwareRequired(player, game) && canPrepareFirmware(player) },
     private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
@@ -35,7 +35,7 @@ internal class LaunchSaves(
             val firmware = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
             }
-            val available = firmware && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, route.saves) }
+            val available = firmware && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, route.saves, local) }
             if (!available) {
                 return PreparedLaunch(local, emptyList(), route.saves)
             }
@@ -139,7 +139,7 @@ internal class LaunchSaves(
         // A declared folder is not necessarily a reachable slot for this game
         // (for example an ARMSX2 file card). Tell the library what the shell can
         // actually place, so its activity cannot claim an unreachable save synced.
-        val available = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, owner) }
+        val available = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, owner, local) }
         val syncingPlayer = playerForSaveSpots(player, owner, spots, allowFirmware = available)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)

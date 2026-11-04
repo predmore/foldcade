@@ -40,9 +40,9 @@ internal fun isZipFile(path: Path): Boolean {
  * Files already unpacked from [zip], named `<zip name>/<file name>`. Empty when
  * the unpack is missing, only partly written, or belongs to an older copy of [zip].
  */
-internal fun checkedZipMembers(zip: Path, keepFolders: Boolean = false): List<Pair<String, Path>> {
-    if (!unpackMatches(zip, keepFolders)) return emptyList()
-    val dir = unpackDir(zip, keepFolders)
+internal fun checkedZipMembers(zip: Path, keepFolders: Boolean = false, selectionKey: String = ""): List<Pair<String, Path>> {
+    if (!unpackMatches(zip, keepFolders, selectionKey)) return emptyList()
+    val dir = unpackDir(zip, keepFolders, selectionKey)
     val zipName = zip.fileName.toString()
     val files = Files.walk(dir).use { stream -> stream.collect(java.util.stream.Collectors.toList()) }
     return files
@@ -69,12 +69,14 @@ internal fun unpackFirmwareZip(
     totalCap: Long = FIRMWARE_ZIP_TOTAL_CAP,
     planning: () -> Unit = {},
     keepFolders: Boolean = false,
+    selectionKey: String = "",
+    memberFilter: ((String, Long) -> Boolean)? = null,
     wants: (String) -> Boolean,
 ): List<Pair<String, Path>> {
     val lock = unpackLock(zip)
     lock.lock()
     try {
-        return unpackFirmwareZipLocked(zip, fileCap, totalCap, planning, keepFolders, wants)
+        return unpackFirmwareZipLocked(zip, fileCap, totalCap, planning, keepFolders, selectionKey, memberFilter, wants)
     } finally {
         lock.unlock()
     }
@@ -86,19 +88,21 @@ private fun unpackFirmwareZipLocked(
     totalCap: Long,
     planning: () -> Unit,
     keepFolders: Boolean,
+    selectionKey: String,
+    memberFilter: ((String, Long) -> Boolean)?,
     wants: (String) -> Boolean,
 ): List<Pair<String, Path>> {
-    if (unpackMatches(zip, keepFolders)) return checkedZipMembers(zip, keepFolders)
+    if (unpackMatches(zip, keepFolders, selectionKey)) return checkedZipMembers(zip, keepFolders, selectionKey)
     if (!isZipFile(zip) || !Files.isRegularFile(zipMarker(zip))) return emptyList()
-    val work = unpackWork(zip, keepFolders)
+    val work = unpackWork(zip, keepFolders, selectionKey)
     var published = false
     try {
         // Before planning, so a zip replaced while the entries are chosen is not stamped as this one.
         val stamp = Files.readAllBytes(zipMarker(zip))
-        when (val plan = planZip(zip, wants, fileCap, totalCap, planning, keepFolders)) {
+        when (val plan = planZip(zip, wants, fileCap, totalCap, planning, keepFolders, memberFilter)) {
             ZipPlan.None -> return emptyList()
             ZipPlan.Skip -> {
-                dropUnpack(zip, keepFolders)
+                dropUnpack(zip, keepFolders, selectionKey)
                 return emptyList()
             }
             is ZipPlan.Unpack -> {
@@ -112,12 +116,12 @@ private fun unpackFirmwareZipLocked(
                     return emptyList()
                 }
                 // Unpublished until the stamp is written, so a copy cut short is not offered.
-                Files.deleteIfExists(unpackMarker(zip, keepFolders))
-                deleteTree(unpackDir(zip, keepFolders))
-                moveDir(work, unpackDir(zip, keepFolders))
-                writeDurably(unpackMarker(zip, keepFolders), stamp)
+                Files.deleteIfExists(unpackMarker(zip, keepFolders, selectionKey))
+                deleteTree(unpackDir(zip, keepFolders, selectionKey))
+                moveDir(work, unpackDir(zip, keepFolders, selectionKey))
+                writeDurably(unpackMarker(zip, keepFolders, selectionKey), stamp)
                 published = true
-                return checkedZipMembers(zip, keepFolders)
+                return checkedZipMembers(zip, keepFolders, selectionKey)
             }
         }
     } catch (cancelled: CancellationException) {
@@ -146,6 +150,7 @@ private fun planZip(
     totalCap: Long,
     planning: () -> Unit,
     keepFolders: Boolean,
+    memberFilter: ((String, Long) -> Boolean)?,
 ): ZipPlan {
     if (Files.size(zip) > totalCap) return ZipPlan.Skip
     val zipName = zip.fileName.toString()
@@ -162,6 +167,7 @@ private fun planZip(
             // The first of each flattened name. A later copy is not a second file.
             if (!seen.add(fileName)) continue
             val size = entry.size
+            if (memberFilter != null && !memberFilter("$zipName/$fileName", size)) continue
             if (size > fileCap) return ZipPlan.Skip
             if (size >= 0) {
                 total += size
@@ -240,18 +246,18 @@ private fun zipLeaf(entryName: String): String? {
     return name
 }
 
-private fun unpackMatches(zip: Path, keepFolders: Boolean): Boolean {
-    val marker = unpackMarker(zip, keepFolders)
+private fun unpackMatches(zip: Path, keepFolders: Boolean, selectionKey: String): Boolean {
+    val marker = unpackMarker(zip, keepFolders, selectionKey)
     val stamp = zipMarker(zip)
-    val dir = unpackDir(zip, keepFolders)
+    val dir = unpackDir(zip, keepFolders, selectionKey)
     if (!Files.isRegularFile(marker) || !Files.isRegularFile(stamp) || !Files.isDirectory(dir)) return false
     return Files.readAllBytes(marker).contentEquals(Files.readAllBytes(stamp))
 }
 
-private fun dropUnpack(zip: Path, keepFolders: Boolean) {
-    deleteTree(unpackWork(zip, keepFolders))
-    deleteTree(unpackDir(zip, keepFolders))
-    Files.deleteIfExists(unpackMarker(zip, keepFolders))
+private fun dropUnpack(zip: Path, keepFolders: Boolean, selectionKey: String) {
+    deleteTree(unpackWork(zip, keepFolders, selectionKey))
+    deleteTree(unpackDir(zip, keepFolders, selectionKey))
+    Files.deleteIfExists(unpackMarker(zip, keepFolders, selectionKey))
 }
 
 private fun deleteTree(path: Path) {
@@ -272,11 +278,12 @@ private val unpackLocks = ConcurrentHashMap<Path, ReentrantLock>()
 private fun unpackLock(zip: Path): ReentrantLock =
     unpackLocks.computeIfAbsent(zip.toAbsolutePath().normalize()) { ReentrantLock() }
 
-private fun unpackDir(zip: Path, keepFolders: Boolean): Path = zip.resolveSibling(zip.fileName.toString() + if (keepFolders) ".unpacked-tree" else ".unpacked")
+private fun unpackDir(zip: Path, keepFolders: Boolean, selectionKey: String): Path = zip.resolveSibling(zip.fileName.toString() + (if (keepFolders) ".unpacked-tree" else ".unpacked") +
+    if (selectionKey.isEmpty()) "" else "." + java.security.MessageDigest.getInstance("SHA-256").digest(selectionKey.toByteArray()).take(8).joinToString("") { "%02x".format(it) })
 
-private fun unpackWork(zip: Path, keepFolders: Boolean): Path = unpackDir(zip, keepFolders).resolveSibling(unpackDir(zip, keepFolders).fileName.toString() + ".partial")
+private fun unpackWork(zip: Path, keepFolders: Boolean, selectionKey: String): Path = unpackDir(zip, keepFolders, selectionKey).resolveSibling(unpackDir(zip, keepFolders, selectionKey).fileName.toString() + ".partial")
 
-private fun unpackMarker(zip: Path, keepFolders: Boolean): Path = unpackDir(zip, keepFolders).resolveSibling(unpackDir(zip, keepFolders).fileName.toString() + ".verified")
+private fun unpackMarker(zip: Path, keepFolders: Boolean, selectionKey: String): Path = unpackDir(zip, keepFolders, selectionKey).resolveSibling(unpackDir(zip, keepFolders, selectionKey).fileName.toString() + ".verified")
 
 private fun zipMarker(zip: Path): Path = zip.resolveSibling(zip.fileName.toString() + ".verified")
 
@@ -284,8 +291,37 @@ private fun zipMarker(zip: Path): Path = zip.resolveSibling(zip.fileName.toStrin
  * A player-owned local archive copied into Foldcade's private cache. Stamp the
  * complete copy, then use the same CRC-checked bounded unpacker as RomM.
  */
-fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, totalCap: Long = FIRMWARE_ZIP_TOTAL_CAP, wants: (String) -> Boolean): List<Pair<String, Path>> {
-    if (!isZipFile(zip)) return emptyList()
+fun unpackLocalFirmwareZip(
+    zip: Path, keepFolders: Boolean = false, totalCap: Long = FIRMWARE_ZIP_TOTAL_CAP,
+    selectionKey: String = "", candidate: ((String, Long) -> Boolean)? = null,
+    wants: (String) -> Boolean,
+): List<Pair<String, Path>> {
+    require(candidate == null || selectionKey.isNotEmpty())
+    val lock = unpackLock(zip)
+    lock.lock()
+    try {
+        if (!stampLocalFirmwareZip(zip)) return emptyList()
+        // Different cores keep separate filtered trees of the same complete source.
+        return unpackFirmwareZip(zip, keepFolders = keepFolders, totalCap = totalCap,
+            selectionKey = selectionKey, memberFilter = candidate, wants = wants)
+            .takeIf { files -> files.sumOf { Files.size(it.second) } <= totalCap }.orEmpty()
+    } finally { lock.unlock() }
+}
+
+/** The private complete copy is immutable while its source stamp matches. Never rehash it on reuse. */
+internal fun stampLocalFirmwareZip(zip: Path, hash: (Path) -> ByteArray = ::hashFirmwareZip): Boolean {
+    if (!Files.isRegularFile(zip)) return false
+    val version = "${Files.size(zip)}:${Files.getLastModifiedTime(zip).toMillis()}"
+    val marker = zip.resolveSibling(zip.fileName.toString() + ".local-version")
+    if (Files.isRegularFile(zipMarker(zip)) && Files.size(zipMarker(zip)) == 32L &&
+        runCatching { if (Files.size(marker) <= 128) String(Files.readAllBytes(marker), Charsets.UTF_8) else null }.getOrNull() == version) return true
+    if (!isZipFile(zip)) return false
+    writeDurably(zipMarker(zip), hash(zip))
+    writeDurably(marker, version.toByteArray())
+    return true
+}
+
+private fun hashFirmwareZip(zip: Path): ByteArray {
     val digest = java.security.MessageDigest.getInstance("SHA-256")
     Files.newInputStream(zip).use { input ->
         val buffer = ByteArray(64 * 1024)
@@ -296,9 +332,5 @@ fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, totalCap: Lo
             digest.update(buffer, 0, count)
         }
     }
-    writeDurably(zipMarker(zip), digest.digest())
-    // A caller may have a smaller remaining budget than a previous launch.
-    // The existing unpack is still valid, but only offer it if it fits this call.
-    return unpackFirmwareZip(zip, keepFolders = keepFolders, totalCap = totalCap, wants = wants)
-        .takeIf { files -> files.sumOf { Files.size(it.second) } <= totalCap }.orEmpty()
+    return digest.digest()
 }

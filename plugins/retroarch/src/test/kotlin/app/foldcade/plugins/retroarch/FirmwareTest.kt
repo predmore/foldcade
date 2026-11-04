@@ -52,7 +52,7 @@ class FirmwareTest {
         val folder = object : app.foldcade.api.plugin.SaveFolderAccess {
             override fun list(path: String) = if (path.isEmpty()) listOf(app.foldcade.api.plugin.SaveFolderEntry("sega_101.bin", false, 524288)) else emptyList()
             override fun read(path: String, limit: Int): ByteArray? = error("must not hash the player's existing BIOS")
-            override fun read(path: String, offset: Long, length: Int) = if (path == "sega_101.bin") byteArrayOf(1) else null
+            override fun read(path: String, offset: Long, length: Int): ByteArray? = error("installed BIOS needs metadata only")
             override fun write(path: String, bytes: ByteArray) = false
             override fun createFolder(path: String) = false
             override fun moveToBackup(path: String) = false
@@ -64,7 +64,7 @@ class FirmwareTest {
     private fun installed(name: String, size: Long) = object : app.foldcade.api.plugin.SaveFolderAccess {
         override fun list(path: String) = if (path.isEmpty()) listOf(app.foldcade.api.plugin.SaveFolderEntry(name, false, size)) else emptyList()
         override fun read(path: String, limit: Int): ByteArray? = error("must not hash an installed BIOS")
-        override fun read(path: String, offset: Long, length: Int) = if (path == name) byteArrayOf(1) else null
+        override fun read(path: String, offset: Long, length: Int): ByteArray? = error("installed BIOS needs metadata only")
         override fun write(path: String, bytes: ByteArray) = false
         override fun createFolder(path: String) = false
         override fun moveToBackup(path: String) = false
@@ -113,11 +113,10 @@ class FirmwareTest {
     @Test fun optionalBiosDoesNotNagForAFolderOnCartridgeLaunches() {
         for (system in listOf("nes", "snes", "game-boy", "game-boy-advance", "genesis", "psp")) {
             val p = player(system)
-            assertFalse(system, p.needsFirmwareFolder(game(system), firmwareOffered = false))
-            assertTrue(system, p.needsFirmwareFolder(game(system), firmwareOffered = true))
+            assertFalse(system, p.needsFirmwareFolder(game(system)))
         }
-        assertTrue(player("sega-cd").needsFirmwareFolder(game("sega-cd"), firmwareOffered = false))
-        assertFalse(player("playstation", "mednafen_psx").needsFirmwareFolder(game("playstation"), firmwareOffered = false))
+        assertTrue(player("sega-cd").needsFirmwareFolder(game("sega-cd")))
+        assertFalse(player("playstation", "mednafen_psx").needsFirmwareFolder(game("playstation")))
     }
 
     @Test fun metadataFilteringStillFindsRenamedBiosWithUnusualDocumentedSizes() {
@@ -126,6 +125,8 @@ class FirmwareTest {
         assertFalse(color.localFirmwareCandidate("unrelated-image.dat", 4194304))
         assertTrue(player("playstation").localFirmwareCandidate("renamed.dump", 524288))
         assertFalse(player("playstation").localFirmwareCandidate("ps2-dump.bin", 4194304))
+        assertFalse(player("playstation").localFirmwareCandidate("scph5501.bin", -1))
+        assertFalse(player("playstation").localFirmwareCandidate("scph5501.bin", 0))
     }
 
     @Test fun openBiosAndBundledAssetsNeverBlockWorkingCores() {

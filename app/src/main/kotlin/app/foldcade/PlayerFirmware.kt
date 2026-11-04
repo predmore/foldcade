@@ -25,26 +25,28 @@ internal fun canUseRommFirmware(backendId: String, connected: Boolean): Boolean 
     connected && backendId == app.foldcade.plugins.romm.ROMM_LIBRARY_ID
 
 /** Launch-only I/O. Every source is the player's storage or a checked RomM download. */
-internal class PlayerFirmware(private val context: Context, private val saves: PlayerSaves) {
+internal class PlayerFirmware(private val context: Context, private val saves: PlayerSaves, private val systemFolder: () -> String? = { null }) {
     private val docs = AndroidSaveDocuments(context.contentResolver)
     private val android = AndroidSaveFolderFinder(context)
     private val sourceCache = FirmwareSourceCache()
 
     /** Payloads wait until their destination is writable; an unknown folder is optional setup. */
-    fun canPlace(player: Player, game: Game, picked: String?): Boolean {
-        if (player.firmwareFileName("bios.bin") == null && player.firmwareFileName("PS3UPDAT.PUP") == null) return false
+    fun canPlace(player: Player, game: Game, picked: String?, target: LaunchTarget): Boolean {
+        if (!firmwareRequired(player, game)) return false
         val grants = firmwareGrants(player)
-        val finder = android.finder(player, grants)
-        if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
-            return listOf("primary:RetroArch/system", "primary:RetroArch").any { id ->
-                finder.reachable(id)?.let(android::isDirectory) == true
-            }
-        }
-        val folder = declaredFolder(player, game, picked) ?: return false
-        if (!android.canReach(folder, grants)) return false
+        val folder = if (player is RetroArchPlayer) retroArchFolder(grants) else
+            declaredFolder(player, game, picked)?.takeIf { android.canReach(it, grants) }
+        folder ?: return false
         val access = saves.firmwareFolder(player, folder)
-        return player.needsFirmware(access)
+        return if (player is RetroArchPlayer) player.missingFirmware(firmwareGame(game, target, docs), access).isNotEmpty()
+            else player.needsFirmware(access)
     }
+
+    private fun retroArchFolder(grants: List<SaveFolderGrant>): String? =
+        findFirmwareFolder(systemFolder(), grants, android::isDirectory, ::systemUnder)
+
+    private fun systemUnder(root: String): String? = if (docs.createFolder(root, "system"))
+        docs.children(root, "")?.firstOrNull { it.isFolder && it.name == "system" }?.uri else null
 
     private fun declaredFolder(player: Player, game: Game, picked: String?): String? = picked ?:
         if (player is app.foldcade.api.plugin.HostedSaveFolder) null else player.saveDeclarations(game).firstNotNullOfOrNull { it.locationUri }
@@ -60,60 +62,17 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
     }
 
     fun prepare(player: Player, game: Game, target: LaunchTarget, picked: String?, libraries: List<String>, onCopy: () -> Unit = {}): FirmwareResult {
-        val grants = firmwareGrants(player)
-        val finder = android.finder(player, grants)
-        val retro = player is RetroArchPlayer
-        val melon = player is app.foldcade.plugins.melonds.MelonDsPlayer
-        val systemFolder = retro || melon
-        val folder = if (systemFolder) {
-            finder.reachable("primary:RetroArch/system")?.takeIf { android.isDirectory(it) }
-                ?: finder.reachable("primary:RetroArch")?.let { root ->
-                    if (docs.createFolder(root, "system")) docs.children(root, "")?.firstOrNull { it.isFolder && it.name == "system" }?.uri else null
-                }
-        } else declaredFolder(player, game, picked)?.takeIf(android::isDirectory)
-        val place = if (systemFolder) "RetroArch/system" else when (player.id) {
+        val grants by lazy { firmwareGrants(player) }
+        val place = if (player is RetroArchPlayer) systemFolder()?.let(::folderPathLabel) ?: "RetroArch/system" else when (player.id) {
             "duckstation" -> (picked?.let(::folderPathLabel) ?: "Android/data/com.github.stenzek.duckstation/files") + "/bios"
             "armsx2" -> (picked?.let(::folderPathLabel) ?: "Android/data/com.armsx2/files") + "/bios"
             "aps3e" -> "aPS3e/firmware"
             else -> player.displayName
         }
-        // An uninterested player must not scan storage on launch.
-        if (player.firmwareFileName("bios.bin") == null && player.firmwareFileName("PS3UPDAT.PUP") == null) {
-            return FirmwareResult(emptyList(), emptyList(), false, place)
-        }
-        // RomM's display title omits region tags. The actual document name is
-        // what tells region-sensitive disc cores which BIOS this game needs.
-        val fileName = when (target) {
-            is LaunchTarget.ContentUri -> docs.displayName(target.uri)
-            is LaunchTarget.SharedFile -> target.path.substringAfterLast('/')
-            else -> null
-        }
-        val launchGame = fileName?.let { game.copy(label = it) } ?: game
-        val sources = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
-        val offerFolder = !melon && (player !is RetroArchPlayer || player.needsFirmwareFolder(launchGame, sources.isNotEmpty()))
-        if (folder == null) {
-            // Do not assume a missing BIOS from an ungranted folder. Offer one
-            // shared RetroArch pick in R1; melonDS needs no external setup.
-            return FirmwareResult(emptyList(), emptyList(), offerFolder, place)
-        }
-        val access = saves.firmwareFolder(player, folder)
-        if (access.list("") == null) return FirmwareResult(emptyList(), emptyList(), offerFolder, place)
-        if (!player.needsFirmware(access)) return FirmwareResult(emptyList(), emptyList(), false, place)
-        val needed = player.missingFirmware(launchGame, access)
-        if (retro && needed.isEmpty() && (player as RetroArchPlayer).hasFirmware(access)) {
-            return FirmwareResult(emptyList(), emptyList(), false, place)
-        }
-        val scan = needed.isNotEmpty() || when {
-            retro -> !(player as RetroArchPlayer).hasFirmware(access)
-            melon -> listOf("bios7.bin", "bios9.bin", "firmware.bin").any { leaf ->
-                access.list("nds").orEmpty().none { !it.isFolder && it.name == leaf && it.size > 0 }
-            }
-            else -> player is app.foldcade.plugins.aps3e.Aps3ePlayer
-        }
-        val local = if (scan) localFirmware(player, libraries, grants, onCopy) else emptyList()
-        val uri = (target as? LaunchTarget.ContentUri)?.uri ?: "content://firmware/launch"
-        val written = saves.placeFirmware(player, launchGame, LaunchTarget.ContentUri(uri, firmware = sources + local), folder, onWrite = onCopy)
-        return FirmwareResult(written, saves.missingFirmware(player, launchGame, folder), false, place)
+        return prepareFirmware(player, game, target, place, docs, saves,
+            folder = { if (player is RetroArchPlayer) retroArchFolder(grants)
+                else declaredFolder(player, game, picked)?.takeIf(android::isDirectory) },
+            local = { localFirmware(player, libraries, grants, onCopy) }, onCopy = onCopy)
     }
 
     private fun localFirmware(player: Player, libraries: List<String>, grants: List<SaveFolderGrant>, onCopy: () -> Unit): List<FirmwareBytes> {
@@ -156,13 +115,12 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
                 }
                 else {
                     val offeredName = if (player.firmwareKeepsFolders) name else child.name
-                    if (player.firmwareFileName(offeredName) != null && child.size <= LOCAL_FILE_CAP) files.putIfAbsent(child.uri, child.copy(name = offeredName))
+                    if (player.firmwareFileName(offeredName) != null && child.size in 1..LOCAL_FILE_CAP) files.putIfAbsent(child.uri, child.copy(name = offeredName))
                 }
             }
         }
         roots.forEach { visit(it, 0) }
         val playerKey = player.id + if (player is RetroArchPlayer) ":${player.pinnedCore}:${player.cores.activePackage()?.let(player::coreChoice)}" else ""
-        val destinations = HashSet<String>()
         var bytesRead = 0L
         var archiveBytes = 0L
         var unpackedBytes = 0L
@@ -171,6 +129,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
             val version = FirmwareSourceVersion(file.size, file.modifiedMillis)
             sourceCache.get(key, version)?.takeIf { cached -> cached.all { docs.length(it.contentUri) != null } }
                 ?.let { return@flatMap it }
+            if (file.size !in 1..LOCAL_FILE_CAP) return@flatMap emptyList()
             val archiveName = file.name.endsWith(".zip", ignoreCase = true)
             if (archiveName && file.size > LOCAL_ARCHIVE_CAP || !archiveName && !localCandidate(player, file)) {
                 sourceCache.put(key, version, emptyList())
@@ -185,9 +144,11 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
                 }
                 val remaining = LOCAL_UNPACK_CAP - unpackedBytes
                 val unpacked = unpackLocalFirmwareZip(zip.toPath(), keepFolders = player.firmwareKeepsFolders,
-                    totalCap = remaining) { player.firmwareFileName(it) != null }
+                    totalCap = remaining, selectionKey = "v2:$playerKey", candidate = { name, size ->
+                        size in 1..LOCAL_FILE_CAP && player.firmwareFileName(name) != null && localCandidate(player, SaveChild(name, "", false, size))
+                    }) { player.firmwareFileName(it) != null }
                 unpackedBytes += unpacked.sumOf { it.second.toFile().length() }
-                listOf(file) + unpacked.map { (name, path) -> SaveChild(name,
+                unpacked.map { (name, path) -> SaveChild(name,
                         FileProvider.getUriForFile(context, "${context.packageName}.romm.cache", path.toFile()).toString(), false,
                         path.toFile().length(), path.toFile().lastModified()) }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -205,12 +166,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
             if (complete) sourceCache.put(key, version, accepted)
             accepted
         }
-        return chosen.filter { file ->
-            // Selection was checked above (or for this unchanged source version).
-            // A destination is stable for a cached source; reading its short header
-            // here is deferred to the common placement path instead of retaining bytes.
-            destinations.add(file.name)
-        }
+        return chosen.distinctBy { it.contentUri }
     }
 
     private fun localCandidate(player: Player, file: SaveChild): Boolean = when (player) {
