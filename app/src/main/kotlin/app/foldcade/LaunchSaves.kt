@@ -45,7 +45,16 @@ internal class LaunchSaves(
                     val slots = player.saveDeclarations(route.saves).map { it.slot }.toSet()
                     for (owner in candidates) {
                         val held = plugins.saves(owner.backendId, owner).slots.any { it.slot in slots }
-                        val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot in slots }
+                        val incoming = held || try {
+                            plugins.serverSaves(owner.backendId, owner, player).any { it.slot in slots }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            if (player is EdenPlayer) throw failure
+                            // Unsupported PSP/GC images still play offline. No destination means
+                            // no negotiation, writes or acknowledgement; the unsynced signal stays.
+                            false
+                        }
                         if (incoming) {
                             if (player is EdenPlayer) throw UnresolvedSaveNotPlaced(needsEdenUser = !saves.edenHasUser(player, owner))
                             throw UnresolvedSaveNotPlaced()
@@ -56,12 +65,13 @@ internal class LaunchSaves(
                 } catch (failure: SaveNotPlaced) {
                     throw failure
                 } catch (_: Exception) {
-                    // An unavailable listing cannot prove there is no incoming save.
+                    // Failed local reads, and an unresolved Eden profile's remote check,
+                    // cannot prove there is no incoming save.
                     throw UnresolvedSaveNotPlaced()
                 }
             }
-            // With no incoming save, first boot can make a user and save. Return
-            // discovery hands it over without a server baseline from this launch.
+            // No known incoming save: allow first-run setup or unsupported-image offline play.
+            // Return discovery can hand over a resolved save without a baseline from this launch.
             return PreparedLaunch(local, emptyList(), route.saves)
         }
         val setup = mutableListOf<String>()

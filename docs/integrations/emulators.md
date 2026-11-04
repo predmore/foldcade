@@ -176,6 +176,8 @@ Foldcade looks for the **PSP** folder using access it already holds, including *
 
 Game saves sync through RomM as slot `savedata`. ISO, CSO v1, and PBP games are identified by `DISC_ID` in `PARAM.SFO`; a save archive contains all matching `SAVEDATA/<DISC_ID…>/` folders, under their original names. Games with unreadable metadata or nonstandard save-directory IDs cannot be matched by filename or title. Their files stay on the device; unsupported game images show **Saves not syncing**. Save states do not sync.
 
+If Foldcade cannot resolve a save destination and already holds or finds an incoming save, choose **Play without syncing** to start that launch anyway. When RomM is unreachable and Foldcade holds no incoming save, the game can play offline without syncing; the amber warnings stay.
+
 ## Dolphin: GameCube
 
 Install [official Dolphin](https://dolphin-emu.org/download/) and open it once. Its default **GameCube Slot A Device: GCI Folder** keeps one or more `.gci` files per game. Foldcade syncs those for **ISO/GCM** games through RomM, in slot `gci`. It reads the game ID and region from the disc, then checks the GCI headers. Other games on that card and Slot B stay untouched.
@@ -186,7 +188,7 @@ A zip contains the game's `.gci` files directly at the root, matching Argosy's G
 
 Raw `.raw` cards can hold many games and are never uploaded as one game's save. With a raw card or custom card settings, Settings shows **Set up** and the game's saves remain not syncing. In Dolphin, choose **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder**. Games won't see saves on the old card in this mode. Keep the old card; Dolphin's desktop **Memory Card Manager** can export its saves as GCI files into the matching `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A` folder. Foldcade never changes Dolphin's card settings for you.
 
-**RVZ, Wii NAND saves, custom card paths, per-game card overrides, MMJR, Slot B, and save states do not sync yet.** They still launch through their existing paths. An unresolved game keeps the amber not-syncing signal. If a server save is waiting and Foldcade cannot resolve a destination, the launch offers **Play without syncing** for that launch; both copies stay intact.
+**RVZ, Wii NAND saves, custom card paths, per-game card overrides, MMJR, Slot B, and save states do not sync yet.** They still launch through their existing paths. An unresolved game keeps the amber not-syncing signal. If Foldcade holds or finds an incoming save and cannot resolve a destination, the launch offers **Play without syncing** for that launch; both copies stay intact. When only RomM's listing is unavailable, the game can play offline without syncing and the amber warnings stay.
 
 The [candidate audit](../save-sync-candidates.md) lists the next emulators and verified formats.
 

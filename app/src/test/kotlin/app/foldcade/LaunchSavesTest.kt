@@ -43,6 +43,7 @@ class LaunchSavesTest {
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.held = player.saveDeclarations(owner).map { it.slot }
+            server.listingFails = true
             val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local) }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
             val pending = unresolvedSaveHold(failure as SaveNotPlaced) { PendingBackendLaunch("Game", player.platformId, GameRoute("tile", owner, owner), player.id, Panel.Bottom) }
@@ -52,11 +53,56 @@ class LaunchSavesTest {
         }
     }
 
-    @Test fun unresolvedPspAndGameCubeCanPlayOfflineOnlyAfterTheExplicitPerLaunchChoice() = runBlocking {
+    @Test fun unresolvedPspAndGameCubePlayOfflineWithoutNegotiationAndRemainUnreachable() = runBlocking {
         val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.listingFails = true
+            var reported = false
+            val listingCount = server.listings
+            val prepared = LaunchSaves(saves, plugins, onSpots = { _, picked, spots ->
+                assertEquals(player.id, picked.id)
+                assertTrue(spots.isEmpty())
+                reported = true
+            }) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local)
+            assertTrue(reported)
+            assertEquals(local, prepared.target)
+            assertTrue(prepared.spots.isEmpty())
+            assertEquals(listingCount + 1, server.listings)
+            assertTrue(server.calls.isEmpty())
+            assertTrue(docs.files.isEmpty())
+            assertTrue(marks.isEmpty())
+            assertTrue(awaiting.isEmpty())
+        }
+    }
+
+    @Test fun anUnavailableFirstListingDoesNotHideAnIncomingSaveFromAnotherCopy() = runBlocking {
+        val second = owner.copy(backendId = "folder", remoteKey = "other")
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        for (player in players) {
+            (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+            server.listingFails = true
+            folder.remoteSlot = player.saveDeclarations(second).single().slot
+            val listingCount = server.listings
+            val secondListingCount = folder.listings
+            val failure = runCatching {
+                LaunchSaves(saves, plugins) { awaiting += it }
+                    .prepare(GameRoute("tile", owner, owner, servers = listOf(owner, second)), player, local)
+            }.exceptionOrNull()
+            assertTrue(failure is UnresolvedSaveNotPlaced)
+            assertEquals(listingCount + 1, server.listings)
+            assertEquals(secondListingCount + 1, folder.listings)
+            assertTrue(server.calls.isEmpty())
+            assertTrue(folder.calls.isEmpty())
+            assertTrue(docs.files.isEmpty())
+        }
+    }
+
+    @Test fun unresolvedPspAndGameCubeWithAnIncomingSaveRequireTheExplicitPerLaunchChoice() = runBlocking {
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        for (player in players) {
+            (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+            server.remoteSlot = player.saveDeclarations(owner).single().slot
             val route = GameRoute("tile", owner, owner)
             val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, player, local) }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
@@ -273,6 +319,7 @@ class LaunchSavesTest {
         var declarationsSeen: List<SaveDeclaration> = emptyList()
         var listingFails = false
         var listings = 0
+        var remoteSlot: String? = null
         var firmware: List<FirmwareBytes> = emptyList()
 
         override suspend fun connect() = Unit
@@ -285,7 +332,7 @@ class LaunchSavesTest {
         override suspend fun serverSaves(game: Game, player: Player?): List<app.foldcade.api.plugin.ServerSave> {
             listings++
             if (listingFails) throw java.io.IOException("offline")
-            return emptyList()
+            return remoteSlot?.let { listOf(app.foldcade.api.plugin.ServerSave("1", it, player?.id, null, 0, 1, false, null)) }.orEmpty()
         }
 
         override suspend fun prepareLaunch(game: Game, player: Player): Placement {

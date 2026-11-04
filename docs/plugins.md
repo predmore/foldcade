@@ -112,7 +112,7 @@ Dolphin reads the six-byte GameCube ID, GC magic, and region word at `0x458` fro
 
 Both plugins use `SaveFolderHolder`, so Settings tiles, Y › Saves, standing R1 notices and amber save-health marks follow the existing paths. A held exact writable grant for an emulator's suggested DocumentsProvider root can now be reused after its markers pass. Ambiguous provider/shared copies ask. PPSSPP checks `PSP` and the package-specific external `files/PSP` folders, requiring PPSSPP's exact grant for automatic shared discovery; markers are `SAVEDATA`/`SYSTEM`. Dolphin checks legacy `dolphin-emu` and its external `files` folder, or reuses its own `org.dolphinemu.dolphinemu.user` root; markers are `GC`/`Config`. Its own provider is suggested because all-files access cannot open `Android/data`.
 
-An unresolved PSP/GameCube destination is reported as not syncing. An incoming save, or an unavailable server listing while a destination is unresolved, blocks the sync launch without acknowledging the save. The usual per-launch **Play without syncing** remains available. Remote saves stay visible in Y › Saves.
+An unresolved PSP/GameCube destination is reported as not syncing. A locally held or listed incoming save blocks the sync launch without acknowledging the save; the per-launch **Play without syncing** remains available. If only the remote listing is unavailable, the game can play offline without negotiating, placing or acknowledging saves. Other library copies are still checked, and the unsynced signals stay. Eden retains its stricter check when its destination and remote listing are both unresolved. Remote saves stay visible in Y › Saves.
 
 ### Table or own plugin
 
