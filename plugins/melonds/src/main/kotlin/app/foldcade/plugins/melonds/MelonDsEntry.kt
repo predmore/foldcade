@@ -99,6 +99,7 @@ class MelonDsPlayer : Player, SaveFolderHolder {
     }
 
     override val firmwareHeaderSize: Int = 512 * 1024 + 1
+    override val firmwareKeepsFolders: Boolean = true
 
     override fun firmwareDestination(offer: app.foldcade.api.plugin.FirmwareOffer): String? {
         val hash = java.security.MessageDigest.getInstance("MD5").digest(offer.header)
@@ -106,10 +107,11 @@ class MelonDsPlayer : Player, SaveFolderHolder {
         if (hash == "df692a80a5b1bc90728bc3dfc76cd948") return "nds/bios7.bin"
         if (hash == "a392174eb3e572fed6447e956bde4b25") return "nds/bios9.bin"
         val leaf = firmwareFileName(offer.name)?.lowercase() ?: return null
+        val dsi = offer.name.split('/').dropLast(1).any { it.contains("dsi", ignoreCase = true) }
         return when {
             leaf in setOf("dsi_bios7.bin", "bios7.bin") && offer.header.size == 65536 -> "dsi/bios7.bin"
             leaf in setOf("dsi_bios9.bin", "bios9.bin") && offer.header.size == 65536 -> "dsi/bios9.bin"
-            leaf == "dsi_firmware.bin" && offer.header.size == 131072 -> "dsi/firmware.bin"
+            (leaf == "dsi_firmware.bin" || dsi && leaf == "firmware.bin") && offer.header.size == 131072 -> "dsi/firmware.bin"
             leaf == "firmware.bin" && offer.header.size in setOf(131072, 262144, 524288) -> "nds/firmware.bin"
             leaf in setOf("dsi_nand.bin", "nand.bin") && offer.header.isNotEmpty() -> "dsi/nand.bin"
             else -> null

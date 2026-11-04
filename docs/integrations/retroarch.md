@@ -50,24 +50,24 @@ Foldcade uses the first core in each row that is installed. If none is installed
 
 ## BIOS
 
-Foldcade brings your BIOS from the platform's RomM firmware or your local BIOS folders into `RetroArch/system` before launch. Choose the **RetroArch** folder once when Foldcade asks: that single grant covers both `system` and `saves`. Existing grants on that folder, `system`, or optional all-files access are reused. A previous grant on `saves` alone cannot reach its sibling `system`; choose **RetroArch** once in Settings › Emulators › RetroArch to extend it. A BIOS already there is never overwritten.
+Foldcade brings your BIOS from the platform's RomM firmware or your local BIOS folders into `RetroArch/system` before launch. Choose the **RetroArch** folder once when Foldcade asks: that single grant covers both `system` and `saves`. Existing grants on that folder, `system`, or optional all-files access are reused. A previous grant on `saves` alone cannot reach its sibling `system`; choose **RetroArch** once in Settings › Emulators › RetroArch to extend it. A BIOS already there is never overwritten. A working set skips local discovery; unchanged local files and ZIPs reuse their verified source versions, so later launches do not copy the archive again.
 
-Names, required flags and known MD5s are pinned from [libretro-core-info](https://github.com/libretro/libretro-core-info/tree/eac3a2784d428444aa2bd472039b5c5540141af1), in the plugin's `firmware.tsv`. Hashes identify renamed dumps and verify documented BIOS files. The installed or selected core determines the files. A required BIOS that is missing stops launch with its exact filename and `RetroArch/system` as the place to put it. “PlayStation BIOS ready” appears in R1 after placement.
+Names, required flags and known MD5s are pinned from [libretro-core-info](https://github.com/libretro/libretro-core-info/tree/eac3a2784d428444aa2bd472039b5c5540141af1), in the plugin's `firmware.tsv`. Hashes identify and verify incoming renamed dumps; documented sizes filter unrelated files. Existing installed BIOS revisions stay the player's choice, so an alternate checksum alone never blocks a working emulator. The installed or selected core determines the files. When Foldcade can read that folder, a missing required BIOS stops launch with its exact filename and `RetroArch/system` as the place to put it. Without access to the folder, games keep launching and R1 offers the optional folder pick; Foldcade cannot assume an emulator lacks its own BIOS. “PlayStation BIOS ready” appears in R1 after placement.
 
 | Core / system | BIOS in `system` |
 | --- | --- |
 | Genesis Plus GX / PicoDrive, Sega CD | `bios_CD_U.bin`, `bios_CD_E.bin`, `bios_CD_J.bin` (the disc's region) |
 | Beetle PCE Fast / PCE, PC Engine CD | `syscard3.pce` |
 | PCSX-ReARMed / SwanStation / Beetle PSX | `scph5500.bin`, `scph5501.bin`, `scph5502.bin`; supported alternatives follow the core info. PCSX-ReARMed also accepts `scph1001.bin`, `scph7001.bin` and `scph101.bin` from its [BIOS documentation](https://docs.libretro.com/library/pcsx_rearmed/#bios), and can use HLE. |
-| YabaSanshiro / Yabause | `saturn_bios.bin` (optional with Yabause) |
+| YabaSanshiro / Yabause | `saturn_bios.bin`; YabaSanshiro also accepts `sega_101.bin` or `mpr-17933.bin` |
 | Beetle Saturn | `sega_101.bin` (Japan), `mpr-17933.bin` (US/Europe) |
 | Flycast | `dc/dc_boot.bin` (optional) |
-| gpSP | `gba_bios.bin` |
+| gpSP | `gba_bios.bin` (optional in Auto; the core includes an open BIOS) |
 | Beetle Lynx / Handy | `lynxboot.img` (optional with Handy) |
 | Gearcoleco | `colecovision.rom` |
 | blueMSX | `Databases/msxromdb.xml`, `Machines/Shared Roms/MSX.rom` |
 
-Other optional files use the paths in the pinned core info too. blueMSX receives the complete `Databases` and `Machines` trees from a folder or ZIP; their core-info entries represent those bundles. Sega CD and PC Engine BIOS entries are optional for the shared cartridge/CD cores, but required when playing CD games. The user's own RomM or storage are the only sources; Foldcade never downloads BIOS from the internet.
+Current upstream core behavior supplements stale required flags: gpSP can use its open BIOS, and PPSSPP warns about missing assets while continuing to play. These files never become Foldcade launch gates. Other optional files use the paths in the pinned core info too. blueMSX receives the complete `Databases` and `Machines` trees from a folder or ZIP; their core-info entries represent those bundles. Sega CD and PC Engine BIOS entries are optional for the shared cartridge/CD cores, but required when playing CD games. The user's own RomM or storage are the only sources; Foldcade never downloads BIOS from the internet.
 
 ## Saves
 

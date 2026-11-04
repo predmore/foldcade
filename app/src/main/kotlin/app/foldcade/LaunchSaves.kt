@@ -16,6 +16,7 @@ import kotlin.coroutines.cancellation.CancellationException
 internal class LaunchSaves(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
+    private val firmwareAvailable: (Player, Game) -> Boolean = { player, _ -> canPrepareFirmware(player) },
     private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
@@ -32,7 +33,8 @@ internal class LaunchSaves(
             val firmware = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
             }
-            if (!firmware) {
+            val available = firmware && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, route.saves) }
+            if (!available) {
                 return PreparedLaunch(local, emptyList(), route.saves)
             }
             // Firmware is independent of save sync. Ask the library with no save slots.
@@ -120,7 +122,8 @@ internal class LaunchSaves(
         // A declared folder is not necessarily a reachable slot for this game
         // (for example an ARMSX2 file card). Tell the library what the shell can
         // actually place, so its activity cannot claim an unreachable save synced.
-        val syncingPlayer = playerForSaveSpots(player, owner, spots)
+        val available = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, owner) }
+        val syncingPlayer = playerForSaveSpots(player, owner, spots, allowFirmware = available)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
             if (outside.slots.isNotEmpty()) {
@@ -174,7 +177,7 @@ internal open class SaveNotPlaced : Exception("save could not be placed")
 internal class EdenSaveNotPlaced(val needsUser: Boolean) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
-internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {
+internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>, allowFirmware: Boolean = true): Player {
     val supportsSync = player.supportsSaveSync(game)
     val reachable = spots.map { it.slot }.toSet()
     val declarations = player.saveDeclarations(game).map { slot ->
@@ -182,6 +185,13 @@ internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot
     }
     return object : Player by player {
         override fun supportsSaveSync(game: Game) = supportsSync
+        override fun firmwareFileName(name: String): String? =
+            if (allowFirmware && canPrepareFirmware(player)) player.firmwareFileName(name) else null
         override fun saveDeclarations(game: Game) = declarations
     }
 }
+
+/** Do not fetch large BIOS archives until a standalone player's data folder is reachable. */
+internal fun canPrepareFirmware(player: Player): Boolean = player !is app.foldcade.api.plugin.SaveFolderHolder ||
+    player.hasSaveFolder() || player is app.foldcade.plugins.retroarch.RetroArchPlayer ||
+    player is app.foldcade.plugins.melonds.MelonDsPlayer

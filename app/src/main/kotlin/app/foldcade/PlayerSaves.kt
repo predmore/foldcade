@@ -70,6 +70,7 @@ internal data class SaveChild(
     val uri: String,
     val isFolder: Boolean,
     val size: Long,
+    val modifiedMillis: Long = 0L,
 )
 
 /** Positioned reads from one open document, held only for the duration of a health check. */
@@ -134,7 +135,7 @@ internal interface SaveDocuments {
     fun renameFirmware(uri: String, leaf: String): String? = null
 
     /** Atomic publication of a new firmware file; null asks for the compatibility writer. */
-    fun publishFirmware(folder: String, name: String, source: String, hash: String): Boolean? = null
+    fun publishFirmware(folder: String, name: String, source: String, hash: String, header: ByteArray): Boolean? = null
 
     fun length(uri: String): Long? = read(uri)?.size?.toLong()
 
@@ -379,7 +380,7 @@ internal class PlayerSaves(
      * longer needs firmware writes nothing. An exception from the player writes
      * nothing. Returns the names written; the launch coordinator checks requirements.
      */
-    fun placeFirmware(player: Player, game: Game, target: LaunchTarget, folder: String? = null): List<String> {
+    fun placeFirmware(player: Player, game: Game, target: LaunchTarget, folder: String? = null, onWrite: () -> Unit = {}): List<String> {
         val firmware = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
         if (firmware.isEmpty()) return emptyList()
         val into = folder ?: if (player is HostedSaveFolder) return emptyList() else try {
@@ -424,23 +425,26 @@ internal class PlayerSaves(
         }
         val destinations = try {
             named.zip(offers).filter { (file, _) -> file.name in chosen }.mapNotNull { (file, offer) ->
-                player.firmwareDestination(offer)?.takeIf { savePathParts(it) != null }?.let { file to it }
+                player.firmwareDestination(offer)?.takeIf { savePathParts(it) != null }?.let { Triple(file, it, offer.header) }
             }.distinctBy { it.second }
         } catch (_: Exception) { return emptyList() }
-        return destinations.mapNotNull { (file, name) ->
+        return destinations.mapNotNull { (file, name, header) ->
             try {
-                if (synchronized(SaveFileLock) { placeFirmwareFile(into, name, file.contentUri) }) name else null
+                if (synchronized(SaveFileLock) {
+                    if (docs.find(into, name) == null) onWrite()
+                    placeFirmwareFile(into, name, file.contentUri, header)
+                }) name else null
             } catch (_: Exception) {
                 null
             }
         }
     }
 
-    private fun placeFirmwareFile(folder: String, name: String, source: String): Boolean {
+    private fun placeFirmwareFile(folder: String, name: String, source: String, header: ByteArray): Boolean {
         val key = "firmware:$folder/$name"
         val hash = docs.md5(source) ?: return false
         val existing = docs.find(folder, name)
-        docs.publishFirmware(folder, name, source, hash)?.let { return it }
+        docs.publishFirmware(folder, name, source, hash, header)?.let { return it }
         val currentHash = existing?.let(docs::md5)
         val mine = marks.mark(key)
         // Unreadable, or not the bytes the shell wrote or left: the user's own, which stays.
@@ -683,6 +687,9 @@ internal class PlayerSaves(
      * asked with no folder when none is picked. Never writes. A throw means it
      * does not say, so the launch goes on.
      */
+    fun firmwareFolder(player: Player, folderUri: String): app.foldcade.api.plugin.SaveFolderAccess =
+        folderAccess(player, folderUri, allowWrite = false)
+
     fun missingFirmware(player: Player, game: Game, folderUri: String): List<String> =
         player.missingFirmware(game, folderAccess(player, folderUri, allowWrite = false))
 
@@ -1195,8 +1202,8 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
     override fun renameFirmware(uri: String, leaf: String): String? =
         DocumentsContract.renameDocument(resolver, Uri.parse(uri), leaf)?.toString()
 
-    override fun publishFirmware(folder: String, name: String, source: String, hash: String): Boolean =
-        publishNewFirmware(this, folder, name, source, hash)
+    override fun publishFirmware(folder: String, name: String, source: String, hash: String, header: ByteArray): Boolean =
+        publishNewFirmware(this, folder, name, source, hash, header)
 
     override fun length(uri: String): Long? = try {
         val parsed = Uri.parse(uri)
@@ -1342,11 +1349,12 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
                 DocumentsContract.buildDocumentUriUsingTree(tree, child.id).toString(),
                 child.isFolder,
                 child.size,
+                child.modifiedMillis,
             )
         }
     }
 
-    private class Child(val id: String, val name: String, val isFolder: Boolean, val size: Long)
+    private class Child(val id: String, val name: String, val isFolder: Boolean, val size: Long, val modifiedMillis: Long)
 
     /** The children of [parentId]. Throws when the provider does not answer, unlike [child]. */
     private fun listChildren(tree: Uri, parentId: String): List<Child> {
@@ -1355,6 +1363,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
         )
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
         val cursor = resolver.query(children, columns, null, null, null) ?: error("save folder could not be listed")
@@ -1362,7 +1371,8 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
             buildList {
                 while (it.moveToNext()) {
                     val size = if (it.isNull(3)) 0L else it.getLong(3)
-                    add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR, size))
+                    val modified = if (it.isNull(4)) 0L else it.getLong(4)
+                    add(Child(it.getString(0), it.getString(1), it.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR, size, modified))
                 }
             }
         }
@@ -1370,7 +1380,7 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
 }
 
 /** Publishes only a complete, checked new image. The player's existing image always wins. */
-internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: String, source: String, hash: String): Boolean {
+internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: String, source: String, hash: String, header: ByteArray = byteArrayOf()): Boolean {
     if (docs.find(folder, name) != null) return false
     val parent = name.substringBeforeLast('/', "")
     val leaf = name.substringAfterLast('/')
@@ -1380,6 +1390,9 @@ internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: Strin
     var renamed: String? = null
     try {
         if (!docs.copyFirmware(source, temp) || docs.md5(temp) != hash) return false
+        // A background RomM refresh can replace the source after selection.
+        // Publish only the image whose bytes selected this core's destination.
+        if (header.isNotEmpty() && docs.head(temp, header.size)?.contentEquals(header) != true) return false
         if (docs.find(folder, name) != null) return false
         renamed = docs.renameFirmware(temp, leaf) ?: return false
         if (docs.displayName(renamed) != leaf || docs.md5(renamed) != hash) return false

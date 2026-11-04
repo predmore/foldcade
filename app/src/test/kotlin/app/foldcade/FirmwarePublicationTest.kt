@@ -14,6 +14,7 @@ class FirmwarePublicationTest {
         override fun find(folderUri: String, name: String) = files.keys.firstOrNull { it == "$folderUri/$name" || names[it] == name }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = byteArrayOf(); names[it] = name.substringAfterLast('/') }
         override fun read(uri: String) = files[uri]
+        override fun head(uri: String, size: Int) = files[uri]?.take(size)?.toByteArray()
         override fun write(uri: String, bytes: ByteArray) { files[uri] = bytes }
         override fun delete(uri: String): Boolean { names.remove(uri); return files.remove(uri) != null }
         override fun copy(sourceUri: String, targetUri: String): Boolean {
@@ -51,6 +52,15 @@ class FirmwarePublicationTest {
         assertEquals(setOf("source", "folder/bios.bin"), docs.files.keys)
         assertEquals("new player", String(docs.files.getValue("folder/bios.bin")))
     }
+    @Test fun aRefreshedSourceCannotBePublishedUnderANameChosenFromItsOldBytes() {
+        val docs = Documents()
+        val selected = docs.files.getValue("source").copyOf()
+        docs.files["source"] = "a newer image".toByteArray()
+        assertFalse(publishNewFirmware(docs, "folder", "bios.bin", "source", md5Hex(docs.files.getValue("source")), selected))
+        assertEquals(setOf("source"), docs.files.keys)
+        assertTrue(publishNewFirmware(docs, "folder", "bios.bin", "source", md5Hex(docs.files.getValue("source")), docs.files.getValue("source")))
+    }
+
     @Test fun providerWhoseOpaqueIdSurvivesRenameKeepsThePublishedBios() {
         val docs = Documents().apply { opaque = true }
         assertTrue(publish(docs))

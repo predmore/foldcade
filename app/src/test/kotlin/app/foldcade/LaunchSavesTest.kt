@@ -72,6 +72,20 @@ class LaunchSavesTest {
     }
 
     @Test
+    fun aMissingDataGrantDoesNotDownloadAnUnusedArchiveBeforePlaying() = runBlocking {
+        val firmware = object : Player by Melon, app.foldcade.api.plugin.SaveFolderHolder {
+            override fun bindSaveFolder(contentUri: String) = Unit
+            override fun hasSaveFolder() = false
+            override fun firmwareFileName(name: String) = "bios/$name"
+        }
+        val prepared = LaunchSaves(saves, plugins) { awaiting += it }
+            .prepare(GameRoute("tile", play, owner), firmware, local, syncing = false)
+        assertTrue(server.calls.isEmpty())
+        assertEquals(local, prepared.target)
+        assertEquals(null, playerForSaveSpots(firmware, owner, emptyList()).firmwareFileName("bios.zip"))
+    }
+
+    @Test
     fun aSaveTheFolderCopyMadeGoesToTheServerFirst() = runBlocking {
         docs.files["$SAVES/Tetris DS (USA).sav"] = "played in the folder".toByteArray()
         server.toPlace = "server copy"

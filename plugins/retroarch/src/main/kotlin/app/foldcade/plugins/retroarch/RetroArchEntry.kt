@@ -164,6 +164,28 @@ class RetroArchPlayer internal constructor(
         return leaf
     }
 
+    /** Metadata-only warm-launch check. Existing files stay the player's choice. */
+    fun hasFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = firmwareList()
+        .groupBy { it.path.substringBeforeLast('/', "") }.any { (parent, files) ->
+            val names = files.mapTo(HashSet()) { it.path.substringAfterLast('/') }
+            folder.list(parent).orEmpty().any { !it.isFolder && it.name in names && it.size > 0 }
+        }
+
+    /** Reject unrelated images before reading a multi-megabyte header, while recognizing renamed dumps. */
+    fun localFirmwareCandidate(name: String, size: Long): Boolean {
+        val leaf = biosLeaf(name) ?: return false
+        if (size <= 0) return true
+        if (firmwareList().any { it.path.substringAfterLast('/').equals(leaf, true) }) return true
+        return when (platformId) {
+            "playstation" -> size == 524288L || size == 0x3E66F0L
+            "sega-cd" -> size == 131072L
+            "saturn" -> size == 524288L
+            "pc-engine-cd" -> size == 262144L
+            else -> firmwareList().any { it.size == size } ||
+                firmwareList().any { it.md5 != null && it.size == null } && size in 128..4194304
+        }
+    }
+
     override val firmwareKeepsFolders: Boolean get() = firmwareCore() == "bluemsx"
 
     override val firmwareHeaderSize: Int = FIRMWARE_HEADER_SIZE

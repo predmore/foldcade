@@ -257,10 +257,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     }
                 }
                 FolderPurpose.Firmware -> {
+                    val player = settingsPlayerId?.let(foldcade.plugins::player)
+                    settingsPlayerId = null
+                    val document = folderDocumentId(uri.toString())
+                    if (!containsFolder(document, "primary:RetroArch/system")) {
+                        if (player != null) foldcade.shell.showDialog(app.foldcade.language.firmwareFolderDialog(
+                            player.id, app.foldcade.language.FirmwareCopy.wrongFolder, hostScreen()))
+                        return@launch
+                    }
                     if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(uri, flags) }) {
                         foldcade.shell.present(playerNotice(Copy.saveFolderTitle, Copy.folderGrantFailed, hostScreen()))
+                    } else if (player != null) {
+                        foldcade.dismissNotice("firmware-folder:${player.saveFolderId()}")
                     }
-                    settingsPlayerId = null
                 }
                 FolderPurpose.Settings -> {
                     val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
@@ -390,6 +399,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ShowSaveSync -> showSaveSync(effect.playerId)
             is Effect.ShowPlayerSetup -> showPlayerSetup(effect.playerId)
+            is Effect.ChooseFirmwareFolder -> foldcade.plugins.player(effect.playerId)?.let(::openFirmwareFolder)
             is Effect.OpenPlayer -> {
                 cancelLaunches()
                 openPlayerApp(effect.playerId)
@@ -2079,19 +2089,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         if (!interested) return true
         val progress = TileDownload(foldcade.shell, game.backendId, game.remoteKey)
-        progress.onStep(RomProgress.Receiving(0L, null))
         val result = try {
             kotlinx.coroutines.runInterruptible(Dispatchers.IO) {
-                PlayerFirmware(foldcade, foldcade.playerSaves).prepare(player, game, target, foldcade.playerSaveFolder(player), libraries)
+                foldcade.playerFirmware.prepare(player, game, target, foldcade.playerSaveFolder(player), libraries) {
+                    progress.onStep(RomProgress.Receiving(0L, null))
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             withContext(Dispatchers.Main.immediate) {
-                if (launchCurrent(generation)) foldcade.shell.showDialog(playerNotice(app.foldcade.language.FirmwareCopy.title,
-                    app.foldcade.language.FirmwareCopy.unreachable(player.displayName), hostScreen()))
+                if (launchCurrent(generation)) foldcade.postNotice(app.foldcade.language.FoldNotice(
+                    id = "firmware-folder:${player.saveFolderId()}", title = app.foldcade.language.FirmwareCopy.folderNoticeTitle(player.displayName),
+                    body = app.foldcade.language.FirmwareCopy.unreachable(player.displayName),
+                    postedMillis = System.currentTimeMillis(), firmwarePlayerId = player.id))
             }
-            return false
+            return true
         } finally {
             withContext(NonCancellable) { progress.finish() }
         }
@@ -2106,13 +2119,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     packageName = player.packageNames.firstOrNull(),
                 ))
             }
+            if (!result.needsFolder) foldcade.dismissNotice("firmware-folder:${player.saveFolderId()}")
             when {
                 result.needsFolder -> {
-                    foldcade.shell.showDialog(app.foldcade.language.firmwareFolderDialog(player.id,
-                        app.foldcade.language.FirmwareCopy.folder(if (player is app.foldcade.plugins.melonds.MelonDsPlayer) "RetroArch" else player.displayName, result.place, result.missing), hostScreen()))
-                    false
+                    foldcade.postNotice(app.foldcade.language.FoldNotice(
+                        id = "firmware-folder:${player.saveFolderId()}", title = app.foldcade.language.FirmwareCopy.folderNoticeTitle(player.displayName),
+                        body = app.foldcade.language.FirmwareCopy.folder(
+                            if (player is RetroArchPlayer) "RetroArch" else player.displayName, result.place),
+                        postedMillis = System.currentTimeMillis(), firmwarePlayerId = player.id))
+                    true
                 }
-                result.missing.isNotEmpty() -> {
+                result.blocksLaunch -> {
                     foldcade.shell.showDialog(playerNotice(app.foldcade.language.FirmwareCopy.title,
                         app.foldcade.language.FirmwareCopy.missing(result.missing, result.place), hostScreen()))
                     false
@@ -2131,6 +2148,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             LaunchSaves(
                 foldcade.playerSaves,
                 foldcade.plugins,
+                firmwareAvailable = { picked, game -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked)) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
                 onSpots = { game, picked, spots ->
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(game, picked.id, spots.isNotEmpty()) }
@@ -2585,12 +2603,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             DialogKind.FirmwareFolder -> {
                 if (effect.button == DialogButton.ChooseSaveFolder) {
-                    val player = foldcade.plugins.player(effect.subject ?: return) ?: return
-                    folderPurpose = if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) FolderPurpose.Firmware else FolderPurpose.Settings
-                    settingsPlayerId = player.id
-                    if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
-                        folderPicker.launch(Uri.parse(app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
-                    } else openSaveFolderPicker(player)
+                    foldcade.plugins.player(effect.subject ?: return)?.let(::openFirmwareFolder)
                 }
             }
             DialogKind.SaveFolder -> if (pendingBackend != null) {
@@ -2898,7 +2911,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         openSaveFolderPicker(foldcade.plugins.player(playerId))
     }
 
-    /** Opens the save-folder picker at once, at the start the last look found, so a second press cannot open another. */
+    /** Optional BIOS setup opens from R1 without holding or restarting a game launch. */
+    private fun openFirmwareFolder(player: Player) {
+        settingsPlayerId = player.id
+        if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
+            folderPurpose = FolderPurpose.Firmware
+            folderPicker.launch(Uri.parse(app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
+        } else {
+            folderPurpose = FolderPurpose.Settings
+            openSaveFolderPicker(player)
+        }
+    }
+
+    /** Opens the save-folder picker at the start the last look found. */
     private fun openSaveFolderPicker(player: Player?) {
         folderPicker.launch(foldcade.saveFolderStart(player)?.let(Uri::parse))
     }
@@ -3279,6 +3304,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri.toString())
             }
             foldcade.store.setPlayerSaveFolder(key, uri.toString())
+            foldcade.dismissNotice("firmware-folder:$key")
             if (previous != null && previous != uri.toString()) {
                 foldcade.releaseUnusedFolderGrant(previous, read or write)
             }

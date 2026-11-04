@@ -1192,7 +1192,7 @@ fun panelHints(model: PickerModel): List<HintKey>? {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
                 val roles = actionFaces(model.faceMap)
-                if (notice.savePlayerId != null || notice.settingsCategory != null) {
+                if (notice.savePlayerId != null || notice.settingsCategory != null || notice.firmwarePlayerId != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
                 if (notice.id == ROMM_SIGN_IN_NOTICE) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
@@ -1503,6 +1503,7 @@ sealed interface Effect {
     data object RequestHome : Effect
     data object OpenAllFilesAccess : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
+    data class ChooseFirmwareFolder(val playerId: String) : Effect
     /** How to point the player at the folder Foldcade hosts for its saves. */
     data class SetUpHostedSaves(val playerId: String) : Effect
 
@@ -2731,6 +2732,9 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
             return opened.copy(settings = opened.settings?.copy(inner = SettingsInner.Systems, onRows = true, row = row)) to null
         }
         return opened to null
+    }
+    notice.firmwarePlayerId?.let { playerId ->
+        return model.copy(panel = null, focus = panel.grid) to Effect.ChooseFirmwareFolder(playerId)
     }
     notice.settingsCategory?.let { category ->
         return model.openSettings(model.layout.pageScreen, category, panel.grid) to null

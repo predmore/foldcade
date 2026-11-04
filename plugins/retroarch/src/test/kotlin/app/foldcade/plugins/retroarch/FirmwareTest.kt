@@ -16,7 +16,7 @@ class FirmwareTest {
 
     @Test fun everyCatalogCoreHasASnapshotIncludingRequiredAndOptionalFiles() {
         assertEquals("scph5501.bin", coreFirmware.single { it.core == "mednafen_psx" && it.path == "scph5501.bin" }.path)
-        assertFalse(coreFirmware.single { it.core == "yabasanshiro" }.optional)
+        assertFalse(coreFirmware.single { it.core == "yabasanshiro" && it.path == "saturn_bios.bin" }.optional)
         assertEquals("dc/dc_boot.bin", coreFirmware.first { it.core == "flycast" }.path)
         assertTrue(coreFirmware.any { it.core == "gpsp" && !it.optional })
         assertTrue(coreFirmware.any { it.path == "Machines/Shared Roms/MSX.rom" && !it.optional })
@@ -44,8 +44,35 @@ class FirmwareTest {
         entry.cores.update(mapOf(PACKAGES.first() to setOf("mednafen_psx_libretro_android.so")))
         assertEquals(listOf(listOf("scph5501.bin")), player("playstation").requiredBios(game("playstation")))
         assertTrue(player("playstation", "pcsx_rearmed").requiredBios(game("playstation")).isEmpty())
-        assertEquals(listOf(listOf("saturn_bios.bin")), player("saturn").requiredBios(game("saturn")))
+        assertEquals(listOf(listOf("saturn_bios.bin", "sega_101.bin", "mpr-17933.bin")), player("saturn").requiredBios(game("saturn")))
         assertEquals(listOf(listOf("mpr-17933.bin")), player("saturn", "mednafen_saturn").requiredBios(game("saturn")))
+    }
+
+    @Test fun anExistingAlternativeRevisionIsNotMistakenForAMissingBios() {
+        val folder = object : app.foldcade.api.plugin.SaveFolderAccess {
+            override fun list(path: String) = if (path.isEmpty()) listOf(app.foldcade.api.plugin.SaveFolderEntry("sega_101.bin", false, 524288)) else emptyList()
+            override fun read(path: String, limit: Int): ByteArray? = error("must not hash the player's existing BIOS")
+            override fun read(path: String, offset: Long, length: Int) = if (path == "sega_101.bin") byteArrayOf(1) else null
+            override fun write(path: String, bytes: ByteArray) = false
+            override fun createFolder(path: String) = false
+            override fun moveToBackup(path: String) = false
+        }
+        assertTrue(player("saturn").missingFirmware(game("saturn"), folder).isEmpty())
+        assertTrue(player("saturn", "mednafen_saturn").missingFirmware(game("saturn", "Game (Japan)"), folder).isEmpty())
+    }
+
+    @Test fun metadataFilteringStillFindsRenamedBiosWithUnusualDocumentedSizes() {
+        val color = player("game-boy-color", "sameboy")
+        assertTrue(color.localFirmwareCandidate("renamed.dump", 2304))
+        assertFalse(color.localFirmwareCandidate("unrelated-image.dat", 4194304))
+        assertTrue(player("playstation").localFirmwareCandidate("renamed.dump", 524288))
+        assertFalse(player("playstation").localFirmwareCandidate("ps2-dump.bin", 4194304))
+    }
+
+    @Test fun openBiosAndBundledAssetsNeverBlockWorkingCores() {
+        assertTrue(player("game-boy-advance", "gpsp").requiredBios(game("game-boy-advance")).isEmpty())
+        assertTrue(player("psp").requiredBios(game("psp")).isEmpty())
+        assertTrue(coreFirmware.any { it.core == "yabasanshiro" && it.path == "sega_101.bin" && it.md5 == "85ec9ca47d8f6807718151cbcca8b964" })
     }
 
     @Test fun blueMsxGetsWholeDirectoryBundlesRatherThanOnlyTheirMarkerFiles() {

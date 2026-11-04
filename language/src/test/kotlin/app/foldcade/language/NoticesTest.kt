@@ -8,6 +8,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NoticesTest {
+    @Test fun optionalFirmwareSetupOpensOnePickerWithoutHoldingTheLaunch() {
+        val notice = FoldNotice("firmware-folder:duckstation", FirmwareCopy.folderNoticeTitle("DuckStation"),
+            FirmwareCopy.folder("DuckStation", "DuckStation/bios"), firmwarePlayerId = "duckstation")
+        val base = model(listOf(notice))
+        val right = reduce(base, Meaning.RightPanel, HostScreen.Top).first
+        val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+        val (opened, effect) = reduce(focused, Meaning.Activate, HostScreen.Top)
+        assertEquals(Effect.ChooseFirmwareFolder("duckstation"), effect)
+        assertNull(opened.dialog)
+        assertNull(opened.panel)
+    }
+
     @Test
     fun aMergedSaveNoticeOpensSetUpSavesAtTheFirstEmulatorThatNeedsYou() {
         val notice = FoldNotice("foldcade:save-setup:emulators", Copy.savesNotSyncing, Copy.savesNotSyncingEmulatorsBody(2),

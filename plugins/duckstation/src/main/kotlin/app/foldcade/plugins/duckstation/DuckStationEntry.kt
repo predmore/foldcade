@@ -161,7 +161,10 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
 
     private fun hasBios(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean =
         folder.list(BIOS).orEmpty().filterNot { it.isFolder }.any { file ->
-            folder.read("$BIOS/${file.name}", firmwareHeaderSize)?.let { biosHash(it) in knownBiosHashes } == true
+            // DuckStation also accepts patched/unknown revisions of these image
+            // sizes. Keep an existing choice; only incoming dumps require a known hash.
+            (file.size in setOf(524288L, 4194304L, 0x3E66F0L) && folder.read("$BIOS/${file.name}", 0L, 1)?.isNotEmpty() == true) ||
+                file.size <= 0 && folder.read("$BIOS/${file.name}", firmwareHeaderSize)?.let { biosHash(it) in knownBiosHashes } == true
         }
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {

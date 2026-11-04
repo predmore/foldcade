@@ -193,6 +193,9 @@ class FoldcadeApp : Application() {
         ) { uri -> ContentGameFile(contentResolver, uri) }
     }
 
+    /** Launch-only firmware state; source versions avoid repeated BIOS reads and ZIP copies. */
+    internal val playerFirmware: PlayerFirmware by lazy { PlayerFirmware(this, playerSaves) }
+
     /**
      * Host-owned secrets. Plugins do not open this store.
      * RomM reads its token through [rommTokenSource], which looks up this
