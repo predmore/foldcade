@@ -126,11 +126,11 @@ interface Player {
     /**
      * Destination after reading the offered bytes. Allows a known BIOS hash to
      * supply its core's canonical name even when the source was renamed.
-     * Null refuses the file. Added in API minor 21.
+     * Null refuses the file. Added in API minor 23.
      */
     fun firmwareDestination(offer: FirmwareOffer): String? = firmwareFileName(offer.name)
 
-    /** Keep safe paths inside firmware ZIPs, for directory bundles such as blueMSX. API minor 21. */
+    /** Keep safe paths inside firmware ZIPs, for directory bundles such as blueMSX. API minor 23. */
     val firmwareKeepsFolders: Boolean
         get() = false
 
@@ -138,7 +138,7 @@ interface Player {
      * Required firmware still missing from the resolved firmware folder, for
      * this game. Each string names exactly one file, or alternatives separated
      * by " / ". Empty permits launch, including cores with HLE BIOS support.
-     * The shell calls this off Main after placement. Added in API minor 21.
+     * The shell calls this off Main after placement. Added in API minor 23.
      */
     fun missingFirmware(game: Game, folder: SaveFolderAccess): List<String> = emptyList()
 

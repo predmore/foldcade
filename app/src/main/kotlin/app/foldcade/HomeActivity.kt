@@ -1280,7 +1280,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is PlayerLaunch.Ready -> {
                 foldcade.launchWork.job = foldcade.scope.launch {
-                    if (target != null && !prepareFirmware(player, apiGame, target, generation)) return@launch
+                    if (target != null && foldcade.launchWork.prepareFiles(
+                        generation, apiGame,
+                        saves = { PreparedLaunch(target, spots, apiGame) },
+                        firmware = { firmwareTarget, backendId -> prepareFirmwareFiles(player, apiGame, firmwareTarget, generation, backendId) },
+                    ) == null) return@launch
                     val steps = playerSetupSteps(player)
                     withContext(Dispatchers.Main.immediate) {
                         if (!launchCurrent(generation)) return@withContext
@@ -1636,13 +1640,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         // Saves go into the player's folder before it starts, and come back when it returns.
         var owner = route.saves
-        var firmwareTarget = local
         val spots = if (plan is GameLaunch.Installed) {
             try {
-                prepareSaves(route, plan.player, local, saveSyncDeclinedFor).also {
-                    owner = it.owner ?: owner
-                    firmwareTarget = it.target
-                }.spots
+                val prepared = foldcade.launchWork.prepareFiles(
+                    generation, game,
+                    saves = {
+                        try {
+                            prepareSaves(route, plan.player, local, saveSyncDeclinedFor)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: SaveNotPlaced) {
+                            throw failure
+                        } catch (_: Exception) {
+                            // The player keeps its own save. Firmware still runs before play.
+                            PreparedLaunch(local, emptyList(), route.saves)
+                        }
+                    },
+                    firmware = { firmwareTarget, backendId -> prepareFirmwareFiles(plan.player, game, firmwareTarget, generation, backendId) },
+                ) ?: return
+                owner = prepared.owner ?: owner
+                prepared.spots
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (fatal: VirtualMachineError) {
@@ -1655,14 +1672,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     }
                 }
                 return
-            } catch (_: Exception) {
-                // The player keeps its own save. The next launch hands any change to the library.
-                emptyList()
             }
         } else {
             emptyList()
         }
-        if (plan is GameLaunch.Installed && !prepareFirmware(plan.player, game, firmwareTarget, generation, firmwareBackendId = owner.backendId)) return
         // A player that still needs its own setup, such as firmware, does not start.
         if (plan is GameLaunch.Installed) {
             val steps = playerSetupSteps(plan.player)
@@ -2120,9 +2133,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** BIOS search and writes run only during a launch, off Main. */
-    private suspend fun prepareFirmware(player: Player, game: Game, target: LaunchTarget, generation: Int, firmwareBackendId: String = game.backendId): Boolean =
-        foldcade.launchWork.prepare(generation) { prepareFirmwareFiles(player, game, target, generation, firmwareBackendId) }
-
     private suspend fun prepareFirmwareFiles(player: Player, game: Game, target: LaunchTarget, generation: Int, firmwareBackendId: String): Boolean {
         val libraries = foldcade.store.libraryFolders().map { it.uri }
         val interested = withContext(Dispatchers.IO) {

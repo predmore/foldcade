@@ -34,6 +34,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
@@ -44,12 +45,13 @@ class LaunchSavesTest {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.held = player.saveDeclarations(owner).map { it.slot }
             server.listingFails = true
-            val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local) }.exceptionOrNull()
+            val failure = runCatching { prepareFiles(GameRoute("tile", owner, owner), player) }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
             val pending = unresolvedSaveHold(failure as SaveNotPlaced) { PendingBackendLaunch("Game", player.platformId, GameRoute("tile", owner, owner), player.id, Panel.Bottom) }
             assertNotNull(pending)
             assertFalse((failure as UnresolvedSaveNotPlaced).needsEdenUser)
             assertTrue(server.calls.isEmpty())
+            assertTrue(firmwarePasses.isEmpty())
         }
     }
 
@@ -60,11 +62,12 @@ class LaunchSavesTest {
             server.listingFails = true
             var reported = false
             val listingCount = server.listings
-            val prepared = LaunchSaves(saves, plugins, onSpots = { _, picked, spots ->
+            val passes = firmwarePasses.size
+            val prepared = prepareFiles(GameRoute("tile", owner, owner), player, onSpots = { _, picked, spots ->
                 assertEquals(player.id, picked.id)
                 assertTrue(spots.isEmpty())
                 reported = true
-            }) { awaiting += it }.prepare(GameRoute("tile", owner, owner), player, local)
+            })
             assertTrue(reported)
             assertEquals(local, prepared.target)
             assertTrue(prepared.spots.isEmpty())
@@ -73,6 +76,8 @@ class LaunchSavesTest {
             assertTrue(docs.files.isEmpty())
             assertTrue(marks.isEmpty())
             assertTrue(awaiting.isEmpty())
+            assertEquals(passes + 1, firmwarePasses.size)
+            assertEquals(local to owner.backendId, firmwarePasses.last())
         }
     }
 
@@ -86,8 +91,7 @@ class LaunchSavesTest {
             val listingCount = server.listings
             val secondListingCount = folder.listings
             val failure = runCatching {
-                LaunchSaves(saves, plugins) { awaiting += it }
-                    .prepare(GameRoute("tile", owner, owner, servers = listOf(owner, second)), player, local)
+                prepareFiles(GameRoute("tile", owner, owner, servers = listOf(owner, second)), player)
             }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
             assertEquals(listingCount + 1, server.listings)
@@ -95,6 +99,7 @@ class LaunchSavesTest {
             assertTrue(server.calls.isEmpty())
             assertTrue(folder.calls.isEmpty())
             assertTrue(docs.files.isEmpty())
+            assertTrue(firmwarePasses.isEmpty())
         }
     }
 
@@ -104,8 +109,10 @@ class LaunchSavesTest {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.remoteSlot = player.saveDeclarations(owner).single().slot
             val route = GameRoute("tile", owner, owner)
-            val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, player, local) }.exceptionOrNull()
+            val passes = firmwarePasses.size
+            val failure = runCatching { prepareFiles(route, player) }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
+            assertEquals(passes, firmwarePasses.size)
             val pending = unresolvedSaveHold(failure as SaveNotPlaced) { PendingBackendLaunch("Game", player.platformId, route, player.id, Panel.Bottom) }
             val prompt = app.foldcade.language.saveNotPlacedDialog("Game", app.foldcade.language.HostScreen.Bottom, playAnyway = pending != null)
             assertTrue(prompt.buttons.contains(app.foldcade.language.DialogButton.PlayWithoutSyncing))
@@ -116,7 +123,7 @@ class LaunchSavesTest {
                 playWithoutSyncing = { declinedFor = player.id })
             assertFalse(saveSyncForLaunch(player, declinedFor))
             val listingCount = server.listings
-            val prepared = LaunchSaves(saves, plugins) { awaiting += it }.prepare(route, player, local, syncing = saveSyncForLaunch(player, declinedFor))
+            val prepared = prepareFiles(route, player, syncing = saveSyncForLaunch(player, declinedFor))
             assertEquals(local, prepared.target)
             assertTrue(prepared.spots.isEmpty())
             assertEquals(listingCount, server.listings)
@@ -124,6 +131,8 @@ class LaunchSavesTest {
             assertTrue(docs.files.isEmpty())
             assertTrue(marks.isEmpty())
             assertTrue(awaiting.isEmpty())
+            assertEquals(passes + 1, firmwarePasses.size)
+            assertEquals(local to owner.backendId, firmwarePasses.last())
             assertTrue(saveSyncForLaunch(player, null))
             assertTrue(saveSyncForLaunch(player, "another-player"))
         }
@@ -135,6 +144,7 @@ class LaunchSavesTest {
     private val marks = HashMap<String, String>()
     private val saves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("launch-saves"), Files.createTempDirectory("launch-handover"))
     private val awaiting = mutableListOf<String>()
+    private val firmwarePasses = mutableListOf<Pair<LaunchTarget, String>>()
     private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
         register(object : PluginEntry {
             override val apiVersion = PLUGIN_API_VERSION
@@ -148,6 +158,25 @@ class LaunchSavesTest {
 
     init {
         docs.names["content://rf4"] = "Tetris DS (USA).nds"
+    }
+
+    /** The same post-save gate used by both Home launch paths. */
+    private suspend fun prepareFiles(
+        route: GameRoute,
+        player: Player,
+        syncing: Boolean = true,
+        onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
+        firmware: (LaunchTarget) -> Unit = {},
+    ): PreparedLaunch {
+        val work = LaunchWork()
+        return work.prepareFiles(work.begin(), route.play,
+            saves = { LaunchSaves(saves, plugins, onSpots = onSpots) { awaiting += it }.prepare(route, player, local, syncing) },
+            firmware = { target, backendId ->
+                firmwarePasses += target to backendId
+                firmware(target)
+                true
+            },
+        ) ?: error("launch unexpectedly blocked")
     }
 
     @Test
@@ -286,15 +315,30 @@ class LaunchSavesTest {
         assertTrue(saveLaunchOffer(player, onServer = true) is SaveLaunchOffer.Setup)
         val continuation = saveLaunchContinuation(player.id, SaveFolderAnswer.PlayWithoutSyncing, false) as SaveLaunchContinuation.Launch
         server.firmware = listOf(FirmwareBytes("SCPH1001.BIN", "content://firmware"))
-        docs.files["content://firmware"] = "library BIOS".toByteArray()
+        // No console dump is stored in tests. Substitute this generated image's
+        // hash for the upstream database at the publication boundary only.
+        val bytes = ByteArray(524288) { (it % 251).toByte() }
+        docs.files["content://firmware"] = bytes
+        val publisher = object : Player by player {
+            override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>) =
+                offered.filter { md5Hex(it.header) == md5Hex(bytes) }
+        }
+        assertTrue(player.chooseFirmware(listOf(app.foldcade.api.plugin.FirmwareOffer("SCPH1001.BIN", bytes))).isEmpty())
 
-        val prepared = LaunchSaves(saves, plugins, pickedFolder = { SAVES }) { awaiting += it }
-            .prepare(GameRoute("tile", game, game), player, local, syncing = saveSyncForLaunch(player, continuation.declinedFor))
+        val prepared = prepareFiles(GameRoute("tile", game, game), player,
+            syncing = saveSyncForLaunch(player, continuation.declinedFor),
+            firmware = { target ->
+                assertFalse(docs.files.containsKey("$SAVES/bios/SCPH1001.BIN")) // Saves only returned the offer.
+                assertEquals(listOf("bios/SCPH1001.BIN"), saves.placeFirmware(publisher, game, target, SAVES))
+            })
 
         assertEquals(listOf("prepareLaunch:12"), server.calls)
         assertTrue(prepared.spots.isEmpty())
         assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
-        assertEquals("library BIOS", docs.files["$SAVES/bios/SCPH1001.BIN"]?.toString(Charsets.UTF_8))
+        assertArrayEquals(bytes, docs.files["$SAVES/bios/SCPH1001.BIN"])
+        assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
+        assertEquals(1, docs.firmwarePublications)
+        assertTrue(docs.files.keys.none { it.endsWith(".partial") })
         assertTrue(awaiting.isEmpty())
     }
 
@@ -304,14 +348,55 @@ class LaunchSavesTest {
         val game = owner.copy(platformId = player.platformId)
         val continuation = saveLaunchContinuation(player.id, SaveFolderAnswer.PlayWithoutSyncing, false) as SaveLaunchContinuation.Launch
 
-        val prepared = LaunchSaves(saves, plugins, pickedFolder = { SAVES }) { awaiting += it }
-            .prepare(GameRoute("tile", game, game), player, local, syncing = saveSyncForLaunch(player, continuation.declinedFor))
+        val prepared = prepareFiles(GameRoute("tile", game, game), player,
+            syncing = saveSyncForLaunch(player, continuation.declinedFor),
+            firmware = { target -> assertTrue(saves.placeFirmware(player, game, target, SAVES).isEmpty()) })
 
         assertEquals(listOf("prepareLaunch:12"), server.calls)
         assertEquals("content://own", (prepared.target as LaunchTarget.ContentUri).uri)
         assertTrue(prepared.spots.isEmpty())
         assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
         assertTrue(docs.files.isEmpty())
+        assertTrue(awaiting.isEmpty())
+        assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
+        assertEquals(0, docs.firmwarePublications)
+    }
+
+    @Test
+    fun decliningArmsX2CardSetupPlacesItsBiosOnceWithoutChangingTheCard() = runBlocking {
+        val player = app.foldcade.plugins.armsx2.ArmsX2Player().apply { bindSaveFolder(SAVES) }
+        val game = owner.copy(platformId = player.platformId)
+        val continuation = saveLaunchContinuation(player.id, SaveFolderAnswer.PlayWithoutSyncing, false) as SaveLaunchContinuation.Launch
+        // Generated ROM-directory structure, matching the plugin's parser tests.
+        val bytes = ByteArray(144)
+        fun entry(offset: Int, name: String, size: Int) {
+            name.toByteArray().copyInto(bytes, offset)
+            bytes[offset + 12] = size.toByte()
+        }
+        entry(64, "RESET", 64)
+        entry(80, "ROMDIR", 64)
+        entry(96, "ROMVER", 14)
+        "0230AC20080220".toByteArray().copyInto(bytes, 128)
+        server.firmware = listOf(FirmwareBytes("ps2.bin", "content://firmware"))
+        docs.files["content://firmware"] = bytes
+        val card = "$SAVES/memcards/Mcd001.ps2"
+        val existing = "player's file card".toByteArray()
+        docs.files[card] = existing
+
+        val prepared = prepareFiles(GameRoute("tile", game, game), player,
+            syncing = saveSyncForLaunch(player, continuation.declinedFor),
+            firmware = { target ->
+                assertFalse(docs.files.containsKey("$SAVES/bios/ps2.bin"))
+                assertEquals(listOf("bios/ps2.bin"), saves.placeFirmware(player, game, target, SAVES))
+            })
+
+        assertEquals(listOf("prepareLaunch:12"), server.calls)
+        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
+        assertTrue(prepared.spots.isEmpty())
+        assertArrayEquals(bytes, docs.files["$SAVES/bios/ps2.bin"])
+        assertArrayEquals(existing, docs.files[card])
+        assertEquals(1, docs.firmwarePublications)
         assertTrue(awaiting.isEmpty())
     }
 
@@ -387,12 +472,28 @@ class LaunchSavesTest {
     private inner class Documents : SaveDocuments {
         val names = HashMap<String, String>()
         val files = HashMap<String, ByteArray>()
+        var firmwarePublications = 0
 
-        override fun displayName(uri: String): String? = names[uri]
+        override fun displayName(uri: String): String? = names[uri] ?: uri.substringAfterLast('/').takeIf { uri in files }
         override fun find(folderUri: String, name: String): String? = "$folderUri/$name".takeIf { it in files }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = ByteArray(0) }
         override fun read(uri: String): ByteArray? =
             if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.toPlace?.toByteArray() else files[uri]
+        override fun head(uri: String, size: Int): ByteArray? = read(uri)?.take(size)?.toByteArray()
+        override fun children(folderUri: String, path: String): List<SaveChild> {
+            val prefix = folderUri + "/" + if (path.isEmpty()) "" else "$path/"
+            return files.filterKeys { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
+                .map { (uri, bytes) -> SaveChild(uri.substringAfterLast('/'), uri, false, bytes.size.toLong()) }
+        }
+        override fun publishFirmware(folder: String, name: String, source: String, hash: String, header: ByteArray): Boolean =
+            publishNewFirmware(this, folder, name, source, hash, header)
+        override fun renameFirmware(uri: String, leaf: String): String {
+            val target = uri.substringBeforeLast('/') + "/$leaf"
+            check(target !in files)
+            files[target] = files.remove(uri)!!
+            firmwarePublications++
+            return target
+        }
         override fun delete(uri: String): Boolean = files.remove(uri) != null
         override fun write(uri: String, bytes: ByteArray) {
             files[uri] = bytes

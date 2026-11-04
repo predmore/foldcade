@@ -113,16 +113,21 @@ class RetroArchPreparationTest {
                 finally { ui.endCoreDownload(id, owner) }
                 true
             })
-            assertTrue(work.prepare(ticket) {
-                assertNotNull(work.retroArchCore)
-                assertFalse(ui.activity.containsKey(id))
-                ui.beginDownload(game.backendId, game.remoteKey)
-                ui.noteActivity(game.backendId, game.remoteKey, GameActivity.GettingFirmware(0, null), 0)
-                assertEquals(TileActivity.Downloading(null, firmware = true), ui.activity[id])
-                lines += activityLine(ui.activity.getValue(id))
-                try { runInterruptible(Dispatchers.IO) { publishNewFirmware(docs, "system", "bios_CD_U.bin", "source", md5Hex(bios), bios) } }
-                finally { ui.endDownload(game.backendId, game.remoteKey); ui.settleActivity(game.backendId, game.remoteKey) }
-            })
+            assertNotNull(work.prepareFiles(ticket, game,
+                saves = { PreparedLaunch(LaunchTarget.ContentUri("content://disc"), emptyList(), game) },
+                firmware = { target, backendId ->
+                    assertEquals("content://disc", (target as LaunchTarget.ContentUri).uri)
+                    assertEquals(game.backendId, backendId)
+                    assertNotNull(work.retroArchCore)
+                    assertFalse(ui.activity.containsKey(id))
+                    ui.beginDownload(game.backendId, game.remoteKey)
+                    ui.noteActivity(game.backendId, game.remoteKey, GameActivity.GettingFirmware(0, null), 0)
+                    assertEquals(TileActivity.Downloading(null, firmware = true), ui.activity[id])
+                    lines += activityLine(ui.activity.getValue(id))
+                    try { runInterruptible(Dispatchers.IO) { publishNewFirmware(docs, "system", "bios_CD_U.bin", "source", md5Hex(bios), bios) } }
+                    finally { ui.endDownload(game.backendId, game.remoteKey); ui.settleActivity(game.backendId, game.remoteKey) }
+                },
+            ))
             assertTrue(player.missingFirmware(game, docs.folder()).isEmpty())
             val intent = player.launchIntent(LaunchRequest(game, LaunchTarget.SharedFile("/sdcard/disc.chd", "content://disc"), pkg))
             assertEquals(CORE_SIDELOAD_ACTIVITY, work.retroArchCore!!.sideload(intent).componentClass)
@@ -152,14 +157,17 @@ class RetroArchPreparationTest {
                         true
                     } finally { ui.endCoreDownload(id, owner) }
                 }) return@launch
-                if (!work.prepare(ticket) {
-                    biosStarted = true
-                    ui.beginDownload(game.backendId, game.remoteKey)
-                    ui.noteActivity(game.backendId, game.remoteKey, GameActivity.GettingFirmware(0, null), 0)
-                    reached.complete(Unit)
-                    try { CompletableDeferred<Unit>().await(); true }
-                    finally { ui.endDownload(game.backendId, game.remoteKey); ui.settleActivity(game.backendId, game.remoteKey) }
-                }) return@launch
+                if (work.prepareFiles(ticket, game,
+                    saves = { PreparedLaunch(LaunchTarget.ContentUri("content://disc"), emptyList(), game) },
+                    firmware = { _, _ ->
+                        biosStarted = true
+                        ui.beginDownload(game.backendId, game.remoteKey)
+                        ui.noteActivity(game.backendId, game.remoteKey, GameActivity.GettingFirmware(0, null), 0)
+                        reached.complete(Unit)
+                        try { CompletableDeferred<Unit>().await(); true }
+                        finally { ui.endDownload(game.backendId, game.remoteKey); ui.settleActivity(game.backendId, game.remoteKey) }
+                    },
+                ) == null) return@launch
                 launched = true
             }
             work.job = preparing
