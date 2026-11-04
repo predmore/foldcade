@@ -21,7 +21,8 @@ class ExPlusEntry : PluginEntry {
 /** EmuSystem::contentNameExt, with companion files in the same archive.
  * https://github.com/Rakashazi/emu-ex-plus-alpha/blob/1c12fac5ce49badaadff2e2f210dcc30b89f4943/EmuFramework/src/EmuSystem.cc
  * Each system's src/main/Main.cc defines the extensions; GBC's .rtc is a
- * separate four-byte big-endian clock. MD's .brm includes internal and cartridge BRAM.
+ * separate four-byte big-endian clock. SNES S-RTC/SPC7110
+ * cartridges also keep a 20-byte .rtc (CMemory::SaveSRTC / S9XApi.cc). MD's .brm includes internal and cartridge BRAM.
  */
 class ExPlusPlayer(
     private val emulatorId: String,
@@ -82,7 +83,7 @@ class ExPlusPlayer(
             "gba-emu" -> if (extension in setOf("gba", "mb", "zip", "7z")) setOf(".sav") else null
             "gbc-emu" -> if (extension in setOf("gb", "gbc", "zip", "7z")) setOf(".sav", ".rtc") else null
             "nes-emu" -> when (extension) { "nes", "unf", "unif" -> setOf(".sav"); "fds" -> setOf(".fds.sav"); else -> null }
-            "snes9x-ex" -> if (extension in setOf("sfc", "smc", "zip", "7z")) setOf(".srm") else null
+            "snes9x-ex" -> if (extension in setOf("sfc", "smc", "zip", "7z")) setOf(".srm", ".rtc") else null
             "md-emu" -> if (platformId == "sega-cd") {
                 if (extension in setOf("cue", "chd", "iso", "bin")) setOf(".brm") else null
             } else if (extension in setOf("gen", "smd", "md", "bin", "sms")) setOf(".srm") else null

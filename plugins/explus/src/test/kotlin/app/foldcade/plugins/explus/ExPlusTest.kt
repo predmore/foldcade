@@ -35,6 +35,12 @@ class ExPlusTest {
         for (path in listOf("Pokemon.0A.gqs", "Pokemon/saves/run 2/auto.0A.gqs", "Other/saves/run 2/auto.sav", "Pokemon/saves/../auto.sav", "auto.sav"))
             assertFalse(path, accepts("gbc-emu", "Pokemon.gbc", path))
     }
+    @Test fun snesSrtcAndSpc7110ClockCompanionsTravelWithTheirBatterySlots() {
+        for (path in listOf("Game.srm", "Game.rtc", "Game/saves/run 2/auto.srm", "Game/saves/run 2/auto.rtc"))
+            assertTrue(path, accepts("snes9x-ex", "Game.sfc", path))
+        for (path in listOf("Other.rtc", "Game.0A.frz", "Game.rtc.bak"))
+            assertFalse(path, accepts("snes9x-ex", "Game.sfc", path))
+    }
     @Test fun unsupportedNamesAndUnknownSlotsCannotResolve() {
         for (name in listOf("Game.rar", "Game", "../Game.gba", "Game.gba\u0000", ".gba"))
             assertNull(name, player("gba-emu").saveArchiveFilter("battery",reader(name)))
@@ -46,6 +52,7 @@ class ExPlusTest {
             assertTrue(accepts("gba-emu", archive, "Pokemon.sav"))
             assertTrue(accepts("gbc-emu", archive, "Pokemon.rtc"))
             assertTrue(accepts("snes9x-ex", archive, "Pokemon.srm"))
+            assertTrue(accepts("snes9x-ex", archive, "Pokemon.rtc"))
             assertFalse(accepts("gbc-emu", archive, "Inner ROM.sav"))
         }
         assertNull(player("nes-emu").saveArchiveFilter("battery", reader("Game.zip")))

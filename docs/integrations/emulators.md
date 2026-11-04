@@ -226,17 +226,17 @@ The format audit confirms `<sanitized IP.BIN product number>_vmu_save_A1.bin`; u
 
 ## EX family: Nintendo and Sega
 
-Foldcade syncs **GBA.emu**, **GBC.emu**, **NES.emu**, **Snes9x EX+** and **MD.emu** through RomM, in slot `battery`. Every file in a bundle is matched by the exact game basename, with its case preserved. Keep ROM filenames the same across devices.
+Foldcade syncs **GBA.emu**, **GBC.emu**, **NES.emu**, **Snes9x EX+** and **MD.emu** through RomM, in slot `battery`. Every file in a bundle is matched by the exact game basename, with its case preserved. Keep ROM filenames the same across devices. If you rename a ROM, its older bundle stays on RomM and launch offers **Play without syncing** for that launch. Restore the original name to reconnect those saves; Foldcade never renames or reassigns them by guessing.
 
 | App | Battery files |
 | --- | --- |
 | GBA.emu | `<game>.sav` |
 | GBC.emu | `<game>.sav` and the four-byte `<game>.rtc` clock companion |
 | NES.emu | `<game>.sav`; FDS disk changes use `<game>.fds.sav` |
-| Snes9x EX+ | `<game>.srm` |
+| Snes9x EX+ | `<game>.srm` and the 20-byte `<game>.rtc` companion for S-RTC/SPC7110 clocks |
 | MD.emu | `<game>.srm` for cartridges; `<game>.brm` for Sega CD |
 
-The bundle also keeps each game’s named battery slots at `<game>/saves/<slot>/auto.<extension>`. Save states, cheats, other games and all other files stay out. GBA.emu, GBC.emu and Snes9x EX+ also sync ZIP/7z games using the archive’s basename, matching upstream. NES.emu and MD.emu archives remain unresolved because their battery type depends on the file inside; multi-disc playlists remain unresolved too. Unsupported files say **This game can’t sync yet** in Y › Saves.
+The bundle also keeps each game’s named battery slots at `<game>/saves/<slot>/auto.<extension>`. Save states, cheats, other games and all other files stay out. GBA.emu, GBC.emu and Snes9x EX+ also sync ZIP/7z games using the archive’s basename, matching upstream. NES.emu and MD.emu archives remain unresolved because their battery type depends on the file inside; multi-disc playlists remain unresolved too. An unreachable folder or unsupported mapping says **Saves aren’t syncing** in Y › Saves and names the folder, file type and layout checks.
 
 EX defaults to the ROM’s directory, unless you select a save directory. **App Folder** uses `Android/data/<package>/files/EmuEx/<system>/saves` on current Android, which all-files access cannot open. The system names are `GBA`, `GB`, `FC-NES`, `SFC-SNES` and `MD-Genesis`. This private app folder has no public documents provider.
 
@@ -244,7 +244,7 @@ For a shared save directory, open the emulator’s **Options › File Paths › 
 
 Y › Saves refuses raw saves or incompatible archives before making them this emulator’s slot head, with a format explanation. Such saves remain available on RomM to copy to another server slot.
 
-EX can restore an older autosave state over battery progress. Choose **Main (No State)** as its launch mode when using battery saves from another device, or decline its older-state warning. Named slots remain separate in EX; Foldcade carries their battery files together. Save states stay local.
+For battery sync, set EX’s **Options › System › Launch Mode** to **Main Slot (No State)**. An autosave state can resume older runtime progress, and its older-state warning does not cover every resume. Foldcade cannot read or change this private setting. Named slots remain separate in EX; Foldcade carries their battery files together. Save states stay local.
 
 **Saturn.emu is still launch-only.** Its `.bkr`, `.smpc` clock and cartridge saves require a separate, MD5-aware mapping.
 

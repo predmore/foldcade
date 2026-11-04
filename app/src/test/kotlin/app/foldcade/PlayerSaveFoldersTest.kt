@@ -46,14 +46,20 @@ class PlayerSaveFoldersTest {
         }
         val sync = PlayerSaves(rootDocs, marks, backups, handover)
         val spots = sync.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
-        val archive = zipOf("Game.srm" to "main", "Game/saves/run 2/auto.srm" to "named")
+        val archive = zipOf("Game.srm" to "main", "Game.rtc" to "01234567890123456789", "Game/saves/run 2/auto.srm" to "named", "Game/saves/run 2/auto.rtc" to "98765432109876543210")
         docs.library[SERVER] = archive
         assertTrue(sync.canPlaceSave(spots, "battery", archive))
         assertFalse(sync.canPlaceSave(spots, "battery", "raw RetroArch SRAM".toByteArray()))
         assertFalse(sync.canPlaceSave(spots, "battery", zipOf("Other.srm" to "foreign")))
+        docs.library[SERVER] = zipOf("Old.srm" to "old name")
+        assertTrue(sync.hasIncompatibleSave(spots, listOf(PlacedSave("battery", SERVER, md5Hex(docs.library[SERVER]!!)))))
+        assertFalse(sync.hasIncompatibleSave(spots, listOf(PlacedSave("battery", SERVER, "0".repeat(32)))))
+        docs.library[SERVER] = archive
         assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))
         assertEquals("named", docs.text("Game/saves/run 2/auto.srm"))
         assertEquals("main", docs.text("Game.srm"))
+        assertEquals("01234567890123456789", docs.text("Game.rtc"))
+        assertEquals("98765432109876543210", docs.text("Game/saves/run 2/auto.rtc"))
         assertTrue(sync.changedSince("romm", GAME, player, spots).slots.isEmpty())
         // A second placement from Y › Saves stays successful too.
         assertTrue(sync.place("romm", GAME, player, spots, listOf(PlacedSave("battery", SERVER, md5Hex(archive)))))

@@ -95,6 +95,12 @@ internal class LaunchSaves(
         }
         val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, resolvedSpots)
         try {
+            // EX names batteries from the ROM filename. A rename can leave an
+            // older bundle with no compatible destination; preserve it and ask.
+            if (player is ExPlusPlayer && saves.hasIncompatibleSave(spots, placement.savesToPlace)) {
+                onSpots(owner, player, emptyList())
+                throw UnresolvedSaveNotPlaced()
+            }
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
@@ -179,7 +185,7 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 /** A library save could not be written into the player's folder and checked. */
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
-/** No destination was resolved before negotiation or writing; an explicit per-launch opt-out is safe. */
+/** No compatible destination, before any write; an explicit per-launch opt-out is safe. */
 internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */

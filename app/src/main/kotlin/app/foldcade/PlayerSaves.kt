@@ -558,6 +558,13 @@ internal class PlayerSaves(
         return if (spot.folders.isNotEmpty() || spot.search != null) incomingFolderEntries(spot, bytes) != null else true
     }
 
+    /** Verified bytes with no compatible mapping can offer a per-launch opt-out before any write. */
+    fun hasIncompatibleSave(spots: List<SaveSpot>, placed: List<PlacedSave>): Boolean = placed.any { save ->
+        if (spots.none { it.slot == save.slot }) return@any false
+        val bytes = docs.read(save.contentUri) ?: return@any false
+        md5Hex(bytes) == save.contentHash && !canPlaceSave(spots, save.slot, bytes)
+    }
+
     private fun incomingFolderEntries(spot: SaveSpot, zip: ByteArray): java.util.SortedMap<String, ByteArray?>? {
         val allowed = spot.search?.let { search ->
             val roots = saveZipRoots(zip) ?: return null
