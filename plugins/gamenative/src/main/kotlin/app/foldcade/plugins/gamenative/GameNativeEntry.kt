@@ -88,6 +88,19 @@ class GameNativePlayer : Player {
             ?: throw PluginException.NotFound("GameNative is not installed.")
         val target = request.target as? LaunchTarget.AppRef
             ?: throw PluginException.NotFound("GameNative needs an app id.")
+        val shortcutPackage = target.values[EXTRA_SHORTCUT_PACKAGE]
+        if (shortcutPackage != null && shortcutPackage !in PACKAGES) {
+            throw PluginException.NotFound("GameNative needs a game shortcut.")
+        }
+        val shortcutId = target.values[EXTRA_SHORTCUT_ID]
+        if (shortcutId != null) {
+            if (shortcutPackage == null || gameNativeShortcutId(shortcutId) == null) {
+                throw PluginException.NotFound("GameNative needs a game shortcut.")
+            }
+            // Only pins whose store is still hidden need LauncherApps.startShortcut.
+            return PlayerIntent(shortcutPackage, MAIN_ACTIVITY, ACTION_LAUNCH_GAME,
+                extras = listOf(PlayerExtra.Text(EXTRA_SHORTCUT_ID, shortcutId)))
+        }
         val appId = target.values[EXTRA_APP_ID]?.toIntOrNull()
         if (appId == null || appId <= 0) {
             throw PluginException.NotFound("GameNative needs an app id.")
@@ -97,7 +110,7 @@ class GameNativePlayer : Player {
             throw PluginException.NotFound("GameNative needs a game source.")
         }
         return PlayerIntent(
-            packageName = request.resolvedPackage,
+            packageName = shortcutPackage ?: request.resolvedPackage,
             componentClass = activity,
             action = ACTION_LAUNCH_GAME,
             extras = listOf(
@@ -112,6 +125,8 @@ class GameNativePlayer : Player {
         const val ID: String = "gamenative"
         const val DISPLAY_NAME: String = "GameNative"
         const val ACTION_LAUNCH_GAME: String = "app.gamenative.LAUNCH_GAME"
+        const val EXTRA_SHORTCUT_ID: String = "foldcade_shortcut_id"
+        const val EXTRA_SHORTCUT_PACKAGE: String = "foldcade_shortcut_package"
         const val EXTRA_APP_ID: String = "app_id"
         const val EXTRA_GAME_SOURCE: String = "game_source"
         const val DEFAULT_SOURCE: String = "STEAM"

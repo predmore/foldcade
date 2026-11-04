@@ -22,7 +22,7 @@ object FoundFolderCopy {
     /** The card in a sentence, where its folder's own name says nothing more. */
     const val yourCard = "your SD card"
 
-    const val offerTitle = "Found your ROMs"
+    const val offerTitle = "Found your games"
 
     /**
      * The one-time offer, naming what Foldcade saw without any access: the folders and the

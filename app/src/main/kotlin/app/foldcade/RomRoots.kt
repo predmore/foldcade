@@ -5,6 +5,7 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import app.foldcade.language.FoundFolderCopy
 import app.foldcade.localfolder.platformFromFolderName
+import app.foldcade.localfolder.gameNativeExportSource
 import java.io.File
 import java.nio.file.Files
 
@@ -38,7 +39,19 @@ internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? 
                 folders(emulation).filter { it.name.equals(ROMS, ignoreCase = true) }
             }
         candidates.mapNotNull { dir ->
-            val systems = folders(dir).mapNotNull { platformFromFolderName(it.name)?.name }.distinct().sortedBy { it.lowercase() }
+            val children = folders(dir)
+            // GameNative has no default export path (PrefManager defaults each to "").
+            // https://github.com/utkarshdalal/GameNative/blob/a2a121bb477070026fed8f6ee66f8d3e8b350971/app/src/main/java/app/gamenative/PrefManager.kt#L1626-L1658
+            // Only ROM library locations: <volume>/GameNative is the PC install root,
+            // and Download/GameNative holds container exports, not frontend references.
+            // https://github.com/utkarshdalal/GameNative/blob/a2a121bb477070026fed8f6ee66f8d3e8b350971/app/src/main/java/app/gamenative/utils/StorageUtils.kt#L133-L156
+            val pcFolders = children.filter { it.name.equals("GameNative", true) || gameNativeExportSource(it.name) != null }
+            val exports = (list(dir).orEmpty() + pcFolders.flatMap { list(it).orEmpty() })
+                .any { !it.isDirectory && !Files.isSymbolicLink(it.toPath()) && gameNativeExportSource(it.extension) != null }
+            val hasGameNative = exports || pcFolders.isNotEmpty()
+            val systems = (children.mapNotNull { platformFromFolderName(it.name)?.name } +
+                listOfNotNull(app.foldcade.plugins.gamenative.GameNativeLibrary.DISPLAY_NAME.takeIf { hasGameNative }))
+                .distinct().sortedBy { it.lowercase() }
             if (systems.isEmpty()) return@mapNotNull null
             RomRoot(volume.id, dir.relativeTo(volume.dir).invariantSeparatorsPath, systems)
         }

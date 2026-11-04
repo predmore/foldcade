@@ -556,7 +556,7 @@ class HomeSession(
         hide = id !in board.hidden,
         moveTo = otherAppFolder(board, id),
         removeDownload = downloaded(id),
-        deleteShortcut = shelfById[id]?.let { it.libraryId in setOf("moonlight", "droiddeck") && it.remoteKey != null && it.shortcut } == true,
+        deleteShortcut = shelfById[id]?.let { it.libraryId in setOf("moonlight", "droiddeck", "gamenative") && it.remoteKey != null && it.shortcut } == true,
         game = id,
     )
 
