@@ -42,7 +42,7 @@ class FirmwarePreparationTest {
 
     @Test fun optionalFirmwareDoesNoIoEvenWithRommOffersAndNoFolderGrant() {
         val players = listOf(player("game-boy"), player("genesis"), player("playstation", "pcsx_rearmed"),
-            player("playstation", "mednafen_psx"), player("game-boy-advance", "gpsp"), player("psp"), MelonDsPlayer())
+            player("playstation", "mednafen_psx"), player("game-boy-advance", "gpsp"), player("psp"), MelonDsPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             val docs = Documents()
             val saves = saves(docs)

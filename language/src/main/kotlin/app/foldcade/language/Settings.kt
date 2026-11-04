@@ -217,6 +217,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
                 add(Row.PlayerSave(setting.playerId))
                 if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
+                if (setting.thorSetup != null) add(Row.ThorSetup(setting.playerId))
                 if (setting === retroArchOwner) add(Row.RetroArchCores)
                 if (setting === edenOwner) add(Row.EdenFolder)
             },

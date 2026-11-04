@@ -3452,6 +3452,17 @@ class ShellController(
         else -> hiddenTile(source)
     }
 
+    private var thorSetups: Map<String, app.foldcade.language.ThorSetupSetting> = emptyMap()
+
+    fun setThorSetups(setups: Map<String, app.foldcade.language.ThorSetupSetting>) {
+        if (thorSetups == setups) return
+        thorSetups = setups
+        refreshPlayerSaves()
+    }
+
+    fun setThorSetup(playerId: String, setup: app.foldcade.language.ThorSetupSetting) =
+        setThorSetups(thorSetups + (playerId to setup))
+
     fun refreshPlayerSaves() {
         saveSettingsCache = null
         val settings = playerSaveSettings()
@@ -3816,6 +3827,7 @@ class ShellController(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
+                thorSetup = thorSetups[player.id],
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,

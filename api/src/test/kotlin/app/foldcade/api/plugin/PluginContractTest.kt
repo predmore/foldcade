@@ -121,8 +121,8 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(23, PLUGIN_API_MINOR)
-        for (name in listOf("findSaveFolderParts", "saveArchiveFilter")) {
+        assertEquals(25, PLUGIN_API_MINOR)
+        for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave", "firmwareDestination", "getFirmwareKeepsFolders", "missingFirmware")) {
             assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
         }
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)

@@ -91,7 +91,7 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, and **Eden Switch account saves** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, **Eden Switch account saves**, **PPSSPP game saves**, **Dolphin GameCube GCI bundles**, and **EX-family battery saves (including GBC and SNES RTC)** with RomM **5.4.0 or newer**.
 
 Select **Choose folder** to point Foldcade at the emulator's save folder. **Play without syncing**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play without syncing** the same way.
 

@@ -183,7 +183,10 @@ class FoldcadeApp : Application() {
         )
     }
 
-    /** Moves library saves in and out of each player's save folder. Replaced files are kept in `save-backups`. */
+    /** First-time configuration, read and changed only on IO. */
+    internal val thorPresets: AndroidThorPresets by lazy { AndroidThorPresets(this) }
+
+    /** Moves library saves in and out; replaced files are kept in `save-backups`. */
     internal val playerSaves: PlayerSaves by lazy {
         val documents = AndroidSaveDocuments(contentResolver)
         PlayerSaves(
@@ -1363,6 +1366,7 @@ class FoldcadeApp : Application() {
             throw failure
         }
         refreshEdenSetting()
+        shell.setThorSetups(notes.thor)
         shell.setSaveSync(notes.sync, notes.setup)
         shell.refreshPlayerSaves()
         shell.noteShelfChanged()
@@ -1407,6 +1411,24 @@ class FoldcadeApp : Application() {
             plugins.playerIds().mapNotNull { id ->
                 (plugins.player(id) as? HostedSaveFolder)?.let { HostedFolder(id, it.hostedFolderTitle) }
             }
+        }
+    }
+
+    private val thorSetupNotices = app.foldcade.language.ThorSetupNotices()
+
+    /** Apply before launch; publishing one settings snapshot and a notice never delays Home drawing. */
+    internal suspend fun applyThorPreset(player: Player) {
+        if (player.id != "azahar") return
+        var appliedNow = false
+        val result = withContext(Dispatchers.IO) {
+            thorPresets.apply(player.id, playerSaveFolder(player)) { appliedNow = true }
+        } ?: return
+        withContext(Dispatchers.Main.immediate) {
+            shell.setThorSetup(player.id, result)
+            if (result.status in setOf(app.foldcade.language.ThorSetupStatus.Applied, app.foldcade.language.ThorSetupStatus.Kept, app.foldcade.language.ThorSetupStatus.Restored)) {
+                dismissNotice(app.foldcade.language.ThorSetupCopy.noticePrefix + player.id)
+            }
+            thorSetupNotices.update(player.id, result.status, System.currentTimeMillis(), appliedNow)?.let(::postNotice)
         }
     }
 
@@ -1481,7 +1503,10 @@ class FoldcadeApp : Application() {
         eden?.let(::playerSaveFolder)?.takeIf { it != edenUserFolder }?.let { folder ->
             if (playerSaves.edenHasUser(eden, folder)) edenUserFolder = folder else setup.putIfAbsent(eden.id, Copy.edenUserSteps)
         }
-        return PlayerFolderNotes(sync, setup)
+        val thor = listOfNotNull(plugins.player("azahar")).associate { player ->
+            player.id to thorPresets.read(player.id, playerSaveFolder(player))!!
+        }
+        return PlayerFolderNotes(sync, setup, thor)
     }
 
     /** The Eden folder last seen holding a user. Users are not taken away in passing. */
@@ -1491,6 +1516,7 @@ class FoldcadeApp : Application() {
     private data class PlayerFolderNotes(
         val sync: Map<String, app.foldcade.api.plugin.SaveSyncState>,
         val setup: Map<String, String>,
+        val thor: Map<String, app.foldcade.language.ThorSetupSetting>,
     )
 
     /**
