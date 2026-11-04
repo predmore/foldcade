@@ -354,6 +354,7 @@ class ThemeTypography internal constructor(private val reader: ThemeStyleReader)
     val menuRow = size("menuRow", TypeRamp.menuRow.value)
     val sideRow = size("sideRow", TypeRamp.sideRow.value)
     val hint = size("hint", TypeRamp.hint.value)
+    val tileStatus = size("tileStatus", 10f)
     val clock = size("clock", TypeRamp.clock.value)
 
     /** Running text: rows, hints, values. */

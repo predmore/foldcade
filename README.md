@@ -83,7 +83,7 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 
 ### One press, and you are playing
 
-Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once you install a core for it.
+Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
 
 ### Two drawers, always a press away
 

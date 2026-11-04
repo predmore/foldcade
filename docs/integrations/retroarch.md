@@ -1,13 +1,12 @@
 # RetroArch
 
-[RetroArch](https://www.retroarch.com) runs dozens of systems through cores, and signs in to [RetroAchievements](https://retroachievements.org) for all of them. Install it and its cores. Foldcade then opens your games in it, from [local folders](local-games.md) and from [RomM](romm.md).
+[RetroArch](https://www.retroarch.com) runs dozens of systems through cores, and signs in to [RetroAchievements](https://retroachievements.org) for all of them. Install it. Foldcade gets missing cores and opens your games in it, from [local folders](local-games.md) and from [RomM](romm.md).
 
 ## Set up RetroArch
 
 1. Install the 64-bit RetroArch from [retroarch.com](https://www.retroarch.com/?page=platforms) (`com.retroarch.aarch64`) or from F-Droid (`com.retroarch`). Google Play's RetroArch can't open games from other apps.
-2. Open RetroArch once and allow access to files. RetroArch reads your games by their place on the device, so it needs that permission.
-3. Install a core for each system: **Main Menu › Online Updater › Core Downloader**. The table below lists the cores Foldcade starts.
-4. To earn achievements, sign in under **Settings › Achievements** in RetroArch. Foldcade passes nothing to it. Hardcore mode, on by default, turns off save states and rewind.
+2. Allow RetroArch access to files. If it needs this at launch, **Allow file access** opens its Android App info page; enable file access under Permissions, then return to Foldcade to carry on.
+3. To earn achievements, sign in under **Settings › Achievements** in RetroArch. Foldcade passes nothing to it. Hardcore mode, on by default, turns off save states and rewind.
 
 ## Let Foldcade see your cores
 
@@ -19,7 +18,7 @@ Without that folder, Foldcade starts the first core in the table and can't warn 
 
 ## Systems and cores
 
-Foldcade uses the first core in each row that is installed. If none is installed, it says which core to install. For every system except the Nintendo DS and the PlayStation, RetroArch with a core goes ahead of a standalone emulator. melonDS keeps the DS because it draws the touch screen on the bottom display, and DuckStation keeps the PlayStation because Foldcade brings it the BIOS and memory cards from RomM. Without a core, a system's standalone emulator plays as before.
+Foldcade uses the first core in each row that is installed. If none is installed, press **A** as usual: the tile and top screen say `Getting <core>…`, the bar fills, and the game starts when it is ready. **B** cancels the download. A core you chose explicitly is fetched if it is missing, rather than changing your choice. For every system except the Nintendo DS and the PlayStation, RetroArch with a core goes ahead of a standalone emulator. melonDS keeps the DS because it draws the touch screen on the bottom display, and DuckStation keeps the PlayStation because Foldcade brings it the BIOS and memory cards from RomM. Without a core, a system's standalone emulator plays as before.
 
 | System | Example folder | Cores, in order |
 | --- | --- | --- |
@@ -48,6 +47,14 @@ Foldcade uses the first core in each row that is installed. If none is installed
 | WonderSwan, WonderSwan Color | `wonderswan`, `wonderswancolor` | Beetle WonderSwan |
 | ColecoVision | `colecovision` | Gearcoleco, blueMSX |
 
+### How cores arrive
+
+Foldcade uses [libretro’s Android nightly feed](https://buildbot.libretro.com/nightly/android/latest/arm64-v8a/), for the installed RetroArch’s ARM architecture. The [1.22.2 stable Android directory](https://buildbot.libretro.com/stable/1.22.2/android/) provides APKs, not matching core archives. Core releases have their own versions; they do not need to share RetroArch’s frontend version. Foldcade checks the download length, ZIP entry name, expanded size, CRC, and ELF architecture before handing it over.
+
+The verified core is staged under `Android/media/<Foldcade package>/retroarch-cores`. RetroArch’s exported [CoreSideloadActivity](https://github.com/libretro/RetroArch/blob/v1.22.2/pkg/android/phoenix/src/com/retroarch/browser/debug/CoreSideloadActivity.java) copies it into its core directory and starts the game in one handoff, after Foldcade prepares saves. No `.info` download, updater visit, core-list refresh, or writable folder grant is needed. Installed cores are left alone; the existing ordered table and standalone-emulator preferences still apply. Thor uses the `arm64-v8a` feed, with no special core override.
+
+Android protects its direct runtime-permissions page from normal apps on Thor, so the 1.22.2 file-access shortcut opens App info. This step cannot be fully automatic. Newer RetroArch builds that request all-files access have a direct Android permission page.
+
 Disc systems need their BIOS files in RetroArch's system folder (`RetroArch/system`). Check each core's documentation for the file names.
 
 ## Saves
@@ -74,8 +81,8 @@ RetroArch opens a game by its place on the device:
 
 ## If something goes wrong
 
-- **"RetroArch has no core for …"**: install the named core, then start the game again. **Open RetroArch** takes you there.
-- **"RetroArch can't read games yet"**: open RetroArch and allow access to files.
+- `Couldn’t get <core>`: choose **Try again**. **Open RetroArch** keeps the manual route available: **Online Updater › Core Downloader**. Builds without the exported core installer, and unsupported processor architectures, use this manual route.
+- **"RetroArch can’t read games yet"**: choose **Allow file access**, allow it under Android’s Permissions, then return to Foldcade.
 - **RetroArch shows a black screen or its menu**: the core or BIOS is missing, or the folder from **Let Foldcade see your cores** isn't set.
 - **A save didn't sync**: check that the save folder is `RetroArch/saves`, and that the sorting setting above is on.
 

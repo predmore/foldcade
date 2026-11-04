@@ -176,6 +176,7 @@ Text sizes in sp, and weights (CSS weights, 1–1000). One `font.ttf` is synthes
 | `type.menuRow` | 18 | Menu and Settings rows |
 | `type.sideRow` | 18 | Island rows and sliders |
 | `type.hint` | 14 | Hint row, chips, small print |
+| `type.tileStatus` | 10 | Core name in a tile’s progress chip |
 | `type.clock` | 64 | The command center's clock |
 | `type.bodyWeight` | 400 | Running text |
 | `type.strongWeight` | 600 | Titles, headers, the typed name, Done |

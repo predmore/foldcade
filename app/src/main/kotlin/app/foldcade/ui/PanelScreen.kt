@@ -4202,7 +4202,7 @@ private fun TileStatus(
                 scaleY = grown
                 transformOrigin = TransformOrigin(1f, 0.5f)
             }
-            .height(px(tile.statusChipPx))
+            .height(px(tile.statusChipPx * if (loading?.core != null) 2f else 1f))
             .clip(theme.style.shape.control())
             .background(theme.background.copy(alpha = tile.statusBackingAlpha))
             .padding(horizontal = px(((tile.statusChipPx - tile.statusIconPx) / 2f).coerceAtLeast(0f))),
@@ -4211,11 +4211,17 @@ private fun TileStatus(
     ) {
         if (showsBar) {
             // Before the size is known the bar waits empty; the cloud beside it breathes.
-            DownloadBar(
-                fraction = if (activity == TileActivity.Checking) 1f else loading?.fraction ?: 0f,
-                animatorScale = animatorScale,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                loading?.core?.let { core ->
+                    BasicText(Copy.gettingCore(core), style = text(theme.onBackground, theme.style.type.tileStatus, theme),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                DownloadBar(
+                    fraction = if (activity == TileActivity.Checking) 1f else loading?.fraction ?: 0f,
+                    animatorScale = animatorScale,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         val (icon, tint) = when {
             synced != null -> if (synced.mark.worked) {

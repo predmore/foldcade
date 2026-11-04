@@ -6,6 +6,7 @@ import kotlinx.coroutines.Job
 internal class LaunchWork {
     private var generation = 0
     var job: Job? = null
+    var retroArchCore: PreparedRetroArchCore? = null
     val active: Boolean get() = job?.isActive == true
 
     fun begin(): Int {
@@ -17,6 +18,7 @@ internal class LaunchWork {
         generation += 1
         job?.cancel()
         job = null
+        retroArchCore = null
     }
 
     fun current(ticket: Int): Boolean = ticket == generation
