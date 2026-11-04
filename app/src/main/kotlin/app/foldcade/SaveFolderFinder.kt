@@ -32,12 +32,26 @@ internal class SaveFolderFinder(
         val counting = places.filter { it.counts }
         // A player given two of its places keeps one of them, and its grants cannot say which.
         val playerHasOne = !holder.saveFolderPickedInPlayer || places.count { it.inPlayer } <= 1
-        val chosen = (counting.singleOrNull() ?: counting.filter { it.inPlayer }.singleOrNull())?.takeIf { playerHasOne }
+        // An emulator's own DocumentsProvider may expose otherwise private app data.
+        // Reuse only an already-held grant for its exact suggested root.
+        val provider = holder.suggestedSaveFolder?.takeIf {
+            java.net.URI(it).authority != "com.android.externalstorage.documents"
+        }?.let { suggested ->
+            grants.filter { it.read && it.write && java.net.URI(it.uri).authority == java.net.URI(suggested).authority &&
+                folderTreeId(it.uri).trimEnd('/') == folderDocumentId(suggested).trimEnd('/') }
+                // Dolphin's picker returns root/ although its root hint is root.
+                // Keep the actual granted id in the document URI.
+                .map { folderDocumentUri(it.uri, folderTreeId(it.uri)) }
+                .distinct().singleOrNull()?.takeIf { isDirectory(it) && fits(holder, it) }
+        }
+        val selected = (counting.singleOrNull() ?: counting.filter { it.inPlayer }.singleOrNull())?.takeIf { playerHasOne }
+        val candidates = (counting.mapNotNull { it.uri } + listOfNotNull(provider)).distinct()
+        val chosen = if (provider != null) provider.takeIf { counting.isEmpty() } else selected?.uri
         val start = (counting.firstOrNull() ?: places.firstOrNull { it.exists })?.let { primaryFolderDocument(it.path) }
         return SaveFolderFind(
-            chosen?.uri,
+            chosen,
             start ?: holder.suggestedSaveFolder ?: places.firstOrNull()?.let { primaryFolderDocument(it.path) },
-            counting.mapNotNull { it.uri },
+            candidates,
             start,
         )
     }

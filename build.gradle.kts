@@ -24,6 +24,8 @@ tasks.register("testDebugUnitTest") {
         ":plugins:azahar:test",
         ":plugins:droiddeck:test",
         ":plugins:duckstation:test",
+        ":plugins:dolphin:test",
+        ":plugins:ppsspp:test",
         ":plugins:eden:test",
         ":plugins:emulators:test",
         ":plugins:gamenative:test",

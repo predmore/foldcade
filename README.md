@@ -87,6 +87,8 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 
 Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
 
+**A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
+
 ### Two drawers, always a press away
 
 | L1: your Foldcade | R1: your Thor |
@@ -174,7 +176,7 @@ No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and M
 Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
 
 **Which saves sync?**
-melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, and Eden account saves. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
+melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, Eden account saves, PPSSPP game saves, and Dolphin’s GameCube Slot A GCI saves (ISO/GCM games). Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.

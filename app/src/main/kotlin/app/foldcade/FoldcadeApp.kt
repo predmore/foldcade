@@ -513,18 +513,6 @@ class FoldcadeApp : Application() {
         games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
     }
 
-    /**
-     * True while usage access lets Foldcade see what a resume brought to the front
-     * (process exits would take DUMP, which no normal app holds). Without it a game
-     * may have closed unseen and its player's front door would open the player's own
-     * menu, so no game is offered as paused.
-     */
-    internal var closesVisible = false
-        private set(value) {
-            field = value
-            if (::shell.isInitialized) shell.resumable = value
-        }
-
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
     internal var pendingSaveAsk: PendingBackendLaunch? = null
 
@@ -539,7 +527,7 @@ class FoldcadeApp : Application() {
     internal val closingPlayers = mutableSetOf<String>()
 
     internal fun canCloseGame(tileId: String): Boolean = runningOn(tileId)?.let {
-        it.packageName !in closingPlayers && packageManager.getLaunchIntentForPackage(it.packageName) != null
+        canClearPlayerTask(it.packageName) && it.packageName !in closingPlayers && packageManager.getLaunchIntentForPackage(it.packageName) != null
     } == true
 
     internal fun moveGameTarget(tileId: String): Panel? {
@@ -730,17 +718,6 @@ class FoldcadeApp : Application() {
         }
     }
 
-    /**
-     * Reads whether usage access is granted, which decides whether any game reads
-     * Paused ([closesVisible]). Without it the games stay noted, so a start in
-     * their player still replaces their task.
-     */
-    internal fun pruneRunningGames() {
-        if (runningGames.packages().isEmpty()) return
-        val visible = UsageAccess(this).granted()
-        if (closesVisible != visible) closesVisible = visible
-    }
-
     /** Process-exit times for [packageName], newest history Android still has. */
     internal fun playerExitTimestamps(packageName: String): List<Long> {
         val manager = getSystemService(ActivityManager::class.java) ?: return emptyList()
@@ -883,6 +860,7 @@ class FoldcadeApp : Application() {
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
             playMillis = { plays.shown(it).activeMillis },
+            rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onBrightness = { position -> brightness.write(brightnessLevel(position)) },
@@ -1299,13 +1277,19 @@ class FoldcadeApp : Application() {
             perfMark("discovery")
             if (!::plugins.isInitialized) return@withLock
             val players = plugins.playerIds().mapNotNull(plugins::player)
-                .filter { it is SaveFolderHolder && it !is EdenPlayer }.distinctBy { it.saveFolderId() }
+                .filter { it is SaveFolderHolder }.distinctBy { it.saveFolderId() }
             val android = AndroidSaveFolderFinder(this@FoldcadeApp)
             val grants = android.grants(players.filterIsInstance<SaveFolderHolder>())
             val newlyFound = mutableListOf<Pair<String, String>>()
             var firstFound: String? = null
             for (player in players) {
-                val holder = player as SaveFolderHolder
+                // Eden's explicit, per-package data-folder choice also supplies keys and firmware.
+                // Keep it ahead of discovery; its external-files place is useful with an older SAF grant.
+                val edenPackage = if (player is EdenPlayer) installedEdenPackage(player, ::packageInstalled) else null
+                if (player is EdenPlayer && (edenPackage == null || store.edenFolder(edenPackage) != null)) continue
+                val holder = if (player is EdenPlayer) object : SaveFolderHolder by player {
+                    override val saveFolderPlaces = listOf("Android/data/$edenPackage/files")
+                } else player as SaveFolderHolder
                 val key = player.saveFolderId()
                 val saved = store.playerSaveFolder(key)?.let { SavedSaveFolder(it, store.playerSaveFolderFound(key)) }
                 val finder = android.finder(player, grants)
@@ -1316,13 +1300,15 @@ class FoldcadeApp : Application() {
                 val bound = next != null && android.holdsGrant(next.uri, grants)
                 // A picker can finish while the provider is being read. Its choice wins.
                 withContext(Dispatchers.Main.immediate) {
+                    if (edenPackage != null && store.edenFolder(edenPackage) != null) return@withContext
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
-                    // Only an emulator on the device is news, and only it has a tile for the notice to open.
+                    // Only an emulator on the device is news. Eden has no standalone save-folder tile,
+                    // so its find stays a readable notice instead of reopening a folder picker.
                     if (next?.found == true && bound && next.uri != saved?.uri && player.packageNames.any(::packageInstalled)) {
                         newlyFound += player.displayName to folderPathLabel(next.uri)
-                        if (firstFound == null) firstFound = player.id
+                        if (firstFound == null && player !is EdenPlayer) firstFound = player.id
                     }
                     for (id in plugins.playerIds()) {
                         val sharing = plugins.player(id) ?: continue
@@ -1333,7 +1319,7 @@ class FoldcadeApp : Application() {
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
                 // A folder bound without asking says where, so a wrong one is never bound unseen. A opens
-                // Set up saves on the first one found, whose page says where again.
+                // Set up saves on the first one with a save-folder tile, whose page says where again.
                 if (newlyFound.isNotEmpty()) postNotice(FoldNotice(
                     id = SAVES_FOUND_NOTICE_ID, title = Copy.savesFoundTitle, body = Copy.savesFoundBody(newlyFound),
                     postedMillis = System.currentTimeMillis(), savePlayerId = firstFound,
@@ -1600,7 +1586,9 @@ class FoldcadeApp : Application() {
     }
 
     /** The granted Eden folder, per installed package. */
-    internal val edenFolderReader: EdenFolderReader by lazy { EdenFolderReader(this, store::edenFolder) }
+    internal val edenFolderReader: EdenFolderReader by lazy {
+        EdenFolderReader(this, store::edenFolder) { store.playerSaveFolder("eden") }
+    }
 
     /**
      * The Eden package Foldcade added files to that has not started since.
@@ -2571,7 +2559,7 @@ class FoldcadeApp : Application() {
             model.emptyGrid == EmptyGrid.NoPlatforms -> reloadFolder()
             else -> null
         }
-        val romm = synchronized(rommTicket) { rommRefreshJob?.takeIf { it.isActive } } ?: syncRomm()
+        val romm = joinOrSyncRomm()
         withContext(Dispatchers.IO) {
             // After the folders, which route their .steam files into the catalog.
             folders?.join()
@@ -2670,6 +2658,11 @@ class FoldcadeApp : Application() {
      * once no server is saved. The grid does not change mode while this runs. A
      * server that cannot be reached leaves the board as it was, placed tiles included.
      */
+    /** Launch waits join startup's refresh instead of repeatedly cancelling it. */
+    fun joinOrSyncRomm(): Job = synchronized(rommTicket) {
+        rommRefreshJob?.takeIf { it.isActive } ?: syncRomm()
+    }
+
     fun syncRomm(): Job {
         synchronized(rommTicket) {
             val ticket = rommTicket.incrementAndGet()

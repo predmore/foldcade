@@ -6,18 +6,28 @@ import kotlinx.coroutines.Job
 internal class LaunchWork {
     private var generation = 0
     var job: Job? = null
+    private var subjectId: String? = null
     var retroArchCore: PreparedRetroArchCore? = null
     val active: Boolean get() = job?.isActive == true
 
-    fun begin(): Int {
+    fun pending(id: String): Boolean = active && subjectId == id
+
+    fun begin(subject: String? = null): Int {
         cancel()
+        subjectId = subject
         return generation
+    }
+
+    /** A catalog wait is handing its one resolved route to the normal launch. */
+    fun resolved(ticket: Int) {
+        if (current(ticket)) subjectId = null
     }
 
     fun cancel() {
         generation += 1
         job?.cancel()
         job = null
+        subjectId = null
         retroArchCore = null
     }
 

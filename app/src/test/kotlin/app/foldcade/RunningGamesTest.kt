@@ -64,6 +64,13 @@ class RunningGamesTest {
         assertFalse(handlesPanelSizeChange(0))
     }
 
+    @Test fun retroArchNeverGetsAnExternalTaskClearEvenAsACompanion() {
+        for (pkg in app.foldcade.plugins.retroarch.PACKAGES) assertFalse(canClearPlayerTask(pkg))
+        for (pkg in listOf("org.azahar_emu.azahar", "com.github.stenzek.duckstation", "com.android.settings")) {
+            assertTrue(canClearPlayerTask(pkg))
+        }
+    }
+
     @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
@@ -134,6 +141,14 @@ class RunningGamesTest {
         assertFalse(resumable("org.ppsspp.ppsspp.PpssppActivity", "org.ppsspp.ppsspp.PpssppActivity"))
         assertTrue(resumable("org.citra.citra_emu.ui.main.MainActivity", "org.citra.citra_emu.activities.EmulationActivity"))
         assertFalse(resumable(null, "org.citra.citra_emu.activities.EmulationActivity"))
+    }
+
+    @Test fun anExplicitlyReusableStartDoesNotNeedASeparateLauncherActivity() {
+        for (flags in listOf(setOf(LaunchFlag.SameStartResumes), setOf(LaunchFlag.MovesBetweenScreens))) {
+            assertTrue(resumable("player.Main", "player.Main", flags))
+            assertTrue(resumable(null, "player.Main", flags))
+        }
+        assertFalse(resumable("player.Main", "player.Main", setOf(LaunchFlag.NewTask)))
     }
 
     @Test fun closingRemovesPausedButKeepsTheReplacementGuard() {

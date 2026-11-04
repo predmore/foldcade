@@ -52,7 +52,7 @@ class RommSlotMoved(detail: String) : RommException(
 
 /** `GET /api/roms/{id}/content/{file}` returned 202. This client does not send `format`. */
 class RommConversionPending(val retryAfterSeconds: Long?) : RommException(
-    "RomM is converting this ROM. Foldcade does not request format conversion.",
+    "RomM is still preparing this game. The server preparation wait ended.",
 )
 
 class RommUnsupportedServer(val serverVersion: String, message: String) : RommException(message)

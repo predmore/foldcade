@@ -50,7 +50,7 @@ class EdenSettingsTest {
             val dialog = saveNotPlacedDialog("Fantasy Life", HostScreen.Bottom, playAnyway = true, needsEdenUser = needsUser)
             assertEquals(DialogKind.EdenSaveHold, dialog.kind)
             assertEquals("${Copy.saveNotPlaced} Fantasy Life", dialog.title)
-            assertEquals(if (needsUser) Copy.edenSaveNeedsUser else Copy.edenSaveUnresolved, dialog.body)
+            assertEquals(if (needsUser) Copy.edenSaveNeedsUser else Copy.saveUnresolved, dialog.body)
             assertEquals(listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing, DialogButton.NotNow), dialog.buttons)
             assertEquals(DialogButton.SetUpSaves, dialog.buttons[dialog.index])
             assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])

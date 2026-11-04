@@ -8,6 +8,63 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveFolderFinderTest {
+    @Test fun ppssppFindsWritableSavesAlongsideReadOnlyFoundRomTrees() {
+        val player = app.foldcade.plugins.ppsspp.PpssppPlayer()
+        val roms = SaveFolderGrant(romRootTree("app.foldcade.library", "primary:ROMs"), true, false)
+        val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
+        directories += "primary:PSP"
+        names["primary:PSP"] = listOf("SAVEDATA", "SYSTEM")
+        assertNull(finder(roms).find(player).folder)
+        // All-files access still needs PPSSPP's own exact PSP grant.
+        assertNull(finder(roms, allFiles).find(player).folder)
+        playerGrants += "primary:PSP"
+        val expected = folderDocumentUri(allFiles.uri, "primary:PSP")
+        assertEquals(expected, finder(roms, allFiles).find(player).folder)
+        val saf = grant(tree("primary:PSP"))
+        assertEquals(saf.uri, finder(roms, allFiles, saf).find(player).folder)
+        // Revoking all-files cannot turn a read-only ROM tree into writable save access.
+        assertNull(finder(roms).find(player).folder)
+    }
+
+    @Test fun dolphinOwnProviderAndAllFilesDiscoveryStayDistinctFromFoundRoms() {
+        val player = app.foldcade.plugins.dolphin.DolphinPlayer()
+        val roms = SaveFolderGrant(romRootTree("app.foldcade.library", "primary:ROMs"), true, false)
+        val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
+        val own = SaveFolderGrant("content://org.dolphinemu.dolphinemu.user/tree/root%2F", true, true)
+        directories += "root/"
+        names["root/"] = listOf("GC", "Config")
+        val expected = folderDocumentUri(own.uri, "root/")
+        assertEquals(expected, finder(roms, allFiles, own).find(player).folder)
+        // All-files does not bypass Android/data; the exact emulator provider remains usable.
+        assertNull(finder(roms, allFiles).find(player).folder)
+        assertEquals(expected, finder(roms, own).find(player).folder)
+        directories += "primary:dolphin-emu"
+        names["primary:dolphin-emu"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(allFiles.uri, "primary:dolphin-emu"), finder(roms, allFiles).find(player).folder)
+        // A legacy shared folder and the emulator's own folder must not be guessed between.
+        assertNull(finder(roms, allFiles, own).find(player).folder)
+    }
+
+    @Test fun emulatorProviderReusesOnlyAnExactWritableRootWithMarkers() {
+        val uri = "content://org.dolphinemu.dolphinemu.user/tree/root"
+        val holder = object : SaveFolderHolder {
+            override fun bindSaveFolder(contentUri: String) = Unit
+            override fun hasSaveFolder() = false
+            override val suggestedSaveFolder = "content://org.dolphinemu.dolphinemu.user/root/root"
+            override val saveFolderMarkers = setOf("GC")
+        }
+        directories += "root"
+        names["root"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(uri, "root"), finder(SaveFolderGrant(uri, true, true)).find(holder).folder)
+        val slash = "$uri%2F"
+        directories += "root/"
+        names["root/"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(slash, "root/"), finder(SaveFolderGrant(slash, true, true)).find(holder).folder)
+        assertEquals("Dolphin files", folderPathLabel(folderDocumentUri(slash, "root/")))
+        assertNull(finder(SaveFolderGrant(uri, true, false)).find(holder).folder)
+        assertNull(finder(SaveFolderGrant("content://other/tree/root", true, true)).find(holder).folder)
+        assertNull(finder(SaveFolderGrant("$uri%2FGC", true, true)).find(holder).folder)
+    }
     private val directories = mutableSetOf<String>()
     private val names = mutableMapOf<String, List<String>>()
     private val playerGrants = mutableSetOf<String>()
@@ -66,6 +123,21 @@ class SaveFolderFinderTest {
         assertEquals(tree("primary:Azahar"), f.find(h).folder)
         directories.clear()
         assertNull(f.find(h).folder)
+    }
+
+    @Test fun edenUsesAHeldAncestorOnlyWhenTheDataRootHasItsMarkers() {
+        val player = app.foldcade.plugins.eden.EdenPlayer()
+        val id = "primary:${player.saveFolderPlaces.first()}"
+        val ancestor = tree("primary:Android/data")
+        directories += id
+        val f = finder(grant(ancestor))
+        names[id] = listOf("roms")
+        assertNull(f.find(player).folder)
+        for (marker in player.saveFolderMarkers) {
+            names[id] = listOf(marker)
+            assertEquals(folderDocumentUri(ancestor, id), f.find(player).folder)
+        }
+        assertNull(finder(SaveFolderGrant(ancestor, true, false)).find(player).folder)
     }
 
     @Test fun aFolderPickedInThePlayerNeedsItsReadWriteGrant() {

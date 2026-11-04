@@ -104,6 +104,8 @@ import app.foldcade.language.homeGameId
 import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
+import app.foldcade.language.pendingGameTitle
+import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
@@ -209,6 +211,8 @@ class ShellController(
     private val restoreResultPending: () -> Boolean = { false },
     /** Both folder scan paths notify the aggregate PC catalogs after the last pending tree clears. */
     private val onRestoreFoldersConnected: () -> Unit = {},
+    /** Already loaded play history; resolving a launch wait must never read the disk. */
+    private val rememberedPlayName: (String) -> String? = { null },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -741,9 +745,6 @@ class ShellController(
             .sortedBy { it.name.lowercase() }
         if (rows != model.streamHosts) model = model.copy(streamHosts = rows)
     }
-
-    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
-    var resumable by mutableStateOf(false)
 
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
@@ -2000,7 +2001,7 @@ class ShellController(
 
     private fun busyOnDevice(id: String): Boolean = isRunning(id) || tileIds(id).any { one ->
         one in downloading || one in removing || libraryOf(one) in relisting ||
-            activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+            activity[one]?.cancellableTransfer == true
     }
 
     /** True while the game on [id]'s tile is still open in its player, in front or behind Home. */
@@ -2009,7 +2010,7 @@ class ShellController(
 
     /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
     fun isPaused(id: String?): Boolean {
-        if (id == null || !resumable || !isRunning(id)) return false
+        if (id == null || !isRunning(id)) return false
         // On a screen under any id the tile has had, as a game started before a merge is.
         return (tileIds(tileOf(id)) + id).none(store.session::runs)
     }
@@ -2104,6 +2105,8 @@ class ShellController(
                 },
                 firmware = true,
             )
+            GameActivity.PreparingOnServer -> TileActivity.PreparingOnServer
+            GameActivity.Retrying -> TileActivity.Retrying
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
             is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)
@@ -2116,6 +2119,40 @@ class ShellController(
         if (activity[id] != next) activity = activity + (id to next)
         return (next as? TileActivity.Synced)?.untilMillis
     }
+
+    private val catalogWaitTitles = HashMap<String, String>()
+    private val catalogWaitRecords = HashMap<String, Game>()
+
+    fun beginCatalogWait(tileId: String) {
+        val game = findGame(tileId)
+        // This record is only an artwork identity, never a launch route. RomM's
+        // cached metadata lookup is memory-only, including before Home's snapshot lands.
+        val record = home.game(tileId) ?: tileIds(tileId).firstOrNull { libraryOf(it) == RommCredentials.PLUGIN_ID }
+            ?.let(::homeGameKey)?.let {
+                Game(RommCredentials.PLUGIN_ID, it, game.platformId.orEmpty(), Availability.RemoteOnly, game.title)
+            }
+        val cached = record?.takeIf { it.backendId == RommCredentials.PLUGIN_ID }?.let {
+            plugins.metadata(RommCredentials.METADATA_ID)?.cached(it)
+        }
+        catalogWaitTitles[tileId] = pendingGameTitle(
+            game.title, tileId, TileActivity.LoadingLibrary,
+            rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
+        )
+        // An unknown record would let art fetchers cache a failed provider lookup
+        // or search for "Your game" under the real game's id before its catalog arrives.
+        if (record != null && cached != null) catalogWaitRecords[tileId] = record
+        activity = activity + (tileId to TileActivity.LoadingLibrary)
+    }
+
+    fun endCatalogWait(tileId: String) {
+        catalogWaitTitles.remove(tileId)
+        catalogWaitRecords.remove(tileId)
+        if (activity[tileId] == TileActivity.LoadingLibrary) activity = activity - tileId
+    }
+
+    /** Both screens reuse the name resolved once at the press, with no history/cache lookups in the grid. */
+    fun displayTitle(game: ShelfGame, activity: TileActivity? = activityOf(game.id)): String =
+        pendingGameTitle(game.title, game.id, activity, remembered = catalogWaitTitles[game.id])
 
     /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */
     fun expireActivity(libraryId: String, remoteKey: String, untilMillis: Long) {
@@ -3240,7 +3277,7 @@ class ShellController(
         }
         return matchedArtQuery(ArtQuery(
             key = if (model.libraryGrid && record != null) tileOf(homeGameId(libraryId, record.remoteKey)) else game.id,
-            title = game.title,
+            title = displayTitle(game),
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = when (libraryId) {
@@ -3256,7 +3293,7 @@ class ShellController(
 
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =
-        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game ?: streamRecord(game)
+        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game ?: catalogWaitRecords[game.id] ?: streamRecord(game)
 
     /** A Moonlight tile as its library lists it, so Moonlight's own poster can answer for it. */
     private fun streamRecord(game: ShelfGame): Game? {
@@ -3279,7 +3316,7 @@ class ShellController(
         find != null -> find?.subject?.id?.let(home::game)
         showingHome() -> focusedHomeFace()?.id?.let(home::game)
         else -> focusedEntry()?.game
-    } ?: focusedGame()?.let(::streamRecord)
+    } ?: focusedGame()?.let { catalogWaitRecords[it.id] ?: streamRecord(it) }
 
     /**
      * What the idle top screen shows for the focused cell.
@@ -3339,7 +3376,7 @@ class ShellController(
     private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
         HeroItem(
             key = game.id,
-            title = game.title,
+            title = displayTitle(game),
             detail = libraryPlatformName(game.platformId) ?: game.shortText,
             mark = game.mark,
             packageName = game.androidPackage,

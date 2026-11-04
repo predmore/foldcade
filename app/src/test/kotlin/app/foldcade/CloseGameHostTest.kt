@@ -16,10 +16,18 @@ class CloseGameHostTest {
         it.ingestLibrary("local-folder", listOf(GridEntry("sonic", "Sonic", "GBA", "gba", null, false,
             Game("local-folder", "sonic", "gba", Availability.LocalOnly, "Sonic"))), emptyList())
         it.openHomeAll()
-        it.resumable = true
         it.running = setOf(id)
         it.canCloseGame = { true }
         it.moveGameScreen = { HostScreen.Bottom }
+    }
+
+    @Test fun aKnownRunIsPausedWithoutAnExitObservationPermission() {
+        val shell = shell()
+        assertTrue(shell.isPaused(id))
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertTrue(Row.RestartGame in panelRows(shell.model.panel!!, shell.model))
+        shell.running = emptySet()
+        assertFalse(shell.isPaused(id))
     }
 
     @Test fun xClosesAPausedTileButRepeatedXDoesNothing() {
