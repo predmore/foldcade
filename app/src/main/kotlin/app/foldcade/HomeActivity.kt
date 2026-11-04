@@ -1533,7 +1533,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 return
             }
         }
-        // Eden's keys and firmware, also before a download. The same player the RetroArch check uses.
+        if (first is SaveFolderHolder && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
+        // Eden's keys and firmware need its discovered folder, also before a download.
         if (first != null && installedEdenPackage(first, ::packageInstalled) != null) {
             try {
                 if (edenHeld(first, generation, libraryId, game.remoteKey)) {
@@ -1548,7 +1549,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 throw cancelled
             }
         }
-        if (first is SaveFolderHolder && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)

@@ -1292,10 +1292,11 @@ class FoldcadeApp : Application() {
                     if (store.playerSaveFolder(key) != saved?.uri || store.playerSaveFolderFound(key) != (saved?.found == true)) return@withContext
                     if (next != saved) store.setPlayerSaveFolder(key, next?.uri, next?.found == true)
                     val uri = next?.uri?.takeIf { bound }.orEmpty()
-                    // Only an emulator on the device is news, and only it has a tile for the notice to open.
+                    // Only an emulator on the device is news. Eden has no standalone save-folder tile,
+                    // so its find stays a readable notice instead of reopening a folder picker.
                     if (next?.found == true && bound && next.uri != saved?.uri && player.packageNames.any(::packageInstalled)) {
                         newlyFound += player.displayName to folderPathLabel(next.uri)
-                        if (firstFound == null) firstFound = player.id
+                        if (firstFound == null && player !is EdenPlayer) firstFound = player.id
                     }
                     for (id in plugins.playerIds()) {
                         val sharing = plugins.player(id) ?: continue
@@ -1306,7 +1307,7 @@ class FoldcadeApp : Application() {
             withContext(Dispatchers.Main.immediate) {
                 shell.refreshPlayerSaves()
                 // A folder bound without asking says where, so a wrong one is never bound unseen. A opens
-                // Set up saves on the first one found, whose page says where again.
+                // Set up saves on the first one with a save-folder tile, whose page says where again.
                 if (newlyFound.isNotEmpty()) postNotice(FoldNotice(
                     id = SAVES_FOUND_NOTICE_ID, title = Copy.savesFoundTitle, body = Copy.savesFoundBody(newlyFound),
                     postedMillis = System.currentTimeMillis(), savePlayerId = firstFound,
