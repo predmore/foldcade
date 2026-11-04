@@ -1631,7 +1631,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         } else {
             emptyList()
         }
-        if (plan is GameLaunch.Installed && !prepareFirmware(plan.player, game, firmwareTarget, generation)) return
+        if (plan is GameLaunch.Installed && !prepareFirmware(plan.player, game, firmwareTarget, generation, firmwareBackendId = owner.backendId)) return
         // A player that still needs its own setup, such as firmware, does not start.
         if (plan is GameLaunch.Installed) {
             val steps = playerSetupSteps(plan.player)
@@ -2087,10 +2087,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** BIOS search and writes run only during a launch, off Main. */
-    private suspend fun prepareFirmware(player: Player, game: Game, target: LaunchTarget, generation: Int): Boolean =
-        foldcade.launchWork.prepare(generation) { prepareFirmwareFiles(player, game, target, generation) }
+    private suspend fun prepareFirmware(player: Player, game: Game, target: LaunchTarget, generation: Int, firmwareBackendId: String = game.backendId): Boolean =
+        foldcade.launchWork.prepare(generation) { prepareFirmwareFiles(player, game, target, generation, firmwareBackendId) }
 
-    private suspend fun prepareFirmwareFiles(player: Player, game: Game, target: LaunchTarget, generation: Int): Boolean {
+    private suspend fun prepareFirmwareFiles(player: Player, game: Game, target: LaunchTarget, generation: Int, firmwareBackendId: String): Boolean {
         val libraries = foldcade.store.libraryFolders().map { it.uri }
         val interested = withContext(Dispatchers.IO) {
             player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
@@ -2144,7 +2144,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     foldcade.shell.showDialog(playerNotice(app.foldcade.language.FirmwareCopy.title,
                         app.foldcade.language.FirmwareCopy.missing(
                             foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId,
-                            result.missing, result.place, rommConnected = foldcade.store.rommOrigin() != null), hostScreen()))
+                            result.missing, result.place,
+                            rommConnected = canUseRommFirmware(firmwareBackendId, foldcade.store.rommOrigin() != null)), hostScreen()))
                     false
                 }
                 else -> true

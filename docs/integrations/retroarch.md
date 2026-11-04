@@ -57,7 +57,7 @@ Android protects its direct runtime-permissions page from normal apps on Thor, s
 
 ## BIOS
 
-When a game needs both a core and BIOS, Foldcade gets the core first, then places your BIOS. The top screen shows each step separately; **B** cancels either step before the game opens.
+When a game needs both a core and BIOS, Foldcade gets the core first, then places your BIOS. The top screen shows each step separately; **B** cancels either step before the game opens. Missing-BIOS messages name the system and file; they offer RomM only when that launch uses its firmware connection.
 
 Foldcade brings your BIOS from the platform's RomM firmware or your local BIOS folders into `RetroArch/system` before launch. Choose the **RetroArch** folder once when Foldcade asks: that single grant covers both `system` and `saves`. Existing grants on that folder, `system`, or optional all-files access are reused. A previous grant on `saves` alone cannot reach its sibling `system`; choose **RetroArch** once in Settings › Emulators › RetroArch to extend it. A BIOS already there is never overwritten. If you changed RetroArch’s System/BIOS directory, grant Foldcade access to that folder too so it can reuse your existing files. A working set skips local discovery; unchanged local files and ZIPs reuse their verified source versions, so later launches do not copy the archive again.
 

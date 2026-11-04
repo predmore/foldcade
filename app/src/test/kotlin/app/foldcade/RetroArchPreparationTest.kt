@@ -87,6 +87,15 @@ class RetroArchPreparationTest {
 
     private fun shell() = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
 
+    @Test fun rommAdviceFollowsTheFirmwareOwnerRatherThanAnySavedConnection() {
+        assertFalse(canUseRommFirmware(game.backendId, connected = true))
+        assertFalse(canUseRommFirmware(app.foldcade.plugins.romm.ROMM_LIBRARY_ID, connected = false))
+        val server = game.copy(backendId = app.foldcade.plugins.romm.ROMM_LIBRARY_ID, availability = Availability.Cached)
+        val folded = GameRoute(id, play = game, saves = server)
+        assertTrue(canUseRommFirmware(folded.saves.backendId, connected = true))
+        assertFalse(canUseRommFirmware(folded.play.backendId, connected = true))
+    }
+
     @Test fun missingCoreThenBiosHaveDistinctProgressAndOneFinalHandoff() = runBlocking {
         val work = LaunchWork()
         val ticket = work.begin()

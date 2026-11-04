@@ -20,6 +20,10 @@ internal data class FirmwareResult(val written: List<String>, val missing: List<
     val blocksLaunch: Boolean get() = !needsFolder && missing.isNotEmpty()
 }
 
+/** Upload advice is actionable only when this launch negotiates firmware with RomM. */
+internal fun canUseRommFirmware(backendId: String, connected: Boolean): Boolean =
+    connected && backendId == app.foldcade.plugins.romm.ROMM_LIBRARY_ID
+
 /** Launch-only I/O. Every source is the player's storage or a checked RomM download. */
 internal class PlayerFirmware(private val context: Context, private val saves: PlayerSaves) {
     private val docs = AndroidSaveDocuments(context.contentResolver)
