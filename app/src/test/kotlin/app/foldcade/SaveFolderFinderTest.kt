@@ -125,6 +125,21 @@ class SaveFolderFinderTest {
         assertNull(f.find(h).folder)
     }
 
+    @Test fun edenUsesAHeldAncestorOnlyWhenTheDataRootHasItsMarkers() {
+        val player = app.foldcade.plugins.eden.EdenPlayer()
+        val id = "primary:${player.saveFolderPlaces.first()}"
+        val ancestor = tree("primary:Android/data")
+        directories += id
+        val f = finder(grant(ancestor))
+        names[id] = listOf("roms")
+        assertNull(f.find(player).folder)
+        for (marker in player.saveFolderMarkers) {
+            names[id] = listOf(marker)
+            assertEquals(folderDocumentUri(ancestor, id), f.find(player).folder)
+        }
+        assertNull(finder(SaveFolderGrant(ancestor, true, false)).find(player).folder)
+    }
+
     @Test fun aFolderPickedInThePlayerNeedsItsReadWriteGrant() {
         directories += "primary:saves/nds"
         val h = holder("saves/nds", picked = true)

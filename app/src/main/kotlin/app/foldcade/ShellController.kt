@@ -737,9 +737,6 @@ class ShellController(
         if (rows != model.streamHosts) model = model.copy(streamHosts = rows)
     }
 
-    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
-    var resumable by mutableStateOf(false)
-
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
         private set
@@ -1995,7 +1992,7 @@ class ShellController(
 
     /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
     fun isPaused(id: String?): Boolean {
-        if (id == null || !resumable || !isRunning(id)) return false
+        if (id == null || !isRunning(id)) return false
         // On a screen under any id the tile has had, as a game started before a merge is.
         return (tileIds(tileOf(id)) + id).none(store.session::runs)
     }

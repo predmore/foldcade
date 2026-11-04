@@ -45,6 +45,12 @@ class EdenPlayer : Player, SaveFolderHolder {
     override val requiresImportedGame: Boolean = false
     override val suggestedSaveFolder: String = "content://${EDEN_PACKAGES.first()}.user/root/root"
 
+    // DirectoryInitialization.initializeInternalStorage uses getExternalFilesDir(null).
+    // path_util.cpp roots config, keys and nand below that directory:
+    // https://git.eden-emu.dev/eden-emu/eden/src/commit/5df599128d6828fa0e42968909da848c255d22b1/src/common/fs/path_util.cpp
+    override val saveFolderPlaces: List<String> = EDEN_PACKAGES.map { "Android/data/$it/files" }
+    override val saveFolderMarkers: Set<String> = setOf("config", "keys", "nand")
+
     @Volatile
     private var saveFolder: String? = null
 

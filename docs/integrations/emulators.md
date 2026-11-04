@@ -43,6 +43,29 @@ These are formats Foldcade recognizes; the emulator must support them too. `.zip
 
 Shared formats need a [system folder](local-games.md#folder-names-and-formats).
 
+## Resume and Move on the Thor
+
+Press **A** on a game Foldcade left open to return to its existing session. Usage access is optional: turning it off must never turn that press into a restart. **Y › Restart** explicitly starts over. Without usage access, Foldcade cannot tell that a game was closed elsewhere; if A opens the emulator's menu, use Restart. Choosing a save to load also requires a fresh launch.
+
+**Move** is offered only for a tested one-screen emulator that preserves its running game on the other panel. DuckStation keeps its existing support. Both-screen games keep their emulator's own layout; changing a task's display does not by itself prove that its second screen survives.
+
+These checks used the Thor on 2026-11-04, with saves backed up before launch. A repeated start here removes clear-task/clear-top/multiple-task flags. Launcher resume uses `NEW_TASK | RESET_TASK_IF_NEEDED`; a display re-start uses those flags and `launchDisplayId`. No emulator settings were changed.
+
+| Emulator and test game | Re-send the game start | Launcher resume | Re-start on the other display | Foldcade route |
+| --- | --- | --- | --- | --- |
+| Azahar 2126.2; Sonic the Hedgehog 2 (3DS Virtual Console) | Tears down the emulated process; can stall loading | Keeps the running title screen and drawer | Moves the activity, but tears down/reloads the game and disrupts the second display | Launcher; no Move |
+| melonDS 2.0.1 GH; Tetris DS under a temporary filename | Asks to stop emulation and load a ROM, even for the same URI | Keeps the session | Activity survives a round trip, but the stop/reload prompt and changed two-screen layout make this unsuitable | Launcher; no Move |
+| ARMSX2 2.8.4; Need for Speed: Underground 2 | Starts loading again | Returns to the running game's pause menu | Moves the activity but starts loading again | Launcher; no Move |
+| Eden 1f6734c; Fantasy Life i | Starts a ROM swap and stops the current game | Keeps the game and its drawer | Starts another ROM swap | Launcher; no Move |
+| aPS3e 2.43; Skate 3 | Native `:emu` process exited during the test | Native process also exited; launcher then opened its library | A later start moved the new activity, but preserving a live game could not be verified | Existing game-start resume; no Move; see [Thor settings and pause limitation](#settings-that-worked-on-the-thor) |
+| RetroArch 1.22.2_GIT / Genesis Plus GX; Gain Ground | Identical ROM/core strings keep the live game | Initially returns to the game, but changes the intent used to identify it; a subsequent identical game start can exit/reload it | A reliable running-game round trip was not established; activity identity alone is insufficient | Existing `ReplaceRunning` route; no Move |
+
+The declarations stay conservative: Azahar, melonDS, ARMSX2 and Eden do not claim `SameStartResumes` or `MovesBetweenScreens`. melonDS's newer upstream [matching-start check](https://github.com/rafaelvcaetano/melonDS-android/blob/c42995caff0144f37ad9791dc9bc96d82e8a6f65/app/src/main/java/me/magnum/melonds/ui/emulator/EmulatorActivity.kt#L684) does not establish that behavior in the installed 2.0.1 build. Eden's [intent handler](https://git.eden-emu.dev/eden-emu/eden/src/commit/5df599128d6828fa0e42968909da848c255d22b1/src/android/app/src/main/java/org/yuzu/yuzu_emu/activities/EmulationActivity.kt) explicitly swaps the ROM when an intent has data.
+
+RetroArch must keep its exact ROM and core strings through the existing resume/replacement protocol. Do not substitute its launcher intent: [MainMenuActivity](https://github.com/libretro/RetroArch/blob/9b546c8a7cd91ee812416ef93cf5be63ca738d89/pkg/android/phoenix/src/com/retroarch/browser/mainmenu/MainMenuActivity.java) forwards to the game activity, whose [onNewIntent](https://github.com/libretro/RetroArch/blob/9b546c8a7cd91ee812416ef93cf5be63ca738d89/pkg/android/phoenix/src/com/retroarch/browser/retroactivity/RetroActivityFuture.java) replaces its remembered intent even when the new one has no ROM/core. One production Close (`startActivities` with the launcher's `NEW_TASK | CLEAR_TASK` intent followed by Foldcade Home) deadlocked the installed build on a clean game launch: [`android_app_free`](https://github.com/libretro/RetroArch/blob/69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576/frontend/drivers/platform_unix.c#L265) holds the app mutex while joining its still-running thread. The captured ANR shows `NativeActivity.onDestroy` waiting in `pthread_join` while the native loop waits for that mutex in `android_display_has_focus`; the next game launch stays on its splash screen. Foldcade keeps RetroArch out of the generic running-game/Close tracker, rejects task clearing at dispatch, and omits it from another game's Close companions. Quit RetroArch through its own menu.
+
+For this device test only, two explicitly authorized RetroArch-only force-stops recovered the earlier failure and the single-Close reproduction. All 58 original save files matched their SHA-256 backups before recovery. The final cold launch from the test build drew on the top display, accepted physical Back and touch input, and exited through RetroArch's own Quit menu. Its settings were unchanged. Product code never force-stops an emulator.
+
 ## Azahar: Nintendo 3DS
 
 Install [Azahar](https://github.com/azahar-emu/azahar), complete its setup, and configure its layout for the Thor's two screens. Add your `3ds` folder or a RomM server, then select a game. Foldcade starts Azahar on the main display and reserves both screens.
@@ -158,7 +181,9 @@ Skate 3 ran at about 19–27 FPS: playable, not full speed. With these settings 
 
 ## Eden (Nintendo Switch)
 
-Foldcade syncs Eden's account saves for the current profile through [RomM](romm.md#save-sync). Choose **Settings › Emulators › Eden › Saves, keys & firmware**, or **Choose folder** before a launch, then **Use this folder** where Eden's picker opens. Pick the root of the installed Eden's own documents provider, without opening a folder inside it. This is the same grant Eden already uses for [keys and firmware](romm.md#switch-keys-and-firmware). **Play without syncing**, or cancelling the picker, applies to this launch only.
+Foldcade syncs Eden's account saves for the current profile through [RomM](romm.md#save-sync). If Foldcade already has read and write access to the installed Eden's `Android/data/<package>/files` folder or a folder above it, it finds the data folder there and announces the find in R1. The folder must hold `config`, `keys`, or `nand`. An Eden folder you explicitly chose stays first.
+
+Otherwise choose **Settings › Emulators › Eden › Saves, keys & firmware**, or **Choose folder** before a launch, then **Use this folder** where Eden's picker opens. Pick the root of the installed Eden's own documents provider, without opening a folder inside it. This is the same grant Eden already uses for [keys and firmware](romm.md#switch-keys-and-firmware). **Play without syncing**, or cancelling the picker, applies to this launch only.
 
 Saves live at `nand/user/save/0000000000000000/<USER>/<TITLEID>/` inside that folder. Foldcade reads `[System] current_user` from `config/config.ini` (default 0) and maps that entry in `nand/system/save/8000000000000010/su/avators/profiles.dat` to its user folder. A zip contains `<TITLEID>/…`, leaving out the device's user id. Another device places it under its own current profile. If the profile cannot be read, exactly one non-zero 32-hex user folder is an acceptable fallback. Ambiguous users are left alone. Foldcade never changes the profile or configuration files.
 
