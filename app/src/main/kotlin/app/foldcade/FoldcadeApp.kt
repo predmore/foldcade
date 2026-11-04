@@ -2135,7 +2135,7 @@ class FoldcadeApp : Application() {
 
     /**
      * At most one ask per return Home, each once: first reading the ROM folders Foldcade saw,
-     * then being Home when Moonlight or DroidDeck would use it. A restore's notice goes first.
+     * then being Home. A restore's notice goes first.
      */
     private fun offerSetupAsks(seen: List<RomRoot>, roleHeld: Boolean, apps: List<String>) {
         shell.setHomeRoleHeld(roleHeld)

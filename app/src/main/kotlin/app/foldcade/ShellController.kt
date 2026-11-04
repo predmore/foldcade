@@ -2772,17 +2772,17 @@ class ShellController(
     }
 
     /**
-     * Asks once to be Home, and only when it pays: [apps] are the installed apps that put games
-     * only on the Home app, Moonlight and DroidDeck. With none there is nothing to ask yet; the
-     * ask waits for one to be installed. Never over another dialog. Answered once, it never
-     * comes back; Settings › System keeps Set as Home.
+     * Asks once to be Home, so the Home button comes back to Foldcade. [apps] are the installed
+     * apps that put games only on the Home app, Moonlight and DroidDeck, and the ask names them.
+     * Never over another dialog. Answered once, it never comes back; Settings › System keeps
+     * Set as Home.
      */
     fun maybeAskHome(roleHeld: Boolean, apps: List<String>) {
         if (roleHeld) {
             store.setHomePromptSettled()
             return
         }
-        if (apps.isEmpty() || store.homePromptSettled() || model.dialog != null) return
+        if (store.homePromptSettled() || model.dialog != null) return
         publish(model.copy(dialog = homePrompt(model.layout.gridScreen, apps)))
     }
 
