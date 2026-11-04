@@ -49,6 +49,7 @@ Foldcade is made for one device, so it uses everything the Thor has.
 - **Pick up where you left off.** Press Home during a game and its tile says **Paused**. **A** resumes the game already running instead of starting it a second time.
 - **Close the lid, stop the clock.** Play time stops counting while the clamshell is closed.
 - **A screen with depth.** The top screen's art slides slightly when you tilt the Thor and drifts back to rest. Motion Off keeps it still.
+- **Azahar, fitted to both screens.** A [first-time Thor setup](docs/integrations/emulators.md#thor-setup) sets untouched layout and image settings in Azahar 2126.2. See what changed and restore the original in Settings › Emulators › Azahar.
 - **Your Thor, one press away.** **R1** opens Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications.
 - **Its apps, drawn to match.** The Thor's own apps, common apps, and emulators appear as Afterglow icons on the grid.
 

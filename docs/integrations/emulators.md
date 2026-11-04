@@ -69,11 +69,21 @@ For this device test only, two explicitly authorized RetroArch-only force-stops 
 
 ## Azahar: Nintendo 3DS
 
-Install [Azahar](https://github.com/azahar-emu/azahar), complete its setup, and configure its layout for the Thor's two screens. Add your `3ds` folder or a RomM server, then select a game. Foldcade starts Azahar on the main display and reserves both screens.
+Install [Azahar](https://github.com/azahar-emu/azahar) and complete its setup. Add your `3ds` folder or a RomM server, then select a game. Foldcade starts Azahar on the main display and reserves both screens.
 
 Prefer decrypted `.cci` or `.zcci` games. `.3ds` is best-effort; Foldcade does not decrypt or convert it. `.cia` files are not listed by the local-folder scanner.
 
 Both regular and Google Play builds are recognized; regular has priority when both are installed.
+
+### Thor setup
+
+For **Azahar 2126.2**, Foldcade sets untouched options before a game starts: one 3DS screen on each Thor panel, **5×** resolution, and **accurate multiplication**. Choose Azahar’s active user folder for saves first. Foldcade compares each setting with that version’s upstream Android default and keeps any different value. An existing Thor setup stays byte-for-byte as it was. This is a first-time preset: later edits in Azahar, including resetting a value to its default, are never re-applied.
+
+**Settings › Emulators › Azahar › Thor setup** shows what Foldcade set. If it says **Close Azahar**, finish playing and save first. Then open its **App info**, choose **Force stop**, and return to **Thor setup › Set up**, or start the next game. Background and paused apps can still overwrite their config on exit, so Foldcade only changes a file while Android marks Azahar stopped. You can then launch normally. If the folder does not permit a direct atomic replacement, the row offers the existing optional **Find saves** file access; configuring the layout in Azahar remains available. Other Azahar versions are left to Azahar until their defaults are verified.
+
+Foldcade stages and syncs the whole new file, then atomically replaces `config/config.ini`. Before changing it, it keeps the original beside the config as `config.ini.foldcade-original-…`, and in Foldcade’s private `files/emulator-presets` folder with a record of the changed keys. **Thor setup › Restore original** asks before restoring the entire original file. It also backs up the current file in both places, and disables future automatic presets for that user folder. A newly created config restores to no file. Uninstalling Foldcade removes its private copy and record; the backups beside Azahar’s config survive and prevent re-application after reinstall. Restore those copies manually if Foldcade’s private record is gone.
+
+The **Vulkan backend and GPU driver stay your choice**. On the Thor, Vulkan with Mr. Purple Turnip T30 worked well; install and choose that driver in Azahar. The ZIP in `gpu_drivers` is only an archive: Azahar extracts its selected driver into private app storage, which Foldcade’s user-folder grant cannot configure. Foldcade never points at a missing driver or treats that archive as an installed driver.
 
 For [RomM save sync](romm.md#save-sync), choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar**. Foldcade moves a game's save data and extra data there before launch and reads them back when you return. Choose **Play without syncing** at the save-folder prompt to play with Azahar's own saves for this launch. Foldcade asks again next time.
 
@@ -82,6 +92,8 @@ For [RomM save sync](romm.md#save-sync), choose Azahar's user folder, the one th
 Install [melonDS Android](https://github.com/rafaelvcaetano/melonDS-android) 2.0.0 or newer. Configure the DS top screen on the Thor's main display and its touch screen on the other display. Add your `ds` folder or a RomM server, then select a game. Foldcade reserves both screens; melonDS controls the layout.
 
 Stable and nightly builds are recognized; stable has priority when both are installed.
+
+melonDS 2.0.1 keeps layout, renderer and audio preferences in private SharedPreferences. Its release build disables settings backup/restore. The save-folder grant reaches saves, not those settings, so Foldcade cannot apply a Thor preset. The verified manual tuning is OpenGL, 6× resolution, Linear filtering and Cubic audio; keep the two-screen layout step above.
 
 For [RomM save sync](romm.md#save-sync), choose the same save directory in melonDS and **Foldcade Settings › Emulators › melonDS**, with **Save next to ROM file** off. A ROM named `Puzzle.nds` uses `Puzzle.sav`; keep filenames consistent across devices.
 
@@ -110,6 +122,8 @@ Foldcade syncs each game's memory card through [RomM](romm.md#save-sync). DuckSt
 **Foldcade Settings › Emulators** shows **DuckStation memory cards: Syncing** once DuckStation uses the folder. Until then, **Not syncing** there shows the steps again. **Play without syncing** plays with DuckStation's own cards for this launch. Foldcade asks again next time. The cards are in Foldcade's storage, so uninstalling Foldcade removes the copies on the device. The ones on RomM stay.
 
 Foldcade syncs memory card 1, DuckStation's card per game. With its default type, **Separate Card Per Game (Title)**, DuckStation names that card after the game's title in its database. For Redump file names, as RomM keeps them, that title is the game file's name: `Castlevania - Symphony of the Night (USA).cue` uses `Castlevania - Symphony of the Night (USA)_1.mcd`. If your files are named otherwise, set memory card 1's type, in DuckStation's **Memory Cards** settings, to **Separate Card Per Game (File Title)** so the names match. A BIOS file you put in `bios` yourself is never replaced. Save states stay with DuckStation.
+
+DuckStation’s `settings.ini` is reachable through its data-folder grant. That grant does not give DuckStation permission to Foldcade’s hosted folder: Android must persist that separate grant through DuckStation’s picker. The steps above also let DuckStation copy existing cards. Foldcade therefore leaves its directory and naming settings alone; changing the naming type after cards exist can make the game open a different card. This Thor’s directory is already configured by hand and is left unchanged.
 
 DuckStation pauses in the background and writes a changed card when it resumes or quits. A save made just before you switch to Foldcade syncs on the next return or launch.
 
@@ -140,6 +154,8 @@ When slot 1 has no card, or its card is an empty 8 MB file card, Foldcade makes 
 
 Once slot 1 is a folder card, the row reads **ARMSX2 memory card: Syncing**. A card you set for one game in ARMSX2 is used for that game instead of slot 1's.
 
+ARMSX2 2.8.4’s reachable `armsx2-settings.json` is a backup mirror of private preferences. It is imported only for fresh-install recovery, then rewritten when ARMSX2 saves settings. Editing it cannot safely switch a populated file card to a folder card. Foldcade keeps the existing empty-card conversion; populated cards still use the steps above, so their saves remain accessible.
+
 ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. Save states stay with ARMSX2. Restoring happens before a game starts, so quit the game in ARMSX2 before playing it on another device.
 
 ## aPS3e: PlayStation 3
@@ -166,6 +182,8 @@ The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS
 ### Saves
 
 Foldcade syncs each game's `savedata` folders through [RomM](romm.md#save-sync). Those folders are named with the game's title id, such as `BLUS30464-ALIAS_SKATER` for `BLUS30464`. Trophies are not synced. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
+
+aPS3e’s provider grant reaches `config/config.yml` and `config/default_config.yml`. Accessing that provider starts aPS3e’s process, which can cache settings and write them back. Foldcade does not patch that live configuration or its profiles. Apply tuning in aPS3e itself.
 
 ### Settings that worked on the Thor
 
@@ -267,5 +285,19 @@ Disc tracks and other related files may need the emulator's own game-directory a
 Forks with different Android package names are not detected automatically. Install a supported build or report the build you use.
 
 Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [PPSSPP](../../plugins/ppsspp/src/main/kotlin/app/foldcade/plugins/ppsspp/PpssppEntry.kt), [Dolphin](../../plugins/dolphin/src/main/kotlin/app/foldcade/plugins/dolphin/DolphinEntry.kt), [EX family](../../plugins/explus/src/main/kotlin/app/foldcade/plugins/explus/ExPlusEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
+
+
+
+## Preset implementation references
+
+These are the upstream formats and defaults behind the Thor setup decisions:
+
+- [Azahar 2126.2 Android config reader](https://github.com/azahar-emu/azahar/blob/219d743a1e698101fe1ab8bef43e6563126c3c27/src/android/app/src/main/jni/config.cpp): Android layout default 2, secondary layout default 0, accurate multiplication default false. Layout keys are read from `[Layout]`, even when the generated template places some under `[Storage]`.
+- [Azahar settings defaults](https://github.com/azahar-emu/azahar/blob/219d743a1e698101fe1ab8bef43e6563126c3c27/src/common/settings.h) and [GPU driver helper](https://github.com/azahar-emu/azahar/blob/219d743a1e698101fe1ab8bef43e6563126c3c27/src/android/app/src/main/java/org/citra/citra_emu/utils/GpuDriverHelper.kt): native resolution defaults to 1; Vulkan defaults on Android; the selected driver is installed privately.
+- [ARMSX2 2.8.4 ConfigStore](https://github.com/ARMSX2/ARMSX2/blob/25e7084fdefcf1e9069481a583c38c103b03e8f1/platforms/android/app/src/main/java/com/armsx2/config/ConfigStore.kt): `writeBackupMirror` and the guarded `reconcileReusedFolder` import.
+- [melonDS 2.0.1 preference repository](https://github.com/rafaelvcaetano/melonDS-android/blob/5ec3648d68382dea9c17d6fbf02544e5c2c0afed/app/src/main/java/me/magnum/melonds/impl/SharedPreferencesSettingsRepository.kt): its authoritative settings are private preferences; [release feature switches](https://github.com/rafaelvcaetano/melonDS-android/blob/5ec3648d68382dea9c17d6fbf02544e5c2c0afed/app/src/main/res/values/feature_switches.xml) disable settings backup/restore.
+- [Android FileSystemProvider](https://android.googlesource.com/platform/frameworks/base/+/android-13.0.0_r1/core/java/com/android/internal/content/FileSystemProvider.java): `renameDocument` builds a unique name instead of replacing an existing document. Two document renames leave a gap, so Foldcade does not use them as an atomic replacement.
+
+Eden’s existing provider grant reaches `config/config.ini`, along with keys, NAND and saves. Its provider starts Eden and initializes cached state. Foldcade leaves the config, driver installation, and `profiles.dat` alone; it only reads the active profile for save sync as described above.
 
 [All integration guides](README.md)
