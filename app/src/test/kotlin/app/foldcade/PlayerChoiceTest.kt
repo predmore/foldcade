@@ -41,12 +41,13 @@ class PlayerChoiceTest {
         assertSame(preferredPlayer(players, runnable = { true }, rank = ::playerRank, installed = { true }), auto.player)
     }
 
-    @Test fun missingRegistrationPackageAndCoreFallThroughWithoutLosingTheChoice() {
+    @Test fun missingRegistrationAndRetiredCoresFallThroughButMissingDownloadsKeepTheChoice() {
         val gone = PlayerChoice("old.plugin", label = "Old emulator")
         val missingCore = core.copy(core = "desmume", label = "DeSmuME (RetroArch)")
         val result = resolve(gone, missingCore)
-        assertSame(melon, result.player)
-        assertEquals(listOf(gone, missingCore), result.skipped)
+        assertEquals("desmume", (result.player as RetroArchPlayer).pinnedCore)
+        assertTrue((result.player as RetroArchPlayer).coreChoice(PKG) is CoreChoice.Missing)
+        assertEquals(listOf(gone), result.skipped)
         val packageGone = resolve(standalone, core, installed = { it is RetroArchPlayer })
         assertEquals(PlayerChoiceSource.System, packageGone.source)
         assertEquals(listOf(standalone), packageGone.skipped)

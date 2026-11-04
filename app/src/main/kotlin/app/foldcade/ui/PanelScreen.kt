@@ -266,6 +266,8 @@ import app.foldcade.language.SaveHealth
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
 import app.foldcade.language.saveHealthLeads
+import app.foldcade.language.cancellableTransfer
+import app.foldcade.language.pendingChip
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -282,6 +284,7 @@ import app.foldcade.HomeCarry
 import app.foldcade.language.SelectionCopy
 import app.foldcade.HomeFace
 import app.foldcade.ShelfGame
+import app.foldcade.catalogWaitCover
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -2055,7 +2058,8 @@ private fun HeroArt(
         ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val glyph = themedApp ?: mark?.let { markGlyph(it, 640) }
     val accent = glyph?.accent ?: theme.focus
-    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
+    val kept = rememberCatalogWaitCover(app, key)
+    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) } ?: kept
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
     // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
     // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
@@ -2190,6 +2194,25 @@ private fun HeroArt(
 internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null, val crossfadeMillis: Int = 0) {
     // PNG art can let the backdrop show through. Only a known opaque bitmap can hide it.
     val opaque: Boolean get() = (image as? coil3.BitmapImage)?.bitmap?.hasAlpha() == false
+}
+
+/** Only the waiting hero checks history's kept image; the grid gains no work or subscriptions. */
+@Composable
+private fun rememberCatalogWaitCover(app: FoldcadeApp, gameId: String?): LoadedCover? {
+    val waiting = gameId != null && app.shell.activityFor(gameId) == TileActivity.LoadingLibrary
+    var file by remember(gameId) { mutableStateOf<java.io.File?>(null) }
+    LaunchedEffect(gameId, waiting) {
+        if (waiting && gameId != null) file = catalogWaitCover(gameId, app.plays::keptCover)
+    }
+    val saved = file ?: return null
+    val context = LocalContext.current
+    val request = remember(saved) { ImageRequest.Builder(context).data(saved).size(COVER_PX).build() }
+    val painter = rememberAsyncImagePainter(request, app.images)
+    val state by painter.state.collectAsState()
+    val result = (state as? AsyncImagePainter.State.Success)?.result ?: return null
+    val image = result.image
+    if (image.width <= 0 || image.height <= 0) return null
+    return LoadedCover(painter, image.width.toFloat() / image.height, image)
 }
 
 /** Coil's success bitmap can be opaque before its painter has finished fading it in. */
@@ -3216,8 +3239,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
-    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
-        normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
+    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it.cancellableTransfer })) {
+        normalKeys.filterNot { it.key == back } + HintKey(back, Copy.cancelLaunch)
     } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
@@ -3626,7 +3649,8 @@ private fun StripColumn(
                         focus.chrome == null &&
                         focus.cellIndex == index &&
                         carry == null
-                    val label = game?.title.orEmpty()
+                    val activity = shell.activityAt(source)
+                    val label = game?.let { shell.displayTitle(it, activity) }.orEmpty()
                     val libraryTile = library && face == null
                     // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
                     // its Not on Home tab, since every game is in its folder on Home.
@@ -3656,7 +3680,7 @@ private fun StripColumn(
                         offHome = offHome,
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
-                        activity = shell.activityAt(source),
+                        activity = activity,
                         saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
@@ -4202,20 +4226,29 @@ private fun TileStatus(
                 scaleY = grown
                 transformOrigin = TransformOrigin(1f, 0.5f)
             }
-            .height(px(tile.statusChipPx))
+            .heightIn(min = px(tile.statusChipPx * if (loading?.core != null) 2f else 1f))
             .clip(theme.style.shape.control())
             .background(theme.background.copy(alpha = tile.statusBackingAlpha))
             .padding(horizontal = px(((tile.statusChipPx - tile.statusIconPx) / 2f).coerceAtLeast(0f))),
         horizontalArrangement = Arrangement.spacedBy(px(8f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        pendingChip(activity)?.let { label ->
+            BasicText(text = label, style = text(theme.focus, theme.style.type.hint, theme), maxLines = 1)
+        }
         if (showsBar) {
             // Before the size is known the bar waits empty; the cloud beside it breathes.
-            DownloadBar(
-                fraction = if (activity == TileActivity.Checking) 1f else loading?.fraction ?: 0f,
-                animatorScale = animatorScale,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f)) {
+                loading?.core?.let { core ->
+                    BasicText(Copy.gettingCore(core), style = text(theme.onBackground, theme.style.type.tileStatus, theme),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                DownloadBar(
+                    fraction = if (activity == TileActivity.Checking) 1f else loading?.fraction ?: 0f,
+                    animatorScale = animatorScale,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
         val (icon, tint) = when {
             synced != null -> if (synced.mark.worked) {

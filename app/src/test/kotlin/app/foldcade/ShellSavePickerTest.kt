@@ -25,6 +25,26 @@ class ShellSavePickerTest {
     private fun entry(game: Game) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)
     private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false)
 
+    @Test fun pspAndGameCubeKeepTheSavesActionAndOwnSlotsBeforeFolderSetup() {
+        plugins.register(app.foldcade.plugins.ppsspp.PpssppEntry())
+        plugins.register(app.foldcade.plugins.dolphin.DolphinEntry())
+        shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
+        for ((platform, player, slot) in listOf(Triple("psp", "ppsspp.psp", "savedata"), Triple("gamecube", "dolphin.gamecube", "gci"))) {
+            val targetGame = game.copy(platformId = platform)
+            shell.showPlatforms("romm", emptyList())
+            shell.showGames(listOf(entry(targetGame)))
+            assertTrue(shell.model.tileActions!!.saves)
+            shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+            assertEquals(Effect.OpenSaves(homeGameId("romm", "3")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+            val target = SavePickerTarget(homeGameId("romm", "3"), "romm", "3", player)
+            shell.presentSavePicker(SavePickerState(target, "Original", plugins.player(player)!!.displayName, SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false))
+            shell.refreshPlayerSaves()
+            assertEquals(listOf(slot), shell.model.savePicker!!.ownSlots)
+            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.model.savePicker!!.health)
+            shell.presentSavePicker(null)
+        }
+    }
+
     @Test fun coverFallbackUsesTheOriginalGamesHeroArtAndItsChosenCoverAfterFocusMoves() = runBlocking {
         shell.ingestLibrary("romm", listOf(entry(game), entry(game.copy(remoteKey = "4", label = "Other"))), emptyList())
         shell.openHomeAll()
