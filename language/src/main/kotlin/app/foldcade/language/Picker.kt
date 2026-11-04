@@ -2010,7 +2010,7 @@ fun reduce(
     }
     val settings = coerced.settings
     if (repeatCount > 0 && meaning in setOf(Meaning.Options, Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel)) return coerced to null
-    if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> next.versionCopySettled() to effect }
+    if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> retainSettingsShelf(coerced, next).versionCopySettled() to effect }
     coerced.gameAbout?.let { return applyGameAbout(coerced, it, meaning, repeatCount) }
     val activity = coerced.playActivity
     if (activity != null) return applyPlayActivity(coerced, activity, meaning)
@@ -2591,7 +2591,7 @@ private fun applySettings(
     return when (meaning) {
         Meaning.MoveUp, Meaning.MoveDown -> model.copy(
             capturingConfirm = false,
-            settings = current.copy(row = settingsFocusIndex(rows, rowIndex, meaning) ?: rowIndex),
+            settings = current.copy(row = settingsFocusIndex(rows, rowIndex, meaning, shownShelfFirst(current, model)) ?: rowIndex),
         ) to null
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
@@ -2599,7 +2599,7 @@ private fun applySettings(
             val nudged = stepRow(model, row, direction)
             when {
                 nudged != null -> nudged.copy(capturingConfirm = false, settings = current) to null
-                row.settingsTile() -> settingsFocusIndex(rows, rowIndex, meaning)
+                row.settingsTile() -> settingsFocusIndex(rows, rowIndex, meaning, shownShelfFirst(current, model))
                     ?.let { model.copy(settings = current.copy(row = it)) to null }
                     ?: (model.copy(settings = current.copy(onRows = false)) to null)
                 meaning == Meaning.MoveLeft && inner != null -> model.copy(capturingConfirm = false, settings = shelf) to null

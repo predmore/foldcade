@@ -17,6 +17,12 @@ data class SettingsPage(
      * then counts that page's rows. Null shows the category's own tiles and rows.
      */
     val inner: SettingsInner? = null,
+    /**
+     * The first column of the category's shelf on screen. The shelf is a strip, as the grid
+     * is ([SettingsShelf]); it scrolls only as far as the focus needs, and keeps its place
+     * while the focus is on the rows under it or on a tile's page.
+     */
+    val shelfFirst: Int = 0,
 )
 
 /** A page one step inside a Settings category. A tile on the category's shelf opens it, and B returns to that tile. */
@@ -123,7 +129,7 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Sound -> listOf(Row.Music, Row.MusicTrack, Row.MusicVolume)
     SettingsCategory.Library -> buildList {
-        addAll(librarySources(model))
+        addAll(needsYouFirst(librarySources(model), model))
         // Only once there is a folder or a server to read.
         if (model.signedIn.isNotEmpty() || model.folders.isNotEmpty()) add(Row.SyncLibrary)
         // All-files access lets Foldcade find ROMs, ROMs on the card, and Emulation/roms by itself.
@@ -132,7 +138,9 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Players -> buildList {
         val shelf = emulatorShelf(model)
-        addAll(shelf.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
+        // An emulator that is not syncing leads the shelf, so the one to fix is the nearest.
+        val (needsYou, fine) = shelf.partition { entry -> entry.rows.any { rowNeedsYou(it, model) } }
+        addAll((needsYou + fine).map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
         // Only once a system has more than one emulator to choose, or a choice to clear.
         if (model.systemPlayers.any { it.choice.visible }) add(Row.Systems)
         if (shelf.isNotEmpty()) {
@@ -175,8 +183,50 @@ fun librarySources(model: PickerModel): List<Row> {
         Row.SettingsTile(SettingsInner.Add)
 }
 
-/** True for a row Settings draws as a tile on a category's shelf, in lines of [quickTileColumns]. */
+/**
+ * The tiles that wear the attention badge first, the rest after them, each in the order it
+ * came. Add, which never wears one, stays last.
+ */
+private fun needsYouFirst(tiles: List<Row>, model: PickerModel): List<Row> {
+    val (needsYou, fine) = tiles.partition { settingsTileStatus(it, model) == TileStatus.Attention }
+    return needsYou + fine
+}
+
+/** True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). */
 fun Row.settingsTile(): Boolean = this is Row.SettingsTile || this is Row.RommConnection
+
+/**
+ * A category's shelf of tiles is one strip, as the grid is: tiles fill a column top to
+ * bottom, the columns run left to right, and [shown] of them are on screen. Up to [shown]
+ * tiles sit on one line; more take two lines, so eight fit at rest and the ninth starts a
+ * column off screen. The strip then scrolls sideways a column at a time to keep the focus
+ * on screen. It never pages, and it never makes the page itself scroll: two lines of tiles
+ * and the rows under them fit the Thor's top screen whatever the number of tiles.
+ */
+object SettingsShelf {
+    /** Columns on screen. */
+    const val shown = quickTileColumns
+
+    /** Lines of tiles: one for a few, two for more. */
+    fun lines(tiles: Int): Int = if (tiles <= shown) 1 else 2
+
+    fun column(index: Int, tiles: Int): Int = index / lines(tiles)
+
+    fun line(index: Int, tiles: Int): Int = index % lines(tiles)
+
+    /** Columns holding at least one of [tiles]. */
+    fun columns(tiles: Int): Int = if (tiles <= 0) 0 else (tiles + lines(tiles) - 1) / lines(tiles)
+
+    /** The furthest the strip scrolls: the last [shown] columns on screen. */
+    fun lastFirst(tiles: Int): Int = (columns(tiles) - shown).coerceAtLeast(0)
+
+    /** True while some of [tiles] are off screen, so the strip scrolls and shows its bar. */
+    fun scrolls(tiles: Int): Boolean = columns(tiles) > shown
+
+    /** The first column on screen once the focus is in [column], moving only as far as it must from [first]. */
+    fun follow(first: Int, column: Int, tiles: Int): Int =
+        first.coerceIn(column - shown + 1, column).coerceIn(0, lastFirst(tiles))
+}
 
 /**
  * One emulator on Settings › Emulators: its tile, and the rows its page lists. [packageName]
@@ -323,37 +373,93 @@ fun rowNeedsYou(row: Row, model: PickerModel): Boolean = when (row) {
 }
 
 /**
- * Where the D-pad goes in a card that leads with tiles. The tiles sit in lines of
- * [quickTileColumns]; the rows under them are one column. Down from a tile with nothing
- * under it lands on the next line's last tile. Up from the first row lands on the last
- * line's first tile. Null means the move leaves the card: left from a line's first tile.
+ * Where the D-pad goes in a card that leads with tiles. The tiles sit in a strip of
+ * columns ([SettingsShelf]); the rows under them are one column. Left and right step a
+ * column, keeping the line; Right into a shorter last column lands on its tile. Down from
+ * a column's last tile goes to the rows, and Up from the first row lands on the bottom
+ * tile of the first column on screen, [first]. Null means the move leaves the card: Left
+ * from the first column.
  */
-fun settingsFocusIndex(rows: List<Row>, index: Int, meaning: Meaning): Int? {
+fun settingsFocusIndex(rows: List<Row>, index: Int, meaning: Meaning, first: Int = 0): Int? {
     if (rows.isEmpty()) return 0
     val current = index.coerceIn(0, rows.lastIndex)
     val tiles = rows.takeWhile { it.settingsTile() }.size
-    val columns = quickTileColumns
-    val lastLine = (tiles - 1).coerceAtLeast(0) / columns
+    val lines = SettingsShelf.lines(tiles)
     if (current >= tiles) {
         return when (meaning) {
-            Meaning.MoveUp -> if (current == tiles && tiles > 0) lastLine * columns else (current - 1).coerceAtLeast(0)
+            Meaning.MoveUp -> if (current == tiles && tiles > 0) {
+                val column = first.coerceIn(0, SettingsShelf.columns(tiles) - 1)
+                (column * lines + lines - 1).coerceAtMost(tiles - 1)
+            } else (current - 1).coerceAtLeast(0)
             Meaning.MoveDown -> (current + 1).coerceAtMost(rows.lastIndex)
             else -> current
         }
     }
-    val column = current % columns
-    val line = current / columns
+    val column = SettingsShelf.column(current, tiles)
+    val line = SettingsShelf.line(current, tiles)
+    val lastColumn = SettingsShelf.columns(tiles) - 1
     return when (meaning) {
-        Meaning.MoveLeft -> if (column == 0) null else current - 1
-        Meaning.MoveRight -> if (column == columns - 1 || current + 1 >= tiles) current else current + 1
-        Meaning.MoveUp -> if (line == 0) current else current - columns
+        Meaning.MoveLeft -> if (column == 0) null else current - lines
+        Meaning.MoveRight -> if (column == lastColumn) current else (current + lines).coerceAtMost(tiles - 1)
+        Meaning.MoveUp -> if (line == 0) current else current - 1
         Meaning.MoveDown -> when {
-            line < lastLine -> (current + columns).coerceAtMost(tiles - 1)
+            line < lines - 1 && current + 1 < tiles -> current + 1
             tiles < rows.size -> tiles
             else -> current
         }
         else -> current
     }
+}
+
+/**
+ * The first column of [page]'s shelf on screen: following a focused tile only as far as
+ * it must, else where the strip was, kept inside the shelf. A tile's page keeps the
+ * shelf's place for the way back.
+ */
+fun shownShelfFirst(page: SettingsPage, model: PickerModel): Int {
+    if (page.inner != null) return page.shelfFirst
+    val tiles = settingsShown(page, model).second.takeWhile { it.settingsTile() }.size
+    return if (page.onRows && page.row < tiles) SettingsShelf.follow(page.shelfFirst, SettingsShelf.column(page.row, tiles), tiles)
+    else page.shelfFirst.coerceIn(0, SettingsShelf.lastFirst(tiles))
+}
+
+/**
+ * The shelf after any change: a new category starts at its first column, the focus stays
+ * on the tile it was on when the tiles reorder under it (as when an emulator's saves start
+ * syncing and its tile leaves the front), and the strip follows the focus.
+ */
+fun retainSettingsShelf(previous: PickerModel, next: PickerModel): PickerModel {
+    val page = next.settings ?: return next
+    val was = previous.settings
+    var settled = page
+    if (was != null && was.category != page.category) settled = settled.copy(shelfFirst = 0)
+    if (was != null && was.onRows && page.onRows && was.inner == null && page.inner == null &&
+        was.category == page.category && was.row == page.row
+    ) {
+        val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() }
+        val rows = settingsShown(page, next).second
+        if (held != null && rows.getOrNull(page.row) != held) {
+            val moved = rows.indexOf(held)
+            if (moved >= 0) settled = settled.copy(row = moved)
+        }
+    }
+    settled = settled.copy(shelfFirst = shownShelfFirst(settled, next))
+    return if (settled == page) next else next.copy(settings = settled)
+}
+
+/**
+ * The shelf scrolled to [first] by a swipe. A focused tile the strip left behind gives its
+ * place to the tile on its line in the nearest column still on screen.
+ */
+fun SettingsPage.scrolledShelf(first: Int, model: PickerModel): SettingsPage {
+    if (inner != null) return this
+    val tiles = settingsShown(this, model).second.takeWhile { it.settingsTile() }.size
+    val start = first.coerceIn(0, SettingsShelf.lastFirst(tiles))
+    if (!onRows || row >= tiles) return copy(shelfFirst = start)
+    val column = SettingsShelf.column(row, tiles).coerceIn(start, start + SettingsShelf.shown - 1)
+    val lines = SettingsShelf.lines(tiles)
+    val focus = (column * lines + SettingsShelf.line(row, tiles)).coerceAtMost(tiles - 1)
+    return copy(shelfFirst = start, row = focus)
 }
 
 /** The row the D-pad is on in the settings page, or null while the categories have it or the page is shut. */
