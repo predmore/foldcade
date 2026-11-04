@@ -1,0 +1,36 @@
+{
+  "saveIds": [
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117
+  ],
+  "smokeRuns": [
+    {
+      "game": "Foldcade SRAM A",
+      "value": 33
+    },
+    {
+      "game": "Foldcade SRAM B",
+      "value": 49
+    },
+    {
+      "game": "Foldcade SRAM A",
+      "value": 65
+    },
+    {
+      "game": "Foldcade SRAM A",
+      "value": 65
+    }
+  ],
+  "success": true,
+  "pids": [
+    "30412",
+    "30598",
+    "30762"
+  ],
+  "romSha256": "225324766369439a253dcf1d3b508a7dca5c64c7752d86c516ddf403bba2ae8a"
+}

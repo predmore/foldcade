@@ -1,8 +1,8 @@
 # Thor QA: EX saves, 4 November 2026
 
-Final scope: GBA.emu, GBC.emu GB/GBC, NES.emu/FDS, Snes9x EX+, MD.emu Genesis/Master System/Sega CD. Flycast remains launch-only after its real live-folder access check failed. M64Plus and Pizza Boy are deferred for the source-linked limits in the PR.
+Final scope: GBA.emu, GBC.emu GB/GBC, NES.emu/FDS, Snes9x EX+ with S-RTC/SPC7110 RTC, MD.emu Genesis/Master System/Sega CD. Flycast remains launch-only after its real live-folder access check failed. M64Plus and Pizza Boy are deferred for the source-linked limits in the PR.
 
-All QA used the isolated application `app.foldcade.saves_more_emulators_2`, CI music assets, and throwaway save bytes through production ContentResolver, PlayerSaves and RommClient code. The temporary debug activities were removed before the final commit. No real game was launched. The real `app.foldcade` application was never installed over, cleared, reconfigured or uninstalled.
+All QA used the isolated application `app.foldcade.saves_more_emulators_2`, CI music assets, and throwaway save bytes through production ContentResolver, PlayerSaves and RommClient code. The temporary debug activities were removed before the final commit. No library game was launched. The final round ran a self-authored SRAM test program in the official GBA.emu app. The real `app.foldcade` application was never installed over, cleared, reconfigured or uninstalled.
 
 The first pass exercised all eight EX player/platform routes: exact basename and companion filtering, upload to unique `foldcade-probe-<uuid>-<index>` slots on ROM 23 Gain Ground, hash-verified download, refusal over unseen local progress, durable backup and restore, and preservation of unrelated files. The original synthetic Flycast-home check was insufficient and is superseded by the live-folder result below.
 
@@ -40,3 +40,30 @@ Official free apps installed for QA and left installed:
 - MD.emu 1.5.85 — `com.explusalpha.MdEmu`.
 
 Flycast came from the project's official v2.7 GitHub release. EX APKs came from the project's official Pre-release archives at source `1c12fac5`. No payment, store login, mirrored APK or root was used.
+
+## Final review fixes and live emulator check
+
+The branch was rebased onto main after #367 merged as `975ca9c9`. Main uses plugin API minor 22; root archives now use minor 23, and format validation uses minor 24. The full forced suite passed again (187 tasks).
+
+GBA ZIP, GBC ZIP/RTC and SNES ZIP/named-slot routes were repeated. SNES included both its 20-byte root `.rtc` and `saves/run 2/auto.rtc`. Each archive round-tripped and placed twice through production ContentResolver/PlayerSaves/RommClient. The real Y › Saves screen also repeated the raw RetroArch refusal using the final shorter copy. Renamed-ROM opt-out and the distinction from a failed provider write have regression tests; unreadable or hash-invalid bytes do not grant that opt-out.
+
+The official GBA.emu app initially had Content Folder saves and no recent content. Its Android picker was used to select `saves/GBA.emu`, matching Foldcade's root. A self-authored 128 KB GBA test ROM writes a counter and marker to a 32 KB SRAM file. The source is `smoke.s`; it uses no game assets or BIOS. Two copies, `Foldcade SRAM A.gba` and `Foldcade SRAM B.gba`, were opened through the production EX PlayerIntent and Android intent conversion, including NewTask/ClearTop/ClearTask and the FileProvider read grant.
+
+- A loaded seeded counter 0x20 and wrote 0x21 plus marker 0x51 in `Foldcade SRAM A.sav`.
+- After returning to Foldcade, its actual archive uploaded to a throwaway ROM 23 slot and downloaded with a matching hash.
+- With GBA.emu in the background, B launched successfully, restarted the emulator process, and wrote 0x31 from seed 0x30. That archive also round-tripped.
+- Foldcade then backed up A and placed a replacement with counter 0x40. A relaunched and showed EX's older-autosave warning. Declining it produced 0x41 and another verified round-trip.
+- An additional same-game check showed that Main Slot can resume its autosave without running the boot path again. The battery stayed at the placed bytes. Selecting Main Slot (No State), as now required by the guide, restarted from those bytes, wrote 0x41 and round-tripped successfully. Foldcade cannot read or rewrite EX's private launch-mode preference. The warning alone is not a substitute for that mode.
+
+The recorded emulator PIDs changed from 30412 (A) to 30598 (B) to 30762 (A reload), confirming real process restarts. `smoke-proof.json` records the counters and probe IDs. This closes the launch-flags and real-write-path QA gaps using throwaway data.
+
+The prior Main Slot and Content Folder choices were restored in the official app. Its initially unused QA installation was then restored from the same official APK, removing the temporary URI grant and test-only recent entries; it remains installed with the original defaults. Other official QA apps remain installed.
+
+Final cleanup deleted exactly rows 111–117 and both QA device registrations. All 33 baseline RomM saves retained their fingerprints. All 137 baseline device-file hashes matched. Backups were exported to the local `review2/save-backups.tar`. The isolated Foldcade app, ROM fixtures, batteries, clock files and test autosave states were removed. HOME stayed `app.foldcade`; stayon was false and the turn released.
+
+Additional images:
+- `gba-live-write.png`: self-authored test executing in official GBA.emu.
+- `gba-save-root.png`: the official app's chosen GBA.emu save directory.
+- `gba-no-state.png`: Main Slot (No State) used for the final fresh battery launch.
+- `gba-autosave-warning.png`: actual older-state warning after a placed battery.
+- `gba-format-refused.png`: final Y › Saves refusal copy.
