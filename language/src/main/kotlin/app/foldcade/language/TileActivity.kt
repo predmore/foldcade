@@ -77,3 +77,7 @@ fun pendingChip(activity: TileActivity?): String? = when (activity) {
 val TileActivity.pendingLaunch: Boolean get() = pendingChip(this) != null
 
 val TileActivity.cancellableTransfer: Boolean get() = pendingLaunch || this is TileActivity.Downloading || this == TileActivity.Checking
+
+/** No catalog title yet: never show an internal library key as the waiting game's name. */
+fun pendingGameTitle(title: String, id: String, activity: TileActivity?): String =
+    if (activity == TileActivity.LoadingLibrary && title == id) Copy.yourGame else title

@@ -307,6 +307,8 @@ object Copy {
     const val themeTakenOutBody = "Foldcade stopped twice while it was in use, so it was removed."
     const val downloading = "Downloading"
     const val findingGame = "Finding your game…"
+    const val yourGame = "Your game"
+    const val cancelLaunch = "Cancel"
     const val preparingOnServer = "Warming up on RomM…"
     const val retryingConnection = "Catching the connection…"
     const val findingChip = "Finding"

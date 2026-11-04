@@ -103,6 +103,7 @@ import app.foldcade.language.homeGameId
 import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
+import app.foldcade.language.pendingGameTitle
 import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
@@ -3218,7 +3219,7 @@ class ShellController(
     private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
         HeroItem(
             key = game.id,
-            title = game.title,
+            title = pendingGameTitle(game.title, game.id, activityOf(game.id)),
             detail = libraryPlatformName(game.platformId) ?: game.shortText,
             mark = game.mark,
             packageName = game.androidPackage,

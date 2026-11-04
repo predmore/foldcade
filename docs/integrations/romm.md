@@ -53,7 +53,7 @@ The catalog loads at startup and after connecting or editing a connection. After
 
 ## Downloads and offline play
 
-Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused. Brief connection failures and temporary server errors retry automatically with backoff. **B** cancels a launch while it waits or downloads. Pressing A again on the same pending game keeps its single launch.
+Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused. Brief connection failures and temporary server errors retry automatically with backoff. Connection and sign-in checks stay quick when the server is offline, so a downloaded game does not wait through retry backoff for its save-sync probe. **B** cancels a launch while it waits or downloads. Pressing A again on the same pending game keeps its single launch.
 
 Press a saved tile before the startup catalog arrives and **Finding your game…** appears above it, with **Finding** on the tile. Foldcade waits up to a minute for the existing sync or starts one, then launches as soon as the game resolves.
 

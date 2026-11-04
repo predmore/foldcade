@@ -66,7 +66,10 @@ class RommReadRetryTest {
         }
         for (error in listOf(RommUnauthorized("token"), RommHttpException(404, "gone"),
             RommResponseException("wrong hash"), RommSlotMoved("newer save"), RommConversionPending(1),
-            RommUnavailable("policy", CleartextRejected("http://other.example")))) {
+            RommUnavailable("policy", CleartextRejected("http://other.example")),
+            RommUnavailable("offline", java.net.NoRouteToHostException()),
+            RommUnavailable("bad name", java.net.UnknownHostException()),
+            RommUnavailable("recovered coroutine", RommUnavailable("offline", java.net.NoRouteToHostException())))) {
             var reads = 0
             val failure = runCatching { RommReadRetry(pause = { error("must not wait") }).run { reads++; throw error } }.exceptionOrNull()
             assertSame(error, failure)

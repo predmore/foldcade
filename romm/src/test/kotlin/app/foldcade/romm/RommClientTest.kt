@@ -46,6 +46,33 @@ class RommClientTest {
         dir.toFile().deleteRecursively()
     }
 
+    @Test fun connectionProbesAndSignInNeverBackOff() {
+        server.route("GET", "/api/heartbeat") { exchange, _ -> json(exchange, 503, "{}") }
+        server.route("GET", "/openapi.json") { exchange, _ -> json(exchange, 503, "{}") }
+        server.route("GET", "/api/platforms") { exchange, _ -> json(exchange, 503, "{}") }
+        runClient(token = { "rmm_test" }) { client ->
+            assertTrue(suspendCatching { client.heartbeat() }.exceptionOrNull() is RommHttpException)
+            assertNull(client.redirectHint())
+            assertTrue(suspendCatching { client.openApiInfo() }.exceptionOrNull() is RommProtocolUnreadable)
+            assertTrue(client.confirmSignIn() is RommSignInResult.StayOnForm)
+        }
+        assertEquals(3, server.recorded.count { it.path == "/api/heartbeat" })
+        assertEquals(1, server.recorded.count { it.path == "/openapi.json" })
+        assertEquals(1, server.recorded.count { it.path == "/api/platforms" })
+    }
+
+    @Test fun anOfflineSavePreparationProbeDoesNotDelayTheCachedGameForBackoff() {
+        server.route("GET", "/openapi.json") { exchange, _ -> exchange.close() }
+        val save = localSave("local-progress")
+        val started = System.nanoTime()
+        runClient(token = { "rmm_test" }) { client ->
+            assertTrue(suspendCatching { client.negotiate("device-1", listOf(save)) }.exceptionOrNull() is RommUnavailable)
+        }
+        assertTrue("The offline protocol probe must not back off", (System.nanoTime() - started) / 1_000_000 < 2_000)
+        assertFalse(server.recorded.any { it.path == "/api/sync/negotiate" || it.path == "/api/saves" })
+        assertEquals("local-progress", Files.readString(save.file))
+    }
+
     @Test fun conversion202KeepsThePartialAndHonorsItsHeaderBeforeResuming() {
         val cache = dir.resolve("cache")
         val partial = cache.resolve("roms/1234/mario.cci.partial")

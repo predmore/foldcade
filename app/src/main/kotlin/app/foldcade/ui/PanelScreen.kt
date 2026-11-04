@@ -3219,7 +3219,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it.cancellableTransfer })) {
-        normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
+        normalKeys.filterNot { it.key == back } + HintKey(back, Copy.cancelLaunch)
     } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
@@ -4204,7 +4204,7 @@ private fun TileStatus(
                 scaleY = grown
                 transformOrigin = TransformOrigin(1f, 0.5f)
             }
-            .height(px(tile.statusChipPx))
+            .heightIn(min = px(tile.statusChipPx))
             .clip(theme.style.shape.control())
             .background(theme.background.copy(alpha = tile.statusBackingAlpha))
             .padding(horizontal = px(((tile.statusChipPx - tile.statusIconPx) / 2f).coerceAtLeast(0f))),

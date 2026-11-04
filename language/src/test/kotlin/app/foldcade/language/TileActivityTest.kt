@@ -6,6 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TileActivityTest {
+    @Test fun aCatalogWaitUsesAFriendlyNameUntilTheTitleArrives() {
+        assertEquals(Copy.yourGame, pendingGameTitle("lib:romm:23", "lib:romm:23", TileActivity.LoadingLibrary))
+        assertEquals("Gain Ground", pendingGameTitle("Gain Ground", "lib:romm:23", TileActivity.LoadingLibrary))
+        assertEquals("Gain Ground", pendingGameTitle("Gain Ground", "lib:romm:23", null))
+    }
+
     @Test
     fun theTopScreenSaysWhatTheLibraryIsDoing() {
         assertEquals("Downloading", activityLine(TileActivity.Downloading(null)))

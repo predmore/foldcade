@@ -57,6 +57,7 @@ internal fun retryableRommStatus(status: Int): Boolean = status in setOf(408, 42
 
 private fun RommException.transientReadFailure(): Boolean =
     (this is RommUnavailable && generateSequence(cause) { it.cause }.take(8).none {
-        it is CleartextRejected || it is OriginRedirectRejected || it is javax.net.ssl.SSLException
+        it is CleartextRejected || it is OriginRedirectRejected || it is javax.net.ssl.SSLException ||
+            it is java.net.UnknownHostException || it is java.net.NoRouteToHostException
     }) ||
         (this is RommHttpException && retryableRommStatus(status))

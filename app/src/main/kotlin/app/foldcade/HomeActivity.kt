@@ -1445,7 +1445,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 if (route != null) {
                     foldcade.launchWork.resolved(generation)
                     launchScreen = screen
-                    launchBackendGame(game.title, route.play.platformId, route)
+                    launchBackendGame(game.title.takeUnless { it == tileId } ?: route.play.label, route.play.platformId, route)
                 } else {
                     foldcade.shell.present(DialogState(
                         kind = DialogKind.Ok,
