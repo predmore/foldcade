@@ -420,6 +420,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             Effect.SaveRommToken -> saveRommToken()
             Effect.RetryRommDeviceCode -> beginRommDeviceCode()
+            Effect.UseFoundRomm -> foldcade.shell.model.connectFoundOrigin?.let {
+                beginRommFromPhone(it)
+            }
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> foldcade.saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -2777,8 +2780,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /**
      * Device code is the main path once an origin is on the form. Paste stays in the token field.
-     * The code is for the saved server when one exists, and for the typed origin otherwise.
+     * The code follows the address on this form, including a phone's explicit choice.
      */
+    internal fun beginRommFromPhone(origin: String) {
+        foldcade.shell.chooseRommOrigin(origin)
+        beginRommDeviceCode()
+    }
+
     private fun beginRommDeviceCode() {
         deviceCodeJob?.cancel()
         val instanceId = RommCredentials.PLUGIN_ID
@@ -2789,8 +2797,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val (revision, origin) = withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.connectOriginRevision to normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
                 }
-                val saved = foldcade.store.rommOrigin()?.let(::normalizeSetupOrigin)
-                if (origin == null || revision == pairedRevision || (saved != null && saved != origin)) {
+                if (origin == null || revision == pairedRevision) {
                     delay(200)
                     continue
                 }

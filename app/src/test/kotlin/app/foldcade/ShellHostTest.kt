@@ -36,6 +36,20 @@ import org.junit.Test
 
 class ShellHostTest {
     @Test
+    fun choosingTheSameRommAddressExplicitlyRetiresAnExpiredChallenge() {
+        val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.openConnect("https://romm.example")
+        val visit = shell.beginDeviceCodeAttempt()
+        val revision = shell.connectOriginRevision
+        shell.showSetupHint(app.foldcade.language.Copy.rommCodeExpired, retry = true)
+        shell.chooseRommOrigin("https://romm.example")
+        assertFalse(shell.deviceCodeFormCurrent(visit, revision))
+        assertFalse(shell.model.connectRetry)
+        assertNull(shell.model.connectHint)
+        assertTrue(shell.deviceCodeFormCurrent(visit, shell.connectOriginRevision))
+    }
+
+    @Test
     fun originEditsSupersedeChallengesEvenWhenTheNormalizedAddressIsUnchanged() {
         val shell = shell(PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         val address = "https://romm.example"

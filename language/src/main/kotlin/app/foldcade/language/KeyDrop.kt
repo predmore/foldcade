@@ -82,13 +82,13 @@ object KeyDropPage {
     fun done(received: Boolean, colors: Colors): String =
         page(colors, "<h1>${if (received) KeyDropCopy.pageSent else KeyDropCopy.pageEmpty}</h1>")
 
-    private fun page(colors: Colors, body: String): String = """
+    internal fun page(colors: Colors, body: String, title: String = KeyDropCopy.pageTitle): String = """
         <!doctype html>
         <html lang="en"><head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="referrer" content="no-referrer">
-        <title>${KeyDropCopy.pageTitle}</title>
+        <title>${escape(title)}</title>
         <style>
           :root { color-scheme: dark; }
           body { margin: 0; padding: 28px 22px; background: ${hex(colors.background)}; color: ${hex(colors.text)};
@@ -111,7 +111,7 @@ object KeyDropPage {
         </body></html>
     """.trimIndent()
 
-    private fun escape(text: String): String =
+    internal fun escape(text: String): String =
         text.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
     /** Only a `#rrggbb`, so nothing else can reach the style sheet. */

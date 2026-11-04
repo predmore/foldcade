@@ -34,6 +34,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import app.foldcade.language.fullPageOn
 import app.foldcade.api.plugin.Credential
 import app.foldcade.api.plugin.CredentialLookup
@@ -906,6 +908,25 @@ class FoldcadeApp : Application() {
                     keyDrop.checking(busy)
                 }
         }
+        // The RomM address page follows the same visible-form lifetime as the key page.
+        scope.launch(Dispatchers.Main.immediate) {
+            snapshotFlow {
+                val model = shell.model
+                Triple(homeShownNow && model.connectOpen && model.connectKind == app.foldcade.language.ConnectKind.Romm &&
+                    !model.connectBusy && model.connectCode == null && shell.connectToken.isBlank(), model.connectRetry, model.connectOrigin)
+            }.collect { (wanted, retry, _) -> rommPhone.want(wanted, retry) }
+        }
+        scope.launch(Dispatchers.Main.immediate) {
+            snapshotFlow { homeShownNow && shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.Romm }
+                .collectLatest { open ->
+                    if (!open || shell.model.connectOrigin.isNotBlank()) return@collectLatest
+                    shell.showNearbyRomm(null, searching = true)
+                    val found = withContext(Dispatchers.IO) {
+                        lanAddress(getSystemService(ConnectivityManager::class.java))?.hostAddress?.let { app.foldcade.romm.findNearbyRomm(it) }
+                    }
+                    shell.showNearbyRomm(found, searching = false)
+                }
+        }
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
@@ -1255,6 +1276,28 @@ class FoldcadeApp : Application() {
                 }
             },
         )
+    }
+
+    internal val rommPhone by lazy {
+        RommPhoneHost(getSystemService(ConnectivityManager::class.java), scope, colors = {
+            val theme = paintFor(shell.model.themeIndex).theme
+            app.foldcade.language.KeyDropPage.Colors(
+                KeyDropHost.hex(theme.background), KeyDropHost.hex(theme.surface), KeyDropHost.hex(theme.onBackground),
+                KeyDropHost.hex(theme.muted), KeyDropHost.hex(theme.focus),
+            )
+        }, onAddress = address@{ origin ->
+            val home = homes.values.firstNotNullOfOrNull { it.get()?.takeIf { home -> home.shellVisible } } ?: return@address null
+            home.beginRommFromPhone(origin)
+            val visit = shell.connectVisit
+            val revision = shell.connectOriginRevision
+            // RomM returns /pair/device?user_code=<public user_code>. The device_code and access token
+            // stay in the existing polling flow, never in the LAN response:
+            // https://github.com/rommapp/romm/blob/5.4.1/backend/utils/device_auth.py
+            val model = snapshotFlow { shell.model }.first { model ->
+                !homeShownNow || !shell.deviceCodeFormCurrent(visit, revision) || model.connectCode != null || model.connectRetry
+            }
+            if (homeShownNow && shell.deviceCodeFormCurrent(visit, revision)) model.connectCode?.url?.let { app.foldcade.romm.rommPhoneApprovalUrl(origin, it) } else null
+        })
     }
 
     /** True while any Home screen is shown, for what runs only then. */

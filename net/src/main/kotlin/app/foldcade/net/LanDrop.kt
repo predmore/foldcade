@@ -61,6 +61,9 @@ class LanDrop private constructor(
 
         /** After the one POST: [received] is false when it held nothing usable. */
         fun done(received: Boolean): String
+
+        /** A bounded handoff may return a continuation link after accepting the value. Runs off Main. */
+        fun received(value: String?): String = done(value != null)
     }
 
     /** Called on the drop's own thread. */
@@ -147,7 +150,7 @@ class LanDrop private constructor(
         closed.set(true)
         runCatching { server.close() }
         val value = formValue(String(body, Charsets.UTF_8))
-        runCatching { respond(output, 200, pages.done(value != null)) }
+        runCatching { respond(output, 200, pages.received(value)) }
         listener.received(value)
         return true
     }

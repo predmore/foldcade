@@ -38,6 +38,23 @@ class LanDropTest {
 
     private fun open(heard: Heard) = LanDrop.open(loopback, pages, heard).also { drops += it }
 
+    @Test fun continuationRunsAfterTheOneTimeListenerHasClosed() {
+        val heard = Heard()
+        lateinit var drop: LanDrop
+        drop = LanDrop.open(loopback, object : LanDrop.Pages {
+            override fun form(action: String) = "form"
+            override fun done(received: Boolean) = "done"
+            override fun received(value: String?): String {
+                assertFalse(drop.isOpen)
+                assertEquals("https://romm.example", value)
+                return "approval link"
+            }
+        }, heard).also { drops += it }
+        assertEquals(200 to "approval link", post(drop, "key=https%3A%2F%2Fromm.example"))
+        assertTrue(heard.got.await(1, TimeUnit.SECONDS))
+        assertEquals(1, heard.receivedCount)
+    }
+
     /** One raw HTTP exchange: the status code and the body. */
     private fun exchange(drop: LanDrop, request: String): Pair<Int, String> {
         val uri = URI(drop.url)

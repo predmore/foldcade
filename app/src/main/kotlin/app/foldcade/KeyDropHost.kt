@@ -71,7 +71,7 @@ internal class KeyDropHost(
         opening = scope.launch(Dispatchers.IO) {
             // Without Wi-Fi the form shows SteamGridDB's own page; it looks again now and then.
             while (true) {
-                val address = lanAddress()
+                val address = lanAddress(connectivity)
                 val opened = address?.let { open(it, pageColors) }
                 if (opened != null) {
                     // A drop this job opened is held or closed, even if the job is cancelled on the way.
@@ -90,7 +90,7 @@ internal class KeyDropHost(
                     // A move to another network, or off Wi-Fi, takes the page's address with it: a fresh page follows.
                     while (opened.isOpen) {
                         delay(ADDRESS_CHECK_MILLIS)
-                        if (opened.isOpen && lanAddress() != address) {
+                        if (opened.isOpen && lanAddress(connectivity) != address) {
                             withContext(Dispatchers.Main.immediate) { if (wanted && drop === opened) arm() }
                             return@launch
                         }
@@ -150,32 +150,32 @@ internal class KeyDropHost(
         }
     }
 
-    /** IO. This device's IPv4 address on Wi-Fi or Ethernet, the one a phone beside it can reach. */
-    private fun lanAddress(): InetAddress? {
-        val manager = connectivity ?: return null
-        return try {
-            @Suppress("DEPRECATION")
-            val networks = listOfNotNull(manager.activeNetwork) + manager.allNetworks
-            networks.distinct().firstNotNullOfOrNull { network ->
-                val capabilities = manager.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
-                // A VPN reports the Wi-Fi under it as its transport, but its address is the tunnel's, which no phone beside this one reaches.
-                if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@firstNotNullOfOrNull null
-                val local = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-                if (!local) return@firstNotNullOfOrNull null
-                manager.getLinkProperties(network)?.linkAddresses?.map { it.address }?.firstOrNull { address ->
-                    address is Inet4Address && !address.isLoopbackAddress && isLanHost(address.hostAddress.orEmpty())
-                }
-            }
-        } catch (failure: SecurityException) {
-            null
-        }
-    }
-
     companion object {
         private const val OFFLINE_RETRY_MILLIS = 5_000L
         private const val ADDRESS_CHECK_MILLIS = 5_000L
 
         fun hex(color: Color): String = "#%06x".format(color.toArgb() and 0xffffff)
+    }
+}
+
+/** IO. This device's IPv4 address on Wi-Fi or Ethernet, the one a phone beside it can reach. */
+internal fun lanAddress(connectivity: ConnectivityManager?): InetAddress? {
+    val manager = connectivity ?: return null
+    return try {
+        @Suppress("DEPRECATION")
+        val networks = listOfNotNull(manager.activeNetwork) + manager.allNetworks
+        networks.distinct().firstNotNullOfOrNull { network ->
+            val capabilities = manager.getNetworkCapabilities(network) ?: return@firstNotNullOfOrNull null
+            // A VPN reports the Wi-Fi under it as its transport, but its address is the tunnel's, which no phone beside this one reaches.
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@firstNotNullOfOrNull null
+            val local = capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            if (!local) return@firstNotNullOfOrNull null
+            manager.getLinkProperties(network)?.linkAddresses?.map { it.address }?.firstOrNull { address ->
+                address is Inet4Address && !address.isLoopbackAddress && isLanHost(address.hostAddress.orEmpty())
+            }
+        }
+    } catch (failure: SecurityException) {
+        null
     }
 }
