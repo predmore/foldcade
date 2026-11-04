@@ -14,6 +14,10 @@ class RommPhoneTest {
         assertFalse(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeExpired, connectRetry = true)))
         assertFalse(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeDenied, connectRetry = true)))
         assertTrue(rommNeedsAddress(known.copy(connectHint = Copy.rommCodeUnavailable, connectRetry = true)))
+        // An offline signed-in server needs its existing approval retry, not a nudge to change addresses.
+        val unavailableSaved = known.copy(rommSaved = true, connectHint = Copy.rommCodeUnavailable, connectRetry = true)
+        assertFalse(rommNeedsAddress(unavailableSaved))
+        assertTrue(rommNeedsAddress(unavailableSaved.copy(rommSignIn = true)))
     }
 
     @Test fun phoneAsksOnlyForAnAddressAndContinuesToApprovalWithoutAnotherScan() {

@@ -22,7 +22,8 @@ object RommPhoneCopy {
 
 /** A known address goes straight to its approval code; only a failed address needs another handoff. */
 fun rommNeedsAddress(model: PickerModel): Boolean =
-    model.connectOrigin.isBlank() || model.connectHint == Copy.rommCodeUnavailable
+    model.connectOrigin.isBlank() ||
+        model.connectHint == Copy.rommCodeUnavailable && (!model.rommSaved || model.rommSignIn)
 
 /** Address only. The continuation holds RomM's public user code, never its secret device code or token. */
 object RommPhonePage {
