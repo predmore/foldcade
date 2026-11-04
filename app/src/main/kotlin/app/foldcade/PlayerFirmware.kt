@@ -13,7 +13,6 @@ import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.unpackLocalFirmwareZip
 import java.io.File
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import kotlin.coroutines.cancellation.CancellationException
 
 internal data class FirmwareResult(val written: List<String>, val missing: List<String>, val needsFolder: Boolean, val place: String) {
@@ -40,7 +39,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
         val folder = declaredFolder(player, game, picked) ?: return false
         if (!android.canReach(folder, grants)) return false
         val access = saves.firmwareFolder(player, folder)
-        return player.needsFirmware(access) && (player.id != "aps3e" || player.missingFirmware(game, access).isNotEmpty())
+        return player.needsFirmware(access)
     }
 
     private fun declaredFolder(player: Player, game: Game, picked: String?): String? = picked ?:
@@ -87,13 +86,14 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
         }
         val launchGame = fileName?.let { game.copy(label = it) } ?: game
         val sources = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
+        val offerFolder = !melon && (player !is RetroArchPlayer || player.needsFirmwareFolder(launchGame, sources.isNotEmpty()))
         if (folder == null) {
             // Do not assume a missing BIOS from an ungranted folder. Offer one
             // shared RetroArch pick in R1; melonDS needs no external setup.
-            return FirmwareResult(emptyList(), emptyList(), !melon, place)
+            return FirmwareResult(emptyList(), emptyList(), offerFolder, place)
         }
         val access = saves.firmwareFolder(player, folder)
-        if (access.list("") == null) return FirmwareResult(emptyList(), emptyList(), !melon, place)
+        if (access.list("") == null) return FirmwareResult(emptyList(), emptyList(), offerFolder, place)
         if (!player.needsFirmware(access)) return FirmwareResult(emptyList(), emptyList(), false, place)
         val needed = player.missingFirmware(launchGame, access)
         if (retro && needed.isEmpty() && (player as RetroArchPlayer).hasFirmware(access)) {
@@ -104,7 +104,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
             melon -> listOf("bios7.bin", "bios9.bin", "firmware.bin").any { leaf ->
                 access.list("nds").orEmpty().none { !it.isFolder && it.name == leaf && it.size > 0 }
             }
-            else -> false
+            else -> player is app.foldcade.plugins.aps3e.Aps3ePlayer
         }
         val local = if (scan) localFirmware(player, libraries, grants, onCopy) else emptyList()
         val uri = (target as? LaunchTarget.ContentUri)?.uri ?: "content://firmware/launch"
@@ -160,21 +160,34 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
         val playerKey = player.id + if (player is RetroArchPlayer) ":${player.pinnedCore}:${player.cores.activePackage()?.let(player::coreChoice)}" else ""
         val destinations = HashSet<String>()
         var bytesRead = 0L
+        var archiveBytes = 0L
+        var unpackedBytes = 0L
         val chosen = files.values.flatMap { file ->
             val key = "$playerKey:${player.firmwareKeepsFolders}:${file.uri}"
             val version = FirmwareSourceVersion(file.size, file.modifiedMillis)
             sourceCache.get(key, version)?.takeIf { cached -> cached.all { docs.length(it.contentUri) != null } }
                 ?.let { return@flatMap it }
-            val zipped = docs.head(file.uri, 4)?.contentEquals(byteArrayOf(0x50, 0x4b, 3, 4)) == true
+            val archiveName = file.name.endsWith(".zip", ignoreCase = true)
+            if (archiveName && file.size > LOCAL_ARCHIVE_CAP || !archiveName && !localCandidate(player, file)) {
+                sourceCache.put(key, version, emptyList())
+                return@flatMap emptyList()
+            }
+            val zipped = archiveName && docs.head(file.uri, 4)?.contentEquals(byteArrayOf(0x50, 0x4b, 3, 4)) == true
+            var complete = true
             val candidates = if (!zipped) listOf(file) else try {
-                val zip = cacheArchive(file, onCopy)
-                listOf(file) + unpackLocalFirmwareZip(zip.toPath(), keepFolders = player.firmwareKeepsFolders) { player.firmwareFileName(it) != null }
-                    .map { (name, path) -> SaveChild(name,
+                val zip = cacheArchive(file, onCopy) { count ->
+                    archiveBytes += count
+                    check(archiveBytes <= LOCAL_ARCHIVE_CAP)
+                }
+                val remaining = LOCAL_UNPACK_CAP - unpackedBytes
+                val unpacked = unpackLocalFirmwareZip(zip.toPath(), keepFolders = player.firmwareKeepsFolders,
+                    totalCap = remaining) { player.firmwareFileName(it) != null }
+                unpackedBytes += unpacked.sumOf { it.second.toFile().length() }
+                listOf(file) + unpacked.map { (name, path) -> SaveChild(name,
                         FileProvider.getUriForFile(context, "${context.packageName}.romm.cache", path.toFile()).toString(), false,
                         path.toFile().length(), path.toFile().lastModified()) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { emptyList() }
-            var complete = true
+            catch (_: Exception) { complete = false; emptyList() }
             val accepted = candidates.mapNotNull { candidate ->
                 if (!localCandidate(player, candidate)) return@mapNotNull null
                 val count = if (candidate.size > 0) minOf(candidate.size, player.firmwareHeaderSize.toLong()).toInt() else player.firmwareHeaderSize
@@ -205,35 +218,30 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
         else -> true
     }
 
-    private fun cacheArchive(file: SaveChild, onCopy: () -> Unit): File {
-        val key = MessageDigest.getInstance("SHA-256").digest(file.uri.toByteArray()).joinToString("") { "%02x".format(it.toInt() and 255) }
-        val dir = File(context.cacheDir, "local-firmware/$key").apply { mkdirs() }
-        val target = File(dir, file.name.substringAfterLast('/'))
-        val temp = File(dir, ".archive.partial")
-        try {
+    private fun cacheArchive(file: SaveChild, onCopy: () -> Unit, onBytes: (Long) -> Unit): File =
+        reuseFirmwareArchive(File(context.cacheDir, "local-firmware"), file.uri, file.name.substringAfterLast('/'),
+            FirmwareSourceVersion(file.size, file.modifiedMillis)) { temp ->
             onCopy()
             context.contentResolver.openInputStream(Uri.parse(file.uri))!!.use { input ->
                 FileOutputStream(temp).use { output ->
                     val buffer = ByteArray(64 * 1024)
-                    var total = 0L
                     while (true) {
                         if (Thread.currentThread().isInterrupted) throw CancellationException("BIOS copy cancelled")
                         val count = input.read(buffer)
                         if (count < 0) break
-                        total += count
-                        check(total <= LOCAL_FILE_CAP)
+                        onBytes(count.toLong())
                         output.write(buffer, 0, count)
                     }
                     output.fd.sync()
                 }
             }
-            check(temp.renameTo(target))
-            return target
-        } finally { temp.delete() }
-    }
+        }
 
     private companion object {
         const val LOCAL_FILE_CAP = 512L * 1024 * 1024
         const val LOCAL_PROBE_CAP = 64L * 1024 * 1024
+        // Fits the player's 181 MiB PS2 dump set while bounding a BIOS collection scan.
+        const val LOCAL_ARCHIVE_CAP = 256L * 1024 * 1024
+        const val LOCAL_UNPACK_CAP = 512L * 1024 * 1024
     }
 }

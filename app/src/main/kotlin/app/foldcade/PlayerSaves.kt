@@ -431,7 +431,7 @@ internal class PlayerSaves(
         return destinations.mapNotNull { (file, name, header) ->
             try {
                 if (synchronized(SaveFileLock) {
-                    if (docs.find(into, name) == null) onWrite()
+                    if (findFirmwareFile(docs, into, name) == null) onWrite()
                     placeFirmwareFile(into, name, file.contentUri, header)
                 }) name else null
             } catch (_: Exception) {
@@ -443,7 +443,7 @@ internal class PlayerSaves(
     private fun placeFirmwareFile(folder: String, name: String, source: String, header: ByteArray): Boolean {
         val key = "firmware:$folder/$name"
         val hash = docs.md5(source) ?: return false
-        val existing = docs.find(folder, name)
+        val existing = findFirmwareFile(docs, folder, name)
         docs.publishFirmware(folder, name, source, hash, header)?.let { return it }
         val currentHash = existing?.let(docs::md5)
         val mine = marks.mark(key)
@@ -1379,9 +1379,19 @@ internal class AndroidSaveDocuments(private val resolver: ContentResolver) : Sav
     }
 }
 
+/** Shared-storage names ignore case. A provider spelling difference must never allow replacement. */
+private fun findFirmwareFile(docs: SaveDocuments, folder: String, name: String): String? {
+    docs.find(folder, name)?.let { return it }
+    var current = folder
+    for (part in name.split('/')) {
+        current = docs.children(current, "")?.firstOrNull { it.name.equals(part, true) }?.uri ?: return null
+    }
+    return current
+}
+
 /** Publishes only a complete, checked new image. The player's existing image always wins. */
 internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: String, source: String, hash: String, header: ByteArray = byteArrayOf()): Boolean {
-    if (docs.find(folder, name) != null) return false
+    if (findFirmwareFile(docs, folder, name) != null) return false
     val parent = name.substringBeforeLast('/', "")
     val leaf = name.substringAfterLast('/')
     val tempName = listOf(parent, ".foldcade-${java.util.UUID.randomUUID()}.partial").filter { it.isNotEmpty() }.joinToString("/")
@@ -1393,7 +1403,7 @@ internal fun publishNewFirmware(docs: SaveDocuments, folder: String, name: Strin
         // A background RomM refresh can replace the source after selection.
         // Publish only the image whose bytes selected this core's destination.
         if (header.isNotEmpty() && docs.head(temp, header.size)?.contentEquals(header) != true) return false
-        if (docs.find(folder, name) != null) return false
+        if (findFirmwareFile(docs, folder, name) != null) return false
         renamed = docs.renameFirmware(temp, leaf) ?: return false
         if (docs.displayName(renamed) != leaf || docs.md5(renamed) != hash) return false
         published = true

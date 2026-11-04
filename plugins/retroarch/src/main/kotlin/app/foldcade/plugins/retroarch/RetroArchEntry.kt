@@ -165,10 +165,12 @@ class RetroArchPlayer internal constructor(
     }
 
     /** Metadata-only warm-launch check. Existing files stay the player's choice. */
-    fun hasFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = firmwareList()
+    fun needsFirmwareFolder(game: Game, firmwareOffered: Boolean): Boolean = firmwareOffered || requiredBios(game).isNotEmpty()
+
+    fun hasFirmware(folder: app.foldcade.api.plugin.SaveFolderAccess): Boolean = hasScanningPs1Bios(folder) || firmwareList()
         .groupBy { it.path.substringBeforeLast('/', "") }.any { (parent, files) ->
             val names = files.mapTo(HashSet()) { it.path.substringAfterLast('/') }
-            folder.list(parent).orEmpty().any { !it.isFolder && it.name in names && it.size > 0 }
+            folder.list(parent).orEmpty().any { !it.isFolder && names.any { name -> name.equals(it.name, true) } && it.size > 0 }
         }
 
     /** Reject unrelated images before reading a multi-megabyte header, while recognizing renamed dumps. */

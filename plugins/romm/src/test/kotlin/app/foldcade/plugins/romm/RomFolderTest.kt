@@ -469,6 +469,18 @@ class RomFolderTest {
     }
 
     @Test
+    fun aSmallerLocalLaunchBudgetDoesNotOfferAnOversizedCachedUnpack() {
+        val dir = Files.createTempDirectory("local-firmware-budget")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf("bios.bin" to ByteArray(800), "firmware.bin" to ByteArray(400)))
+            assertEquals(2, unpackLocalFirmwareZip(zip, totalCap = 1200) { true }.size)
+            assertTrue(unpackLocalFirmwareZip(zip, totalCap = 1000) { true }.isEmpty())
+            assertEquals(2, unpackLocalFirmwareZip(zip, totalCap = 1200) { true }.size)
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun aZipOverTheCapIsNotUnpacked() {
         assertEquals(32L * 1024 * 1024, FIRMWARE_ZIP_FILE_CAP)
         assertEquals(1024L * 1024 * 1024, FIRMWARE_ZIP_TOTAL_CAP)

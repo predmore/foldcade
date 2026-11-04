@@ -13,6 +13,8 @@ class FirmwarePublicationTest {
         override fun displayName(uri: String) = names[uri] ?: uri.substringAfterLast('/')
         override fun find(folderUri: String, name: String) = files.keys.firstOrNull { it == "$folderUri/$name" || names[it] == name }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = byteArrayOf(); names[it] = name.substringAfterLast('/') }
+        override fun children(folderUri: String, path: String) = files.filterKeys { it.startsWith("$folderUri/") }
+            .map { (uri, bytes) -> SaveChild(displayName(uri), uri, false, bytes.size.toLong()) }
         override fun read(uri: String) = files[uri]
         override fun head(uri: String, size: Int) = files[uri]?.take(size)?.toByteArray()
         override fun write(uri: String, bytes: ByteArray) { files[uri] = bytes }
@@ -52,6 +54,19 @@ class FirmwarePublicationTest {
         assertEquals(setOf("source", "folder/bios.bin"), docs.files.keys)
         assertEquals("new player", String(docs.files.getValue("folder/bios.bin")))
     }
+    @Test fun mixedCaseAndConcurrentCaseVariantsOfThePlayersBiosAlwaysWin() {
+        val docs = Documents()
+        docs.files["folder/BIOS.BIN"] = "player".toByteArray()
+        assertFalse(publish(docs))
+        assertEquals("player", String(docs.files.getValue("folder/BIOS.BIN")))
+        assertFalse(docs.files.containsKey("folder/bios.bin"))
+        docs.files.remove("folder/BIOS.BIN")
+        docs.copying = { docs.files["folder/BIOS.BIN"] = "new player".toByteArray() }
+        assertFalse(publish(docs))
+        assertEquals(setOf("source", "folder/BIOS.BIN"), docs.files.keys)
+        assertEquals("new player", String(docs.files.getValue("folder/BIOS.BIN")))
+    }
+
     @Test fun aRefreshedSourceCannotBePublishedUnderANameChosenFromItsOldBytes() {
         val docs = Documents()
         val selected = docs.files.getValue("source").copyOf()

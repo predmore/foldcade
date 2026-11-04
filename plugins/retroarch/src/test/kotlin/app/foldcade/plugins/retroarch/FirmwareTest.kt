@@ -61,6 +61,46 @@ class FirmwareTest {
         assertTrue(player("saturn", "mednafen_saturn").missingFirmware(game("saturn", "Game (Japan)"), folder).isEmpty())
     }
 
+    private fun installed(name: String, size: Long) = object : app.foldcade.api.plugin.SaveFolderAccess {
+        override fun list(path: String) = if (path.isEmpty()) listOf(app.foldcade.api.plugin.SaveFolderEntry(name, false, size)) else emptyList()
+        override fun read(path: String, limit: Int): ByteArray? = error("must not hash an installed BIOS")
+        override fun read(path: String, offset: Long, length: Int) = if (path == name) byteArrayOf(1) else null
+        override fun write(path: String, bytes: ByteArray) = false
+        override fun createFolder(path: String) = false
+        override fun moveToBackup(path: String) = false
+    }
+
+    @Test fun existingMixedCaseBiosUsesTheProviderNameAndDoesNotBlockPlay() {
+        val sega = player("sega-cd")
+        val folder = installed("BIOS_CD_U.BIN", 131072)
+        assertTrue(sega.missingFirmware(game("sega-cd"), folder).isEmpty())
+        assertTrue(sega.hasFirmware(folder))
+    }
+
+    @Test fun ps1CoresKeepTheirOwnDirectorySearchAndOverrideBiosChoices() {
+        for (name in listOf("SCPH5501.BIN", "SCPH-5501.bin", "scph7003.bin", "openbios.bin", "my-console.dump")) {
+            assertTrue(name, player("playstation", "mednafen_psx").missingFirmware(game("playstation"), installed(name, 524288)).isEmpty())
+        }
+        assertTrue(player("playstation", "mednafen_psx_hw").hasFirmware(installed("SCPH-5903.bin", 1048576)))
+        val swan = player("playstation", "swanstation")
+        for (size in listOf(524288L, 4194304L, 0x3E66F0L)) {
+            assertTrue(swan.missingFirmware(game("playstation"), installed("scph1001.bin", size)).isEmpty())
+            assertTrue(swan.hasFirmware(installed("renamed.bin", size)))
+        }
+        assertTrue(swan.firmwareList().any { it.path == "scph1001.bin" && it.md5 == "924e392ed05558ffdb115408c263dccf" })
+        assertFalse(swan.missingFirmware(game("playstation"), installed("empty.bin", 0)).isEmpty())
+    }
+
+    @Test fun optionalBiosDoesNotNagForAFolderOnCartridgeLaunches() {
+        for (system in listOf("nes", "snes", "game-boy", "game-boy-advance", "genesis", "psp")) {
+            val p = player(system)
+            assertFalse(system, p.needsFirmwareFolder(game(system), firmwareOffered = false))
+            assertTrue(system, p.needsFirmwareFolder(game(system), firmwareOffered = true))
+        }
+        assertTrue(player("sega-cd").needsFirmwareFolder(game("sega-cd"), firmwareOffered = false))
+        assertTrue(player("playstation", "mednafen_psx").needsFirmwareFolder(game("playstation"), firmwareOffered = false))
+    }
+
     @Test fun metadataFilteringStillFindsRenamedBiosWithUnusualDocumentedSizes() {
         val color = player("game-boy-color", "sameboy")
         assertTrue(color.localFirmwareCandidate("renamed.dump", 2304))

@@ -24,6 +24,36 @@ class FirmwareSourceCacheTest {
         cache.put("source", version, emptyList())
         assertNull(cache.get("source", version))
     }
+    @Test fun aSourceVersionSurvivesProcessDeathWithoutCopyingTheArchiveAgain() {
+        val root = kotlin.io.path.createTempDirectory("firmware-archive").toFile()
+        try {
+            val version = FirmwareSourceVersion(4, 12345)
+            val first = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version) { it.writeBytes(byteArrayOf(1, 2, 3, 4)) }
+            val reopened = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version) { error("copied again after restart") }
+            assertEquals(first, reopened)
+            assertEquals(listOf<Byte>(1, 2, 3, 4), reopened.readBytes().toList())
+            val changed = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version.copy(modifiedMillis = 12346)) { it.writeBytes(byteArrayOf(5, 6, 7, 8)) }
+            assertEquals(listOf<Byte>(5, 6, 7, 8), changed.readBytes().toList())
+        } finally { root.deleteRecursively() }
+    }
+
+    @Test fun anInterruptedArchiveCopyLeavesNoPartialAndKeepsTheLastCompleteCopy() {
+        val root = kotlin.io.path.createTempDirectory("firmware-archive").toFile()
+        try {
+            val version = FirmwareSourceVersion(4, 12345)
+            val old = reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version) { it.writeBytes(byteArrayOf(1, 2, 3, 4)) }
+            try {
+                reuseFirmwareArchive(root, "content://bios/collection", "bios.zip", version.copy(modifiedMillis = 12346)) {
+                    it.writeBytes(byteArrayOf(9))
+                    throw java.io.IOException("storage disconnected")
+                }
+                fail("copy should fail")
+            } catch (_: java.io.IOException) { }
+            assertEquals(listOf<Byte>(1, 2, 3, 4), old.readBytes().toList())
+            assertFalse(root.walkTopDown().any { it.name.endsWith(".partial") })
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun unknownFoldersNeverProveBiosMissingOrBlockWorkingEmulators() {
         assertFalse(FirmwareResult(emptyList(), listOf("PlayStation BIOS (.bin)"), true, "DuckStation/bios").blocksLaunch)
         assertFalse(FirmwareResult(emptyList(), emptyList(), true, "RetroArch/system").blocksLaunch)

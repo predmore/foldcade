@@ -42,7 +42,11 @@ internal fun RetroArchPlayer.firmwareCore(): String {
     }
 }
 
-internal fun RetroArchPlayer.firmwareList(): List<CoreFirmware> = coreFirmware.filter { it.core == firmwareCore() }.filter { file ->
+// SwanStation's directory scan also recognizes the documented PCSX PS1 dumps.
+// Its core-info list names only a subset (HostInterface::FindBIOSImageInDirectory).
+internal fun RetroArchPlayer.firmwareList(): List<CoreFirmware> = coreFirmware.filter {
+    it.core == firmwareCore() || firmwareCore() == "swanstation" && it.core == "pcsx_rearmed"
+}.filter { file ->
     // Shared cores list firmware for several systems. Only this player's system
     // matters when deciding whether its optional BIOS is already in place.
     when (platformId) {
@@ -98,15 +102,31 @@ internal fun RetroArchPlayer.requiredBios(game: Game): List<List<String>> {
     }
 }
 
-internal fun RetroArchPlayer.missingBios(game: Game, folder: SaveFolderAccess): List<String> = requiredBios(game)
+/** The cores also scan unnamed/alternate dumps; a name-only gate cannot prove these absent.
+ * https://github.com/libretro/swanstation/blob/master/src/core/host_interface.cpp (FindBIOSImageInDirectory)
+ * https://github.com/libretro/beetle-psx-libretro/blob/master/libretro.c (search_firmware, firmware_is_present)
+ */
+internal fun RetroArchPlayer.hasScanningPs1Bios(folder: SaveFolderAccess): Boolean {
+    val sizes = when (firmwareCore()) {
+        "swanstation" -> setOf(524288L, 4194304L, 0x3E66F0L)
+        "mednafen_psx", "mednafen_psx_hw" -> setOf(524288L, 1048576L)
+        else -> return false
+    }
+    return folder.list("").orEmpty().any { file ->
+        !file.isFolder && file.size in sizes && folder.read(file.name, 0L, 1)?.isNotEmpty() == true
+    }
+}
+
+internal fun RetroArchPlayer.missingBios(game: Game, folder: SaveFolderAccess): List<String> =
+    if (hasScanningPs1Bios(folder)) emptyList() else requiredBios(game)
     .filter { alternatives -> alternatives.none { path ->
         val spec = firmwareList().firstOrNull { it.path == path }
         val entry = folder.list(path.substringBeforeLast('/', "")).orEmpty()
-            .firstOrNull { !it.isFolder && it.name == path.substringAfterLast('/') }
+            .firstOrNull { !it.isFolder && it.name.equals(path.substringAfterLast('/'), true) }
         // Hashes identify incoming dumps. An already installed alternate BIOS
         // revision is the player's choice, not proof that the BIOS is missing.
         entry != null && (entry.size <= 0 || spec?.size == null || entry.size == spec.size) &&
-            folder.read(path, 0L, 1)?.isNotEmpty() == true
+            folder.read(listOf(path.substringBeforeLast('/', ""), entry.name).filter { it.isNotEmpty() }.joinToString("/"), 0L, 1)?.isNotEmpty() == true
     } }.map { it.joinToString(" / ") }
 
 /** Full bytes for hashing normal BIOS dumps, plus one byte to reject oversized lookalikes. */

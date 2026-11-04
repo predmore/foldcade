@@ -284,7 +284,7 @@ private fun zipMarker(zip: Path): Path = zip.resolveSibling(zip.fileName.toStrin
  * A player-owned local archive copied into Foldcade's private cache. Stamp the
  * complete copy, then use the same CRC-checked bounded unpacker as RomM.
  */
-fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, wants: (String) -> Boolean): List<Pair<String, Path>> {
+fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, totalCap: Long = FIRMWARE_ZIP_TOTAL_CAP, wants: (String) -> Boolean): List<Pair<String, Path>> {
     if (!isZipFile(zip)) return emptyList()
     val digest = java.security.MessageDigest.getInstance("SHA-256")
     Files.newInputStream(zip).use { input ->
@@ -296,5 +296,8 @@ fun unpackLocalFirmwareZip(zip: Path, keepFolders: Boolean = false, wants: (Stri
         }
     }
     writeDurably(zipMarker(zip), digest.digest())
-    return unpackFirmwareZip(zip, keepFolders = keepFolders, wants = wants)
+    // A caller may have a smaller remaining budget than a previous launch.
+    // The existing unpack is still valid, but only offer it if it fits this call.
+    return unpackFirmwareZip(zip, keepFolders = keepFolders, totalCap = totalCap, wants = wants)
+        .takeIf { files -> files.sumOf { Files.size(it.second) } <= totalCap }.orEmpty()
 }

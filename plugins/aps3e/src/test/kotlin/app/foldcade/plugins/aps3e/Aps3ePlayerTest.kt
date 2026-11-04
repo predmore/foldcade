@@ -121,7 +121,8 @@ class Aps3ePlayerTest {
         )
         assertFalse(player.needsFirmware(folder("config/dev_flash/.installed")))
         assertTrue(player.needsFirmware(folder()))
-        assertTrue(player.needsFirmware(folder("config/default_config.yml", "firmware/PS3UPDAT.PUP")))
+        assertFalse(player.needsFirmware(folder("config/default_config.yml", "firmware/PS3UPDAT.PUP")))
+        assertTrue(player.missingFirmware(game, folder()).isEmpty()) // Its install wizard owns this guidance.
     }
 
     @Test
