@@ -68,7 +68,7 @@ internal class AndroidThorPresets(private val context: Context) {
                         presets.apply(identity, unchanged, ::stopped)
                     } else ThorPresetStatus.FileAccess
                 }
-                operation == Operation.Read -> ThorPresetStatus.Ready
+                operation == Operation.Read -> if (stopped()) ThorPresetStatus.Ready else ThorPresetStatus.CloseEmulator
                 operation == Operation.Restore -> presets.restore(identity, file, ::stopped)
                 else -> presets.apply(identity, file, ::stopped)
             }

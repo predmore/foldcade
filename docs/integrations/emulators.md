@@ -55,7 +55,7 @@ Both regular and Google Play builds are recognized; regular has priority when bo
 
 For **Azahar 2126.2**, Foldcade sets untouched options before a game starts: one 3DS screen on each Thor panel, **5×** resolution, and **accurate multiplication**. Choose Azahar’s active user folder for saves first. Foldcade compares each setting with that version’s upstream Android default and keeps any different value. An existing Thor setup stays byte-for-byte as it was. This is a first-time preset: later edits in Azahar, including resetting a value to its default, are never re-applied.
 
-**Settings › Emulators › Azahar › Thor setup** shows what Foldcade set. If it says **Close Azahar**, open its **App info**, choose **Force stop**, and return to **Thor setup › Set up**. Background and paused apps can still overwrite their config on exit, so Foldcade only changes a file while Android marks Azahar stopped. You can then launch normally. If the folder does not permit a direct atomic replacement, the row offers the existing optional **Find saves** file access; configuring the layout in Azahar remains available. Other Azahar versions are left to Azahar until their defaults are verified.
+**Settings › Emulators › Azahar › Thor setup** shows what Foldcade set. If it says **Close Azahar**, finish playing and save first. Then open its **App info**, choose **Force stop**, and return to **Thor setup › Set up**, or start the next game. Background and paused apps can still overwrite their config on exit, so Foldcade only changes a file while Android marks Azahar stopped. You can then launch normally. If the folder does not permit a direct atomic replacement, the row offers the existing optional **Find saves** file access; configuring the layout in Azahar remains available. Other Azahar versions are left to Azahar until their defaults are verified.
 
 Foldcade stages and syncs the whole new file, then atomically replaces `config/config.ini`. Before changing it, it keeps the original beside the config as `config.ini.foldcade-original-…`, and in Foldcade’s private `files/emulator-presets` folder with a record of the changed keys. **Thor setup › Restore original** asks before restoring the entire original file. It also backs up the current file in both places, and disables future automatic presets for that user folder. A newly created config restores to no file. Uninstalling Foldcade removes its private copy and record; the backups beside Azahar’s config survive and prevent re-application after reinstall. Restore those copies manually if Foldcade’s private record is gone.
 
@@ -198,7 +198,6 @@ Forks with different Android package names are not detected automatically. Insta
 
 Recognized packages are listed in the source for [Eden](../../plugins/eden/src/main/kotlin/app/foldcade/plugins/eden/EdenEntry.kt), [standalone emulators](../../plugins/emulators/src/main/kotlin/app/foldcade/plugins/emulators/Emulators.kt), [aPS3e](../../plugins/aps3e/src/main/kotlin/app/foldcade/plugins/aps3e/Aps3eEntry.kt), [ARMSX2](../../plugins/armsx2/src/main/kotlin/app/foldcade/plugins/armsx2/ArmsX2Entry.kt), [Azahar](../../plugins/azahar/src/main/kotlin/app/foldcade/plugins/azahar/AzaharEntry.kt), [DuckStation](../../plugins/duckstation/src/main/kotlin/app/foldcade/plugins/duckstation/DuckStationEntry.kt), [melonDS](../../plugins/melonds/src/main/kotlin/app/foldcade/plugins/melonds/MelonDsEntry.kt), and [RetroArch](../../plugins/retroarch/src/main/kotlin/app/foldcade/plugins/retroarch/RetroArchEntry.kt).
 
-[All integration guides](README.md)
 
 
 ## Preset implementation references
@@ -212,3 +211,5 @@ These are the upstream formats and defaults behind the Thor setup decisions:
 - [Android FileSystemProvider](https://android.googlesource.com/platform/frameworks/base/+/android-13.0.0_r1/core/java/com/android/internal/content/FileSystemProvider.java): `renameDocument` builds a unique name instead of replacing an existing document. Two document renames leave a gap, so Foldcade does not use them as an atomic replacement.
 
 Eden’s existing provider grant reaches `config/config.ini`, along with keys, NAND and saves. Its provider starts Eden and initializes cached state. Foldcade leaves the config, driver installation, and `profiles.dat` alone; it only reads the active profile for save sync as described above.
+
+[All integration guides](README.md)

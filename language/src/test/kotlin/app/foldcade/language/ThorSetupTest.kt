@@ -23,6 +23,8 @@ class ThorSetupTest {
             PlayerSaveSetting("azahar", "Azahar", true, installed = true, thorSetup = ThorSetupSetting(ThorSetupStatus.CloseEmulator))))
         val right = reduce(base, Meaning.RightPanel).first
         val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))
+        assertTrue(panelHints(focused)!!.any { it.label == NoticeCopy.open })
+        assertFalse(panelHints(focused)!!.any { it.label == Copy.setUp })
         val (opened, effect) = reduce(focused, Meaning.Activate)
         assertNull(effect)
         assertNull(opened.saveSetup)

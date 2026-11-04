@@ -82,6 +82,20 @@ class ThorPresetsTest {
         }
     }
 
+    @Test fun `known failure with unchanged file can retry using its existing adjacent backup`() {
+        val folder = Files.createTempDirectory("thor-retry").toRealPath()
+        val path = folder.resolve("config.ini")
+        Files.writeString(path, defaults)
+        val file = LocalPresetFile(path)
+        val presets = ThorPresets(folder.resolve("private"))
+        var checks = 0
+        assertEquals(ThorPresetStatus.Failed, presets.apply("azahar", file) { ++checks == 1 })
+        assertEquals(ThorPresetStatus.Failed, presets.status("azahar", file))
+        assertFalse(presets.canRestore("azahar"))
+        assertTrue(file.hasPriorBackup())
+        assertEquals(ThorPresetStatus.Applied, ThorPresets(folder.resolve("private")).apply("azahar", file) { true })
+    }
+
     @Test fun `death after atomic replacement does not reapply on restart`() {
         val root = Files.createTempDirectory("thor-presets")
         val file = MemoryFile(defaults.toByteArray())

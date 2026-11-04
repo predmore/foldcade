@@ -148,8 +148,12 @@ internal class ThorPresets(private val root: Path) {
 
     @Synchronized
     fun apply(identity: String, file: PresetFile, stopped: () -> Boolean): ThorPresetStatus {
-        if (record(identity) != null) return status(identity, file)
-        if (file.hasPriorBackup()) {
+        val previous = record(identity)
+        // Only a failure observed before any replacement may retry. A prepared crash is
+        // ambiguous (the player might have changed the applied value back), so never retry it.
+        val retry = previous?.optString("phase") == "failed"
+        if (previous != null && !retry) return status(identity, file)
+        if (!retry && file.hasPriorBackup()) {
             val dir = directory(identity)
             Files.createDirectories(dir)
             saveRecord(dir, JSONObject().put("phase", "kept").put("identity", identity))
@@ -176,7 +180,15 @@ internal class ThorPresets(private val root: Path) {
                 .put("section", edit.section).put("key", edit.key)
                 .put("before", edit.before ?: JSONObject.NULL).put("after", edit.after) }))
         saveRecord(dir, journal)
-        if (!file.replace(original, plan.bytes, stopped)) return ThorPresetStatus.Failed
+        try {
+            if (!file.replace(original, plan.bytes, stopped)) {
+                noteFailedReplacement(dir, journal, file, original)
+                return ThorPresetStatus.Failed
+            }
+        } catch (failure: Exception) {
+            noteFailedReplacement(dir, journal, file, original)
+            throw failure
+        }
         saveRecord(dir, journal.put("phase", "applied"))
         return ThorPresetStatus.Applied
     }
@@ -188,7 +200,7 @@ internal class ThorPresets(private val root: Path) {
 
     @Synchronized
     fun canRestore(identity: String): Boolean = record(identity)?.let {
-        it.optString("phase") != "restored" && it.has("originalExists")
+        it.optString("phase") !in setOf("restored", "failed") && it.has("originalExists")
     } == true
 
     @Synchronized
@@ -210,6 +222,13 @@ internal class ThorPresets(private val root: Path) {
         if (!file.replace(current, original, stopped)) return ThorPresetStatus.Failed
         saveRecord(dir, journal.put("phase", "restored"))
         return ThorPresetStatus.Restored
+    }
+
+    private fun noteFailedReplacement(dir: Path, journal: JSONObject, file: PresetFile, original: ByteArray?) {
+        val current = runCatching { file.read() }.getOrElse { return }
+        if ((current == null && original == null) || (current != null && original != null && current.contentEquals(original))) {
+            saveRecord(dir, journal.put("phase", "failed"))
+        }
     }
 
     private fun directory(identity: String) = root.resolve(identity.toByteArray().presetHash())

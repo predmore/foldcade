@@ -1198,7 +1198,9 @@ fun panelHints(model: PickerModel): List<HintKey>? {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
                 val roles = actionFaces(model.faceMap)
-                if (notice.savePlayerId != null || notice.settingsCategory != null) {
+                if (notice.id.startsWith(ThorSetupCopy.noticePrefix)) {
+                    add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, NoticeCopy.open))
+                } else if (notice.savePlayerId != null || notice.settingsCategory != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
                 if (notice.id == ROMM_SIGN_IN_NOTICE) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))

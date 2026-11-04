@@ -3279,6 +3279,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 else foldcade.thorPresets.apply(playerId, foldcade.playerSaveFolder(player))
             } ?: return@launch
             foldcade.shell.setThorSetup(playerId, setup)
+            // A successful settings action resolves the standing launch notice as well.
+            if (setup.status in setOf(app.foldcade.language.ThorSetupStatus.Applied,
+                    app.foldcade.language.ThorSetupStatus.Kept, app.foldcade.language.ThorSetupStatus.Restored)) {
+                foldcade.dismissNotice(app.foldcade.language.ThorSetupCopy.noticePrefix + playerId)
+            }
             foldcade.shell.showDialog(app.foldcade.language.thorSetupDialog(playerId, setup, hostScreen()))
         }
     }
