@@ -268,6 +268,7 @@ import app.foldcade.language.saveHealthLine
 import app.foldcade.language.saveHealthLeads
 import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.pendingChip
+import app.foldcade.language.pendingGameTitle
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -3628,7 +3629,8 @@ private fun StripColumn(
                         focus.chrome == null &&
                         focus.cellIndex == index &&
                         carry == null
-                    val label = game?.title.orEmpty()
+                    val activity = shell.activityAt(source)
+                    val label = game?.let { pendingGameTitle(it.title, it.id, activity) }.orEmpty()
                     val libraryTile = library && face == null
                     // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
                     // its Not on Home tab, since every game is in its folder on Home.
@@ -3658,7 +3660,7 @@ private fun StripColumn(
                         offHome = offHome,
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
-                        activity = shell.activityAt(source),
+                        activity = activity,
                         saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
