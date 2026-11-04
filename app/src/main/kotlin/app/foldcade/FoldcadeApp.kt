@@ -2090,8 +2090,7 @@ class FoldcadeApp : Application() {
         val before = store.foundRoots()
         val next = if (!held) before else {
             val mounted = volumes.mapTo(HashSet()) { it.id }
-            val away = before.filter { it.substringBefore(':') !in mounted }
-                .filter { id -> picked.none { containsFolder(it, id) || containsFolder(id, it) } && removed.none { containsFolder(it, id) } }
+            val away = before.filter { it.substringBefore(':') !in mounted && romRootUsable(it, picked, removed) }
             (seen.map { it.documentId } + away).distinct()
         }
         if (next != before) store.setFoundRoots(next)

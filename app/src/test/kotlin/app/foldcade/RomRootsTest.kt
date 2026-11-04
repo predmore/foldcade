@@ -71,8 +71,8 @@ class RomRootsTest {
         // Removed stays removed, and a removed folder keeps the ones inside it away too.
         assertEquals(listOf(roms, emulation), usableRomRoots(all, emptyList(), setOf("BB42-D432:roms")))
         assertEquals(listOf(roms, card), usableRomRoots(all, emptyList(), setOf("primary:Emulation")))
-        // Removing a system folder inside a root keeps the root.
-        assertEquals(all, usableRomRoots(all, emptyList(), setOf("primary:ROMs/genesis")))
+        // A removed pick inside a root keeps the root away too, so its games don't come back through it.
+        assertEquals(listOf(emulation, card), usableRomRoots(all, emptyList(), setOf("primary:ROMs/genesis")))
     }
 
     @Test

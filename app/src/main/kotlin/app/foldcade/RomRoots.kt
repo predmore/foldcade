@@ -47,15 +47,16 @@ internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? 
 
 /**
  * The roots the library reads: every root in [roots] that no folder the player picked
- * covers or sits in, since that pick already lists those games, and that the player has
- * not removed. A removed folder also keeps the roots inside it away.
+ * covers or sits in, since that pick already lists those games, and that overlaps nothing
+ * the player removed: a removed found folder, or a removed pick such as `ROMs/3ds`, whose
+ * games would otherwise come back through the folder around it.
  * [picked] and [removed] are document ids, `<volume>:<path>`.
  */
 internal fun usableRomRoots(roots: List<RomRoot>, picked: List<String>, removed: Set<String>): List<RomRoot> =
-    roots.filter { root ->
-        picked.none { containsFolder(it, root.documentId) || containsFolder(root.documentId, it) } &&
-            removed.none { containsFolder(it, root.documentId) }
-    }
+    roots.filter { romRootUsable(it.documentId, picked, removed) }
+
+internal fun romRootUsable(id: String, picked: List<String>, removed: Set<String>): Boolean =
+    (picked + removed).none { containsFolder(it, id) || containsFolder(id, it) }
 
 /** The document ids of picked folders on Android's own storage, which a found root may overlap. */
 internal fun pickedStorageFolders(trees: List<String>): List<String> = trees.mapNotNull { tree ->
