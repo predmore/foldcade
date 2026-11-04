@@ -22,6 +22,9 @@ sealed class PluginException(
     /** A save choice was definitively refused; its commit did not change server or player bytes. */
     class SaveChoiceRefused(message: String, cause: Throwable? = null) : PluginException(message, cause)
 
+    /** Downloaded save bytes cannot be placed in the selected player's slot; nothing was promoted. */
+    class SaveFormatMismatch : PluginException("Save format does not fit the player")
+
     /** The plugin cannot reach its source. Offline is this failure. */
     class Unavailable(
         message: String,

@@ -140,6 +140,31 @@ class ServerSaveFlowTest {
         assertTrue(events.indexOf("await-load:melonds:true") < events.indexOf("commit"))
     }
 
+    @Test fun archiveFormatsAreCheckedBeforePlayOrOwnSlotCopyCanCommit() = runBlocking {
+        val archivePlayer = object : Player by player {
+            override fun saveFolders(slot: String, romFileName: String, romHeader: ByteArray) = listOf(SaveFolderPart("", ""))
+            override fun saveArchiveFilter(slot: String, game: GameFileReader) = object : SaveArchiveFilter {
+                override val headerSize = 0
+                override fun accepts(path: String, header: ByteArray) = path == "Game.sav"
+            }
+        }
+        val archiveRequest = request.copy(player = archivePlayer)
+        for (destination in listOf(null, SaveDestination("sav", "melonds", "This device"))) {
+            events.clear()
+            assertTrue(runCatching { flow.perform(archiveRequest, "raw-retroarch-save", destination) }
+                .exceptionOrNull() is PluginException.SaveFormatMismatch)
+            assertFalse(events.contains("commit"))
+            assertFalse(events.contains("place"))
+            assertTrue(awaiting.isEmpty())
+            assertNull(docs.current)
+        }
+        // A server-to-server copy remains available without pretending it can load locally.
+        events.clear()
+        flow.perform(archiveRequest, "raw-retroarch-save", SaveDestination("autosave", "argosy", "Steam Deck"))
+        assertTrue(events.any { it.startsWith("copy:") })
+        assertTrue(awaiting.isEmpty())
+    }
+
     @Test fun syncNowCapturesBeforeTheStrictSyncWithoutReplacingThePlayerFile() = runBlocking {
         docs.current = "current progress".toByteArray()
         flow.perform(request, null)
@@ -213,11 +238,12 @@ class ServerSaveFlowTest {
         }
         override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult { events += "sync:${game.remoteKey}"; onSync(); return SyncResult(SyncOutcome.Unchanged) }
         override suspend fun playServerSave(game: Game, player: Player, saveId: String, beforeCommit: () -> Unit): List<PlacedSave> {
-            events += "choose:${game.remoteKey}:$saveId"; onChoose(); beforeCommit(); events += "commit"; onCommit(); return placed()
+            events += "choose:${game.remoteKey}:$saveId"; onChoose(); if (!player.canPlaceSave("sav", "chosen".toByteArray())) throw PluginException.SaveFormatMismatch(); beforeCommit(); events += "commit"; onCommit(); return placed()
         }
         override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> {
             events += "copy:${game.remoteKey}:$saveId:$toSlot:$toEmulator"; onChoose()
             if (toSlot != "sav") return emptyList()
+            if (player?.canPlaceSave(toSlot, "chosen".toByteArray()) == false) throw PluginException.SaveFormatMismatch()
             beforeCommit(); events += "commit"; onCommit(); return placed()
         }
         private fun placed() = listOf(PlacedSave("sav", "content://chosen", md5Hex("chosen".toByteArray())))
@@ -233,6 +259,7 @@ class ServerSaveFlowTest {
         override fun read(uri: String) = if (uri == "content://chosen") "chosen".toByteArray() else current.takeIf { readable }
         override fun write(uri: String, bytes: ByteArray) { events += "place"; current = bytes }
         override fun delete(uri: String): Boolean { current = null; return true }
+        override fun list(folderUri: String, name: String) = children(folderUri, name)?.map { SaveEntry(it.name, it.uri, it.isFolder) }
         override fun children(folderUri: String, path: String): List<SaveChild>? = if (!folderReadable) null else if (current == null) emptyList() else listOf(SaveChild("Game.sav", "content://current", false, current!!.size.toLong()))
     }
 }

@@ -904,14 +904,14 @@ internal class RommLibrary internal constructor(
         // Every bundled syncing player owns one slot. Do not guess for a future multi-slot player.
         val slot = player.saveDeclarations(game).singleOrNull()?.slot
             ?: throw PluginException.Unavailable("Choose a player with one save slot")
-        chooseSave(wiring, ops, romId, saveId, slot, player.id, player.id, beforeCommit)
+        chooseSave(wiring, ops, romId, saveId, slot, player.id, player, beforeCommit)
     }
 
     override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> =
         serverSaveWork(game) { wiring, ops, romId ->
             val own = player?.saveDeclarations(game).orEmpty().any { it.slot == toSlot }
             if (own) requireSavePlayer(game, player!!)
-            chooseSave(wiring, ops, romId, saveId, toSlot, toEmulator, player?.id.takeIf { own }, beforeCommit)
+            chooseSave(wiring, ops, romId, saveId, toSlot, toEmulator, player.takeIf { own }, beforeCommit)
         }
 
     /** Strict sync, download and promotion all share the ROM lock, including concurrent return syncs. */
@@ -949,7 +949,8 @@ internal class RommLibrary internal constructor(
         return report
     }
 
-    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, localPlayer: String?, beforeCommit: () -> Unit): List<PlacedSave> {
+    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> {
+        val localPlayer = player?.id
         strictSaveSync(wiring, ops, romId, localPlayer)
         val device = wiring.rememberedDevice!!.deviceId
         val listed = ops.listSaves(romId, device).filter { it.romId == romId }
@@ -968,6 +969,9 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable("The downloaded save did not verify")
             bytes
         }
+        // A raw battery from another client is not necessarily this slot's ZIP.
+        // Refuse before backups, promotion, selection marks, or fresh-load markers.
+        if (player != null && !player.canPlaceSave(slot, bytes)) throw PluginException.SaveFormatMismatch()
         // The server can have a slot retention cap even though we never request autocleanup.
         // Keep the current head outside slot retention before a confirmed overwrite can prune it.
         if (latest != null && latest.contentHash?.lowercase() != hash) {

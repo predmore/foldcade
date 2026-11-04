@@ -59,9 +59,15 @@ internal class ServerSaveFlow(
                 awaitLoad(key, true)
             }
         }
+        val placingPlayer = player?.let { original ->
+            object : Player by original {
+                override fun canPlaceSave(slot: String, bytes: ByteArray) =
+                    original.canPlaceSave(slot, bytes) && saves.canPlaceSave(spots, slot, bytes)
+            }
+        }
         val placed = try {
-            if (destination == null) plugins.playServerSave(library, owner, player ?: throw SaveNotPlaced(), saveId, beforeCommit)
-            else plugins.copyServerSave(library, owner, saveId, destination.slot, destination.emulator, player, beforeCommit)
+            if (destination == null) plugins.playServerSave(library, owner, placingPlayer ?: throw SaveNotPlaced(), saveId, beforeCommit)
+            else plugins.copyServerSave(library, owner, saveId, destination.slot, destination.emulator, placingPlayer, beforeCommit)
         } catch (refused: PluginException.SaveChoiceRefused) {
             if (armed && key != null) awaitLoad(key, wasAwaiting)
             throw refused

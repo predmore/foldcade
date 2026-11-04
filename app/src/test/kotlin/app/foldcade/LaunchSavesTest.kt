@@ -39,7 +39,7 @@ import org.junit.Test
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
     @Test fun unresolvedPspAndGameCubeSavesNeverAcknowledgeAnIncomingHead() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.held = player.saveDeclarations(owner).map { it.slot }
@@ -54,7 +54,7 @@ class LaunchSavesTest {
     }
 
     @Test fun unresolvedPspAndGameCubePlayOfflineWithoutNegotiationAndRemainUnreachable() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.listingFails = true
@@ -78,7 +78,7 @@ class LaunchSavesTest {
 
     @Test fun anUnavailableFirstListingDoesNotHideAnIncomingSaveFromAnotherCopy() = runBlocking {
         val second = owner.copy(backendId = "folder", remoteKey = "other")
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.listingFails = true
@@ -99,7 +99,7 @@ class LaunchSavesTest {
     }
 
     @Test fun unresolvedPspAndGameCubeWithAnIncomingSaveRequireTheExplicitPerLaunchChoice() = runBlocking {
-        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer())
+        val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
             (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
             server.remoteSlot = player.saveDeclarations(owner).single().slot
@@ -128,6 +128,48 @@ class LaunchSavesTest {
             assertTrue(saveSyncForLaunch(player, "another-player"))
         }
     }
+    @Test fun aRenamedExRomOffersOnlyAPerLaunchOptOutAndLeavesEveryCopyAlone() = runBlocking {
+        val player = app.foldcade.plugins.explus.ExPlusEntry().players.first()
+        (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(SAVES)
+        docs.names["content://rf4"] = "New.gba"
+        docs.files["$SAVES/Old.sav"] = "original local battery".toByteArray()
+        server.placementSlot = "battery"
+        server.archiveToPlace = java.io.ByteArrayOutputStream().also { out ->
+            java.util.zip.ZipOutputStream(out).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("Old.sav"))
+                zip.write("original server battery".toByteArray())
+                zip.closeEntry()
+            }
+        }.toByteArray()
+        var reachable = true
+        val launch = LaunchSaves(saves, plugins, onSpots = { _, _, spots -> reachable = spots.isNotEmpty() }) { awaiting += it }
+        val route = GameRoute("tile", play, owner)
+        val before = docs.files.mapValues { it.value.copyOf() }
+        repeat(2) {
+            val failure = runCatching { launch.prepare(route, player, local) }.exceptionOrNull()
+            assertTrue(failure is UnresolvedSaveNotPlaced)
+            assertTrue((failure as UnresolvedSaveNotPlaced).incompatible)
+            val dialog = app.foldcade.language.saveNotPlacedDialog("New", app.foldcade.language.HostScreen.Bottom,
+                playAnyway = true, incompatible = failure.incompatible)
+            assertEquals(app.foldcade.language.SavePickerCopy.incompatible, dialog.body)
+            assertFalse(dialog.buttons.contains(app.foldcade.language.DialogButton.SetUpSaves))
+            assertEquals(app.foldcade.language.DialogButton.NotNow, dialog.buttons[dialog.index])
+            assertFalse(reachable)
+            assertTrue(awaiting.isEmpty())
+            assertTrue(marks.isEmpty())
+            assertEquals(before.keys, docs.files.keys)
+            assertTrue(docs.files["$SAVES/Old.sav"]!!.contentEquals(before.getValue("$SAVES/Old.sav")))
+            assertEquals(local, launch.prepare(route, player, local, syncing = false).target)
+        }
+        // A compatible bundle whose write fails must still block, with no opt-out.
+        docs.names["content://rf4"] = "Old.gba"
+        docs.files.clear()
+        docs.failWrites = true
+        val failure = runCatching { launch.prepare(route, player, local) }.exceptionOrNull()
+        assertTrue(failure is SaveNotPlaced)
+        assertFalse(failure is UnresolvedSaveNotPlaced)
+    }
+
     private val libraries = HashMap<String, RecordingLibrary>()
     private val folder = RecordingLibrary("folder")
     private val server = RecordingLibrary("server")
@@ -315,6 +357,8 @@ class LaunchSavesTest {
         val calls = mutableListOf<String>()
         val observed = mutableListOf<String>()
         var toPlace: String? = null
+        var archiveToPlace: ByteArray? = null
+        var placementSlot = "sav"
         var held: List<String> = emptyList()
         var declarationsSeen: List<SaveDeclaration> = emptyList()
         var listingFails = false
@@ -353,20 +397,26 @@ class LaunchSavesTest {
         }
 
         private fun placed(): List<PlacedSave> =
-            toPlace?.let { listOf(PlacedSave("sav", "lib://$id", md5Hex(it.toByteArray()))) }.orEmpty()
+            (archiveToPlace ?: toPlace?.toByteArray())?.let { listOf(PlacedSave(placementSlot, "lib://$id", md5Hex(it))) }.orEmpty()
     }
 
     private inner class Documents : SaveDocuments {
         val names = HashMap<String, String>()
         val files = HashMap<String, ByteArray>()
+        var failWrites = false
+        override fun list(folderUri: String, name: String) = files.keys.filter { it.startsWith("$folderUri/") }.map {
+            SaveEntry(it.removePrefix("$folderUri/"), it, false)
+        }
+        override fun children(folderUri: String, path: String) = list(folderUri, path).map { SaveChild(it.path, it.uri, it.isFolder, files[it.uri]!!.size.toLong()) }
 
         override fun displayName(uri: String): String? = names[uri]
         override fun find(folderUri: String, name: String): String? = "$folderUri/$name".takeIf { it in files }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = ByteArray(0) }
         override fun read(uri: String): ByteArray? =
-            if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.toPlace?.toByteArray() else files[uri]
+            if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.let { it.archiveToPlace ?: it.toPlace?.toByteArray() } else files[uri]
         override fun delete(uri: String): Boolean = files.remove(uri) != null
         override fun write(uri: String, bytes: ByteArray) {
+            if (failWrites) throw java.io.IOException("provider refused write")
             files[uri] = bytes
         }
     }

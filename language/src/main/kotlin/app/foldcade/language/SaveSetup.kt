@@ -445,7 +445,17 @@ object SaveSetupCopy {
     }
 
     /** The step's words. Find saves, once allowed, says what it found, after [checking] is over. */
-    fun stepBody(tile: SetupTile, checking: Boolean = false): String? = when (val step = tile.step) {
+    fun stepBody(tile: SetupTile, checking: Boolean = false): String? {
+        val body = stepBodyWithoutNote(tile, checking)
+        // These stable table IDs now live in the EX save plugin. Its private
+        // launch mode cannot be read here, so keep the required setup visible.
+        val ex = tile.key.substringBefore('.') in setOf("gba-emu", "gbc-emu", "nes-emu", "snes9x-ex", "md-emu")
+        return if (ex) listOfNotNull(body, exLaunchMode(tile.label)).joinToString("\n") else body
+    }
+
+    fun exLaunchMode(name: String) = "In $name: Options › System › Launch Mode › Main Slot (No State)."
+
+    private fun stepBodyWithoutNote(tile: SetupTile, checking: Boolean): String? = when (val step = tile.step) {
         null -> when {
             tile.findSaves -> when {
                 tile.found.isNotEmpty() -> found(tile.found)

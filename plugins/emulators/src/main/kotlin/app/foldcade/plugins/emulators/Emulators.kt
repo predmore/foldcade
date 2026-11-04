@@ -56,12 +56,8 @@ val EMULATORS: List<Emulator> = listOf(
         handoff = RomHandoff.Extra("rom_uri"),
         flags = RELAUNCH,
     ),
-    explusAlpha("gba-emu", "GBA.emu", "com.explusalpha.GbaEmu", GBA),
-    explusAlpha("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", GB, GBC),
 
     // Nintendo home consoles.
-    explusAlpha("nes-emu", "NES.emu", "com.explusalpha.NesEmu", NES),
-    explusAlpha("snes9x-ex", "Snes9x EX+", "com.explusalpha.Snes9xPlus", SNES),
     Emulator(
         id = "m64plus-fz",
         displayName = "M64Plus FZ",
@@ -113,7 +109,6 @@ val EMULATORS: List<Emulator> = listOf(
     ),
 
     // Sega.
-    explusAlpha("md-emu", "MD.emu", "com.explusalpha.MdEmu", GENESIS, MASTER_SYSTEM),
     Emulator(
         id = "pizza-boy-sc",
         displayName = "Pizza Boy SC",
