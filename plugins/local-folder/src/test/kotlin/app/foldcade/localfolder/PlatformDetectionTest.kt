@@ -5,6 +5,32 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PlatformDetectionTest {
+    /** ES-DE, Batocera and RetroArch lay ROMs out by these system folders. */
+    @Test
+    fun frontendSystemFoldersMatchTheirPlatform() {
+        val cases = mapOf(
+            // ES-DE
+            "n3ds" to "nintendo-3ds", "gc" to "gamecube", "psx" to "playstation", "megadrive" to "genesis",
+            "megadrivejp" to "genesis", "mastersystem" to "master-system", "mark3" to "master-system",
+            "sfc" to "snes", "snesna" to "snes", "fds" to "nes", "famicom" to "nes", "saturnjp" to "saturn",
+            "tg-cd" to "pc-engine-cd", "atarilynx" to "atari-lynx", "wonderswancolor" to "wonderswan-color",
+            // Batocera
+            "wswan" to "wonderswan", "wswanc" to "wonderswan-color", "lynx" to "atari-lynx", "gamecube" to "gamecube",
+            "3ds" to "nintendo-3ds", "virtualboy" to "virtual-boy",
+            // RetroArch and libretro-database
+            "Nintendo - Game Boy Advance" to "game-boy-advance", "Nintendo - Game Boy" to "game-boy",
+            "Nintendo - Super Nintendo Entertainment System" to "snes", "Sony - PlayStation" to "playstation",
+            "Sony - PlayStation Portable" to "psp", "Sega - Mega Drive - Genesis" to "genesis",
+            "Sega - Master System - Mark III" to "master-system", "NEC - PC Engine CD - TurboGrafx-CD" to "pc-engine-cd",
+            "Nintendo - Nintendo 3DS" to "nintendo-3ds", "Bandai - WonderSwan Color" to "wonderswan-color",
+        )
+        for ((name, id) in cases) {
+            assertEquals(name, id, platformFromFolderName(name)?.id)
+        }
+        // Moonlight's shortcut folder and a frontend's own folders are not systems.
+        for (name in listOf("moonlight", "downloaded_media", "bios", "ports")) assertNull(name, platformFromFolderName(name))
+    }
+
     @Test
     fun folderNamesMatchOnePlatform() {
         val cases = mapOf(

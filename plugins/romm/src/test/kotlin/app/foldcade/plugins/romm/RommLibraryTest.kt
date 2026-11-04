@@ -34,6 +34,8 @@ import app.foldcade.romm.RomFileSummary
 import app.foldcade.romm.RomPage
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
+import app.foldcade.romm.RommReadRetry
+import app.foldcade.romm.RommConversionPending
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommException
 import app.foldcade.romm.RommForbidden
@@ -77,6 +79,68 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RommLibraryTest {
+    @Test fun conversionAndNetworkBlipsStayOnTheSameLaunchAndReportTheirWaits() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val waits = mutableListOf<Long>()
+        val harness = harness(ops, retry = RommReadRetry(pause = { waits += it }))
+        var attempts = 0
+        ops.onDownload = { _, name, root, ids, _, _ ->
+            when (attempts++) {
+                0 -> throw RommConversionPending(6)
+                1 -> throw RommUnavailable("connection dropped")
+                2 -> throw RommHttpException(503, "busy")
+                else -> RommClient.romCacheFile(root, 1234, name, ids).also {
+                    Files.createDirectories(it.parent)
+                    Files.writeString(it, "hello-rom")
+                }
+            }
+        }
+        val activities = mutableListOf<GameActivity>()
+        harness.library.observeActivity { _, activity -> activities += activity }
+        try {
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            assertTrue(harness.library.ensureLocal(game) is LaunchTarget.ContentUri)
+            assertEquals(4, attempts)
+            assertEquals(listOf(6_000L, 1_000L, 2_000L), waits)
+            assertTrue(GameActivity.PreparingOnServer in activities)
+            assertEquals(2, activities.count { it == GameActivity.Retrying })
+            assertFalse(GameActivity.Idle in activities)
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun cancellingServerPreparationDropsTheWaitAndClearsItsTile() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        var attempts = 0
+        ops.onDownload = { _, _, _, _, _, _ -> attempts++; throw RommConversionPending(20) }
+        val waiting = CompletableDeferred<Unit>()
+        val harness = harness(ops, retry = RommReadRetry(pause = { waiting.complete(Unit); CompletableDeferred<Unit>().await() }))
+        val activities = mutableListOf<GameActivity>()
+        harness.library.observeActivity { _, activity -> activities += activity }
+        try {
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            var delivered = false
+            val job = launch { harness.library.ensureLocal(game); delivered = true }
+            waiting.await()
+            assertEquals(GameActivity.PreparingOnServer, activities.last())
+            job.cancelAndJoin()
+            assertEquals(1, attempts)
+            assertFalse(delivered)
+            assertEquals(GameActivity.Idle, activities.last())
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test fun detailsUseExplicitRolesAndAggregateMillisecondsThenStayCached() = runBlocking {
         val ops = ScriptedOps()
         var reads = 0
@@ -2007,7 +2071,7 @@ class RommLibraryTest {
     }
 }
 
-private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): Harness {
+private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList(), retry: RommReadRetry = RommReadRetry()): Harness {
     val cache = Files.createTempDirectory("romm-script")
     val wiring = RommWiring(
         origin = "http://romm.example",
@@ -2018,7 +2082,7 @@ private fun harness(ops: ScriptedOps, platforms: List<Platform> = emptyList()): 
     )
     wiring.open = { _, _ -> ops }
     val gate = RommGate { wiring }
-    return Harness(wiring, RommLibrary(gate), RommMetadata(gate))
+    return Harness(wiring, RommLibrary(gate, retry), RommMetadata(gate))
 }
 
 private fun live(server: TinyServer, cache: Path): RommLibrary {

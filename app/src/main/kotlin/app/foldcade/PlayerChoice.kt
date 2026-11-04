@@ -30,9 +30,8 @@ fun resolvePlayer(
         val wantedCore = choice.core
         val player = players.firstOrNull { it.id == choice.playerId }
         val core = (player as? RetroArchPlayer)?.system?.cores?.firstOrNull { it.file == wantedCore }
-        val files = player?.let(coreFiles)
         if (player == null || !installed(player) ||
-            (wantedCore != null && (core == null || (files != null && core.fileName !in files)))) {
+            (wantedCore != null && core == null)) {
             skipped += choice
             continue
         }

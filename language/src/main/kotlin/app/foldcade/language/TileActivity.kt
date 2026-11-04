@@ -5,12 +5,16 @@ package app.foldcade.language
  * None of it asks anything of the player: the game opens when it is ready.
  */
 sealed interface TileActivity {
+    data object LoadingLibrary : TileActivity
+    data object PreparingOnServer : TileActivity
+    data object Retrying : TileActivity
+
     /**
      * The game, or Eden's firmware, is arriving.
      * [fraction] is 0..1, or null while the size is not known.
      * [firmware] uses its own words on the top screen. The pulse and the fraction stay the same.
      */
-    data class Downloading(val fraction: Float?, val firmware: Boolean = false) : TileActivity
+    data class Downloading(val fraction: Float?, val firmware: Boolean = false, val core: String? = null) : TileActivity
 
     /** Every byte is here and is being checked. */
     data object Checking : TileActivity
@@ -41,8 +45,11 @@ val SyncMark.worked: Boolean get() = this == SyncMark.Synced || this == SyncMark
 
 /** The top screen's words for [activity], first on the line under the game's name. */
 fun activityLine(activity: TileActivity): String = when (activity) {
+    TileActivity.LoadingLibrary -> Copy.findingGame
+    TileActivity.PreparingOnServer -> Copy.preparingOnServer
+    TileActivity.Retrying -> Copy.retryingConnection
     is TileActivity.Downloading -> {
-        val word = if (activity.firmware) Copy.gettingFirmware else Copy.downloading
+        val word = activity.core?.let(Copy::gettingCore) ?: if (activity.firmware) Copy.gettingFirmware else Copy.downloading
         activity.fraction
             ?.let { "$word ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }
             ?: word
@@ -57,4 +64,30 @@ fun activityLine(activity: TileActivity): String = when (activity) {
         SyncMark.Later -> Copy.savesSyncLater
         SyncMark.NotSynced -> Copy.savesNotSynced
     }
+}
+
+/** Short words fit the existing tile chip; the full line explains the wait above. */
+fun pendingChip(activity: TileActivity?): String? = when (activity) {
+    TileActivity.LoadingLibrary -> Copy.findingChip
+    TileActivity.PreparingOnServer -> Copy.preparingChip
+    TileActivity.Retrying -> Copy.retryingChip
+    else -> null
+}
+
+val TileActivity.pendingLaunch: Boolean get() = pendingChip(this) != null
+
+val TileActivity.cancellableTransfer: Boolean get() = pendingLaunch || this is TileActivity.Downloading || this == TileActivity.Checking
+
+/** Keep the best known name while a catalog arrives, never an internal library key. */
+fun pendingGameTitle(
+    title: String,
+    id: String,
+    activity: TileActivity?,
+    remembered: String? = null,
+    cached: String? = null,
+): String {
+    if (activity != TileActivity.LoadingLibrary) return title
+    return sequenceOf(title, remembered, cached)
+        .mapNotNull { it?.trim()?.takeIf { name -> name.isNotEmpty() && name != id } }
+        .firstOrNull() ?: Copy.yourGame
 }
