@@ -144,6 +144,13 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     /** The one-time offer to let Foldcade read the ROM folders it saw was answered. */
     fun findGamesOffered(): Boolean = prefs.getBoolean(KEY_FIND_GAMES_OFFERED, false)
 
+    /** The first run asked where the games are, or found the player already had a source. */
+    fun addGamesAsked(): Boolean = prefs.getBoolean(KEY_ADD_GAMES_ASKED, false)
+
+    fun setAddGamesAsked() {
+        if (!addGamesAsked()) prefs.edit().putBoolean(KEY_ADD_GAMES_ASKED, true).apply()
+    }
+
     fun setFindGamesOffered() {
         prefs.edit().putBoolean(KEY_FIND_GAMES_OFFERED, true).apply()
     }
@@ -652,6 +659,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val KEY_REMOVED_ROOTS = "removed_roots"
         private const val KEY_ANNOUNCED_ROOTS = "announced_roots"
         private const val KEY_FIND_GAMES_OFFERED = "find_games_offered"
+        private const val KEY_ADD_GAMES_ASKED = "add_games_asked"
         private const val KEY_ROMM_ORIGIN = "romm_origin"
         private const val KEY_MUSIC_ENABLED = "music_enabled"
         private const val KEY_MUSIC_VOLUME = "music_volume"
