@@ -26,6 +26,9 @@ internal fun folderTreeId(uri: String): String = folderDocumentId(folderGrantUri
 internal fun folderDocumentUri(tree: String, documentId: String): String =
     "${folderGrantUri(tree)}/document/${encodeDocumentId(documentId)}"
 
+/** A tree on [authority] rooted at [documentId], encoded as `DocumentsContract.buildTreeDocumentUri` encodes it. */
+internal fun treeUri(authority: String, documentId: String): String = "content://$authority/tree/${encodeDocumentId(documentId)}"
+
 /** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
 internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
     if (URI(uri).authority == "org.dolphinemu.dolphinemu.user" && id.trimEnd('/') == "root") app.foldcade.language.Copy.dolphinFiles

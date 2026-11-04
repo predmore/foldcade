@@ -8,6 +8,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveFolderFinderTest {
+    @Test fun ppssppFindsWritableSavesAlongsideReadOnlyFoundRomTrees() {
+        val player = app.foldcade.plugins.ppsspp.PpssppPlayer()
+        val roms = SaveFolderGrant(romRootTree("app.foldcade.library", "primary:ROMs"), true, false)
+        val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
+        directories += "primary:PSP"
+        names["primary:PSP"] = listOf("SAVEDATA", "SYSTEM")
+        assertNull(finder(roms).find(player).folder)
+        // All-files access still needs PPSSPP's own exact PSP grant.
+        assertNull(finder(roms, allFiles).find(player).folder)
+        playerGrants += "primary:PSP"
+        val expected = folderDocumentUri(allFiles.uri, "primary:PSP")
+        assertEquals(expected, finder(roms, allFiles).find(player).folder)
+        val saf = grant(tree("primary:PSP"))
+        assertEquals(saf.uri, finder(roms, allFiles, saf).find(player).folder)
+        // Revoking all-files cannot turn a read-only ROM tree into writable save access.
+        assertNull(finder(roms).find(player).folder)
+    }
+
+    @Test fun dolphinOwnProviderAndAllFilesDiscoveryStayDistinctFromFoundRoms() {
+        val player = app.foldcade.plugins.dolphin.DolphinPlayer()
+        val roms = SaveFolderGrant(romRootTree("app.foldcade.library", "primary:ROMs"), true, false)
+        val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
+        val own = SaveFolderGrant("content://org.dolphinemu.dolphinemu.user/tree/root%2F", true, true)
+        directories += "root/"
+        names["root/"] = listOf("GC", "Config")
+        val expected = folderDocumentUri(own.uri, "root/")
+        assertEquals(expected, finder(roms, allFiles, own).find(player).folder)
+        // All-files does not bypass Android/data; the exact emulator provider remains usable.
+        assertNull(finder(roms, allFiles).find(player).folder)
+        assertEquals(expected, finder(roms, own).find(player).folder)
+        directories += "primary:dolphin-emu"
+        names["primary:dolphin-emu"] = listOf("GC", "Config")
+        assertEquals(folderDocumentUri(allFiles.uri, "primary:dolphin-emu"), finder(roms, allFiles).find(player).folder)
+        // A legacy shared folder and the emulator's own folder must not be guessed between.
+        assertNull(finder(roms, allFiles, own).find(player).folder)
+    }
+
     @Test fun emulatorProviderReusesOnlyAnExactWritableRootWithMarkers() {
         val uri = "content://org.dolphinemu.dolphinemu.user/tree/root"
         val holder = object : SaveFolderHolder {

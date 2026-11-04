@@ -159,6 +159,17 @@ class HomeGridOrderTest {
         val drift = titles(shell).indexOf("Drift")
         focus(shell, drift)
 
+        shell.beginCatalogWait(homeGameId("romm", "drift"))
+        assertEquals(TileActivity.LoadingLibrary, shell.focusedActivity())
+        assertEquals(Copy.findingGame, activityLine(shell.focusedActivity()!!))
+        shell.noteActivity("romm", "drift", GameActivity.PreparingOnServer, nowMillis = 0)
+        shell.endCatalogWait(homeGameId("romm", "drift")) // A retiring catalog wait cannot clear preparation.
+        assertEquals(TileActivity.PreparingOnServer, shell.focusedActivity())
+        assertEquals(Copy.preparingOnServer, activityLine(shell.focusedActivity()!!))
+        shell.noteActivity("romm", "drift", GameActivity.Retrying, nowMillis = 0)
+        assertEquals(TileActivity.Retrying, shell.focusedActivity())
+        shell.settleActivity("romm", "drift")
+        assertNull(shell.focusedActivity())
         assertNull(shell.noteActivity("romm", "drift", GameActivity.Downloading(0L, null), nowMillis = 0L))
         assertEquals(TileActivity.Downloading(null), shell.activityAt(drift))
         shell.noteActivity("romm", "drift", GameActivity.Downloading(50L, 200L), nowMillis = 0L)
@@ -204,6 +215,19 @@ class HomeGridOrderTest {
         shell.noteActivity("romm", "drift", GameActivity.SyncingSaves, nowMillis = 0L)
         shell.noteActivity("romm", "drift", GameActivity.Idle, nowMillis = 0L)
         assertTrue(shell.activity.isEmpty())
+    }
+
+    @Test fun coreDownloadCleanupCannotEraseAReplacementOnTheSameTile() {
+        val shell = shell()
+        val id = homeGameId("romm", "drift")
+        val first = Any()
+        val replacement = Any()
+        shell.noteCoreDownload(id, first, "Mesen", .1f)
+        shell.noteCoreDownload(id, replacement, "Mesen", .5f)
+        shell.endCoreDownload(id, first)
+        assertEquals(TileActivity.Downloading(.5f, core = "Mesen"), shell.activity[id])
+        shell.endCoreDownload(id, replacement)
+        assertFalse(id in shell.activity)
     }
 
     @Test

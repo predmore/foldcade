@@ -36,8 +36,17 @@ tasks.withType<Test>().configureEach {
     dependsOn(":app:packageAfterglowTheme")
     inputs.file(afterglowZip).withPathSensitivity(PathSensitivity.NONE)
     systemProperty("foldcade.afterglowZip", afterglowZip.get().asFile.absolutePath)
-    // -PwriteThemeContract=true rewrites themes/contract.json and themes/theme.schema.json.
-    systemProperty("foldcade.writeThemeContract", providers.gradleProperty("writeThemeContract").getOrElse("false"))
+    // ./gradlew updateThemeContract rewrites themes/contract.json and themes/theme.schema.json.
+    // -PwriteThemeContract=true does the same while the unit tests run.
+    val requested = gradle.startParameter.taskNames.map { it.substringAfterLast(':') }
+    val writeThemeContract = providers.gradleProperty("writeThemeContract").getOrElse("false")
+    val updatingContract = "updateThemeContract" in requested
+    systemProperty("foldcade.writeThemeContract", if (updatingContract) "true" else writeThemeContract)
+    // The updater runs only ThemeContractTest. A suite named on the same command line still runs whole.
+    val suite = setOf("testDebugUnitTest", "test", "check")
+    if (name == "testDebugUnitTest" && updatingContract && requested.none { it in suite }) {
+        filter.includeTestsMatching("*ThemeContractTest*")
+    }
     inputs.files(rootProject.file("themes/contract.json"), rootProject.file("themes/theme.schema.json")).optional()
     inputs.dir(rootProject.file("samples/themes")).withPathSensitivity(PathSensitivity.RELATIVE)
 }

@@ -507,7 +507,7 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     is Row.ForgetFolder -> R.drawable.symbol_remove
     // Under the Emulators shelf, so the rows share Systems' icon column.
     Row.SaveSetup -> R.drawable.symbol_saves
-    Row.FindSaves -> R.drawable.ic_control_search
+    Row.FindSaves, Row.FindGames -> R.drawable.ic_control_search
     Row.SyncLibrary -> R.drawable.ic_badge_sync
     Row.AddFolder -> R.drawable.symbol_folder
     Row.AddRomm -> R.drawable.symbol_cloud

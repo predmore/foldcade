@@ -9,9 +9,17 @@ import icons, symbols, sprites
 
 OUT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RES = f"{OUT}/res"; SVG = f"{OUT}/svg"; PREV = f"{OUT}/previews"
-FONT = "/usr/share/fonts/truetype/sand-box/google/Nunito/Nunito-VariableFont_wght.ttf"
+# Afterglow ships Nunito Regular. The variable face, when that file is missing, can take a weight.
+BUNDLED_NUNITO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "themes", "afterglow", "font.ttf"))
+SYSTEM_NUNITO = "/usr/share/fonts/truetype/sand-box/google/Nunito/Nunito-VariableFont_wght.ttf"
 def font(sz, w=700):
-    ft = ImageFont.truetype(FONT, sz); ft.set_variation_by_axes([w]); return ft
+    path = BUNDLED_NUNITO if os.path.isfile(BUNDLED_NUNITO) else SYSTEM_NUNITO
+    ft = ImageFont.truetype(path, sz)
+    try:
+        ft.set_variation_by_axes([w])
+    except OSError:
+        pass
+    return ft
 
 def png(a, px, bg=None):
     return Image.open(io.BytesIO(cairosvg.svg2png(bytestring=to_svg(a, px=px, bg=bg).encode()))).convert("RGBA")

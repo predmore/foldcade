@@ -90,7 +90,7 @@ interface Player {
 
     /**
      * Folder parts resolved using the game and the player's settings. Asked before
-     * [findSaveFolders] and [saveFolders]. Read only. Added in API minor 21.
+     * [findSaveFolders] and [saveFolders]. Read only. Added in API minor 22.
      * A single part with an empty name puts files directly at the zip's root.
      */
     fun findSaveFolderParts(slot: String, game: GameFileReader, folder: SaveFolderAccess): List<SaveFolderPart>? = null
@@ -98,7 +98,7 @@ interface Player {
     /**
      * Selects this game's files inside a shared folder, such as a Dolphin GCI
      * card. Applied to both local files and incoming zip entries before writing.
-     * Null selects every file, as before. Added in API minor 21.
+     * Null selects every file, as before. Added in API minor 22.
      */
     fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? = null
 

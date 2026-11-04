@@ -203,13 +203,13 @@ Anything Gradle builds outside GitHub Actions is a local build, and it says so o
 4. **Wire it up.**
    - Its folder and tiles use the mark as soon as the slot exists; the app looks marks up by slot, so a pack can do the same. For a platform, add its id to `PLATFORM_MARKS` in `language/.../HomeBoard.kt`, so the collection picker offers it.
    - Give it a short picker name in `glyphName` in `CollectionLook.kt`.
-5. **Check it** on the contact sheet beside its neighbours (see the checklist below), then on the device. Bump the icon count in `ThemeSceneTest` and run the tests.
+5. **Check it** on the contact sheet beside its neighbours (see the checklist below), then on the device. Run the tests. `ThemeSceneTest` counts the slots in `themes/afterglow/theme.json` against the icon files, so there is no count to bump.
 
 ### An app
 
 1. **Draw it** in the module for its group, as a function of its accent that returns parts, the same as a platform.
 2. **Register it** in that module's `APPS`: `"vlc": (vlc, "#FF8A1F", "VLC: a traffic cone", ["org.videolan.vlc"])`. The name is only the file's (`app_vlc.xml`). The slots are the packages.
-3. **Check it** with `python3 tools/art/preview.py /tmp/vlc.png vlc nes chrome` beside a platform and another app, then regenerate with `python3 tools/art/icons.py`. Bump the icon count in `ThemeSceneTest`.
+3. **Check it** with `python3 tools/art/preview.py /tmp/vlc.png vlc nes chrome` beside a platform and another app, then regenerate with `python3 tools/art/icons.py`. Run the tests. The scene test counts the slots itself.
 
 The app needs no code. Any tile or hero for a package with a slot draws the object.
 
@@ -226,7 +226,7 @@ A glyph is a solid silhouette. It must read when it is pressed into the folder a
 1. Draw it in `verbs.py` as a function with no arguments, returning `outline()` and `line()` parts, and add it to `VERBS`.
 2. Regenerate. This writes `symbol_<name>.xml` and the `symbol.<name>` slot.
 3. Give its row the symbol in `rowIcon` in `MenuKit.kt`. A verb that leads a tile's menu as a tile goes in `verbRows` in `Picker.kt`, with its word in `tileLabel`.
-4. Regenerate the theme contract (`./gradlew :language:testDebugUnitTest --tests '*ThemeContractTest*' -PwriteThemeContract=true`) and bump the icon count in `ThemeSceneTest`.
+4. Regenerate the theme contract with `./gradlew updateThemeContract`. The scene test counts the new slot itself.
 
 ### A controller, status, or badge symbol
 

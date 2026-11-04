@@ -74,6 +74,34 @@ That prints `versionCode`, `versionName`, and the debug and release application 
 
 `:api`, `:host`, `:romm`, and every `:plugins:*` module apply `foldcade.jvm-api33`. Animal Sniffer fails the build when those modules call an Android API above 33. `testDebugUnitTest` depends on that check.
 
+## Lint
+
+```sh
+./gradlew lintDebug
+```
+
+That runs `:app:lintDebug` and `:language:lintDebug`. The build fails on lint errors. Warnings stay warnings. CI runs the same task.
+
+## Theme contract
+
+`themes/contract.json` and `themes/theme.schema.json` are written from the engine. When a test says either file is stale:
+
+```sh
+./gradlew updateThemeContract
+```
+
+That rewrites both files. Commit the result.
+
+## Icons
+
+```sh
+python3 tools/art/icons.py
+```
+
+The script uses the Python standard library only. It rewrites `themes/afterglow/icons/`, the SVG sources under `art/svg/`, and the icon slots in `themes/afterglow/theme.json`. CI runs it and fails if that output differs. `ThemeSceneTest` counts those slots, so there is no icon count to bump by hand.
+
+`tools/art/build.py` draws its previews with Afterglow's Nunito at `themes/afterglow/font.ttf`.
+
 ## Baseline profile
 
 The release includes an app profile. See [baseline-profile.md](baseline-profile.md) to regenerate it on a Thor and measure startup and controller frames.

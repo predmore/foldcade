@@ -82,6 +82,7 @@
     "type.menuRow": {"kind":"number","unit":"sp","role":"type","above":0.0,"afterglow":18.0},
     "type.sideRow": {"kind":"number","unit":"sp","role":"type","above":0.0,"afterglow":18.0},
     "type.hint": {"kind":"number","unit":"sp","role":"type","above":0.0,"afterglow":14.0},
+    "type.tileStatus": {"kind":"number","unit":"sp","role":"type","above":0.0,"afterglow":10.0},
     "type.clock": {"kind":"number","unit":"sp","role":"type","above":0.0,"afterglow":64.0},
     "type.bodyWeight": {"kind":"weight","unit":"weight","min":1.0,"max":1000.0,"whole":true,"afterglow":400.0},
     "type.strongWeight": {"kind":"weight","unit":"weight","min":1.0,"max":1000.0,"whole":true,"afterglow":600.0},
