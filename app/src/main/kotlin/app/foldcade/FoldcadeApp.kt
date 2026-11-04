@@ -1054,17 +1054,17 @@ class FoldcadeApp : Application() {
                     playersLoaded.complete(Unit)
                 }
                 // Found ROM folders join the first scan, so their games never arrive in a second pass.
-                try {
+                val rootsChanged = try {
                     perfMark("rom-roots-start")
-                    romRootLook.withLock { lookForRomRoots() }
-                    perfMark("rom-roots-end")
+                    romRootLook.withLock { lookForRomRoots() }.changed.also { perfMark("rom-roots-end") }
                 } finally {
                     startupRootsLooked.complete(Unit)
                 }
                 // Listing games needs entries, not save-folder providers or old ROM copies. Found
                 // folders whose access was turned off (Android restarts Foldcade then) still reload,
                 // so their games leave the board rather than stay as tiles that cannot open.
-                if (libraryTrees().isNotEmpty() || store.foundRoots().isNotEmpty()) reloadFolder(startup = true)
+                // A found folder deleted while Foldcade was closed leaves the set too, and its games with it.
+                if (libraryTrees().isNotEmpty() || store.foundRoots().isNotEmpty() || rootsChanged) reloadFolder(startup = true)
                 perfMark("save-prepare-start")
                 saveFoldersReady.await()
                 readRetroArchCores()
