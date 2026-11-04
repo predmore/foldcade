@@ -8,6 +8,9 @@ private fun pspSfo(game: GameFileReader): ByteArray? {
     if (head.size < 4) return null
     if (head.copyOfRange(0, 4).contentEquals(byteArrayOf(0, 0x50, 0x42, 0x50))) {
         val start = u32(head, 8) ?: return null
+        // PBPReader.h GetSubFileSize uses the adjacent offset, even for empty sections.
+        // A zero ICON0 offset makes the SFO invalid; scanning later offsets would read
+        // metadata PPSSPP itself ignores.
         val end = u32(head, 12) ?: return null
         if (start < 40 || end <= start || end - start > SFO_CAP) return null
         return game.read(start, (end - start).toInt())?.takeIf { it.size.toLong() == end - start }

@@ -45,6 +45,24 @@ class PpssppTest {
         assertTrue(ServiceLoader.load(PluginEntry::class.java).any { it is PpssppEntry })
     }
 
+    @Test fun emptyPbpIconUsesRepeatedOffsetsAndAZeroOffsetDoesNotExposeIgnoredMetadata() {
+        val sfo = sfo("ULUS12345")
+        val pbp = ByteArray(40 + sfo.size + 8)
+        byteArrayOf(0, 0x50, 0x42, 0x50).copyInto(pbp)
+        put32(pbp, 4, 0x10000)
+        put32(pbp, 8, 40)
+        // Empty ICON0/ICON1/PIC0/PIC1/SND0 sections share the executable's start.
+        for (section in 1..6) put32(pbp, 8 + section * 4, 40 + sfo.size)
+        put32(pbp, 36, pbp.size)
+        sfo.copyInto(pbp, 40)
+        assertEquals("ULUS12345", pspDiscId(reader(pbp)))
+        // Later offsets remain valid, but PPSSPP never scans past the adjacent one.
+        for (end in listOf(0, 39, 40)) {
+            assertNull("ICON0 offset $end", pspDiscId(reader(pbp.copyOf().also { put32(it, 12, end) })))
+        }
+        assertNull(pspDiscId(reader(pbp.copyOf(40))))
+    }
+
     @Test fun badSfoLengthsAndFormatsNeverYieldAnId() {
         assertNull(sfoValue(sfo("ULUS12345").also { put32(it, 24, 99999) }, "DISC_ID"))
         assertNull(sfoValue(sfo("ULUS12345").copyOf(25), "DISC_ID"))

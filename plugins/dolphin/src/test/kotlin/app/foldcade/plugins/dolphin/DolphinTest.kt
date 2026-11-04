@@ -49,6 +49,39 @@ class DolphinTest {
         assertTrue(ServiceLoader.load(PluginEntry::class.java).any { it is DolphinEntry })
     }
 
+    @Test fun redundantPerGameCardSettingsStillUseTheDefaultFolder() {
+        val player = DolphinPlayer()
+        val folder = Folder().apply {
+            ini = "[Core]\nSlotA = 8\nMemcardAPath = /unused/card.raw\n"
+        }
+        for (name in listOf("G.ini", "GFZ.ini", "GFZE8P.ini", "GFZE8Pr1.ini")) {
+            folder.gameInis.clear()
+            folder.gameInis[name] = "[Core]\nSlotA = 1\nSlotA = 8\nGCIFolderAPath = \"\"\nGCIFolderAPathOverride =\nMemcardAPath = /unused/card.raw\n"
+            assertEquals(name, listOf(SaveFolderPart("", "GC/USA/Card A")), player.findSaveFolderParts("gci", disc(), folder))
+        }
+        folder.gameInis.clear()
+        folder.gameInis["GFZE8P.ini"] = "[Video_Settings]\nSlotA = 1\nGCIFolderAPath = /irrelevant\n[Main.Core]\nSlotA = 8\n"
+        assertTrue(defaultFolderCard(folder, "GFZE8P"))
+        folder.gameInis["GFZE8P.ini"] = "[Main.Core]\nSlotA = 1\n"
+        assertFalse(defaultFolderCard(folder, "GFZE8P"))
+        folder.gameInis["GFZE8P.ini"] = "[Core]\nSlotA = 1\n"
+        assertNull(player.findSaveFolderParts("gci", disc(), folder))
+    }
+
+    @Test fun gciPathSettingsAreStringsEvenWhenTheirTextLooksBoolean() {
+        val folder = Folder()
+        for (key in listOf("GCIFolderAPath", "GCIFolderAPathOverride")) {
+            for (path in listOf("False", "false", "0", "True", "/custom/card")) {
+                folder.ini = "[Core]\nSlotA = 8\n$key = $path\n"
+                assertFalse("$key = $path", defaultFolderCard(folder))
+                folder.ini = "[Core]\nSlotA = 8\n"
+                folder.gameInis["GFZE8P.ini"] = "[Core]\n$key = $path\n"
+                assertFalse("per-game $key = $path", defaultFolderCard(folder, "GFZE8P"))
+            }
+            folder.gameInis.clear()
+        }
+    }
+
     private fun disc(region: Int = 1, magic: Boolean = true) = object : GameFileReader {
         override fun read(offset: Long, length: Int) = ByteArray(0x460).also {
             "GFZE8P".toByteArray().copyInto(it)
@@ -59,11 +92,17 @@ class DolphinTest {
     private fun gci(id: String) = ByteArray(64).also { id.toByteArray().copyInto(it) }
     private class Folder : SaveFolderAccess {
         var ini: String? = null
+        val gameInis = linkedMapOf<String, String>()
         override fun list(path: String): List<SaveFolderEntry>? = when(path) {
             "Config" -> ini?.let { listOf(SaveFolderEntry("Dolphin.ini", false, it.length.toLong())) }.orEmpty()
+            "GameSettings" -> gameInis.map { (name, text) -> SaveFolderEntry(name, false, text.length.toLong()) }
             else -> null
         }
-        override fun read(path: String, limit: Int) = ini?.toByteArray()
+        override fun read(path: String, limit: Int) = when {
+            path == "Config/Dolphin.ini" -> ini
+            path.startsWith("GameSettings/") -> gameInis[path.removePrefix("GameSettings/")]
+            else -> null
+        }?.toByteArray()
         override fun read(path: String, offset: Long, length: Int): ByteArray? = null
         override fun write(path: String, bytes: ByteArray): Boolean = error("read only")
         override fun createFolder(path: String): Boolean = error("read only")

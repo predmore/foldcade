@@ -95,7 +95,7 @@ internal fun gameCubeDisc(game: GameFileReader): GameCubeDisc? {
 }
 
 /** MainSettings.cpp defaults SlotA to MemoryCardFolder (8). Never change choices.
- * Custom folders, raw cards, overrides and per-game card settings stay unresolved.
+ * Custom folders, raw cards and non-default per-game card settings stay unresolved.
  */
 internal fun defaultFolderCard(folder: SaveFolderAccess, gameId: String? = null): Boolean {
     val entries = folder.list("Config") ?: return false
@@ -105,21 +105,30 @@ internal fun defaultFolderCard(folder: SaveFolderAccess, gameId: String? = null)
                 (it.name.startsWith(gameId + "r") && it.name.endsWith(".ini"))) }
         for (settings in gameSettings) {
             val text = folder.read("GameSettings/${settings.name}", 256 * 1024)?.toString(Charsets.UTF_8) ?: return false
-            if (text.lineSequence().any { it.substringBefore('=').trim().lowercase() in setOf("slota", "gcifolderapath", "gcifolderapathoverride", "memcardapath") }) return false
+            // GameConfigLoader.cpp maps legacy [Core] and [Main.Core] to Main/Core.
+            // Require defaults in both forms; resolving conflicting overrides is unsupported.
+            if (!defaultFolderCardSettings(coreSettings(text)) ||
+                !defaultFolderCardSettings(coreSettings(text, sectionName = "main.core"))) return false
         }
     }
     if (entries.none { it.name == "Dolphin.ini" }) return true
     val ini = folder.read("Config/Dolphin.ini", 256 * 1024)?.toString(Charsets.UTF_8) ?: return false
-    val core = coreSettings(ini)
-    return core["slota"].let { it == null || it == "8" } &&
-        core["gcifolderapath"].isNullOrEmpty() && core["gcifolderapathoverride"].isNullOrEmpty()
+    return defaultFolderCardSettings(coreSettings(ini))
 }
+
+/** Both GCI settings are paths, not a path and an enable flag: even "False" is a custom path.
+ * A raw-card path does not affect Slot A's GCI Folder device.
+ * https://github.com/dolphin-emu/dolphin/blob/df4bd441dec5d6f3cff606eea76f183963e97a44/Source/Core/Core/HW/EXI/EXI_DeviceMemoryCard.cpp#L137-L156
+ */
+private fun defaultFolderCardSettings(core: Map<String, String>): Boolean =
+    core["slota"].let { it == null || it == "8" } &&
+        core["gcifolderapath"].isNullOrEmpty() && core["gcifolderapathoverride"].isNullOrEmpty()
 
 /** Common/IniFile.cpp: case-insensitive names, UTF-8 BOM, first closing bracket,
  * quoted values and last assignment wins. Leading whitespace does not start a section.
  * https://github.com/dolphin-emu/dolphin/blob/df4bd441dec5d6f3cff606eea76f183963e97a44/Source/Core/Common/IniFile.cpp
  */
-private fun coreSettings(text: String): Map<String, String> {
+private fun coreSettings(text: String, sectionName: String = "core"): Map<String, String> {
     val values = mutableMapOf<String, String>()
     var section = ""
     for (line in text.removePrefix("\uFEFF").lineSequence()) {
@@ -128,7 +137,8 @@ private fun coreSettings(text: String): Map<String, String> {
             if (end > 0) section = line.substring(1, end).lowercase()
             continue
         }
-        if (section != "core" || '=' !in line || line.firstOrNull() in listOf('#', '$', '+', '*')) continue
+        if (section != sectionName) continue
+        if ('=' !in line || line.firstOrNull() in listOf('#', '$', '+', '*')) continue
         values[line.substringBefore('=').trim().lowercase()] = line.substringAfter('=').trim().removeSurrounding("\"")
     }
     return values
