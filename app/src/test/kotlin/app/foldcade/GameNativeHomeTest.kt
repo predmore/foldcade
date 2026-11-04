@@ -30,6 +30,52 @@ class GameNativeHomeTest {
         assertFalse(onHome(decodeHome(store.homeBoardRaw()), id))
     }
 
+    @Test fun deletingAPinFirstGameKeepsItsExportOffHomeAcrossOtherMergesAndRestart() {
+        val pin = app.foldcade.plugins.gamenative.gameNativeShortcut("app.gamenative", "game_42", "Game", true, true)!!
+        val export = app.foldcade.plugins.gamenative.CatalogGame("Game", 42, "STEAM")
+        val merged = app.foldcade.plugins.gamenative.mergeGameNativeGames(
+            app.foldcade.plugins.gamenative.restoreGameNativePins(listOf(pin), listOf(pin)), listOf(export),
+        ).single()
+        val entry = app.foldcade.plugins.gamenative.GameNativeEntry()
+        entry.library.confirm(listOf(merged))
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply { register(entry) }
+        val store = SessionStore(MemoryPrefs())
+        val id = "gamenative.${pin.remoteKey}"
+        val exportId = "gamenative.${export.remoteKey}"
+        Shelf.catalog = listOf(ShelfGame(id, "Game", "", "pc", libraryId = "gamenative", remoteKey = pin.remoteKey))
+        var time = 0L
+        val deleted = mutableListOf<String>()
+        val shell = ShellController(store, plugins, nowMillis = { time }, onGameNativeRemoved = { deleted += it })
+        shell.settleGameNative()
+        shell.noteShelfChanged()
+        val folderIndex = (0 until shell.model.count).first { shell.homeFace(it)?.title == "GameNative" }
+        val columns = app.foldcade.language.GridStrip.column(folderIndex) - app.foldcade.language.GridStrip.column(shell.model.focus.cellIndex)
+        repeat(kotlin.math.abs(columns)) { shell.onMeaning(if (columns > 0) app.foldcade.language.Meaning.MoveRight else app.foldcade.language.Meaning.MoveLeft, app.foldcade.language.HostScreen.Bottom) }
+        val rows = app.foldcade.language.GridStrip.row(folderIndex) - app.foldcade.language.GridStrip.row(shell.model.focus.cellIndex)
+        repeat(kotlin.math.abs(rows)) { shell.onMeaning(if (rows > 0) app.foldcade.language.Meaning.MoveDown else app.foldcade.language.Meaning.MoveUp, app.foldcade.language.HostScreen.Bottom) }
+        shell.onMeaning(app.foldcade.language.Meaning.Activate, app.foldcade.language.HostScreen.Bottom)
+        shell.onMeaning(app.foldcade.language.Meaning.Options, app.foldcade.language.HostScreen.Bottom)
+        val menuRows = app.foldcade.language.panelRows(shell.model.panel!!, shell.model)
+        walkPanelTo(shell, menuRows.indexOf(app.foldcade.language.Row.DeleteShortcut), app.foldcade.language.HostScreen.Bottom)
+        shell.onMeaning(app.foldcade.language.Meaning.Activate, app.foldcade.language.HostScreen.Bottom)
+        assertNotNull(shell.model.deleteHold)
+        shell.setPromptHeld(app.foldcade.language.PromptKey.FaceA, true)
+        time += app.foldcade.language.DELETE_HOLD_MILLIS
+        shell.tickRecovery()
+        assertEquals(listOf(pin.remoteKey), deleted)
+        repeat(2) { shell.noteShelfChanged() }
+        assertTrue(exportId in decodeHome(store.homeBoardRaw()).offHome)
+        entry.library.confirm(listOf(export))
+        Shelf.catalog = listOf(ShelfGame(exportId, "Game", "", "pc", libraryId = "gamenative", remoteKey = export.remoteKey, shortcut = false))
+        shell.noteShelfChanged()
+        assertFalse(onHome(decodeHome(store.homeBoardRaw()), exportId))
+        assertTrue(exportId in decodeHome(store.homeBoardRaw()).offHome)
+        val restarted = ShellController(store, plugins)
+        restarted.settleGameNative()
+        restarted.noteShelfChanged()
+        assertFalse(onHome(decodeHome(store.homeBoardRaw()), exportId))
+    }
+
     @Test fun aPinGoesHomeWithNewGamesOffAndKeepsItsPlaceUntilTheSourcesSettle() {
         val id = "gamenative.SHORTCUT_app.gamenative_42"
         val store = SessionStore(MemoryPrefs())

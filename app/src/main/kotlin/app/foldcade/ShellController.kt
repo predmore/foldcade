@@ -435,6 +435,9 @@ class ShellController(
     /** Platform names a library listed, by platform id. Used when nothing else names it. */
     private val listedPlatformNames = HashMap<String, String>()
 
+    /** A pin-first game's export must inherit Delete shortcut, including merges before Android answers. */
+    private val deletedGameNativeExports = mutableSetOf<String>()
+
     private var committedHome: String? = store.homeBoardRaw()
     private var saveHealthReady = false
     private var current by mutableStateOf(initial())
@@ -1169,6 +1172,17 @@ class ShellController(
                 effect.gameId?.let { id ->
                     val removed = homeShelf(home.faceOf(id))
                     home.deleteShortcut(id)
+                    if (removed.libraryId == GameNativeLibrary.ID) {
+                        val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()
+                            ?.firstOrNull { it.remoteKey == removed.remoteKey }
+                        if (game != null && game.gameSource != "SHORTCUT") {
+                            val exportId = "gamenative.${game.gameSource}_${game.appId}"
+                            if (exportId != id) {
+                                deletedGameNativeExports += exportId
+                                home.deleteShortcut(exportId)
+                            }
+                        }
+                    }
                     commitHome()
                     removed.remoteKey?.let { key ->
                         when (removed.libraryId) {
@@ -3979,6 +3993,12 @@ class ShellController(
             sameGames = sameAliases,
             copies = copies,
         )
+        // Apply before persisting/publishing: an export may acquire its own id after unpin.
+        // Retain the request across unrelated or deferred merges until that id actually exists.
+        if (deletedGameNativeExports.isNotEmpty()) {
+            deletedGameNativeExports.forEach(home::deleteShortcut)
+            deletedGameNativeExports.removeAll(home.catalog().mapTo(HashSet()) { it.id })
+        }
         commitHome(catalog = true)
         find?.refresh(findEntries())
         refreshSaveHealth()

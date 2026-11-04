@@ -76,6 +76,7 @@ class GameNativeShortcutsTest {
             val library = GameNativeLibrary().apply { confirm(mergeGameNativeGames(listOf(pin), listOf(file, file))) }
             val merged = library.confirmed().single()
             assertEquals(file.remoteKey, merged.remoteKey)
+            assertEquals(title, merged.title)
             assertEquals(pin.shortcutPackage, merged.shortcutPackage)
             val restored = restoreGameNativePins(listOf(pin), listOf(merged)).single()
             assertEquals("GOG", restored.gameSource)

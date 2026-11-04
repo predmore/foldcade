@@ -25,7 +25,7 @@ fun mergeGameNativeGames(pins: List<CatalogGame>, files: List<CatalogGame>): Lis
         val pin = pins.singleOrNull { sameGame(it, file) }
         if (pin == null || files.filter { sameGame(pin, it) }.map { it.gameSource }.distinct().size != 1) file else {
             mergedPins += pin.remoteKey
-            file.copy(shortcutPackage = pin.shortcutPackage, stableKey = pin.stableKey)
+            file.copy(title = pin.title, shortcutPackage = pin.shortcutPackage, stableKey = pin.stableKey)
         }
     }
     return pins.filter { it.remoteKey !in mergedPins } + exports
