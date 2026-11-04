@@ -26,6 +26,7 @@ tasks.register("testDebugUnitTest") {
         ":plugins:duckstation:test",
         ":plugins:dolphin:test",
         ":plugins:ppsspp:test",
+        ":plugins:explus:test",
         ":plugins:eden:test",
         ":plugins:emulators:test",
         ":plugins:gamenative:test",

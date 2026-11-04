@@ -14,6 +14,27 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ServerSavesTest {
+    @Test fun incompatiblePlayerFormatsRefuseBeforeArchivesPromotionAndCommitMarkers() = runBlocking {
+        val old = add("old".toByteArray(), "sav", "melonds", at = 1)
+        val chosen = add("raw other format".toByteArray(), "autosave", "retroarch", at = 2)
+        val rejecting = object : Player by player {
+            override fun canPlaceSave(slot: String, bytes: ByteArray): Boolean {
+                assertEquals("sav", slot)
+                assertArrayEquals("raw other format".toByteArray(), bytes)
+                return false
+            }
+        }
+        val library = library()
+        assertTrue(runCatching { library.playServerSave(GAME, rejecting, chosen.id.toString()) { error("must not commit") } }
+            .exceptionOrNull() is PluginException.SaveFormatMismatch)
+        assertEquals(listOf("sync", "download:${chosen.id}"), events)
+        assertEquals(listOf(old.id, chosen.id), server.map { it.id })
+        events.clear()
+        assertTrue(runCatching { library.copyServerSave(GAME, chosen.id.toString(), "sav", "melonds", rejecting) { error("must not commit") } }
+            .exceptionOrNull() is PluginException.SaveFormatMismatch)
+        assertEquals(listOf("sync", "download:${chosen.id}"), events)
+        assertFalse(Files.exists(data.slotFile(ROM, "sav")))
+    }
     private val root = Files.createTempDirectory("server-save-picker")
     private val data = RommData(root.resolve("data"), ORIGIN)
     private val ops = ScriptedOps()

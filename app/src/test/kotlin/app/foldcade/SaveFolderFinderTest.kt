@@ -4,6 +4,7 @@ import app.foldcade.api.plugin.SaveFolderHolder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,6 +46,15 @@ class SaveFolderFinderTest {
         assertNull(finder(roms, allFiles, own).find(player).folder)
     }
 
+    @Test fun newPlayersDiscoverOnlyAnUnambiguousFolderTheirAppCanUse() {
+        val allFiles = SaveFolderGrant(SharedStorageProvider.tree("app.foldcade"), true, true, allFiles = true)
+        val ex = app.foldcade.plugins.explus.ExPlusEntry().players.first() as SaveFolderHolder
+        directories += "primary:saves/GBA.emu"
+        assertNull(finder(allFiles).find(ex).folder)
+        playerGrants += "primary:saves/GBA.emu"
+        assertNotNull(finder(allFiles).find(ex).folder)
+        assertNotNull(finder(grant(tree("primary:saves/GBA.emu"))).find(ex).folder)
+    }
     @Test fun emulatorProviderReusesOnlyAnExactWritableRootWithMarkers() {
         val uri = "content://org.dolphinemu.dolphinemu.user/tree/root"
         val holder = object : SaveFolderHolder {

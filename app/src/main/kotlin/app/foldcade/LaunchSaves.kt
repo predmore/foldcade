@@ -8,6 +8,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.ppsspp.PpssppPlayer
+import app.foldcade.plugins.explus.ExPlusPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -34,7 +35,7 @@ internal class LaunchSaves(
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
         if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
         val candidates = candidates(route)
-        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer
+        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is ExPlusPlayer
         val resolvedSpots = if (guarded) saves.spots(player, route.saves, local, forLaunch = true) else null
         // A profile or a content-derived game id can be unresolved. Do not let
         // negotiation acknowledge a save this device cannot place.
@@ -94,6 +95,12 @@ internal class LaunchSaves(
         }
         val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, resolvedSpots)
         try {
+            // EX names batteries from the ROM filename. A rename can leave an
+            // older bundle with no compatible destination; preserve it and ask.
+            if (player is ExPlusPlayer && saves.hasIncompatibleSave(spots, placement.savesToPlace)) {
+                onSpots(owner, player, emptyList())
+                throw UnresolvedSaveNotPlaced(incompatible = true)
+            }
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
@@ -178,8 +185,8 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 /** A library save could not be written into the player's folder and checked. */
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
-/** No destination was resolved before negotiation or writing; an explicit per-launch opt-out is safe. */
-internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false) : SaveNotPlaced()
+/** No compatible destination, before any write; an explicit per-launch opt-out is safe. */
+internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false, val incompatible: Boolean = false) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {

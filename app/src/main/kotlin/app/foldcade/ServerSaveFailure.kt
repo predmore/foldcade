@@ -12,6 +12,7 @@ internal fun serverSaveFailure(error: Throwable): String {
     var cause: Throwable? = error
     while (cause != null && seen.add(cause)) {
         when (cause) {
+            is PluginException.SaveFormatMismatch -> return SavePickerCopy.incompatible
             is SaveNeedsDownload -> return SavePickerCopy.downloadFirst
             is SaveNotPlaced -> return SavePickerCopy.unreadable
             is RommUnavailable, is RommUnauthenticated, is RommUnauthorized, is PluginException.NotAuthenticated -> return SavePickerCopy.unavailable
