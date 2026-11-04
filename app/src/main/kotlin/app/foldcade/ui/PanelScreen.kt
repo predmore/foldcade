@@ -3244,13 +3244,9 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
-    // An empty collection's one button, named on A.
-    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null && shell.emptyCollection() != null) {
-        listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
-    } else emptyList()
-    // Home's Add games tile, named on A.
-    val addGamesTile = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
-        model.focus.chrome == null && shell.homeKeys() == HomeKeys.Idle && model.focus.cellIndex == shell.addGamesSlot()) {
+    // An empty collection's one button, and Home's Add games tile, named on A.
+    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
+        (shell.emptyCollection() != null || shell.onAddGamesTile())) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
     // A restored place waiting for RomM signs in on A.
@@ -3266,7 +3262,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
     val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it.cancellableTransfer })) {
         normalKeys.filterNot { it.key == back } + HintKey(back, Copy.cancelLaunch)
-    } else addGames + addGamesTile + signIn + normalKeys
+    } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle

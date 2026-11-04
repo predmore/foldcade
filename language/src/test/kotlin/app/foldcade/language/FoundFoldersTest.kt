@@ -119,7 +119,7 @@ class FoundFoldersTest {
         assertEquals(DialogKind.RetroArchCores, dialog.kind)
         assertEquals(listOf(DialogButton.ContinueGrant, DialogButton.NotNow), dialog.buttons)
         assertEquals(
-            "RetroArch plays your Sega Genesis games. Foldcade gets the cores they need: on the next screen, tap Use this folder, then Allow, so it sees the ones you have.",
+            "RetroArch plays your Sega Genesis games. Let Foldcade see its cores and it gets any that are missing. Next, tap Use this folder, then Allow.",
             dialog.body,
         )
         assertEquals(true, FoundFolderCopy.retroArchCoresBody(listOf("A", "B", "C")).startsWith("RetroArch plays your games."))

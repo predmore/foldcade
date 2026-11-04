@@ -43,8 +43,8 @@ object FoundFolderCopy {
     /** RetroArch's cores ask before the first launch: "RetroArch plays your Sega Genesis games." */
     fun retroArchCoresBody(systems: List<String>): String {
         val what = if (systems.size in 1..MAX_SYSTEMS) "your ${and(systems)} games" else "your games"
-        return "RetroArch plays $what. Foldcade gets the cores they need: on the next screen, " +
-            "tap Use this folder, then Allow, so it sees the ones you have."
+        return "RetroArch plays $what. Let Foldcade see its cores and it gets any that are missing. " +
+            "Next, tap Use this folder, then Allow."
     }
 
     /** Under Add games on the top screen: the way that fits first. */

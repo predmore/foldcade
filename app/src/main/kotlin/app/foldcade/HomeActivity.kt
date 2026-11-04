@@ -2353,11 +2353,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The first of [intents] this device can open. */
     /**
      * Android's folder picker for a library folder. It opens at the ROM folder Foldcade saw and
-     * may not read yet, so choosing it is Use this folder and Allow. Otherwise Android picks.
+     * may not read yet, so choosing it is Use this folder and Allow. Otherwise it opens at the
+     * top of internal storage, where ROM folders live, rather than wherever Android's picker
+     * was last left, which on the Thor is often an emulator's own files.
      */
     private fun pickLibraryFolder() {
         folderPurpose = FolderPurpose.Library
-        folderPicker.launch(foldcade.shell.model.romFolderOffer?.start?.let { Uri.parse(storageFolderDocument(it)) })
+        val start = foldcade.shell.model.romFolderOffer?.start ?: "primary:"
+        folderPicker.launch(Uri.parse(storageFolderDocument(start)))
     }
 
     /**

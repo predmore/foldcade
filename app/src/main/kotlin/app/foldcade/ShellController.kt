@@ -940,9 +940,9 @@ class ShellController(
             return effect
         }
         // A or X on Home's Add games tile offers the ways to bring games, the one that fits first.
-        if ((meaning == Meaning.Activate || meaning == Meaning.ActivateBottom) && homeActive() && find == null &&
-            homeKeys() == HomeKeys.Idle && model.focus.chrome == null && model.focus.cellIndex == addGamesSlot()) {
-            if (repeatCount > 0) return null
+        // It is an action, not a thing, so Y has nothing to move or file there, unless it undoes.
+        if (onAddGamesTile() && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom || meaning == Meaning.Options && !undoOffered())) {
+            if (meaning == Meaning.Options || repeatCount > 0) return null
             heldActions.capture(meaning.ordinal)
             publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, model.romFolderOffer)))
             cue(model.themeIndex, "open")
@@ -1693,7 +1693,7 @@ class ShellController(
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
-        (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
+        !(onAddGamesTile() && !undoOffered()) && (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
             (find != null || model.count > 0 || model.tileActions?.undo == true)
 
     fun homeEditing(): Boolean =
@@ -2852,10 +2852,13 @@ class ShellController(
         if (model.allFilesPage != open) publish(model.copy(allFilesPage = open))
     }
 
-    /** Whether the player has a place games come from: a folder, found or picked, or a RomM server. */
+    /**
+     * Whether the player has a place games come from: a folder, found or picked, a RomM server,
+     * or ROMs already on the board. Streams and Android games alone leave Home's way in.
+     */
     private fun hasGameSource(): Boolean =
         model.folders.isNotEmpty() || model.rommSaved || store.rommOrigin() != null || store.folderTrees().isNotEmpty() ||
-            (model.allFilesGranted && store.foundRoots().isNotEmpty())
+            (model.allFilesGranted && store.foundRoots().isNotEmpty()) || libraryItems.any { it.kind == HomeKind.Rom }
 
     /**
      * Home's root strip ends in an Add games tile, in the first slot past the last tile, while
@@ -2867,6 +2870,13 @@ class ShellController(
         if (hasGameSource()) return null
         return home.visibleCount()
     }
+
+    private fun undoOffered(): Boolean = model.tileActions?.undo == true
+
+    /** The cursor rests on Home's Add games tile, with nothing open over Home. */
+    fun onAddGamesTile(): Boolean =
+        homeActive() && find == null && homeKeys() == HomeKeys.Idle && model.focus.chrome == null &&
+            model.focus.cellIndex == addGamesSlot()
 
     /**
      * Once, on a first run with no ROM folder seen and no RomM server, asks where the games are:

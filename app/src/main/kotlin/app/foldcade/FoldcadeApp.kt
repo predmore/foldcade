@@ -2387,7 +2387,12 @@ class FoldcadeApp : Application() {
             val read = readFolders(ticket, backend, saved)
             deliverLibrary(ticket, LocalFolderBackend.ID, read.library, startup = startup,
                 hasSteamFiles = read.steam?.files?.isNotEmpty() ?: steamFiles.files.isNotEmpty())
-            withContext(Dispatchers.Main.immediate) { if (ticket == libraryTicket.get()) announceFoundGames() }
+            withContext(Dispatchers.Main.immediate) {
+                if (ticket != libraryTicket.get()) return@withContext
+                announceFoundGames()
+                // A folder just chosen: its games may need RetroArch's cores. Startup asks in its own order.
+                if (!startup) offerCoresForNewGames()
+            }
             read.steam?.let { useSteamFiles(it) }
         }).also { it.start() }
     }

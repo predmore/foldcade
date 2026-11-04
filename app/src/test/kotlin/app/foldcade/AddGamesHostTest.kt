@@ -43,6 +43,27 @@ class AddGamesHostTest {
         assertEquals(DialogButton.FindGames, shell.model.dialog?.buttons?.first())
     }
 
+    @Test fun yHasNothingToDoOnTheTile() {
+        val shell = shell()
+        walkTo(shell, shell.model.count)
+        assertTrue(shell.onAddGamesTile())
+        assertFalse(shell.hasOptions())
+        assertNull(shell.onMeaning(Meaning.Options, HostScreen.Bottom))
+        assertNull(shell.model.panel)
+        assertNull(shell.model.dialog)
+    }
+
+    @Test fun romsOnTheBoardTakeTheTileAway() {
+        val shell = shell()
+        shell.ingestLibrary("local-folder", listOf(GridEntry(
+            id = "drift", title = "Drift", shortText = "nintendo-ds", platformId = "nintendo-ds",
+            availabilityLabel = null, occupiesBothDisplays = false,
+            game = app.foldcade.api.plugin.Game(backendId = "local-folder", remoteKey = "drift", platformId = "nintendo-ds",
+                availability = app.foldcade.api.plugin.Availability.LocalOnly, label = "Drift"),
+        )), emptyList())
+        assertNull(shell.addGamesSlot())
+    }
+
     @Test fun aSourceTakesTheTileAway() {
         val shell = shell()
         store.addFolderTree("content://com.android.externalstorage.documents/tree/primary%3AGames")

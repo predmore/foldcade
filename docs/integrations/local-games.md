@@ -40,7 +40,7 @@ Use this for a folder Foldcade doesn't find, or to keep all-files access off.
    ```
 
 3. In Foldcade, choose **Add a folder** on Home's **Add games** tile, or open **L1 › Settings › Library › Add › Add a folder**.
-4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When Foldcade has seen a ROMs folder, the picker opens there, so **Use this folder** and **Allow** are all it takes.
+4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When Foldcade has seen a ROMs folder, the picker opens there, so **Use this folder** and **Allow** are all it takes. Otherwise it opens at the top of internal storage.
 5. Wait for the scan, then open the system's folder on Home or find the game in **All**.
 
 Foldcade scans subfolders too. It needs access only to the tree you choose.
