@@ -146,6 +146,24 @@ internal class ThorPresets(private val root: Path) {
         }
     }
 
+    /**
+     * Settings must inspect before asking for stop/write access. A settled file only needs
+     * a private Kept record; this never backs up or replaces an emulator file.
+     */
+    @Synchronized
+    fun inspect(identity: String, file: PresetFile, writable: Boolean, stopped: () -> Boolean): ThorPresetStatus {
+        val previous = record(identity)
+        if (previous != null && previous.optString("phase") != "failed") return status(identity, file)
+        if (previous == null && file.hasPriorBackup()) return keep(identity)
+        val plan = azaharThorPreset(file.read() ?: byteArrayOf()) ?: return ThorPresetStatus.Failed
+        if (plan.edits.isEmpty()) return keep(identity)
+        return when {
+            !writable -> ThorPresetStatus.FileAccess
+            !stopped() -> ThorPresetStatus.CloseEmulator
+            else -> ThorPresetStatus.Ready
+        }
+    }
+
     @Synchronized
     fun apply(identity: String, file: PresetFile, onApplied: () -> Unit = {}, stopped: () -> Boolean): ThorPresetStatus {
         val previous = record(identity)
@@ -222,10 +240,35 @@ internal class ThorPresets(private val root: Path) {
             durablePresetWrite(dir.resolve(name), current)
             file.backup(name, current)
         }
+        val previousPhase = journal.getString("phase")
         saveRecord(dir, journal.put("phase", "restoring"))
-        if (!file.replace(current, original, stopped)) return ThorPresetStatus.Failed
+        try {
+            if (!file.replace(current, original, stopped)) {
+                noteFailedRestore(dir, journal, previousPhase, file, current)
+                return if (stopped()) ThorPresetStatus.Failed else ThorPresetStatus.CloseEmulator
+            }
+        } catch (failure: Exception) {
+            noteFailedRestore(dir, journal, previousPhase, file, current)
+            if (!stopped()) return ThorPresetStatus.CloseEmulator
+            throw failure
+        }
         saveRecord(dir, journal.put("phase", "restored"))
         return ThorPresetStatus.Restored
+    }
+
+    private fun noteFailedRestore(dir: Path, journal: JSONObject, previousPhase: String, file: PresetFile, snapshot: ByteArray?) {
+        val current = runCatching { file.read() }.getOrElse { return }
+        // A crash or a different file is ambiguous. Only an observed no-op may roll back.
+        if ((current == null && snapshot == null) || (current != null && snapshot != null && current.contentEquals(snapshot))) {
+            saveRecord(dir, journal.put("phase", previousPhase))
+        }
+    }
+
+    private fun keep(identity: String): ThorPresetStatus {
+        val dir = directory(identity)
+        Files.createDirectories(dir)
+        saveRecord(dir, JSONObject().put("phase", "kept").put("identity", identity))
+        return ThorPresetStatus.Kept
     }
 
     private fun noteFailedReplacement(dir: Path, journal: JSONObject, file: PresetFile, original: ByteArray?) {

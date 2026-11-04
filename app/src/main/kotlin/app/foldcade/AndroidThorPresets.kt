@@ -53,23 +53,14 @@ internal class AndroidThorPresets(private val context: Context) {
                 operation == Operation.Read && hasRecord -> prior
                 operation == Operation.Apply && hasRecord && !presets.canRetry(identity) -> prior
                 !supported && operation != Operation.Restore -> ThorPresetStatus.Manual
+                operation == Operation.Read -> presets.inspect(identity, grantedConfig(folder),
+                    writable = Files.isWritable(path.resolve("config")), stopped = ::stopped)
                 !Files.isWritable(path.resolve("config")) -> {
-                    // An already tuned file needs no replacement permission. Its grant suffices
-                    // to record "kept yours", without asking for optional broader access.
-                    if (operation != Operation.Apply) return state(ThorSetupStatus.FileAccess)
-                    val docs = AndroidSaveDocuments(context.contentResolver)
-                    val uri = docs.find(folder, "config/config.ini")
-                    val bytes = uri?.let { docs.head(it, 1024 * 1024 + 1) }?.takeIf { it.size <= 1024 * 1024 }
-                    if (bytes != null && azaharThorPreset(bytes)?.edits?.isEmpty() == true) {
-                        val unchanged = object : PresetFile {
-                            override fun read() = bytes
-                            override fun backup(name: String, bytes: ByteArray) = error("read only")
-                            override fun replace(expected: ByteArray?, bytes: ByteArray?, stopped: () -> Boolean) = false
-                        }
-                        presets.apply(identity, unchanged, stopped = ::stopped)
-                    } else ThorPresetStatus.FileAccess
+                    // Inspect through the held grant even when a direct replacement is unavailable.
+                    // Apply may only consume an already-set file here; it can never write it.
+                    if (operation == Operation.Apply) presets.inspect(identity, grantedConfig(folder),
+                        writable = false, stopped = ::stopped) else ThorPresetStatus.FileAccess
                 }
-                operation == Operation.Read -> if (stopped()) ThorPresetStatus.Ready else ThorPresetStatus.CloseEmulator
                 operation == Operation.Restore -> presets.restore(identity, file, ::stopped)
                 else -> presets.apply(identity, file, onApplied = onApplied, stopped = ::stopped)
             }
@@ -88,6 +79,25 @@ internal class AndroidThorPresets(private val context: Context) {
         catch (_: SecurityException) { state(ThorSetupStatus.FileAccess) }
         catch (_: Exception) { state(ThorSetupStatus.Failed) }
     }
+
+    /** Only read through the chosen grant; missing or unreadable bytes cannot be mistaken for a tuned config. */
+    private fun grantedConfig(folder: String): PresetFile = object : PresetFile {
+        private val docs = AndroidSaveDocuments(context.contentResolver)
+        private val entries by lazy { docs.children(folder, "config") }
+        override fun read(): ByteArray? {
+            val entry = entries?.firstOrNull { it.name == "config.ini" } ?: return null
+            check(!entry.isFolder)
+            val bytes = docs.head(entry.uri, CONFIG_LIMIT + 1) ?: error("config could not be read")
+            check(bytes.size <= CONFIG_LIMIT)
+            return bytes
+        }
+        override fun hasPriorBackup(): Boolean = entries.orEmpty()
+            .any { it.name.startsWith("config.ini.foldcade-original-") }
+        override fun backup(name: String, bytes: ByteArray) = error("read only")
+        override fun replace(expected: ByteArray?, bytes: ByteArray?, stopped: () -> Boolean): Boolean = error("read only")
+    }
+
+    private companion object { const val CONFIG_LIMIT = 1024 * 1024 }
 
     /**
      * Android has no public API that reliably lists another app's cached processes. A cached

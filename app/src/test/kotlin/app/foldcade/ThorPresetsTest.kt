@@ -64,6 +64,59 @@ class ThorPresetsTest {
         assertFalse(ThorPresets(root).canRestore("azahar"))
     }
 
+    @Test fun `settings inspection records tuned running config without asking for stop or writes`() {
+        for (writable in listOf(true, false)) {
+            val root = Files.createTempDirectory("thor-inspect")
+            val file = MemoryFile(azaharThorPreset(defaults.toByteArray())!!.bytes)
+            file.failBackup = true // The granted read-only path cannot create any emulator files.
+            assertEquals(ThorPresetStatus.Kept, ThorPresets(root).inspect("azahar", file, writable) {
+                error("an already-set config must not require stopping a paused game")
+            })
+            assertEquals(0, file.writes)
+            assertTrue(file.backups.isEmpty())
+            // Inspection records the decision, so a later reset to defaults stays the player's choice.
+            file.bytes = defaults.toByteArray()
+            assertEquals(ThorPresetStatus.Kept, ThorPresets(root).apply("azahar", file) { false })
+            assertEquals(0, file.writes)
+        }
+    }
+
+    @Test fun `settings inspection asks only for access or stopping that changes actually require`() {
+        val presets = ThorPresets(Files.createTempDirectory("thor-inspect-needed"))
+        val file = MemoryFile(defaults.toByteArray())
+        assertEquals(ThorPresetStatus.FileAccess, presets.inspect("read-only", file, writable = false) {
+            error("access comes before any stop request")
+        })
+        assertEquals(ThorPresetStatus.CloseEmulator, presets.inspect("running", file, writable = true) { false })
+        assertEquals(ThorPresetStatus.Ready, presets.inspect("stopped", file, writable = true) { true })
+        assertEquals(0, file.writes)
+        assertTrue(file.backups.isEmpty())
+        assertEquals(ThorPresetStatus.Ready, presets.status("stopped", file))
+    }
+
+    @Test fun `missing or malformed inspected config is not recorded as already set`() {
+        val presets = ThorPresets(Files.createTempDirectory("thor-inspect-invalid"))
+        assertEquals(ThorPresetStatus.FileAccess,
+            presets.inspect("missing", MemoryFile(null), writable = false) { false })
+        val invalid = MemoryFile("[Layout".toByteArray())
+        assertEquals(ThorPresetStatus.Failed, presets.inspect("invalid", invalid, writable = false) { false })
+        assertEquals(ThorPresetStatus.Ready, presets.status("invalid", invalid))
+    }
+
+    @Test fun `unreadable inspection never guesses that stopping the emulator would help`() {
+        val file = object : PresetFile by MemoryFile(null) {
+            override fun read(): ByteArray? = error("grant read failed")
+        }
+        val presets = ThorPresets(Files.createTempDirectory("thor-inspect-unreadable"))
+        try {
+            presets.inspect("azahar", file, writable = true) { error("must read before requesting a stop") }
+            fail()
+        } catch (failure: IllegalStateException) {
+            assertEquals("grant read failed", failure.message)
+        }
+        assertEquals(ThorPresetStatus.Ready, presets.status("azahar", file))
+    }
+
     @Test fun `running emulator is left alone and can apply after it stops`() {
         val root = Files.createTempDirectory("thor-presets")
         val file = MemoryFile(defaults.toByteArray())
@@ -138,6 +191,70 @@ class ThorPresetsTest {
         assertEquals(2, file.writes)
     }
 
+    @Test fun `restore aborted by emulator launch retains applied phase and can be retried`() {
+        val root = Files.createTempDirectory("thor-restore-running")
+        val file = MemoryFile(defaults.toByteArray())
+        val presets = ThorPresets(root)
+        presets.apply("azahar", file) { true }
+        val applied = file.bytes!!.copyOf()
+        var running = false
+        file.beforeReplace = { running = true }
+        assertEquals(ThorPresetStatus.CloseEmulator, presets.restore("azahar", file) { !running })
+        assertArrayEquals(applied, file.bytes)
+        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).status("azahar", file))
+        assertTrue(ThorPresets(root).canRestore("azahar"))
+        // A normal launch cannot announce a failed restore or reapply anything.
+        assertEquals(ThorPresetStatus.Applied, ThorPresets(root).apply("azahar", file) { false })
+        assertEquals(1, file.writes)
+        running = false
+        file.beforeReplace = {}
+        assertEquals(ThorPresetStatus.Restored, ThorPresets(root).restore("azahar", file) { !running })
+        assertArrayEquals(defaults.toByteArray(), file.bytes)
+    }
+
+    @Test fun `refused and throwing restore writes keep their prior phase when bytes are unchanged`() {
+        for (throws in listOf(false, true)) {
+            val root = Files.createTempDirectory("thor-restore-refused")
+            val file = MemoryFile(defaults.toByteArray())
+            val presets = ThorPresets(root)
+            presets.apply("azahar", file) { true }
+            file.failReplace = !throws
+            file.beforeReplace = { if (throws) error("rename refused") }
+            if (throws) {
+                try { presets.restore("azahar", file) { true }; fail() } catch (_: IllegalStateException) { }
+            } else {
+                assertEquals(ThorPresetStatus.Failed, presets.restore("azahar", file) { true })
+            }
+            assertEquals(ThorPresetStatus.Applied, ThorPresets(root).status("azahar", file))
+            assertTrue(ThorPresets(root).canRestore("azahar"))
+            file.failReplace = false
+            file.beforeReplace = {}
+            assertEquals(ThorPresetStatus.Restored, ThorPresets(root).restore("azahar", file) { true })
+        }
+    }
+
+    @Test fun `changed bytes and a crash during restore stay ambiguous instead of rolling back the journal`() {
+        for (crash in listOf(false, true)) {
+            val root = Files.createTempDirectory("thor-restore-ambiguous")
+            val file = MemoryFile(defaults.toByteArray())
+            val presets = ThorPresets(root)
+            presets.apply("azahar", file) { true }
+            val changed = "player changed while restoring".toByteArray()
+            if (crash) file.afterReplace = { throw SimulatedDeath() }
+            else file.beforeReplace = { file.bytes = changed }
+            if (crash) {
+                try { presets.restore("azahar", file) { true }; fail() } catch (_: SimulatedDeath) { }
+                assertArrayEquals(defaults.toByteArray(), file.bytes)
+            } else {
+                assertEquals(ThorPresetStatus.Failed, presets.restore("azahar", file) { true })
+                assertArrayEquals(changed, file.bytes)
+            }
+            assertEquals(ThorPresetStatus.Failed, ThorPresets(root).status("azahar", file))
+            assertTrue(ThorPresets(root).canRestore("azahar"))
+            assertFalse(ThorPresets(root).canRetry("azahar"))
+        }
+    }
+
     @Test fun `absent config can be preset and restored to absent`() {
         val file = MemoryFile(null)
         val presets = ThorPresets(Files.createTempDirectory("thor-presets"))
@@ -174,12 +291,14 @@ class ThorPresetsTest {
         val backups = linkedMapOf<String, ByteArray>()
         var writes = 0
         var failBackup = false
+        var failReplace = false
         var beforeReplace: () -> Unit = {}
         var afterReplace: () -> Unit = {}
         override fun read() = bytes?.copyOf()
         override fun backup(name: String, bytes: ByteArray) { check(!failBackup); backups[name] = bytes.copyOf() }
         override fun replace(expected: ByteArray?, bytes: ByteArray?, stopped: () -> Boolean): Boolean {
             beforeReplace()
+            if (failReplace) return false
             if (!((expected == null && this.bytes == null) || (expected != null && this.bytes?.contentEquals(expected) == true)) || !stopped()) return false
             this.bytes = bytes?.copyOf()
             writes++
