@@ -1,0 +1,14 @@
+PASS retroarch.nes no optional-folder notice and no gate
+PASS retroarch.snes no optional-folder notice and no gate
+PASS retroarch.game-boy no optional-folder notice and no gate
+PASS retroarch.game-boy-advance no optional-folder notice and no gate
+PASS retroarch.genesis no optional-folder notice and no gate
+PASS dismissed optional BIOS-folder notice does not return this process
+PASS actual Android engine: mednafen_psx keeps uppercase installed PS1 BIOS
+PASS actual Android engine: mednafen_psx_hw keeps uppercase installed PS1 BIOS
+PASS actual Android engine: swanstation keeps uppercase installed PS1 BIOS
+PASS atomic publisher refuses a case-variant destination; original hash unchanged
+Cold search 71 ms, 1 archive copies
+Warm search 28 ms, 0 archive copies
+Cold search 66 ms, 0 archive copies
+Warm search 26 ms, 0 archive copies
