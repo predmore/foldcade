@@ -1,0 +1,3 @@
+PASS actual Home missing-BIOS gate offers Choose folder / Not now: Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system, then retry.
+PASS custom destination and read/write SAF grant survived process restart
+PASS actual Home missing-BIOS gate offers Choose folder / Not now: Missing the Sega CD BIOS (bios_CD_U.bin). Put it in FoldcadeBiosQA-1104, then retry.
