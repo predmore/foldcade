@@ -18,6 +18,8 @@ class GameSaveHealthTest {
     private fun players(): List<Player> = listOf(
         MelonDsPlayer(), AzaharPlayer(), ArmsX2Player(), Aps3ePlayer(), DuckStationPlayer(), EdenPlayer(),
         RetroArchEntry().players.first(),
+        app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(),
+        *app.foldcade.plugins.explus.ExPlusEntry().players.toTypedArray(),
     )
     private fun game(player: Player) = Game("romm", "42", player.platformId, Availability.Cached, "Game")
     private fun health(player: Player, server: Boolean = true, waiting: Boolean = false,

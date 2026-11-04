@@ -195,13 +195,16 @@ class ShellHostTest {
                 "app.foldcade.plugins.aps3e.Aps3eEntry",
                 "app.foldcade.plugins.armsx2.ArmsX2Entry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.dolphin.DolphinEntry",
                 "app.foldcade.plugins.droiddeck.DroidDeckEntry",
                 "app.foldcade.plugins.duckstation.DuckStationEntry",
                 "app.foldcade.plugins.eden.EdenEntry",
                 "app.foldcade.plugins.emulators.EmulatorsEntry",
+                "app.foldcade.plugins.explus.ExPlusEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
+                "app.foldcade.plugins.ppsspp.PpssppEntry",
                 "app.foldcade.plugins.retroarch.RetroArchEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
@@ -251,13 +254,16 @@ class ShellHostTest {
                 "app.foldcade.plugins.aps3e.Aps3eEntry",
                 "app.foldcade.plugins.armsx2.ArmsX2Entry",
                 "app.foldcade.plugins.azahar.AzaharEntry",
+                "app.foldcade.plugins.dolphin.DolphinEntry",
                 "app.foldcade.plugins.droiddeck.DroidDeckEntry",
                 "app.foldcade.plugins.duckstation.DuckStationEntry",
                 "app.foldcade.plugins.eden.EdenEntry",
                 "app.foldcade.plugins.emulators.EmulatorsEntry",
+                "app.foldcade.plugins.explus.ExPlusEntry",
                 "app.foldcade.plugins.gamenative.GameNativeEntry",
                 "app.foldcade.plugins.melonds.MelonDsEntry",
                 "app.foldcade.plugins.moonlight.MoonlightEntry",
+                "app.foldcade.plugins.ppsspp.PpssppEntry",
                 "app.foldcade.plugins.retroarch.RetroArchEntry",
                 "app.foldcade.plugins.romm.RommEntry",
             ),
@@ -276,11 +282,11 @@ class ShellHostTest {
         assertTrue(host.playerIds().containsAll(listOf("azahar", "melonds", "gamenative", "moonlight")))
         assertEquals(
             listOf("my-boy.game-boy-advance", "pizza-boy-gba.game-boy-advance", "gba-emu.game-boy-advance"),
-            host.playersFor("gba").map { it.id }.filterNot { it.startsWith("retroarch.") },
+            host.playersFor("gba").sortedBy(::playerRank).map { it.id }.filterNot { it.startsWith("retroarch.") },
         )
         assertTrue("retroarch.game-boy-advance" in host.playersFor("gba").map { it.id })
         // RetroArch brings the systems no standalone emulator here runs.
-        assertEquals(listOf("retroarch.sega-cd"), host.playersFor("segacd").map { it.id })
+        assertEquals(setOf("retroarch.sega-cd", "md-emu.sega-cd"), host.playersFor("segacd").map { it.id }.toSet())
         assertEquals(listOf("retroarch.pc-engine"), host.playersFor("tg16").map { it.id })
         // Every RetroArch system is a platform the folder catalog declares.
         val retroArch = host.playerIds().filter { it.startsWith("retroarch.") }

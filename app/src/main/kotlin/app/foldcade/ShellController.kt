@@ -66,6 +66,7 @@ import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
+import app.foldcade.language.scrolledShelf
 import app.foldcade.language.withFolders
 import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
@@ -90,6 +91,7 @@ import app.foldcade.language.chordIndex
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.folderCount
+import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeFolder
@@ -103,6 +105,8 @@ import app.foldcade.language.homeGameId
 import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
+import app.foldcade.language.pendingGameTitle
+import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.resolvePlatform
@@ -143,6 +147,10 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.finishIslandRetire
 import app.foldcade.language.replaceIsland
 import app.foldcade.language.findGamesPrompt
+import app.foldcade.language.addGamesDialog
+import app.foldcade.language.noLibraryActions
+import app.foldcade.language.retroArchCoresFirstDialog
+import app.foldcade.language.RomFolderOffer
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
@@ -158,6 +166,10 @@ import androidx.compose.runtime.setValue
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val HOME_RETURN_WAIT_MS = 30_000L
+private const val ADD_GAMES_HERO = "add-games"
+
+/** Home's Add games tile and its top screen wear the plus Settings › Library's Add wears. */
+internal const val ADD_GAMES_GLYPH = "control.add"
 
 /** How long after a landing a Home recall counts as the same press reaching the other screen. */
 private const val HOME_RECALL_ECHO_MS = 1_000L
@@ -201,6 +213,8 @@ class ShellController(
     private val restoreResultPending: () -> Boolean = { false },
     /** Both folder scan paths notify the aggregate PC catalogs after the last pending tree clears. */
     private val onRestoreFoldersConnected: () -> Unit = {},
+    /** Already loaded play history; resolving a launch wait must never read the disk. */
+    private val rememberedPlayName: (String) -> String? = { null },
 ) {
     var artPicker by mutableStateOf<ArtPickerState?>(null)
         private set
@@ -464,8 +478,9 @@ class ShellController(
             val holdMoved = if (current.deleteHold?.row in pageHolds) next.playActivity != current.playActivity
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
+            val previewed = if (shelfPreview > 0 || current.playerSaves.any { it.playerId.startsWith("preview.") }) ShelfPreview.apply(prepared, shelfPreview) else prepared
             val stable = app.foldcade.language.retainSaveSetup(current,
-                app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, prepared)))
+                app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, previewed))))
                 // Off the dark screen, and off one a game holds.
                 .onShownScreens { store.session.draws(it.panel()) }
             undo = when {
@@ -485,6 +500,14 @@ class ShellController(
             // Each game's name card starts closed: moving on folds the summary R3 opened.
             if (summaryOpenFor != null && summaryOpenFor != focusedHero()?.key) summaryOpenFor = null
         }
+
+    /** Debug builds: how many tiles [ShelfPreview] fills Settings' shelves to, or 0 for none. */
+    private var shelfPreview = 0
+
+    fun previewShelf(count: Int) {
+        shelfPreview = count.coerceIn(0, 32)
+        model = model
+    }
 
     /** Set up saves has been open in this process, so a saved one is from a Home that outlived it. */
     private var saveSetupSeen = false
@@ -737,9 +760,6 @@ class ShellController(
         if (rows != model.streamHosts) model = model.copy(streamHosts = rows)
     }
 
-    /** False while Foldcade can't tell whether a player closed, see [FoldcadeApp.closesVisible]. Nothing reads Paused then. */
-    var resumable by mutableStateOf(false)
-
     /** Cells for the current grid. Empty when the grid is an empty state. */
     var entries by mutableStateOf<List<GridEntry>>(emptyList())
         private set
@@ -932,6 +952,15 @@ class ShellController(
             val (next, effect) = model.openRommSignIn(model.focus)
             publish(next)
             return effect
+        }
+        // A or X on Home's Add games tile offers the ways to bring games, the one that fits first.
+        // It is an action, not a thing, so Y has nothing to move or file there, unless it undoes.
+        if (onAddGamesTile() && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom || meaning == Meaning.Options && !undoOffered())) {
+            if (meaning == Meaning.Options || repeatCount > 0) return null
+            heldActions.capture(meaning.ordinal)
+            publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, model.romFolderOffer)))
+            cue(model.themeIndex, "open")
+            return null
         }
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
             model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
@@ -1690,7 +1719,7 @@ class ShellController(
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
-        (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
+        !(onAddGamesTile() && !undoOffered()) && (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
             (find != null || model.count > 0 || model.tileActions?.undo == true)
 
     fun homeEditing(): Boolean =
@@ -1998,7 +2027,7 @@ class ShellController(
 
     private fun busyOnDevice(id: String): Boolean = isRunning(id) || tileIds(id).any { one ->
         one in downloading || one in removing || libraryOf(one) in relisting ||
-            activity[one].let { it is TileActivity.Downloading || it == TileActivity.Checking }
+            activity[one]?.cancellableTransfer == true
     }
 
     /** True while the game on [id]'s tile is still open in its player, in front or behind Home. */
@@ -2007,7 +2036,7 @@ class ShellController(
 
     /** Still open in its player and on neither screen now: it waits behind Home, where A brings it back. */
     fun isPaused(id: String?): Boolean {
-        if (id == null || !resumable || !isRunning(id)) return false
+        if (id == null || !isRunning(id)) return false
         // On a screen under any id the tile has had, as a game started before a merge is.
         return (tileIds(tileOf(id)) + id).none(store.session::runs)
     }
@@ -2102,6 +2131,8 @@ class ShellController(
                 },
                 firmware = true,
             )
+            GameActivity.PreparingOnServer -> TileActivity.PreparingOnServer
+            GameActivity.Retrying -> TileActivity.Retrying
             GameActivity.Checking -> TileActivity.Checking
             GameActivity.SyncingSaves -> TileActivity.Syncing
             is GameActivity.Synced -> TileActivity.Synced(syncMark(reported.result), nowMillis + Motion.durationSyncMark)
@@ -2114,6 +2145,40 @@ class ShellController(
         if (activity[id] != next) activity = activity + (id to next)
         return (next as? TileActivity.Synced)?.untilMillis
     }
+
+    private val catalogWaitTitles = HashMap<String, String>()
+    private val catalogWaitRecords = HashMap<String, Game>()
+
+    fun beginCatalogWait(tileId: String) {
+        val game = findGame(tileId)
+        // This record is only an artwork identity, never a launch route. RomM's
+        // cached metadata lookup is memory-only, including before Home's snapshot lands.
+        val record = home.game(tileId) ?: tileIds(tileId).firstOrNull { libraryOf(it) == RommCredentials.PLUGIN_ID }
+            ?.let(::homeGameKey)?.let {
+                Game(RommCredentials.PLUGIN_ID, it, game.platformId.orEmpty(), Availability.RemoteOnly, game.title)
+            }
+        val cached = record?.takeIf { it.backendId == RommCredentials.PLUGIN_ID }?.let {
+            plugins.metadata(RommCredentials.METADATA_ID)?.cached(it)
+        }
+        catalogWaitTitles[tileId] = pendingGameTitle(
+            game.title, tileId, TileActivity.LoadingLibrary,
+            rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
+        )
+        // An unknown record would let art fetchers cache a failed provider lookup
+        // or search for "Your game" under the real game's id before its catalog arrives.
+        if (record != null && cached != null) catalogWaitRecords[tileId] = record
+        activity = activity + (tileId to TileActivity.LoadingLibrary)
+    }
+
+    fun endCatalogWait(tileId: String) {
+        catalogWaitTitles.remove(tileId)
+        catalogWaitRecords.remove(tileId)
+        if (activity[tileId] == TileActivity.LoadingLibrary) activity = activity - tileId
+    }
+
+    /** Both screens reuse the name resolved once at the press, with no history/cache lookups in the grid. */
+    fun displayTitle(game: ShelfGame, activity: TileActivity? = activityOf(game.id)): String =
+        pendingGameTitle(game.title, game.id, activity, remembered = catalogWaitTitles[game.id])
 
     /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */
     fun expireActivity(libraryId: String, remoteKey: String, untilMillis: Long) {
@@ -2599,6 +2664,15 @@ class ShellController(
         return onMeaning(Meaning.MoveRight, screen)
     }
 
+    /** A swipe along a shelf's strip, to the column [first]. The focus stays on screen with it. */
+    fun scrollSettingsShelf(first: Int, screen: HostScreen) {
+        if (modalOpen()) return
+        val page = model.settings ?: return
+        if (page.screen != screen) return
+        val next = page.scrolledShelf(first, model)
+        if (next != page) publish(model.copy(settings = next))
+    }
+
     /** One tap on a settings row focuses it and acts on it, the same as a menu row. */
     fun touchSettingsRow(index: Int, screen: HostScreen): Effect? {
         if (modalOpen()) return null
@@ -2797,6 +2871,95 @@ class ShellController(
     fun setAllFilesGranted(granted: Boolean) {
         if (model.allFilesGranted == granted) return
         model = model.copy(allFilesGranted = granted)
+    }
+
+    /**
+     * ROM folders Foldcade saw and may not read yet, or null. While set, the empty library and
+     * Add games lead with Find games, and Add a folder opens Android's picker there. The empty
+     * library's buttons follow it, so its focus starts again on the first.
+     */
+    fun setRomFolderOffer(offer: RomFolderOffer?) {
+        if (model.romFolderOffer == offer) return
+        val next = model.copy(romFolderOffer = offer)
+        publish(
+            if (next.libraryGrid && next.gridKind == GridKind.NoLibrary) {
+                next.copy(count = noLibraryActions(next).size, focus = if (next.focus.chrome == null) GridFocus() else next.focus)
+            } else next,
+        )
+    }
+
+    /** Android's all-files page is open beside Foldcade, whose other screen says how to answer it. */
+    fun setAllFilesPage(open: Boolean) {
+        if (model.allFilesPage != open) publish(model.copy(allFilesPage = open))
+    }
+
+    /**
+     * Whether the player has a place games come from: a folder, found or picked, a RomM server,
+     * or ROMs already on the board. Streams and Android games alone leave Home's way in.
+     */
+    private fun hasGameSource(): Boolean =
+        model.folders.isNotEmpty() || model.rommSaved || store.rommOrigin() != null || store.folderTrees().isNotEmpty() ||
+            (model.allFilesGranted && store.foundRoots().isNotEmpty()) || libraryItems.any { it.kind == HomeKind.Rom }
+
+    /**
+     * Home's root strip ends in an Add games tile, in the first slot past the last tile, while
+     * no folder or RomM server brings games. Its slot, or null. Gone once a source exists, and
+     * while the board is being arranged.
+     */
+    fun addGamesSlot(): Int? {
+        if (!showingHome() || !home.board.atRoot || home.board.editing || home.board.hold != null || home.selection != null) return null
+        if (hasGameSource()) return null
+        return home.visibleCount()
+    }
+
+    private fun undoOffered(): Boolean = model.tileActions?.undo == true
+
+    /** Home with nothing over it and no tool holding the keys, where an ask can come up by itself. */
+    private fun homeIdle(): Boolean = homeActive() && find == null && homeKeys() == HomeKeys.Idle
+
+    /** The cursor rests on Home's Add games tile, with nothing open over Home. */
+    fun onAddGamesTile(): Boolean =
+        homeActive() && find == null && homeKeys() == HomeKeys.Idle && model.focus.chrome == null &&
+            model.focus.cellIndex == addGamesSlot()
+
+    /**
+     * Once, on a first run with no ROM folder seen and no RomM server, asks where the games are:
+     * RomM's phone sign-in first, then a folder. A player who already has a source never sees it.
+     * Never over another dialog. Returns whether it showed.
+     */
+    fun maybeAskAddGames(): Boolean {
+        // Owed while anything else has the keys: a page, a form, a menu, or a Home tool.
+        if (store.addGamesAsked() || !homeIdle() || model.romFolderOffer != null) return false
+        if (hasGameSource()) {
+            store.setAddGamesAsked()
+            return false
+        }
+        publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, null, ask = true)))
+        return true
+    }
+
+    /**
+     * Systems in the library an installed RetroArch can play, by name, A to Z. The first-run
+     * cores ask names them.
+     */
+    internal fun retroArchSystems(): List<String> =
+        libraryGames.values.map { it.platformId }.distinct().map(::canonicalSystem).distinct().filter { id ->
+            plugins.playersFor(id).any { it is RetroArchPlayer && it.packageNames.any(installedPlayers::contains) }
+        }.map { id -> plugins.platformDefinitions().firstOrNull { it.id == id }?.displayName ?: id }.sortedBy { it.lowercase() }
+
+    /**
+     * Once the library has games RetroArch plays, asks for its cores folder before any launch,
+     * so the first game starts without a stop. Asked once, as the launch's own offer is, and
+     * never while Foldcade can already see the cores. Returns whether it showed.
+     */
+    fun maybeOfferRetroArchCores(): Boolean {
+        // Only over Home itself: a page, a menu, the sign-in form, or a Home tool finishes first.
+        if (store.retroArchCoresOffered() || !homeIdle()) return false
+        val retroArch = model.retroArch ?: return false
+        if (retroArch.cores != null) return false
+        val systems = retroArchSystems().takeIf { it.isNotEmpty() } ?: return false
+        publish(model.copy(dialog = retroArchCoresFirstDialog(model.layout.gridScreen, systems)))
+        return true
     }
 
     /** Once, after a session exists. Never on a cold start, and never over another dialog. */
@@ -3169,7 +3332,7 @@ class ShellController(
         }
         return matchedArtQuery(ArtQuery(
             key = if (model.libraryGrid && record != null) tileOf(homeGameId(libraryId, record.remoteKey)) else game.id,
-            title = game.title,
+            title = displayTitle(game),
             platformId = platformId,
             fileName = remoteKey?.takeIf { libraryId == LocalFolderBackend.ID }?.let(LocalFolderBackend::fileNameOf),
             steamAppId = when (libraryId) {
@@ -3187,7 +3350,7 @@ class ShellController(
 
     /** The library record behind [game], on the home grid or the library grid. */
     fun artRecord(game: ShelfGame): Game? =
-        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game ?: streamRecord(game)
+        home.game(game.id) ?: entries.firstOrNull { it.id == game.id }?.game ?: catalogWaitRecords[game.id] ?: streamRecord(game)
 
     /** A Moonlight tile as its library lists it, so Moonlight's own poster can answer for it. */
     private fun streamRecord(game: ShelfGame): Game? {
@@ -3210,7 +3373,7 @@ class ShellController(
         find != null -> find?.subject?.id?.let(home::game)
         showingHome() -> focusedHomeFace()?.id?.let(home::game)
         else -> focusedEntry()?.game
-    } ?: focusedGame()?.let(::streamRecord)
+    } ?: focusedGame()?.let { catalogWaitRecords[it.id] ?: streamRecord(it) }
 
     /**
      * What the idle top screen shows for the focused cell.
@@ -3224,6 +3387,12 @@ class ShellController(
         val carried = homeCarry()?.let { home.faceOf(it.id) }?.let(::homeShelf)
         if (carried != null) return heroItem(carried)
         if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return restoredGapHero(model.focus.cellIndex)
+        if (model.focus.chrome == null && model.focus.cellIndex == addGamesSlot()) return HeroSubject.Item(HeroItem(
+            key = ADD_GAMES_HERO,
+            title = Copy.addGames,
+            detail = FoundFolderCopy.addGamesLine(model.romFolderOffer),
+            control = ADD_GAMES_GLYPH,
+        ))
         if (model.gridKind == GridKind.Platforms) {
             val entry = focusedEntry() ?: return null
             return HeroSubject.Folder(
@@ -3264,7 +3433,7 @@ class ShellController(
     private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
         HeroItem(
             key = game.id,
-            title = game.title,
+            title = displayTitle(game),
             detail = libraryPlatformName(game.platformId) ?: game.shortText,
             mark = game.mark,
             packageName = game.androidPackage,
@@ -3325,6 +3494,17 @@ class ShellController(
         model.homeGrid == HomeGrid.StandIns -> Shelf.games.getOrNull(source)
         else -> hiddenTile(source)
     }
+
+    private var thorSetups: Map<String, app.foldcade.language.ThorSetupSetting> = emptyMap()
+
+    fun setThorSetups(setups: Map<String, app.foldcade.language.ThorSetupSetting>) {
+        if (thorSetups == setups) return
+        thorSetups = setups
+        refreshPlayerSaves()
+    }
+
+    fun setThorSetup(playerId: String, setup: app.foldcade.language.ThorSetupSetting) =
+        setThorSetups(thorSetups + (playerId to setup))
 
     fun refreshPlayerSaves() {
         saveSettingsCache = null
@@ -3395,7 +3575,7 @@ class ShellController(
         platformOrder = emptyList()
         show(
             cells = emptyList(),
-            count = 2,
+            count = noLibraryActions(model).size,
             kind = GridKind.NoLibrary,
             empty = EmptyGrid.None,
             atRoot = true,
@@ -3672,11 +3852,11 @@ class ShellController(
         val definitions = plugins.platformDefinitions()
         saveSettingsCache?.let {
             if (it.definitions === definitions && it.installed === installedPlayers &&
-                it.sync === saveSync && it.setup === setupSteps) return it.rows
+                it.sync === saveSync && it.setup === setupSteps) return if (shelfPreview > 0) ShelfPreview.players(it.rows, shelfPreview) else it.rows
         }
         return readPlayerSaveSettings().also {
             saveSettingsCache = SaveSettingsCache(definitions, installedPlayers, saveSync, setupSteps, it)
-        }
+        }.let { if (shelfPreview > 0) ShelfPreview.players(it, shelfPreview) else it }
     }
 
     /** One row per save folder. Players that share a folder, as RetroArch's systems do, share a row. */
@@ -3690,6 +3870,7 @@ class ShellController(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
+                thorSetup = thorSetups[player.id],
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,

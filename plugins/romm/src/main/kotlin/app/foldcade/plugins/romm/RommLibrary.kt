@@ -34,6 +34,7 @@ import app.foldcade.romm.RomFileSummary
 import app.foldcade.romm.RomProgress
 import app.foldcade.romm.RomQuery
 import app.foldcade.romm.RomSummary
+import app.foldcade.romm.RommReadRetry
 import app.foldcade.romm.RommClient
 import app.foldcade.romm.RommException
 import app.foldcade.romm.RommHttpException
@@ -96,9 +97,10 @@ internal class RommLibrary internal constructor(
     private val gate: RommGate,
     private val supply: () -> RommSupply?,
     private val slot: AtomicReference<RommWiring?>?,
+    private val readRetry: RommReadRetry = RommReadRetry(),
 ) : LibraryBackend {
     /** Tests pass their own gate. Production uses [open]. */
-    constructor(gate: RommGate) : this(gate, { null }, null)
+    constructor(gate: RommGate, readRetry: RommReadRetry = RommReadRetry()) : this(gate, { null }, null, readRetry)
 
     private val listedBackups = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Set<String>>()
     private val listedOrigins = java.util.concurrent.ConcurrentHashMap<java.nio.file.Path, Map<String, app.foldcade.api.plugin.ServerSaveOrigin>>()
@@ -448,25 +450,26 @@ internal class RommLibrary internal constructor(
                 val progress: (RomProgress) -> Unit = { step ->
                     reporter(if (step is RomProgress.Receiving) RomProgress.Receiving(before + step.bytes, total) else step)
                 }
-                val path = ops.downloadRom(
-                    romId = rom.id,
-                    fileName = spec.fileName,
-                    cacheRoot = current.romRoot,
-                    fileIds = spec.fileIds,
-                    expectedSize = spec.expectedSize,
-                    expectedMd5 = spec.md5,
-                    progress = progress,
+                suspend fun download(
+                    name: String, ids: List<Long>, size: Long?, md5: String?, target: Path? = null,
+                ): Path = readRetry.run(allowConversion = true, onWait = { converting ->
+                    report(romId, if (converting) GameActivity.PreparingOnServer else GameActivity.Retrying)
+                }) {
+                    ops.downloadRom(rom.id, name, current.romRoot, ids, size, md5, progress, target)
+                }
+                val path = download(
+                    name = spec.fileName,
+                    ids = spec.fileIds,
+                    size = spec.expectedSize,
+                    md5 = spec.md5,
                 )
                 before += spec.expectedSize ?: 0L
                 for (addOn in spec.addOns) {
-                    ops.downloadRom(
-                        romId = rom.id,
-                        fileName = addOn.fileName,
-                        cacheRoot = current.romRoot,
-                        fileIds = listOf(addOn.id),
-                        expectedSize = addOn.size,
-                        expectedMd5 = addOn.md5,
-                        progress = progress,
+                    download(
+                        name = addOn.fileName,
+                        ids = listOf(addOn.id),
+                        size = addOn.size,
+                        md5 = addOn.md5,
                         target = RommClient.besideRom(path, addOn.fileName),
                     )
                     before += addOn.size
@@ -901,14 +904,14 @@ internal class RommLibrary internal constructor(
         // Every bundled syncing player owns one slot. Do not guess for a future multi-slot player.
         val slot = player.saveDeclarations(game).singleOrNull()?.slot
             ?: throw PluginException.Unavailable("Choose a player with one save slot")
-        chooseSave(wiring, ops, romId, saveId, slot, player.id, player.id, beforeCommit)
+        chooseSave(wiring, ops, romId, saveId, slot, player.id, player, beforeCommit)
     }
 
     override suspend fun copyServerSave(game: Game, saveId: String, toSlot: String, toEmulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> =
         serverSaveWork(game) { wiring, ops, romId ->
             val own = player?.saveDeclarations(game).orEmpty().any { it.slot == toSlot }
             if (own) requireSavePlayer(game, player!!)
-            chooseSave(wiring, ops, romId, saveId, toSlot, toEmulator, player?.id.takeIf { own }, beforeCommit)
+            chooseSave(wiring, ops, romId, saveId, toSlot, toEmulator, player.takeIf { own }, beforeCommit)
         }
 
     /** Strict sync, download and promotion all share the ROM lock, including concurrent return syncs. */
@@ -946,7 +949,8 @@ internal class RommLibrary internal constructor(
         return report
     }
 
-    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, localPlayer: String?, beforeCommit: () -> Unit): List<PlacedSave> {
+    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> {
+        val localPlayer = player?.id
         strictSaveSync(wiring, ops, romId, localPlayer)
         val device = wiring.rememberedDevice!!.deviceId
         val listed = ops.listSaves(romId, device).filter { it.romId == romId }
@@ -965,6 +969,9 @@ internal class RommLibrary internal constructor(
                 throw PluginException.Unavailable("The downloaded save did not verify")
             bytes
         }
+        // A raw battery from another client is not necessarily this slot's ZIP.
+        // Refuse before backups, promotion, selection marks, or fresh-load markers.
+        if (player != null && !player.canPlaceSave(slot, bytes)) throw PluginException.SaveFormatMismatch()
         // The server can have a slot retention cap even though we never request autocleanup.
         // Keep the current head outside slot retention before a confirmed overwrite can prune it.
         if (latest != null && latest.contentHash?.lowercase() != hash) {

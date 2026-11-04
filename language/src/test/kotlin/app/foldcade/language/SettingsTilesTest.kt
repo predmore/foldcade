@@ -56,7 +56,11 @@ class SettingsTilesTest {
         val shelf = emulatorShelf(emulators)
         // A to Z, and melonDS is not installed, so it has no tile.
         assertEquals(listOf("ARMSX2", "Azahar", "Eden", "RetroArch"), shelf.map { it.label })
-        assertEquals(shelf.map { tile(it.key) } + Row.SaveSetup + Row.FindSaves, settingsRows(SettingsCategory.Players, emulators))
+        // On the shelf, Azahar, which is not syncing, leads; the rest stay A to Z.
+        assertEquals(
+            listOf(tile("azahar"), tile("armsx2"), tile("eden"), tile("retroarch.nes"), Row.SaveSetup, Row.FindSaves),
+            settingsRows(SettingsCategory.Players, emulators),
+        )
         assertEquals(listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")), shelf.single { it.key == "armsx2" }.rows)
         // RetroArch's cores and Eden's keys join the player that is that app, not a row of their own.
         assertEquals(listOf(Row.PlayerSave("retroarch.nes"), Row.RetroArchCores), shelf.single { it.key == "retroarch.nes" }.rows)
@@ -169,18 +173,23 @@ class SettingsTilesTest {
             ),
             rows,
         )
-        assertEquals(1, settingsFocusIndex(rows, 0, Meaning.MoveRight))
-        assertEquals(3, settingsFocusIndex(rows, 3, Meaning.MoveRight))
-        assertNull(settingsFocusIndex(rows, 0, Meaning.MoveLeft))
-        assertEquals(2, settingsFocusIndex(rows, 3, Meaning.MoveLeft))
-        // Down from any tile of the first line lands on Add, the only tile below.
-        assertEquals(4, settingsFocusIndex(rows, 0, Meaning.MoveDown))
-        assertEquals(4, settingsFocusIndex(rows, 3, Meaning.MoveDown))
-        assertEquals(0, settingsFocusIndex(rows, 4, Meaning.MoveUp))
+        // Five tiles take two lines, filled a column at a time: RomM over roms, Steam over
+        // game-win, then Add on its own.
+        assertEquals(2, settingsFocusIndex(rows, 0, Meaning.MoveRight))
+        assertEquals(4, settingsFocusIndex(rows, 2, Meaning.MoveRight))
+        // Right from the second line into Add's shorter column lands on Add.
+        assertEquals(4, settingsFocusIndex(rows, 3, Meaning.MoveRight))
         assertEquals(4, settingsFocusIndex(rows, 4, Meaning.MoveRight))
-        // From the last line to the rows, and Up from the first row back to that line.
+        assertNull(settingsFocusIndex(rows, 0, Meaning.MoveLeft))
+        assertNull(settingsFocusIndex(rows, 1, Meaning.MoveLeft))
+        assertEquals(1, settingsFocusIndex(rows, 3, Meaning.MoveLeft))
+        assertEquals(1, settingsFocusIndex(rows, 0, Meaning.MoveDown))
+        assertEquals(0, settingsFocusIndex(rows, 1, Meaning.MoveUp))
+        assertEquals(2, settingsFocusIndex(rows, 2, Meaning.MoveUp))
+        // From a column's last tile to the rows, and Up from the first row to the bottom tile of the first column.
+        assertEquals(5, settingsFocusIndex(rows, 1, Meaning.MoveDown))
         assertEquals(5, settingsFocusIndex(rows, 4, Meaning.MoveDown))
-        assertEquals(4, settingsFocusIndex(rows, 5, Meaning.MoveUp))
+        assertEquals(1, settingsFocusIndex(rows, 5, Meaning.MoveUp))
         assertEquals(6, settingsFocusIndex(rows, 5, Meaning.MoveDown))
         assertEquals(8, settingsFocusIndex(rows, 8, Meaning.MoveDown))
 
@@ -299,7 +308,7 @@ class SettingsTilesTest {
         assertEquals(0, moved.settings!!.row)
         val back = moved.press(Meaning.MoveDown, Meaning.MoveRight)
         assertNull(back.settings!!.inner)
-        assertEquals(tile("armsx2"), settingsFocus(back))
+        assertEquals(tile("azahar"), settingsFocus(back))
     }
 
     @Test

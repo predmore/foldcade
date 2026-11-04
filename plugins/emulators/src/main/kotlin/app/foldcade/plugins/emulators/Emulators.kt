@@ -56,12 +56,8 @@ val EMULATORS: List<Emulator> = listOf(
         handoff = RomHandoff.Extra("rom_uri"),
         flags = RELAUNCH,
     ),
-    explusAlpha("gba-emu", "GBA.emu", "com.explusalpha.GbaEmu", GBA),
-    explusAlpha("gbc-emu", "GBC.emu", "com.explusalpha.GbcEmu", GB, GBC),
 
     // Nintendo home consoles.
-    explusAlpha("nes-emu", "NES.emu", "com.explusalpha.NesEmu", NES),
-    explusAlpha("snes9x-ex", "Snes9x EX+", "com.explusalpha.Snes9xPlus", SNES),
     Emulator(
         id = "m64plus-fz",
         displayName = "M64Plus FZ",
@@ -77,17 +73,6 @@ val EMULATORS: List<Emulator> = listOf(
         displayName = "Mupen64Plus AE",
         platformIds = listOf(N64),
         activities = mapOf("org.mupen64plusae.v3.alpha" to MUPEN_SPLASH),
-    ),
-    Emulator(
-        id = "dolphin",
-        displayName = "Dolphin",
-        platformIds = listOf(GAMECUBE, WII),
-        // ES-DE starts TvMainActivity, not MainActivity, with AutoStartFile.
-        activities = mapOf(
-            "org.dolphinemu.dolphinemu" to "org.dolphinemu.dolphinemu.ui.main.TvMainActivity",
-        ),
-        action = ACTION_MAIN,
-        handoff = RomHandoff.Extra("AutoStartFile"),
     ),
     Emulator(
         id = "dolphin-mmjr",
@@ -122,16 +107,8 @@ val EMULATORS: List<Emulator> = listOf(
         handoff = RomHandoff.Extra("com.sbro.emucorex.extra.GAME_PATH"),
         flags = RELAUNCH,
     ),
-    Emulator(
-        id = "ppsspp",
-        displayName = "PPSSPP",
-        platformIds = listOf(PSP),
-        activities = listOf("org.ppsspp.ppssppgold", "org.ppsspp.ppsspp")
-            .associateWith { "org.ppsspp.ppsspp.PpssppActivity" },
-    ),
 
     // Sega.
-    explusAlpha("md-emu", "MD.emu", "com.explusalpha.MdEmu", GENESIS, MASTER_SYSTEM),
     Emulator(
         id = "pizza-boy-sc",
         displayName = "Pizza Boy SC",
@@ -187,7 +164,6 @@ const val SNES: String = "snes"
 const val N64: String = "nintendo-64"
 const val GAMECUBE: String = "gamecube"
 const val WII: String = "wii"
-const val SWITCH: String = "nintendo-switch"
 const val PLAYSTATION_2: String = "playstation-2"
 const val PSP: String = "psp"
 const val GENESIS: String = "genesis"

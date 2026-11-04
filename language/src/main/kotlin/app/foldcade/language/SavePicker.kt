@@ -146,6 +146,7 @@ object SavePickerCopy {
     const val returnHome = "Return to Home before choosing a save."
     const val installFirst = "Install an emulator to play this save."
     const val unsupported = "This emulator can't load saves through Foldcade."
+    const val incompatible = "This save doesn’t match this game. Check the file name or choose another save."
     private fun fallbackSource(save: SavePickerSave): String =
         named(save.source, save) ?: named(save.emulator, save) ?: unknown
 
@@ -206,13 +207,15 @@ object SavePickerCopy {
     }
     fun header(health: SaveHealth): String = when (health) {
         SaveHealth.Fine -> "Syncing with RomM"
-        is SaveHealth.NotSyncing -> "Not syncing · Set up"
+        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot) "Saves aren’t syncing" else "Not syncing · Set up"
         SaveHealth.Waiting -> "Waiting to upload"
         SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
     }
     fun explanation(health: SaveHealth): String = when (health) {
         SaveHealth.Fine -> "Foldcade keeps this game's saves on RomM."
-        is SaveHealth.NotSyncing -> "Set up the emulator to keep this game's saves on RomM."
+        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot)
+            "Check the save folder, game file type and emulator’s save layout."
+            else "Set up the emulator to keep this game's saves on RomM."
         SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
         SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
     }
@@ -235,7 +238,7 @@ object SavePickerCopy {
  * Slot names that are a file's or Foldcade's own, not a name anyone chose: Azahar's "title",
  * melonDS's "sav", RetroArch's "srm". Those saves go by when they were made instead.
  */
-private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "archive", "default", "save")
+private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "gci", "battery", "archive", "default", "save")
 
 /** True when [slot] says nothing to a player, so its saves are named by date. */
 fun genericSlot(slot: String?, ownSlots: List<String>): Boolean =

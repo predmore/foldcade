@@ -81,7 +81,7 @@ class RommClient(
     )
 
     suspend fun heartbeat(): Heartbeat {
-        val raw = exchange(api("/heartbeat"), "GET", authenticated = false)
+        val raw = exchange(api("/heartbeat"), "GET", authenticated = false, retryRead = false)
         raw.require(200)
         return parseHeartbeat(raw.body)
     }
@@ -93,7 +93,7 @@ class RommClient(
      */
     suspend fun redirectHint(): String? {
         val raw = try {
-            exchange(api("/heartbeat"), "GET", authenticated = false)
+            exchange(api("/heartbeat"), "GET", authenticated = false, retryRead = false)
         } catch (e: CancellationException) {
             throw e
         } catch (_: RommUnavailable) {
@@ -116,7 +116,7 @@ class RommClient(
             null
         }
         return try {
-            platforms()
+            readPlatforms(retryRead = false)
             RommSignInResult.Accepted(hint)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -150,7 +150,7 @@ class RommClient(
 
     suspend fun openApiInfo(): OpenApiInfo {
         val raw = try {
-            exchange(URI.create("$origin/openapi.json"), "GET", authenticated = false)
+            exchange(URI.create("$origin/openapi.json"), "GET", authenticated = false, retryRead = false)
         } catch (e: RommUnavailable) {
             throw e
         }
@@ -225,8 +225,10 @@ class RommClient(
         throw rommHttp(raw.status, raw.detail())
     }
 
-    suspend fun platforms(): List<PlatformSummary> {
-        val raw = exchange(api("/platforms"), "GET", authenticated = true)
+    suspend fun platforms(): List<PlatformSummary> = readPlatforms(retryRead = true)
+
+    private suspend fun readPlatforms(retryRead: Boolean): List<PlatformSummary> {
+        val raw = exchange(api("/platforms"), "GET", authenticated = true, retryRead = retryRead)
         raw.require(200)
         val element = parseElement(raw.body.toString(Charsets.UTF_8))
         if (element !is JsonArray) throw RommResponseException("platforms response is not an array")
@@ -464,14 +466,16 @@ class RommClient(
                         report(RomProgress.Receiving(received, total))
                     }
                 }
-                streamGet(
-                    api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"),
-                    partial,
-                    range = null,
-                    onBytes = onBytes,
-                ) { _, _ ->
-                    received = 0L
-                    progress?.invoke(RomProgress.Receiving(0L, total))
+                RommReadRetry().run {
+                    streamGet(
+                        api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"),
+                        partial,
+                        range = null,
+                        onBytes = onBytes,
+                    ) { _, _ ->
+                        received = 0L
+                        progress?.invoke(RomProgress.Receiving(0L, total))
+                    }
                 }
             } catch (failure: Throwable) {
                 // Stopped or failed: the copy already checked stays the one to use.
@@ -568,14 +572,16 @@ class RommClient(
                 "RomM server too old for save sync (${info.version}). Save sync needs 5.4.0 or newer.",
             )
         }
-        val raw = exchange(
-            api("/sync/negotiate"),
-            "POST",
-            authenticated = true,
-            body = negotiateBody(deviceId, saves, romIds, emulators),
-            contentType = "application/json",
-        )
-        raw.require(200)
+        // A retry can leave an unused session, but never writes a save. Uploads below are not replayed.
+        val raw = RommReadRetry().run {
+            exchange(
+                api("/sync/negotiate"),
+                "POST",
+                authenticated = true,
+                body = negotiateBody(deviceId, saves, romIds, emulators),
+                contentType = "application/json",
+            ).also { it.require(200) }
+        }
         return parseNegotiate(raw.body, info.version)
     }
 
@@ -650,7 +656,7 @@ class RommClient(
             ),
         )
         val partial = partialOf(destination)
-        streamGet(uri, partial, range = null)
+        RommReadRetry().run { streamGet(uri, partial, range = null) }
         withContext(Dispatchers.IO) {
             if ((expectedSize != null && Files.size(partial) != expectedSize) ||
                 (expectedHash != null && rommSaveHash(partial) != expectedHash.lowercase())) {
@@ -1073,6 +1079,30 @@ class RommClient(
         append: Boolean = false,
         onHeaders: ((Int, Map<String, List<String>>) -> Unit)? = null,
         onBytes: ((Int) -> Unit)? = null,
+        // Probes and sign-in checks stay quick, especially with an offline cached game.
+        retryRead: Boolean = true,
+    ): RawResponse {
+        suspend fun once() = exchangeOnce(uri, method, authenticated, body, bodyBytes, contentType,
+            extraHeaders, streamTo, append, onHeaders, onBytes)
+        return if (retryRead && method == "GET" && streamTo == null) {
+            RommReadRetry().run {
+                once().also { if (retryableRommStatus(it.status)) throw rommHttp(it.status, "") }
+            }
+        } else once()
+    }
+
+    private suspend fun exchangeOnce(
+        uri: URI,
+        method: String,
+        authenticated: Boolean,
+        body: String?,
+        bodyBytes: ByteArray?,
+        contentType: String?,
+        extraHeaders: Map<String, String>,
+        streamTo: Path?,
+        append: Boolean,
+        onHeaders: ((Int, Map<String, List<String>>) -> Unit)?,
+        onBytes: ((Int) -> Unit)?,
     ): RawResponse = withContext(Dispatchers.IO) {
         val token = bearer()
         if (authenticated && token == null) throw RommUnauthenticated()

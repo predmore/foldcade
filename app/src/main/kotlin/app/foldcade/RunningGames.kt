@@ -141,9 +141,12 @@ internal class RunningGames {
  * True when the player's front door ([frontDoor], its launcher activity) can bring
  * back a game started in [started]. When they are the same activity, the launcher
  * intent is that activity again with another intent, which Android stacks as a
- * second copy over the game rather than bringing the game's task back.
+ * second copy over the game rather than bringing the game's task back. A player
+ * with an explicitly reusable game start does not need its launcher to resume.
  */
-internal fun resumable(frontDoor: String?, started: String?): Boolean = frontDoor != null && frontDoor != started
+internal fun resumable(frontDoor: String?, started: String?, flags: Set<LaunchFlag> = emptySet()): Boolean =
+    LaunchFlag.SameStartResumes in flags || LaunchFlag.MovesBetweenScreens in flags ||
+        (frontDoor != null && frontDoor != started)
 
 /**
  * What a resume brought to the front, from the player's activities that resumed
@@ -196,6 +199,14 @@ internal fun replaceFlags(flags: Int): Int =
 /** Clear the player's task behind Home, without opening a second task beside it. */
 internal const val CLOSE_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
     Intent.FLAG_ACTIVITY_NO_ANIMATION
+
+/**
+ * RetroArch must quit through its own run loop. Clearing its NativeActivity can
+ * deadlock android_app_free: it joins that loop while holding the app mutex.
+ * This also applies when RetroArch was opened as a companion app, not a player.
+ * https://github.com/libretro/RetroArch/blob/69a4f0ea1e8aaf442ae4858f2e7f2b31a1776576/frontend/drivers/platform_unix.c#L265
+ */
+internal fun canClearPlayerTask(packageName: String): Boolean = packageName !in app.foldcade.plugins.retroarch.PACKAGES
 
 /** A shutdown may finish writes after its activities leave the task history. */
 internal const val CLOSE_SETTLE_MS = 1_500L

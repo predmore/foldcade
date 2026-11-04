@@ -121,7 +121,10 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(20, PLUGIN_API_MINOR)
+        assertEquals(24, PLUGIN_API_MINOR)
+        for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave")) {
+            assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
+        }
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPickedInPlayer" }.isDefault)
         assertTrue(GameFileReader::class.java.methods.single { it.name == "getFileName" }.isDefault)

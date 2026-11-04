@@ -6,6 +6,9 @@ import app.foldcade.api.plugin.Placement
 import app.foldcade.api.plugin.Player
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.dolphin.DolphinPlayer
+import app.foldcade.plugins.ppsspp.PpssppPlayer
+import app.foldcade.plugins.explus.ExPlusPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -32,36 +35,51 @@ internal class LaunchSaves(
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
         if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
         val candidates = candidates(route)
-        val edenSpots = if (player is EdenPlayer) saves.spots(player, route.saves, local, forLaunch = true) else null
-        // Eden may not have made its user yet. Do not let negotiation acknowledge
-        // a server save this device cannot place, even if the player starts anyway.
-        if (player is EdenPlayer && edenSpots?.isEmpty() == true) {
+        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is ExPlusPlayer
+        val resolvedSpots = if (guarded) saves.spots(player, route.saves, local, forLaunch = true) else null
+        // A profile or a content-derived game id can be unresolved. Do not let
+        // negotiation acknowledge a save this device cannot place.
+        if (guarded && resolvedSpots?.isEmpty() == true) {
             onSpots(route.saves, player, emptyList())
-            if (player.hasSaveFolder()) {
+            if (player is app.foldcade.api.plugin.SaveFolderHolder && player.hasSaveFolder()) {
                 try {
+                    val slots = player.saveDeclarations(route.saves).map { it.slot }.toSet()
                     for (owner in candidates) {
-                        val held = plugins.saves(owner.backendId, owner).slots.any { it.slot == EdenPlayer.SLOT }
-                        val incoming = held || plugins.serverSaves(owner.backendId, owner, player).any { it.slot == EdenPlayer.SLOT }
-                        if (incoming) throw EdenSaveNotPlaced(needsUser = !saves.edenHasUser(player, owner))
+                        val held = plugins.saves(owner.backendId, owner).slots.any { it.slot in slots }
+                        val incoming = held || try {
+                            plugins.serverSaves(owner.backendId, owner, player).any { it.slot in slots }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            if (player is EdenPlayer) throw failure
+                            // Unsupported PSP/GC images still play offline. No destination means
+                            // no negotiation, writes or acknowledgement; the unsynced signal stays.
+                            false
+                        }
+                        if (incoming) {
+                            if (player is EdenPlayer) throw UnresolvedSaveNotPlaced(needsEdenUser = !saves.edenHasUser(player, owner))
+                            throw UnresolvedSaveNotPlaced()
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: SaveNotPlaced) {
                     throw failure
                 } catch (_: Exception) {
-                    // An unavailable listing cannot prove there is no incoming save.
-                    throw EdenSaveNotPlaced(needsUser = false)
+                    // Failed local reads, and an unresolved Eden profile's remote check,
+                    // cannot prove there is no incoming save.
+                    throw UnresolvedSaveNotPlaced()
                 }
             }
-            // With no incoming save, first boot can make a user and save. Return
-            // discovery hands it over without a server baseline from this launch.
+            // No known incoming save: allow first-run setup or unsupported-image offline play.
+            // Return discovery can hand over a resolved save without a baseline from this launch.
             return PreparedLaunch(local, emptyList(), route.saves)
         }
         val setup = mutableListOf<String>()
         var chosen: Negotiated? = null
         for (owner in candidates) {
             val negotiated = try {
-                negotiate(route, owner, player, local, setup, edenSpots)
+                negotiate(route, owner, player, local, setup, resolvedSpots)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -75,8 +93,14 @@ internal class LaunchSaves(
                 break
             }
         }
-        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, edenSpots)
+        val (owner, spots, placement) = chosen ?: negotiate(route, route.saves, player, local, setup, resolvedSpots)
         try {
+            // EX names batteries from the ROM filename. A rename can leave an
+            // older bundle with no compatible destination; preserve it and ask.
+            if (player is ExPlusPlayer && saves.hasIncompatibleSave(spots, placement.savesToPlace)) {
+                onSpots(owner, player, emptyList())
+                throw UnresolvedSaveNotPlaced(incompatible = true)
+            }
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
             // Kept until the player starts, so a launch cancelled now still starts it fresh next time.
@@ -161,7 +185,8 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 /** A library save could not be written into the player's folder and checked. */
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
-internal class EdenSaveNotPlaced(val needsUser: Boolean) : SaveNotPlaced()
+/** No compatible destination, before any write; an explicit per-launch opt-out is safe. */
+internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false, val incompatible: Boolean = false) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {

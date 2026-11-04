@@ -163,6 +163,7 @@ import app.foldcade.Displays
 import app.foldcade.language.ArtCopy
 import app.foldcade.language.ArtKind
 import app.foldcade.BloomFrom
+import app.foldcade.ADD_GAMES_GLYPH
 import app.foldcade.FoldcadeApp
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
@@ -214,6 +215,7 @@ import app.foldcade.language.dialogButtonLabel
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.EmptyGrid
+import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroBlend
 import app.foldcade.language.HeroItem
@@ -266,6 +268,8 @@ import app.foldcade.language.SaveHealth
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
 import app.foldcade.language.saveHealthLeads
+import app.foldcade.language.cancellableTransfer
+import app.foldcade.language.pendingChip
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
 import app.foldcade.language.activityLine
@@ -282,6 +286,7 @@ import app.foldcade.HomeCarry
 import app.foldcade.language.SelectionCopy
 import app.foldcade.HomeFace
 import app.foldcade.ShelfGame
+import app.foldcade.catalogWaitCover
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -736,7 +741,7 @@ private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: B
     motionState(target, spec, snap).value
 
 /** What [glideState] follows. [jump] is a token: a new one lands at once, as [snap] does. */
-private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
+internal data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
 
 /**
  * [target] reached with [motion.glide], as state. One coroutine follows every change and
@@ -747,7 +752,7 @@ private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?,
  * glide started there to the new target is left to run.
  */
 @Composable
-private fun glideState(
+internal fun glideState(
     target: Float,
     base: Int,
     scale: Float,
@@ -975,6 +980,14 @@ private fun CommandCenterScreen(
                 }
                 if (line != null) {
                     BasicText(text = line, style = text(theme.focus, LocalFoldTheme.current.theme.style.type.heroMeta, theme), maxLines = 1)
+                }
+                // Android's all-files page beside: its switch takes a touch, and Back returns here.
+                if (subject is CenterSubject.App && app.shell.model.allFilesPage) {
+                    BasicText(
+                        text = FoundFolderCopy.allFilesHint,
+                        style = text(theme.focus, LocalFoldTheme.current.theme.style.type.heroMeta, theme),
+                        maxLines = 1,
+                    )
                 }
                 Spacer(Modifier.height(px(12f)))
                 // Beside an app the keys press these buttons. Beside a page they drive the page.
@@ -1293,6 +1306,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                     packageName = layer.item.packageName,
                                     record = records[layer.key],
                                     query = queries[layer.key],
+                                    control = layer.item.control,
                                 )
                                 is HeroSubject.Folder -> HeroArt(app, screen, null, layer.folder.name, layer.folder.mark, null, null, null)
                             }
@@ -2043,6 +2057,7 @@ private fun HeroArt(
     packageName: String?,
     record: Game?,
     query: ArtQuery?,
+    control: String? = null,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -2055,7 +2070,8 @@ private fun HeroArt(
         ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val glyph = themedApp ?: mark?.let { markGlyph(it, 640) }
     val accent = glyph?.accent ?: theme.focus
-    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) }
+    val kept = rememberCatalogWaitCover(app, key)
+    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) } ?: kept
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
     // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
     // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
@@ -2176,6 +2192,14 @@ private fun HeroArt(
             )
             icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
             glyph != null -> MarkIcon(glyph, glyph.heroScale(theme))
+            control != null -> themeIconOrNull(control, HERO_CONTROL_PX)?.let { ink ->
+                Image(
+                    painter = ink.painter,
+                    contentDescription = title,
+                    colorFilter = ink.tint(theme.onBackground),
+                    modifier = Modifier.fillMaxSize(design.hero.markScale * CONTROL_FILL),
+                )
+            }
             else -> BasicText(
                 text = monogram(title),
                 modifier = Modifier.scale(4f),
@@ -2190,6 +2214,25 @@ private fun HeroArt(
 internal class LoadedCover(val painter: Painter, val ratio: Float, val image: coil3.Image? = null, val crossfadeMillis: Int = 0) {
     // PNG art can let the backdrop show through. Only a known opaque bitmap can hide it.
     val opaque: Boolean get() = (image as? coil3.BitmapImage)?.bitmap?.hasAlpha() == false
+}
+
+/** Only the waiting hero checks history's kept image; the grid gains no work or subscriptions. */
+@Composable
+private fun rememberCatalogWaitCover(app: FoldcadeApp, gameId: String?): LoadedCover? {
+    val waiting = gameId != null && app.shell.activityFor(gameId) == TileActivity.LoadingLibrary
+    var file by remember(gameId) { mutableStateOf<java.io.File?>(null) }
+    LaunchedEffect(gameId, waiting) {
+        if (waiting && gameId != null) file = catalogWaitCover(gameId, app.plays::keptCover)
+    }
+    val saved = file ?: return null
+    val context = LocalContext.current
+    val request = remember(saved) { ImageRequest.Builder(context).data(saved).size(COVER_PX).build() }
+    val painter = rememberAsyncImagePainter(request, app.images)
+    val state by painter.state.collectAsState()
+    val result = (state as? AsyncImagePainter.State.Success)?.result ?: return null
+    val image = result.image
+    if (image.width <= 0 || image.height <= 0) return null
+    return LoadedCover(painter, image.width.toFloat() / image.height, image)
 }
 
 /** Coil's success bitmap can be opaque before its painter has finished fading it in. */
@@ -3201,8 +3244,9 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
-    // An empty collection's one button, named on A.
-    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null && shell.emptyCollection() != null) {
+    // An empty collection's one button, and Home's Add games tile, named on A.
+    val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
+        (shell.emptyCollection() != null || shell.onAddGamesTile())) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
     // A restored place waiting for RomM signs in on A.
@@ -3216,8 +3260,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph
-    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it is TileActivity.Downloading || it == TileActivity.Checking })) {
-        normalKeys.filterNot { it.key == back } + HintKey(back, "Cancel download")
+    val shown = if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) listOf(HintKey(optionsKey, Copy.undo)) else if (!selecting && gridKeys && (shell.downloading.isNotEmpty() || shell.activity.values.any { it.cancellableTransfer })) {
+        normalKeys.filterNot { it.key == back } + HintKey(back, Copy.cancelLaunch)
     } else addGames + signIn + normalKeys
     // The root grid names Select's Find while the row has room, so the button can be found.
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
@@ -3589,6 +3633,7 @@ private fun StripColumn(
     val editing = shell.homeEditing()
     val lifted = shell.homeLiftedIndex()
     val foldersOpen = shell.homeFoldersOpen()
+    val addGames = if (showingHome) shell.addGamesSlot() else null
     Column(verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until Metrics.rows) {
             val index = GridStrip.index(column, row)
@@ -3610,7 +3655,25 @@ private fun StripColumn(
                     },
                 ),
             ) {
-                if (past) {
+                if (past && index == addGames) {
+                    // Past the last tile, while nothing brings games: the way to add some.
+                    val focused = shell.model.dialog == null && shell.model.panel == null && !shell.model.connectOpen &&
+                        focus.chrome == null && focus.cellIndex == index && carry == null
+                    Cell(
+                        title = Copy.addGames,
+                        mark = null,
+                        control = ADD_GAMES_GLYPH,
+                        showTitle = showTitle,
+                        focused = focused,
+                        size = cell,
+                        titleWidth = titleWidth,
+                        corner = radius,
+                        icon = null,
+                        favorite = false,
+                        offHome = true,
+                        onClick = { tap() },
+                    )
+                } else if (past) {
                     // A tap rests the cursor here, as on any empty slot.
                     Box(Modifier.size(cell).hostPress { tap() })
                 } else {
@@ -3626,7 +3689,8 @@ private fun StripColumn(
                         focus.chrome == null &&
                         focus.cellIndex == index &&
                         carry == null
-                    val label = game?.title.orEmpty()
+                    val activity = shell.activityAt(source)
+                    val label = game?.let { shell.displayTitle(it, activity) }.orEmpty()
                     val libraryTile = library && face == null
                     // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
                     // its Not on Home tab, since every game is in its folder on Home.
@@ -3656,7 +3720,7 @@ private fun StripColumn(
                         offHome = offHome,
                         onServer = face?.onServer == true,
                         downloading = shell.isDownloading(face?.id),
-                        activity = shell.activityAt(source),
+                        activity = activity,
                         saveHealth = shell.saveHealthAt(source, game),
                         library = libraryTile,
                         settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
@@ -4126,6 +4190,10 @@ private const val LIFT_GLOW_FLAT = 0.42f
 private const val INTO_SCALE = 0.3f
 
 /** How far up a held tile reaches toward the Home target, in rows. */
+private const val CONTROL_PX = 128
+private const val HERO_CONTROL_PX = 256
+private const val CONTROL_FILL = 0.5f
+
 private const val HOME_REACH = 0.12f
 
 /** The Home target, in panel pixels, and how far above the top row it sits. */
@@ -4202,13 +4270,16 @@ private fun TileStatus(
                 scaleY = grown
                 transformOrigin = TransformOrigin(1f, 0.5f)
             }
-            .height(px(tile.statusChipPx * if (loading?.core != null) 2f else 1f))
+            .heightIn(min = px(tile.statusChipPx * if (loading?.core != null) 2f else 1f))
             .clip(theme.style.shape.control())
             .background(theme.background.copy(alpha = tile.statusBackingAlpha))
             .padding(horizontal = px(((tile.statusChipPx - tile.statusIconPx) / 2f).coerceAtLeast(0f))),
         horizontalArrangement = Arrangement.spacedBy(px(8f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        pendingChip(activity)?.let { label ->
+            BasicText(text = label, style = text(theme.focus, theme.style.type.hint, theme), maxLines = 1)
+        }
         if (showsBar) {
             // Before the size is known the bar waits empty; the cloud beside it breathes.
             Column(Modifier.weight(1f)) {
@@ -4306,6 +4377,8 @@ private fun Cell(
     shortTitle: String? = null,
     /** The theme's object for an app ([appGlyph]), drawn in place of [mark] and its launcher [icon]. */
     themedApp: MarkGlyph? = null,
+    /** A one-ink control glyph by its slot, for a tile that is an action rather than a thing, as Add games. */
+    control: String? = null,
     art: Painter? = null,
     showTitle: Boolean,
     focused: Boolean,
@@ -4542,6 +4615,15 @@ private fun Cell(
                     }
                 } else if (glyph != null) {
                     MarkIcon(glyph, theme.artScale, glyphAlpha)
+                } else if (control != null) {
+                    themeIconOrNull(control, CONTROL_PX)?.let { ink ->
+                        Image(
+                            painter = ink.painter,
+                            contentDescription = null,
+                            colorFilter = ink.tint(theme.onBackground),
+                            modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
+                        )
+                    }
                 } else {
                     BasicText(
                         text = monogram(title),
@@ -4706,7 +4788,13 @@ private fun emptyTitle(model: app.foldcade.language.PickerModel): String? = when
 }
 
 private fun emptyActions(model: app.foldcade.language.PickerModel): List<String> = when (model.gridKind) {
-    GridKind.NoLibrary -> listOf(Copy.addFolder, Copy.addRommServer)
+    GridKind.NoLibrary -> app.foldcade.language.noLibraryActions(model).map { action ->
+        when (action) {
+            app.foldcade.language.NoLibraryAction.FindGames -> app.foldcade.language.FoundFolderCopy.findGames
+            app.foldcade.language.NoLibraryAction.AddFolder -> Copy.addFolder
+            app.foldcade.language.NoLibraryAction.AddRomm -> Copy.addRommServer
+        }
+    }
     GridKind.Unreachable -> listOf(Copy.tryAgain)
     else -> emptyList()
 }

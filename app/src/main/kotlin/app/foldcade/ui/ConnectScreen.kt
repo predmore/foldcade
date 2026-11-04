@@ -62,6 +62,7 @@ import app.foldcade.language.ConnectKind
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
+import app.foldcade.language.KeyDrop
 import app.foldcade.language.Meaning
 import app.foldcade.language.PairingCode
 import app.foldcade.language.PickerModel
@@ -69,6 +70,8 @@ import app.foldcade.language.PromptKey
 import app.foldcade.language.QrCode
 import app.foldcade.language.Theme
 import app.foldcade.language.connectFields
+import app.foldcade.language.keyDropLine
+import app.foldcade.language.keyDropQr
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.rommConnectAction
@@ -235,7 +238,8 @@ internal fun ConnectScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (!artKey) PairingSide(model, theme, compact, Modifier.width(if (compact) PANE_COMPACT else PANE).fillMaxHeight())
+                val side = Modifier.width(if (compact) PANE_COMPACT else PANE).fillMaxHeight()
+                if (artKey) KeyDropSide(app.keyDrop.state, theme, compact, side) else PairingSide(model, theme, compact, side)
             }
         }
     }
@@ -260,7 +264,7 @@ private fun PairingSide(model: PickerModel, theme: Theme, compact: Boolean, modi
             SlideSwap(target = code, scale = scale, distance = 16.dp, vertical = true, direction = { _, _ -> 1 }, key = { it?.code }) { shown ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (shown != null) {
-                        QrSquare(shown, theme, Modifier.size(square))
+                        QrSquare(shown.url, shown.shortUrl, theme, Modifier.size(square))
                         BasicText(
                             shown.spaced,
                             modifier = Modifier.fillMaxWidth().semantics { contentDescription = shown.code },
@@ -320,15 +324,15 @@ private fun PairingSide(model: PickerModel, theme: Theme, compact: Boolean, modi
  * margin scanners need, on a rounded tile so it sits with the page rather than on it.
  */
 @Composable
-private fun QrSquare(code: PairingCode, theme: Theme, modifier: Modifier) {
-    val qr = remember(code.url) { QrCode.encode(code.url) }
+private fun QrSquare(url: String, label: String, theme: Theme, modifier: Modifier) {
+    val qr = remember(url) { QrCode.encode(url) }
     val light = theme.onBackground
     val ink = theme.background
     Box(
         modifier
             .clip(RoundedCornerShape(theme.style.shape.highlightCornerDp.dp))
             .background(light)
-            .semantics { contentDescription = code.shortUrl },
+            .semantics { contentDescription = label },
     ) {
         if (qr == null) return@Box
         Canvas(Modifier.fillMaxSize()) {
@@ -339,6 +343,40 @@ private fun QrSquare(code: PairingCode, theme: Theme, modifier: Modifier) {
             val origin = (size.minDimension - step * qr.size) / 2f
             for (y in 0 until qr.size) for (x in 0 until qr.size) {
                 if (qr.dark(x, y)) drawRect(ink, Offset(origin + x * step, origin + y * step), Size(step, step))
+            }
+        }
+    }
+}
+
+/**
+ * The phone's side of the SteamGridDB form: a QR code of the page Foldcade serves on this
+ * Wi-Fi, where a phone pastes the key, and one line that follows the phone along. Without
+ * Wi-Fi the code is SteamGridDB's own page, to read the key from and type it here. A new
+ * page, as after a refused key, rises in as RomM's next code does.
+ */
+@Composable
+private fun KeyDropSide(drop: KeyDrop?, theme: Theme, compact: Boolean, modifier: Modifier) {
+    val design = theme.style
+    val scale = theme.motion.animatorScale(LocalContext.current.contentResolver)
+    val url = keyDropQr(drop)
+    BoxWithConstraints(modifier) {
+        val square = minOf(maxWidth, maxHeight * if (compact) 0.62f else 0.66f)
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
+            SlideSwap(target = url, scale = scale, distance = 16.dp, vertical = true, direction = { _, _ -> 1 }) { shown ->
+                // While the page opens, or a sent key is checked, the square waits, breathing: no code shows that cannot answer.
+                if (shown == null) EmptySquare(theme, pulse = true, scale = scale, modifier = Modifier.size(square))
+                else QrSquare(shown, Copy.steamGridDb, theme, Modifier.size(square))
+            }
+            SlideSwap(target = keyDropLine(drop), scale = scale, distance = 10.dp, vertical = true, direction = { _, _ -> 1 }) { line ->
+                BasicText(
+                    line,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = formStyle(if (drop is KeyDrop.Open && drop.phoneHere) theme.onBackground else theme.muted, design.type.hint, theme,
+                        bold = drop is KeyDrop.Open && drop.phoneHere)
+                        .copy(textAlign = TextAlign.Center),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

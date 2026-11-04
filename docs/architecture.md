@@ -10,12 +10,15 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:api` | Plugin contract. Unstable: see [plugins.md](plugins.md#stability). |
 | `:language` | Shared UI language: panels, the built-in theme, motion, copy, and the home-music setting. |
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
-| `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only; `LanHttp` reaches computers on the local network. `HttpStackGuardTest` fails a client built anywhere else. |
+| `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only; `LanHttp` reaches computers on the local network. `LanDrop` is the only listener: a one-time page on a LAN address, with a random token in its path, that takes one POST and closes. The SteamGridDB form uses it so a phone can send the key. `HttpStackGuardTest` fails a client or a server socket made anywhere else. |
 | `:romm` | RomM HTTP client, on a client from `:net`. |
 | `:gamestream` | The parts of the GameStream protocol Sunshine and Apollo hosts speak that Foldcade uses: host status, pairing, app lists, and box art. On `LanHttp` from `:net`, which reaches LAN hosts only and pins a paired host's certificate. |
 | `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:droiddeck` | DroidDeck player and library: Steam on the device. Games from DroidDeck's Add to home screen and synced `.steam` files. |
-| `:plugins:emulators` | Standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
+| `:plugins:emulators` | Launch-only standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
+| `:plugins:explus` | EX-family battery saves and clock companions. |
+| `:plugins:ppsspp` | PSP player and per-game savedata folder sync. |
+| `:plugins:dolphin` | Dolphin GameCube player and filtered Slot A GCI sync. |
 | `:plugins:gamenative` | PC player and library for GameNative. Saves stay in GameNative. |
 | `:plugins:local-folder` | Library backed by a folder on the device, its platform ids, and a deferred index of existing local art and game facts. See [local media](local-media.md). |
 | `:plugins:melonds` | Nintendo DS player for upstream melonDS Android. |

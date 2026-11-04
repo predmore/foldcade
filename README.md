@@ -49,6 +49,7 @@ Foldcade is made for one device, so it uses everything the Thor has.
 - **Pick up where you left off.** Press Home during a game and its tile says **Paused**. **A** resumes the game already running instead of starting it a second time.
 - **Close the lid, stop the clock.** Play time stops counting while the clamshell is closed.
 - **A screen with depth.** The top screen's art slides slightly when you tilt the Thor and drifts back to rest. Motion Off keeps it still.
+- **Azahar, fitted to both screens.** A [first-time Thor setup](docs/integrations/emulators.md#thor-setup) sets untouched layout and image settings in Azahar 2126.2. See what changed and restore the original in Settings › Emulators › Azahar.
 - **Your Thor, one press away.** **R1** opens Wi-Fi, Bluetooth, battery, brightness for both screens, and notifications.
 - **Its apps, drawn to match.** The Thor's own apps, common apps, and emulators appear as Afterglow icons on the grid.
 
@@ -79,11 +80,15 @@ Combine any of these sources in one home. Systems and sources get their own fold
 
 A game in a local folder that your RomM server also has is one tile: it opens the file already on your Thor, and its saves sync through RomM.
 
+On a first start Foldcade finds your `ROMs` folder by itself and asks once for file access. With no ROMs folder on the Thor it asks where your games are instead: **Sign in to RomM** shows a code to approve on your phone, and **Add a folder** opens Android's picker. Until you have a folder or a server, Home ends in an **Add games** tile that offers the same.
+
 See the [integration guides](docs/integrations/README.md) for setup and troubleshooting, and the [emulator guide](docs/integrations/emulators.md) for supported apps and formats.
 
 ### One press, and you are playing
 
 Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
+
+**A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
 
 ### Two drawers, always a press away
 
@@ -172,7 +177,7 @@ No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and M
 Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
 
 **Which saves sync?**
-melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, and Eden account saves. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
+melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, Eden account saves, PPSSPP game saves, Dolphin’s GameCube Slot A GCI saves (ISO/GCM games), and GBA.emu, GBC.emu (including RTC), NES.emu/FDS, Snes9x EX+ (including RTC) and MD.emu battery saves. Other emulators, including Flycast, M64Plus and Pizza Boy, keep their saves on the Thor; their access or format limits are listed in the [emulator guide](docs/integrations/emulators.md). Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.

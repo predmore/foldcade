@@ -10,7 +10,9 @@
 
 ## Let Foldcade see your cores
 
-RetroArch keeps its cores where other apps can't look. The first time you start a RetroArch game, Foldcade asks to see them. Choose **Continue**, then **Use this folder** and **Allow** on RetroArch's folder. You can do the same any time from **Settings › Emulators › RetroArch › Cores**, which then shows how many cores Foldcade sees.
+RetroArch keeps its cores where other apps can't look. Once your games include a system RetroArch plays, Foldcade asks once to see them, on Home, before you start anything. If you start a RetroArch game before it asked, it asks then. Choose **Continue**, then **Use this folder** and **Allow** on RetroArch's folder. You can do the same any time from **Settings › Emulators › RetroArch › Cores**, which then shows how many cores Foldcade sees.
+
+This one folder is still needed. RetroArch has no other way to tell an app which cores it has. Its core installer only copies a core in. Without the folder, Foldcade would have to guess. It could replace a core you installed, or play with a different core than yours, whose saves live in another folder.
 
 Foldcade reads the cores again before every RetroArch launch, so a core you just installed counts. Choose RetroArch's top folder, the one that holds `cores`; Foldcade says so if you pick another.
 
@@ -68,6 +70,8 @@ Foldcade syncs battery saves, the `.srm` files RetroArch writes to `saves/<core 
 Press **A** to play on the top screen or **X** on the bottom. RetroArch opens straight into the game.
 
 Home leaves RetroArch running, and starting the same game again picks up where you were. When the game has a newer save from another device, Foldcade starts it fresh so the synced save loads.
+
+Quit RetroArch through its own menu. Foldcade does not offer its generic Close or screen Move for RetroArch, and closing another game leaves a RetroArch companion alone. Clearing the installed 1.22.2 build's activity can deadlock its native shutdown. Foldcade also keeps its launcher intent out of game resumes: that intent can change the ROM/core identity RetroArch remembers and make the next start reload the game. See the [Thor checks](emulators.md#resume-and-move-on-the-thor).
 
 Starting a different game makes RetroArch 1.22 quit, and Foldcade starts it again with the new game, so you may see a short flash. RetroArch writes battery saves every 10 seconds, so after saving in a game, give it a moment before switching games. Nightly builds also save when they are put in the background.
 

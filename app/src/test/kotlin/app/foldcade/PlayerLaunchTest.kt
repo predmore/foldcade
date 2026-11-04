@@ -255,7 +255,7 @@ class PlayerLaunchTest {
 
     @Test
     fun anEmulatorLaunchesOnThePickerScreenWithAContentUri() {
-        val player = EmulatorsEntry().players.single { it.id == "ppsspp.psp" }
+        val player = app.foldcade.plugins.ppsspp.PpssppPlayer().apply { bindSaveFolder("content://test/saves") }
         val ready = planPlayerLaunch(
             player = player,
             game = game.copy(platformId = "psp"),

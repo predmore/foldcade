@@ -81,6 +81,8 @@ object Metrics {
 }
 
 object Copy {
+    const val dolphinFiles = "Dolphin files"
+    const val dolphinFolderCard = "Slot A needs a GCI Folder to sync. In Dolphin, open Settings › Config › GameCube and set GameCube Slot A Device to GCI Folder. Your old card keeps its saves, but games won’t see them in GCI Folder mode."
     const val usesBothScreens = "Both screens"
     /** The command center's button: the grid on that screen, to open a second app there. */
     const val openAnApp = "Open an app"
@@ -158,7 +160,7 @@ object Copy {
     const val apiKey = "API key"
     const val saveKey = "Save key"
     const val checkingKey = "Checking key…"
-    const val artKeyHelp = "A free key from steamgriddb.com, under Preferences › API. It finds art for Moonlight, PC and DroidDeck games, and anything the other sources miss. Foldcade keeps the key on this device."
+    const val artKeyHelp = "A free key finds art for PC, Moonlight and DroidDeck games, and anything the other sources miss. It stays on this device."
     const val artKeyRefused = "SteamGridDB didn’t accept this key."
     const val artKeyUnreachable = "Couldn’t reach SteamGridDB. Try again in a moment."
     const val rommTokenHelp = "Foldcade keeps a token, never your password."
@@ -206,7 +208,7 @@ object Copy {
     const val saveNotPlaced = "Couldn’t load the save for"
     const val saveNotPlacedBody = "The game didn’t start, so it won’t play from an old save. Check the player’s save folder, then try again."
     const val edenSaveNeedsUser = "Open Eden once so it sets up its user, then come back and start the game again. Your RomM save hasn’t been loaded."
-    const val edenSaveUnresolved = "Foldcade couldn’t find where this game’s Eden save goes on this device, or couldn’t check RomM. The game didn’t start. Your RomM save is safe."
+    const val saveUnresolved = "Foldcade couldn’t find where this game’s save goes on this device, or couldn’t check RomM. The game didn’t start. Your RomM save is safe."
     const val tryAgain = "Try again"
     const val noPlatforms = "This library has no platforms"
     const val noGames = "No games"
@@ -310,6 +312,16 @@ object Copy {
     const val themeTakenOutTitle = "A theme was taken out"
     const val themeTakenOutBody = "Foldcade stopped twice while it was in use, so it was removed."
     const val downloading = "Downloading"
+    const val findingGame = "Finding your game…"
+    const val yourGame = "Your game"
+    const val cancelLaunch = "Cancel"
+    const val preparingOnServer = "Warming up on RomM…"
+    const val retryingConnection = "Catching the connection…"
+    const val findingChip = "Finding"
+    const val preparingChip = "Preparing"
+    const val retryingChip = "Retrying"
+    const val gameUnavailable = "Can't reach this game"
+    const val gameUnavailableBody = "RomM couldn't load this game. Check the server connection and that the game is still in its library."
     const val gettingFirmware = "Getting firmware"
     const val checkingDownload = "Checking"
     const val syncingSaves = "Syncing saves"

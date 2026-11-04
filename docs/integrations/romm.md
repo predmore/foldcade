@@ -22,7 +22,7 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 ## Connect with a code
 
-1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**.
+1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**. On a first start with no ROMs folder on the Thor, Foldcade asks where your games are: **Sign in to RomM** opens the same form. So does **Add games** at the end of Home while you have no folder or server.
 2. Enter its address, including `https://` or `http://`, such as `https://romm.example.com`.
 3. A code appears beside the fields, in groups of four, with a QR code. Scan it with your phone, or open the short address under it on any phone or computer, sign in, and approve the code. The button reads **Waiting for phone…** meanwhile.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.
@@ -53,7 +53,11 @@ The catalog loads at startup, after connecting or editing a connection, and agai
 
 ## Downloads and offline play
 
-Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused.
+Press A or X on a game. Foldcade downloads its files and checks each one against the size and checksum RomM lists before launch, showing progress on the tile and top screen. An archive is checked by size, since RomM's checksum describes what is inside it. An interrupted download resumes where it stopped when the server allows it, and starts over otherwise. Verified downloads are reused. Brief connection failures and temporary server errors retry automatically with backoff. Connection and sign-in checks stay quick when the server is offline, so a downloaded game does not wait through retry backoff for its save-sync probe. **B** cancels a launch while it waits or downloads. Pressing A again on the same pending game keeps its single launch.
+
+Press a saved tile before the startup catalog arrives and **Finding your game…** appears above it, with **Finding** on the tile. Foldcade keeps the best name it knows: the catalog title, its remembered play name, then the offline catalog title. Cached cover art or a cover kept with play history stays visible when available. Foldcade waits up to a minute for the existing sync or starts one, then launches as soon as the game resolves.
+
+If RomM answers that it is preparing a file, the tile reads **Preparing** and the top screen says **Warming up on RomM…**. Foldcade respects the server’s retry delay, or backs off from two to thirty seconds without one, for up to thirty minutes, then opens the game automatically. **B** cancels that wait too.
 
 Downloads are kept in `Android/media/app.foldcade/romm` on internal storage, where emulators that open games by path, such as [RetroArch](retroarch.md), can read them. Android does not clear them to free space. **Y › Delete download** frees the space a downloaded game takes. Its saves stay, and its tile shows the cloud again until the next launch downloads it. Uninstalling Foldcade removes its downloads too.
 
@@ -73,7 +77,7 @@ Every game is handed to its emulator as a file in its own download folder, and t
 
 A folder that RomM does not split in one of these ways still downloads as RomM sends it.
 
-Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not handle server-side conversion.
+Downloaded games with a cached catalog can be played offline. New downloads need the server. Provide a format the emulator can open; Foldcade does not request a different format, but waits if the server says its file is still being prepared.
 
 ## Switch keys and firmware
 
@@ -87,7 +91,7 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, and **Eden Switch account saves** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, **Eden Switch account saves**, **PPSSPP game saves**, **Dolphin GameCube GCI bundles**, and **EX-family battery saves (including GBC and SNES RTC)** with RomM **5.4.0 or newer**.
 
 Select **Choose folder** to point Foldcade at the emulator's save folder. **Play without syncing**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play without syncing** the same way.
 
@@ -117,7 +121,13 @@ For aPS3e, pick its own folder, the one the picker opens on. Foldcade syncs the 
 
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
-Other emulators and sources manage their own saves. Save-state sync is not implemented.
+For PPSSPP, Foldcade finds the PSP folder and syncs its game-ID savedata folders as slot `savedata`. ISO, CSO v1 and PBP metadata are supported. See [PPSSPP](emulators.md#ppsspp-psp).
+
+For Dolphin, Foldcade syncs the default GameCube Slot A GCI folder for ISO/GCM games as slot `gci`. Raw cards, RVZ, Wii NAND saves, custom card settings and MMJR do not sync yet. See [Dolphin](emulators.md#dolphin-gamecube).
+
+The remaining emulators and sources manage their own saves. Save-state sync is not implemented.
+
+Temporary failures reading a save or preparing its sync retry briefly. Save uploads are never blindly repeated: a failed upload stays queued for a fresh negotiation, and failed downloads leave the existing save intact. The not-syncing and waiting-to-upload notices remain visible.
 
 Offline changes stay on the device for a later sync. When copies conflict, Foldcade asks which to play and keeps both.
 
@@ -125,7 +135,7 @@ Offline changes stay on the device for a later sync. When copies conflict, Foldc
 
 On a game with a server copy, press **Y › Saves**. The bottom screen lists every RomM save, newest first, across slots, emulators and devices. Each row shows the slot, how long ago it was saved, and where it came from when that wasn't this device. **Playing** marks the save Foldcade holds for the emulator. The top screen shows the focused save over the game's art: its screenshot when one is available, its date and time, source, slot and size. The chip beside **Saves** says how the game's saves are doing. When saves aren't syncing or are waiting to upload, the page opens on that chip, and **A** sets up or syncs.
 
-Press **A** on a save, then confirm **Play** to start the game right away. Foldcade syncs your current progress, verifies the chosen save, downloads the game if needed, and launches it fresh. Choosing an older save uploads the same bytes as a new head in Foldcade's slot. Connect to RomM before choosing. A save from another emulator may not load; the confirmation warns you. It also warns when an open game must restart. Your current save stays on RomM. A server-only game needs no download for melonDS, RetroArch or DuckStation save placement. Azahar, ARMSX2 and aPS3e need the ROM contents to find their saves; download the game first.
+Press **A** on a save, then confirm **Play** to start the game right away. Foldcade syncs your current progress, verifies the chosen save, downloads the game if needed, and launches it fresh. Choosing an older save uploads the same bytes as a new head in Foldcade's slot. Connect to RomM before choosing. A save from another emulator may not load; the confirmation warns you. It also warns when an open game must restart. Your current save stays on RomM. A server-only game needs no download for melonDS, RetroArch or DuckStation save placement. Azahar, ARMSX2, aPS3e, PPSSPP and Dolphin need the ROM contents to find their saves; download the game first.
 
 Press **Y** on a save for **Copy**, choose another slot, and confirm. This can copy progress back to an Argosy slot. Copying into Foldcade's own slot makes an open game restart the next time you play; the confirmation warns you. The source and the save already in that slot stay on RomM. Foldcade’s kept copies read **Backup**. There is no delete action. If a connection drops, reconnect before trying again; Foldcade keeps both copies and reconciles unfinished choices.
 

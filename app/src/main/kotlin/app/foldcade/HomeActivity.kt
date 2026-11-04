@@ -130,6 +130,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private companion object {
         const val EXTRA_DIALOG = "foldcade.dialog"
+        const val EXTRA_SHELF_PREVIEW = "foldcade.shelfPreview"
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
@@ -358,6 +359,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     fun dispatch(effect: Effect?) {
         when (effect) {
             is Effect.Launch -> {
+                // A second A/X keeps the original request, including its screen and bloom subject.
+                val focused = foldcade.shell.focusedGame()?.id?.let(foldcade.shell::tileOf)
+                if (focused != null && foldcade.launchWork.pending(focused)) return
                 launchScreen = foldcade.store.session.playOn.let { if (effect.elsewhere) it.flip() else it }
                 launchSubject = foldcade.shell.focusedRunningApp()
                 bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
@@ -368,10 +372,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenPlatform -> foldcade.openPlatform(effect.index)
             Effect.LeavePlatform -> foldcade.leavePlatform()
             Effect.TryAgain -> foldcade.retryLibrary()
-            Effect.AddFolder -> {
-                folderPurpose = FolderPurpose.Library
-                folderPicker.launch(null)
-            }
+            Effect.AddFolder -> pickLibraryFolder()
             is Effect.PickFolderAgain -> {
                 folderPurpose = FolderPurpose.Library
                 folderPicker.launch(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
@@ -383,6 +384,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.ShowSaveSync -> showSaveSync(effect.playerId)
             is Effect.ShowPlayerSetup -> showPlayerSetup(effect.playerId)
+            is Effect.ShowThorSetup -> showThorSetup(effect.playerId)
             is Effect.OpenPlayer -> {
                 cancelLaunches()
                 openPlayerApp(effect.playerId)
@@ -419,14 +421,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SaveRommToken -> saveRommToken()
             Effect.RetryRommDeviceCode -> beginRommDeviceCode()
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
-            Effect.SaveArtKey -> saveArtKey()
+            Effect.SaveArtKey -> foldcade.saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
             is Effect.PairStreamHost -> foldcade.pairMoonlightHost(effect.key, hostScreen())
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
             is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
-            Effect.OpenAllFilesAccess -> startFirst(AllFilesAccess(this).settingsIntents())
+            Effect.OpenAllFilesAccess -> openAllFilesAccess()
             Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
             Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
             Effect.OpenBackup -> {
@@ -672,6 +674,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.onSaveConflicts = { refreshSaveConflict() }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
+        applyShelfPreview(intent)
         applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
@@ -726,12 +729,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // A player may have been pointed at the folder Foldcade hosts for its saves while Home was away.
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
+        foldcade.shell.setAllFilesPage(false)
         // Android's all-files page may have been answered, or a card put in: look for ROM folders again.
         foldcade.refreshRomRoots()
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
-        // Usage access may have changed while Home was away, and without it no game reads Paused.
-        foldcade.pruneRunningGames()
         val displayId = display?.displayId
         val ending = displayId != null &&
             foldcade.externalPlay.sessionId != null &&
@@ -879,6 +881,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         acceptFolderLibrary(intent)
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
+        applyShelfPreview(intent)
         // Home relaunches this activity before a debug capture intent arrives.
         applyIslandPreview(intent, replace = true)
     }
@@ -893,6 +896,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             HostScreen.Bottom
         }
         foldcade.shell.showPreviewDialog(kind, index, screen)
+    }
+
+    /** Debug builds: `--ei foldcade.shelfPreview 16` fills Settings' shelves with stand-ins, 0 clears them. */
+    private fun applyShelfPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (!intent.hasExtra(EXTRA_SHELF_PREVIEW)) return
+        foldcade.shell.previewShelf(intent.getIntExtra(EXTRA_SHELF_PREVIEW, 0))
     }
 
     private fun applySaveConflictPreview(intent: Intent) {
@@ -1093,7 +1103,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return
         }
         // Only a player that would ask for its folder looks first, so other launches start at once.
-        if (!foldersChecked && player is SaveFolderHolder && player !is EdenPlayer && !player.hasSaveFolder()) {
+        if (!foldersChecked && player is SaveFolderHolder && !player.hasSaveFolder()) {
             // A library game already preparing keeps going, as before.
             if (game.libraryId != null && game.remoteKey != null && foldcade.launchWork.active) return
             val generation = beginLaunch()
@@ -1135,8 +1145,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     notPlaced?.let { failure ->
-                        val pending = edenSaveHold(failure) { PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) }
-                        showSaveNotPlaced(game.title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                        val pending = unresolvedSaveHold(failure) { PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) }
+                        showSaveNotPlaced(game.title, pending, (failure as? UnresolvedSaveNotPlaced)?.needsEdenUser == true, (failure as? UnresolvedSaveNotPlaced)?.incompatible == true)
                     }
                     if (prepared == null) return@withContext
                     finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true, edenChecked = true, saveSyncDeclinedFor = saveSyncDeclinedFor)
@@ -1408,7 +1418,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchFocused() {
         val game = foldcade.shell.focusedGame() ?: return
-        if (game.emptyShelfHint) return
+        if (game.emptyShelfHint || foldcade.launchWork.pending(game.id)) return
         if (game.androidPackage != null) {
             launchInstalled(game)
             return
@@ -1424,19 +1434,47 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return
         }
         if (game.id.startsWith("lib:") || game.id.startsWith(SAME_PREFIX)) {
-            foldcade.shell.present(DialogState(
-                kind = DialogKind.Ok,
-                title = "Game unavailable",
-                body = "This game's library details are not available yet. Reconnect the library and try again.",
-                buttons = listOf(DialogButton.Ok),
-                index = 0,
-                safeIndex = 0,
-                screen = hostScreen(),
-            ))
-            foldcade.syncRomm()
+            waitForCatalogGame(game)
             return
         }
         launchStandIn(game)
+    }
+
+    private fun waitForCatalogGame(game: ShelfGame) {
+        val tileId = game.id
+        if (foldcade.launchWork.pending(tileId)) return
+        val generation = beginLaunch(tileId)
+        val screen = launchScreen
+        foldcade.shell.beginCatalogWait(tileId)
+        foldcade.launchWork.job = foldcade.scope.launch(Dispatchers.Main.immediate) {
+            try {
+                val route = awaitCatalogGame(
+                    resolve = { foldcade.shell.launchRoute(tileId) },
+                    sync = foldcade::joinOrSyncRomm,
+                )
+                if (!launchCurrent(generation)) return@launch
+                foldcade.shell.endCatalogWait(tileId)
+                if (route != null) {
+                    foldcade.launchWork.resolved(generation)
+                    launchScreen = screen
+                    launchBackendGame(game.title.takeUnless { it == tileId } ?: route.play.label, route.play.platformId, route)
+                } else {
+                    foldcade.shell.present(DialogState(
+                        kind = DialogKind.Ok,
+                        title = Copy.gameUnavailable,
+                        body = Copy.gameUnavailableBody,
+                        buttons = listOf(DialogButton.Ok),
+                        index = 0,
+                        safeIndex = 0,
+                        screen = hostScreen(),
+                    ))
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    foldcade.shell.endCatalogWait(tileId)
+                }
+            }
+        }
     }
 
     private fun launchLibraryGame(index: Int) {
@@ -1456,6 +1494,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         fresh: Boolean = false,
         saveSyncDeclinedFor: String? = null,
     ) {
+        if (foldcade.launchWork.pending(route.tileId)) return
         if (waitForSavePreparation {
             val preparedRoute = foldcade.shell.launchRoute(route.tileId, pressed = route.play) ?: route
             launchBackendGame(title, platformId, preparedRoute, fresh, saveSyncDeclinedFor)
@@ -1474,7 +1513,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (fetching && !foldcade.shell.beginDownload(libraryId, game.remoteKey)) return
         // A game on the device pulses while Eden's firmware downloads for it. A second press waits for that too.
         if (!fetching && homeGameId(libraryId, game.remoteKey) in foldcade.shell.downloading) return
-        val generation = beginLaunch()
+        val generation = beginLaunch(route.tileId)
         foldcade.suppressSaveConflict = true
         foldcade.launchWork.job = foldcade.scope.launch {
             try {
@@ -1541,7 +1580,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 return
             }
         }
-        // Eden's keys and firmware, also before a download. The same player the RetroArch check uses.
+        if (first is SaveFolderHolder && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
+        // Eden's keys and firmware need its discovered folder, also before a download.
         if (first != null && installedEdenPackage(first, ::packageInstalled) != null) {
             try {
                 if (edenHeld(first, generation, libraryId, game.remoteKey)) {
@@ -1556,7 +1596,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 throw cancelled
             }
         }
-        if (first is SaveFolderHolder && first !is EdenPlayer && !first.hasSaveFolder()) foldcade.findPlayerSaveFolders()
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
         val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
@@ -1622,8 +1661,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (failure: SaveNotPlaced) {
                 withContext(Dispatchers.Main.immediate) {
                     if (launchCurrent(generation)) {
-                        val pending = edenSaveHold(failure) { PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) }
-                        showSaveNotPlaced(title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                        val pending = unresolvedSaveHold(failure) { PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) }
+                        showSaveNotPlaced(title, pending, (failure as? UnresolvedSaveNotPlaced)?.needsEdenUser == true, (failure as? UnresolvedSaveNotPlaced)?.incompatible == true)
                     }
                 }
                 return
@@ -1716,7 +1755,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className)) {
+        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
@@ -1744,7 +1783,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * closed since without Android saying so; the same start then opens the game anew.
      */
     private fun resumeRunning(tileId: String, title: String, platformId: String?, startAnew: () -> Unit): Boolean {
-        foldcade.pruneRunningGames()
         val running = foldcade.runningOn(tileId) ?: return false
         if (running.packageName in foldcade.closingPlayers) return true
         // A chosen save must load even when the old game is still paused behind Home.
@@ -1772,8 +1810,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             return true
         }
-        // Behind Home, a player that may have closed unseen would open its own menu, not the game.
-        if (!foldcade.closesVisible) return false
+        // Preserve a known run even without usage access. Guessing it has closed
+        // would send a fresh start and discard its unsaved progress. Without
+        // exit observations, Restart remains the explicit way to start it over.
         cancelLaunches()
         if (running.resumeStart != null) {
             // The same start boots the game again when it had closed, and it writes the saves the read-back
@@ -1903,8 +1942,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val id = gameId ?: return
         if (!foldcade.shell.isPaused(id) || !foldcade.canCloseGame(id)) return
         val running = foldcade.runningOn(id) ?: return
-        if (foldcade.shell.present(closeGameDialog(hostScreen(), running.companions.map { it.title }))) {
-            foldcade.closeGameAsk = running
+        val closable = running.copy(companions = running.companions.filter { canClearPlayerTask(it.packageName) })
+        if (foldcade.shell.present(closeGameDialog(hostScreen(), closable.companions.map { it.title }))) {
+            foldcade.closeGameAsk = closable
         }
     }
 
@@ -1959,6 +1999,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Task identity stays with its creator. A task first created by the player's menu on another screen can take this clear. */
     private fun clearBehindHome(playerPackage: String, displayId: Int): Boolean {
+        if (!canClearPlayerTask(playerPackage)) return false
         val front = packageManager.getLaunchIntentForPackage(playerPackage) ?: return false
         val home = foldcade.homeOnDisplay(displayId) ?: return false
         front.flags = CLOSE_FLAGS
@@ -2083,8 +2124,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         )
     }
 
-    private fun showSaveNotPlaced(title: String, pending: PendingBackendLaunch? = null, needsEdenUser: Boolean = false) {
-        foldcade.shell.showDialog(app.foldcade.language.saveNotPlacedDialog(title, hostScreen(), pending != null, needsEdenUser))
+    private fun showSaveNotPlaced(title: String, pending: PendingBackendLaunch? = null, needsEdenUser: Boolean = false, incompatible: Boolean = false) {
+        foldcade.shell.showDialog(app.foldcade.language.saveNotPlacedDialog(title, hostScreen(), pending != null, needsEdenUser, incompatible))
         if (pending != null) foldcade.hostedAsk = HostedAsk(pending.playerId, pending)
     }
 
@@ -2338,15 +2379,38 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     /** The first of [intents] this device can open. */
-    private fun startFirst(intents: List<Intent>) {
+    /**
+     * Android's folder picker for a library folder. It opens at the ROM folder Foldcade saw and
+     * may not read yet, so choosing it is Use this folder and Allow. Otherwise it opens at the
+     * top of internal storage, where ROM folders live, rather than wherever Android's picker
+     * was last left, which on the Thor is often an emulator's own files.
+     */
+    private fun pickLibraryFolder() {
+        folderPurpose = FolderPurpose.Library
+        val start = foldcade.shell.model.romFolderOffer?.start ?: "primary:"
+        folderPicker.launch(Uri.parse(storageFolderDocument(start)))
+    }
+
+    /**
+     * Android's all-files page for Foldcade. Its switch takes a touch: with the D-pad, focus
+     * starts on the app's header, or on nothing in touch mode, so Foldcade's other screen says
+     * what to do until the player comes back.
+     */
+    private fun openAllFilesAccess() {
+        if (startFirst(AllFilesAccess(this).settingsIntents())) foldcade.shell.setAllFilesPage(true)
+    }
+
+    /** Starts the first of [intents] Android can open. False when it has none of them. */
+    private fun startFirst(intents: List<Intent>): Boolean {
         for (intent in intents) {
             try {
                 startActivity(intent)
-                return
+                return true
             } catch (_: ActivityNotFoundException) {
                 continue
             }
         }
+        return false
     }
 
     private fun hostScreen(): HostScreen {
@@ -2419,7 +2483,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The generation this activity started, so its destruction does not cancel a later one. */
     private var ownedLaunch: Int? = null
 
-    private fun beginLaunch(): Int = foldcade.launchWork.begin().also { ownedLaunch = it }
+    private fun beginLaunch(subject: String? = null): Int = foldcade.launchWork.begin(subject).also { ownedLaunch = it }
 
     /** Drops an in-flight launch so a late result cannot open a missing-player dialog. */
     private fun cancelLaunches() {
@@ -2436,7 +2500,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun onDialog(effect: Effect.DialogChoice) {
+        if (effect.kind == DialogKind.ThorSetup || effect.kind == DialogKind.RestoreThorSetup) {
+            val playerId = effect.subject ?: return
+            when (effect.button) {
+                DialogButton.ApplyThorSetup -> changeThorSetup(playerId, restore = false)
+                DialogButton.RestoreThorSetup -> if (effect.kind == DialogKind.ThorSetup)
+                    foldcade.shell.showDialog(app.foldcade.language.restoreThorSetupDialog(playerId, hostScreen()))
+                    else changeThorSetup(playerId, restore = true)
+                DialogButton.ThorAppInfo -> foldcade.thorPresets.packageToClose()?.let { name ->
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", name, null)))
+                }
+                DialogButton.ThorFileAccess -> startFirst(AllFilesAccess(this).settingsIntents())
+                DialogButton.ChooseSaveFolder -> choosePlayerSave(playerId)
+                else -> Unit
+            }
+            return
+        }
+
         when (effect.kind) {
+            DialogKind.ThorSetup, DialogKind.RestoreThorSetup -> Unit
             DialogKind.Brightness -> if (effect.button == DialogButton.Allow) {
                 startActivity(foldcade.brightness.accessIntent())
             }
@@ -2456,12 +2538,30 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             DialogKind.FindGames -> {
                 foldcade.store.setFindGamesOffered()
-                if (effect.button == DialogButton.Allow) startFirst(AllFilesAccess(this).settingsIntents())
+                if (effect.button == DialogButton.Allow) openAllFilesAccess()
+            }
+            DialogKind.AddGames -> {
+                foldcade.store.setAddGamesAsked()
+                when (effect.button) {
+                    DialogButton.FindGames -> {
+                        foldcade.store.setFindGamesOffered()
+                        openAllFilesAccess()
+                    }
+                    // The dialog said what to choose, so the picker needs no explainer of its own.
+                    DialogButton.AddFolder -> {
+                        foldcade.shell.noteFolderExplained()
+                        pickLibraryFolder()
+                    }
+                    DialogButton.SignInRomm -> {
+                        foldcade.shell.openAddRomm()
+                        beginRommDeviceCode()
+                    }
+                    else -> Unit
+                }
             }
             DialogKind.Folder -> if (effect.button == DialogButton.ContinueGrant) {
                 foldcade.shell.noteFolderExplained()
-                folderPurpose = FolderPurpose.Library
-                folderPicker.launch(null)
+                pickLibraryFolder()
             }
             DialogKind.Ok -> cancelLaunches()
             DialogKind.ReLogin -> {
@@ -2540,7 +2640,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.EdenSaveHold -> {
                 val ask = foldcade.hostedAsk
                 foldcade.hostedAsk = null
-                answerEdenSaveHold(
+                answerUnresolvedSaveHold(
                     effect.button,
                     cancel = ::cancelLaunches,
                     openPlayer = { ask?.playerId?.let(::openPlayerApp) },
@@ -2755,58 +2855,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         },
     )
 
-    /**
-     * Checks the typed SteamGridDB key with one search, then keeps it in the
-     * credential store. A refused or unreachable key leaves the form open with a note.
-     */
-    private fun saveArtKey() {
-        val key = foldcade.shell.connectToken.trim()
-        if (key.isEmpty()) return
-        val ticket = foldcade.shell.beginSetupValidation() ?: return
-        foldcade.scope.launch {
-            try {
-                val accepted = foldcade.checkSteamGridDbKey(key)
-                if (accepted != true) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (foldcade.shell.setupValidationCurrent(ticket)) {
-                            foldcade.shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
-                        }
-                    }
-                    return@launch
-                }
-                foldcade.editCredentials {
-                    if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.setupValidationCurrent(ticket) }) return@editCredentials
-                    val saved = try {
-                        foldcade.credentials.put(
-                            SteamGridDb.CREDENTIAL_ID,
-                            SteamGridDb.CREDENTIAL_KEY,
-                            Credential.ApiToken(key),
-                        )
-                        true
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        false
-                    }
-                    if (saved) {
-                        foldcade.steamGridDbKey = key
-                        foldcade.art.forgetMisses()
-                    }
-                    withContext(Dispatchers.Main.immediate) {
-                        if (saved) foldcade.shell.setArtKeySaved(true)
-                        if (foldcade.shell.setupValidationCurrent(ticket)) {
-                            if (saved) foldcade.shell.closeConnect() else foldcade.shell.showConnectNote(Copy.artKeyUnreachable)
-                        }
-                    }
-                }
-            } finally {
-                withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    foldcade.shell.finishSetupValidation(ticket)
-                }
-            }
-        }
-    }
-
     private fun forgetArtKey() {
         foldcade.scope.launch {
             foldcade.editCredentials {
@@ -2956,8 +3004,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
                 // A launch replaced during the install still leaves the restart pending.
                 if (foldcade.edenRestartPending()?.packageName != packageName) return false
-                withContext(Dispatchers.Main.immediate) { presentEdenRestart(packageName, generation) }
-                return true
+                // A held external-storage grant need not start Eden's provider.
+                // If Eden is still stopped, it has not cached the old files.
+                return edenRestartBlocks(packageName, generation)
             }
             EdenGate.Ready -> return false
         }
@@ -3342,6 +3391,32 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (shown) foldcade.hostedAsk = HostedAsk(player.id, null)
     }
 
+    private fun showThorSetup(playerId: String) {
+        foldcade.scope.launch {
+            val player = foldcade.plugins.player(playerId) ?: return@launch
+            val setup = withContext(Dispatchers.IO) { foldcade.thorPresets.read(playerId, foldcade.playerSaveFolder(player)) } ?: return@launch
+            foldcade.shell.setThorSetup(playerId, setup)
+            foldcade.shell.showDialog(app.foldcade.language.thorSetupDialog(playerId, setup, hostScreen()))
+        }
+    }
+
+    private fun changeThorSetup(playerId: String, restore: Boolean) {
+        foldcade.scope.launch {
+            val player = foldcade.plugins.player(playerId) ?: return@launch
+            val setup = withContext(Dispatchers.IO) {
+                if (restore) foldcade.thorPresets.restore(playerId, foldcade.playerSaveFolder(player))
+                else foldcade.thorPresets.apply(playerId, foldcade.playerSaveFolder(player))
+            } ?: return@launch
+            foldcade.shell.setThorSetup(playerId, setup)
+            // A successful settings action resolves the standing launch notice as well.
+            if (setup.status in setOf(app.foldcade.language.ThorSetupStatus.Applied,
+                    app.foldcade.language.ThorSetupStatus.Kept, app.foldcade.language.ThorSetupStatus.Restored)) {
+                foldcade.dismissNotice(app.foldcade.language.ThorSetupCopy.noticePrefix + playerId)
+            }
+            foldcade.shell.showDialog(app.foldcade.language.thorSetupDialog(playerId, setup, hostScreen()))
+        }
+    }
+
     /**
      * What [player] needs once before it starts, read off the main thread from the
      * folder the user picked for it, or asked with none when none is picked.
@@ -3350,6 +3425,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private suspend fun playerSetupSteps(player: Player): String? {
         if (player !is SaveFolderHolder) return null
         val folder = foldcade.playerSaveFolder(player)
+        foldcade.applyThorPreset(player)
         return withContext(Dispatchers.IO) { foldcade.playerSaves.setupSteps(player, folder) }
     }
 
