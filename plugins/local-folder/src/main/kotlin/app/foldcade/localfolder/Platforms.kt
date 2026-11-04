@@ -18,7 +18,7 @@ data class FolderPlatform(
  * Display metadata is not part of this map.
  */
 internal object PlatformCatalog {
-    val specs: List<PlatformSpec> = listOf(
+    private val ownSpecs: List<PlatformSpec> = listOf(
         spec(
             id = "game-boy",
             name = "Game Boy",
@@ -263,6 +263,11 @@ internal object PlatformCatalog {
         ),
     )
 
+    /** Each platform with the system folder names other frontends write too, see [FRONTEND_FOLDERS]. */
+    val specs: List<PlatformSpec> = ownSpecs.map { spec ->
+        spec.copy(folders = spec.folders + FRONTEND_FOLDERS[spec.platform.id].orEmpty())
+    }
+
     val byId: Map<String, PlatformSpec>
     private val byFolder: Map<String, FolderPlatform>
     private val byExtension: Map<String, FolderPlatform>
@@ -333,6 +338,55 @@ internal object PlatformCatalog {
 
     fun platformForUniqueExtension(extension: String): FolderPlatform? = byExtension[extension]
 }
+
+/**
+ * System folder names that frontends lay ROMs out by, beyond Foldcade's own. A found
+ * ROM root (`ROMs`, `Emulation/roms`) holds one of these per system.
+ *
+ * - ES-DE's short names, from its Android `es_systems.xml`
+ *   (https://gitlab.com/es-de/emulationstation-de/-/blob/master/resources/systems/android/es_systems.xml);
+ * - Batocera's, from `es_systems.yml`
+ *   (https://github.com/batocera-linux/batocera.linux/blob/master/package/batocera/emulationstation/batocera-es-system/es_systems.yml);
+ * - RetroArch's, which names playlists and thumbnail folders after libretro-database
+ *   systems such as "Nintendo - Game Boy Advance"
+ *   (https://github.com/libretro/libretro-database/tree/master/rdb).
+ *
+ * Names Foldcade's own list already holds are left out.
+ */
+internal val FRONTEND_FOLDERS: Map<String, Set<String>> = mapOf(
+    "game-boy" to setOf("Nintendo - Game Boy"),
+    "game-boy-color" to setOf("Nintendo - Game Boy Color"),
+    "game-boy-advance" to setOf("Nintendo - Game Boy Advance"),
+    "nes" to setOf("fds", "Nintendo - Nintendo Entertainment System", "Nintendo - Family Computer Disk System"),
+    "snes" to setOf("sfc", "snesna", "Nintendo - Super Nintendo Entertainment System"),
+    "nintendo-64" to setOf("Nintendo - Nintendo 64"),
+    "gamecube" to setOf("Nintendo - GameCube"),
+    "wii" to setOf("Nintendo - Wii"),
+    "nintendo-ds" to setOf("Nintendo - Nintendo DS"),
+    "nintendo-3ds" to setOf("Nintendo - Nintendo 3DS"),
+    "playstation" to setOf("Sony - PlayStation"),
+    "playstation-2" to setOf("Sony - PlayStation 2"),
+    "playstation-3" to setOf("Sony - PlayStation 3"),
+    "psp" to setOf("Sony - PlayStation Portable"),
+    "genesis" to setOf("megadrivejp", "Sega - Mega Drive - Genesis"),
+    "master-system" to setOf("mark3", "Sega - Master System - Mark III"),
+    "game-gear" to setOf("Sega - Game Gear"),
+    "saturn" to setOf("saturnjp", "Sega - Saturn"),
+    "dreamcast" to setOf("Sega - Dreamcast"),
+    "sega-cd" to setOf("Sega - Mega-CD - Sega CD"),
+    "sega-32x" to setOf("Sega - 32X"),
+    "pc-engine" to setOf("NEC - PC Engine - TurboGrafx 16"),
+    "pc-engine-cd" to setOf("NEC - PC Engine CD - TurboGrafx-CD"),
+    "atari-2600" to setOf("Atari - 2600"),
+    "atari-7800" to setOf("Atari - 7800"),
+    "atari-lynx" to setOf("Atari - Lynx"),
+    "neo-geo-pocket" to setOf("SNK - Neo Geo Pocket"),
+    "neo-geo-pocket-color" to setOf("SNK - Neo Geo Pocket Color"),
+    "wonderswan" to setOf("wswan", "Bandai - WonderSwan"),
+    "wonderswan-color" to setOf("wswanc", "Bandai - WonderSwan Color"),
+    "virtual-boy" to setOf("Nintendo - Virtual Boy"),
+    "colecovision" to setOf("Coleco - ColecoVision"),
+)
 
 internal data class PlatformSpec(
     val platform: FolderPlatform,

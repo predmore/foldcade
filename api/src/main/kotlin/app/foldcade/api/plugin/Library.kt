@@ -198,6 +198,12 @@ fun interface GameActivityListener {
  * Open. A host that branches on this must use an `else` branch.
  */
 sealed interface GameActivity {
+    /** RomM accepted the request and is preparing the file. Added in API minor 21. */
+    data object PreparingOnServer : GameActivity
+
+    /** A safe read will retry after a brief connection failure. Added in API minor 21. */
+    data object Retrying : GameActivity
+
     /** The game's bytes are arriving. [totalBytes] is null when the size is not known. */
     data class Downloading(val bytesSoFar: Long, val totalBytes: Long?) : GameActivity
 

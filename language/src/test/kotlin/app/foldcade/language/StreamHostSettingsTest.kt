@@ -18,7 +18,9 @@ class StreamHostSettingsTest {
         assertTrue(rows.indexOf(tile) in 0 until rows.indexOf(Row.Artwork))
         assertEquals("game-win", rowText(tile, model).label)
         val row = Row.StreamHost(gameWin.key)
-        assertEquals(listOf(row), settingsInnerRows(SettingsInner.Host(gameWin.key), model))
+        // Moonlight names computers and pins games only for the Home app, so the page offers it until held.
+        assertEquals(listOf(row, Row.SetAsHome), settingsInnerRows(SettingsInner.Host(gameWin.key), model))
+        assertEquals(listOf(row), settingsInnerRows(SettingsInner.Host(gameWin.key), model.copy(homeRoleHeld = true)))
         assertEquals(Copy.hostGames, rowText(row, model).label)
         assertEquals(RowControl.Toggle(false), rowControl(row, model))
         val paired = model.copy(streamHosts = listOf(gameWin.copy(paired = true)))

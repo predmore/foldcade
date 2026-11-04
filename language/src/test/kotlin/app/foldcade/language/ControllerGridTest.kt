@@ -5,6 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ControllerGridTest {
+    @Test fun heldAAndXNeverRepeatIntoAnotherLaunch() {
+        val model = PickerModel(count = 3, rowsPerPage = 3, focus = GridFocus(0))
+        assertNotNull(reduce(model, Meaning.Activate, repeatCount = 0).second)
+        assertNull(reduce(model, Meaning.Activate, repeatCount = 1).second)
+        assertNull(reduce(model, Meaning.ActivateBottom, repeatCount = 1).second)
+    }
+
     @Test fun unusedControllerButtonsCannotFallBackToActivation() {
         val unused = listOf(KeyEvent.KEYCODE_BUTTON_THUMBL,
             KeyEvent.KEYCODE_BUTTON_MODE, KeyEvent.KEYCODE_BUTTON_C, KeyEvent.KEYCODE_BUTTON_Z,

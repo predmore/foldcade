@@ -34,7 +34,7 @@ class ThemeContractTest {
             contract.writeText(themeContractJson(afterglow))
             schema.writeText(themeSchemaJson(afterglow))
         }
-        val stale = "is stale: run ./gradlew :language:testDebugUnitTest --tests '*ThemeContractTest*' -PwriteThemeContract=true"
+        val stale = "is stale: run ./gradlew updateThemeContract"
         assertEquals("themes/contract.json $stale", themeContractJson(afterglow), contract.readText())
         assertEquals("themes/theme.schema.json $stale", themeSchemaJson(afterglow), schema.readText())
     }

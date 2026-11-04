@@ -51,6 +51,8 @@ Saved settings, Home edits, file durability, credentials, and transfer rules are
 
 Save discovery reuses writable SAF trees first. Optional all-files access adds `SharedStorageProvider` at `<applicationId>.storage`, with `primary:<path>` ids over primary shared storage. It has no picker roots and refuses every uid except Foldcade's own, even with a URI grant. Every storage operation requires current Android all-files access; app data (`Android/data`, `Android/obb`), traversal and symbolic links are refused. Save writes take the same `SaveFileLock` as hosted saves; file creation never replaces an existing name, rename refuses a taken name, and deletion only removes files or empty folders. The manifest exports it behind `MANAGE_DOCUMENTS`, as Android requires for a DocumentsProvider. SAF and its pickers work without the optional permission.
 
+The same access lets the library find ROM folders by itself. `findRomRoots` looks at the top of every mounted volume for `ROMs`/`roms` and `Emulation/roms`, in any case, and keeps one only when it holds a folder the local-folder catalog names as a system (ES-DE, Batocera and libretro names included). Android shows another app's folders without any storage access, so Home can offer the access once, naming what it saw. Found folders are stored apart from picked trees (`found_roots`, document ids such as `primary:ROMs`), never overlap a pick, and a removed one (`removed_roots`, backed up) is never found again. Each is read as a tree on `LibraryFilesProvider` at `<applicationId>.library`: document ids are written as the external storage provider writes them, so the scan, the media index, sibling grants for cue sheets, and `SharedPaths` work unchanged. It serves only documents inside a current found folder, only for reading, only with all-files access, with no picker roots, behind `MANAGE_DOCUMENTS`; a player reads a game through its launch's grant. Looks happen off Main before the first folder scan and on every return Home; only a changed set rescans, and R1 announces a folder's games once. With no folder of the player's own, an empty or unreachable found folder never replaces Home with an empty or error grid. The provider reads the stored folders itself, so a player resuming into a cold Foldcade still opens its game.
+
 Resource themes supply icons, styling, and animated scenes through a versioned ZIP contract. `:language` compiles scene expressions and tracks; the app's native renderer reuses shaders, textures, and path buffers. Afterglow's complete background definitions live under `themes/afterglow/backgrounds`. Icon providers and background selections compose independently. See [themes](themes.md) for author tools and the debug-only native preview.
 
 ## Plugins
@@ -63,7 +65,14 @@ Release publishing is specified in [releases.md](releases.md).
 
 ### Unit tests
 
-`.github/workflows/unit-tests.yml` runs on pull requests and on pushes to `main`. It checks `versionName` with `.github/release/check-version-bump.sh`, then runs `./gradlew testDebugUnitTest`. The Gradle configuration cache is read-only on pull requests and writable on pushes to `main`. A new push cancels a stale pull-request run. A push to `main` does not cancel. The Release workflow also keeps `cancel-in-progress` false.
+`.github/workflows/unit-tests.yml` runs on pull requests and on pushes to `main`.
+
+- **versionCode** checks `versionName` with `.github/release/check-version-bump.sh`.
+- **testDebugUnitTest** runs `./gradlew testDebugUnitTest`.
+- **lintDebug** runs `./gradlew lintDebug`, which is `:app:lintDebug` and `:language:lintDebug`. The build fails on lint errors. Existing warnings stay warnings.
+- **generated icons** runs `python3 tools/art/icons.py` and fails when `themes/afterglow/icons/`, `art/svg/`, or the icon slots in `themes/afterglow/theme.json` differ. The script uses the Python standard library only.
+
+The Gradle jobs use the configuration cache. It is read-only on pull requests and writable on pushes to `main`. They share the Android SDK package cache. A new push cancels a stale pull-request run. A push to `main` does not cancel. The Release workflow also keeps `cancel-in-progress` false.
 
 ### Release
 
