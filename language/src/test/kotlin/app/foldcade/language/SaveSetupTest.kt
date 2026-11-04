@@ -37,6 +37,16 @@ class SaveSetupTest {
     private fun PickerModel.saves(id: String, change: (PlayerSaveSetting) -> PlayerSaveSetting) =
         copy(playerSaves = playerSaves.map { if (it.playerId == id) change(it) else it })
 
+    @Test fun exLaunchModeIsVisibleBeforeAndAfterPickingItsFolder() {
+        for (key in listOf("gba-emu.game-boy-advance", "gbc-emu.game-boy", "nes-emu.nes", "snes9x-ex.snes", "md-emu.genesis")) {
+            for (done in listOf(false, true)) {
+                val tile = SetupTile(key, "EX app", null, listOf(SetupStep.Folder(key, FolderPick.Browse, true, done)))
+                assertTrue(SaveSetupCopy.stepBody(tile)!!.contains(SaveSetupCopy.exLaunchMode("EX app")))
+            }
+        }
+        assertNull(SaveSetupCopy.stepBody(SetupTile("melonds", "melonDS", null, emptyList())))
+    }
+
     @Test fun aFolderFoundWithoutAskingSaysWhereOnThePageAndInSettings() {
         val found = model.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
         assertEquals("saves/nds", rowText(Row.PlayerSave("melonds"), found).value)

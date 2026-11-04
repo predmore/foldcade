@@ -148,6 +148,12 @@ class LaunchSavesTest {
         repeat(2) {
             val failure = runCatching { launch.prepare(route, player, local) }.exceptionOrNull()
             assertTrue(failure is UnresolvedSaveNotPlaced)
+            assertTrue((failure as UnresolvedSaveNotPlaced).incompatible)
+            val dialog = app.foldcade.language.saveNotPlacedDialog("New", app.foldcade.language.HostScreen.Bottom,
+                playAnyway = true, incompatible = failure.incompatible)
+            assertEquals(app.foldcade.language.SavePickerCopy.incompatible, dialog.body)
+            assertFalse(dialog.buttons.contains(app.foldcade.language.DialogButton.SetUpSaves))
+            assertEquals(app.foldcade.language.DialogButton.NotNow, dialog.buttons[dialog.index])
             assertFalse(reachable)
             assertTrue(awaiting.isEmpty())
             assertTrue(marks.isEmpty())

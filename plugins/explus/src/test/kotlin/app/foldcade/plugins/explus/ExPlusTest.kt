@@ -29,13 +29,14 @@ class ExPlusTest {
         assertTrue(accepts("md-emu", "Disc.cue", "Disc.brm", "sega-cd"))
         assertFalse(accepts("md-emu", "Disc.cue", "Disc.srm", "sega-cd"))
     }
-    @Test fun gbcClockAndEveryNamedBatterySlotTravelTogetherButStatesDoNot() {
+    // Nested GBC/RTC fixtures exercise the filter; upstream writes these files at the root.
+    @Test fun gbcClockAndMatchingNestedFilesAreAcceptedButStatesAreNot() {
         for (path in listOf("Pokemon.sav", "Pokemon.rtc", "Pokemon/saves/run 2/auto.sav", "Pokemon/saves/run 2/auto.rtc"))
             assertTrue(path, accepts("gbc-emu", "Pokemon.gbc", path))
         for (path in listOf("Pokemon.0A.gqs", "Pokemon/saves/run 2/auto.0A.gqs", "Other/saves/run 2/auto.sav", "Pokemon/saves/../auto.sav", "auto.sav"))
             assertFalse(path, accepts("gbc-emu", "Pokemon.gbc", path))
     }
-    @Test fun snesSrtcAndSpc7110ClockCompanionsTravelWithTheirBatterySlots() {
+    @Test fun snesRootClocksTravelWithSramAndMatchingNestedFiles() {
         for (path in listOf("Game.srm", "Game.rtc", "Game/saves/run 2/auto.srm", "Game/saves/run 2/auto.rtc"))
             assertTrue(path, accepts("snes9x-ex", "Game.sfc", path))
         for (path in listOf("Other.rtc", "Game.0A.frz", "Game.rtc.bak"))

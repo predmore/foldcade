@@ -99,7 +99,7 @@ internal class LaunchSaves(
             // older bundle with no compatible destination; preserve it and ask.
             if (player is ExPlusPlayer && saves.hasIncompatibleSave(spots, placement.savesToPlace)) {
                 onSpots(owner, player, emptyList())
-                throw UnresolvedSaveNotPlaced()
+                throw UnresolvedSaveNotPlaced(incompatible = true)
             }
             val written = mutableListOf<String>()
             val placed = saves.place(owner.backendId, owner, player, spots, placement.savesToPlace, written)
@@ -186,7 +186,7 @@ internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
 /** No compatible destination, before any write; an explicit per-launch opt-out is safe. */
-internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false) : SaveNotPlaced()
+internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false, val incompatible: Boolean = false) : SaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>): Player {

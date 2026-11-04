@@ -515,17 +515,22 @@ fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
 )
 
 /** An unplaced save stops the launch; unresolved save destinations offer an explicit per-launch opt-out. */
-fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false): DialogState = DialogState(
+fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false, incompatible: Boolean = false): DialogState = DialogState(
     kind = if (playAnyway) DialogKind.EdenSaveHold else DialogKind.Ok,
     title = "${Copy.saveNotPlaced} $title",
     body = when {
+        playAnyway && incompatible -> SavePickerCopy.incompatible
         needsEdenUser -> Copy.edenSaveNeedsUser
         playAnyway -> Copy.saveUnresolved
         else -> Copy.saveNotPlacedBody
     },
-    buttons = if (playAnyway) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing, DialogButton.NotNow) else listOf(DialogButton.Ok),
-    index = 0,
-    safeIndex = if (playAnyway) 2 else 0,
+    buttons = when {
+        playAnyway && incompatible -> listOf(DialogButton.PlayWithoutSyncing, DialogButton.NotNow)
+        playAnyway -> listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing, DialogButton.NotNow)
+        else -> listOf(DialogButton.Ok)
+    },
+    index = if (playAnyway && incompatible) 1 else 0,
+    safeIndex = if (playAnyway && incompatible) 1 else if (playAnyway) 2 else 0,
     screen = screen,
 )
 
