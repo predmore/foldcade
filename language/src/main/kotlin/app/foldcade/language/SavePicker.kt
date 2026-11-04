@@ -235,7 +235,7 @@ object SavePickerCopy {
  * Slot names that are a file's or Foldcade's own, not a name anyone chose: Azahar's "title",
  * melonDS's "sav", RetroArch's "srm". Those saves go by when they were made instead.
  */
-private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "archive", "default", "save")
+private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "gci", "archive", "default", "save")
 
 /** True when [slot] says nothing to a player, so its saves are named by date. */
 fun genericSlot(slot: String?, ownSlots: List<String>): Boolean =

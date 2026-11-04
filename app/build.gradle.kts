@@ -181,6 +181,8 @@ dependencies {
     implementation(project(":plugins:azahar"))
     implementation(project(":plugins:droiddeck"))
     implementation(project(":plugins:duckstation"))
+    implementation(project(":plugins:dolphin"))
+    implementation(project(":plugins:ppsspp"))
     implementation(project(":plugins:eden"))
     implementation(project(":plugins:emulators"))
     implementation(project(":plugins:gamenative"))

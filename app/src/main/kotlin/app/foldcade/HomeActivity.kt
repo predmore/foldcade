@@ -1153,8 +1153,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 withContext(Dispatchers.Main.immediate) {
                     if (!launchCurrent(generation) || pendingLaunch != index) return@withContext
                     notPlaced?.let { failure ->
-                        val pending = edenSaveHold(failure) { PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) }
-                        showSaveNotPlaced(game.title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                        val pending = unresolvedSaveHold(failure) { PendingBackendLaunch(game.title, apiGame.platformId, GameRoute(game.id, apiGame, apiGame), player.id, launchScreen, false) }
+                        showSaveNotPlaced(game.title, pending, (failure as? UnresolvedSaveNotPlaced)?.needsEdenUser == true)
                     }
                     if (prepared == null) return@withContext
                     finishLaunch(index, game, player, prepared.target, apiGame, generation, prepared.spots, coresRead = true, edenChecked = true, saveSyncDeclinedFor = saveSyncDeclinedFor)
@@ -1650,8 +1650,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (failure: SaveNotPlaced) {
                 withContext(Dispatchers.Main.immediate) {
                     if (launchCurrent(generation)) {
-                        val pending = edenSaveHold(failure) { PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) }
-                        showSaveNotPlaced(title, pending, (failure as? EdenSaveNotPlaced)?.needsUser == true)
+                        val pending = unresolvedSaveHold(failure) { PendingBackendLaunch(title, platformId, route, plan.player.id, launchScreen, fresh) }
+                        showSaveNotPlaced(title, pending, (failure as? UnresolvedSaveNotPlaced)?.needsEdenUser == true)
                     }
                 }
                 return
@@ -2622,7 +2622,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.EdenSaveHold -> {
                 val ask = foldcade.hostedAsk
                 foldcade.hostedAsk = null
-                answerEdenSaveHold(
+                answerUnresolvedSaveHold(
                     effect.button,
                     cancel = ::cancelLaunches,
                     openPlayer = { ask?.playerId?.let(::openPlayerApp) },

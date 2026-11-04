@@ -10,6 +10,7 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveFolderPart
+import app.foldcade.api.plugin.SaveArchiveFilter
 import app.foldcade.api.plugin.StartDisplay
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -51,6 +52,59 @@ class PlayerSaveFoldersTest {
     fun tearDown() {
         backups.toFile().deleteRecursively()
         handover.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun flatFilteredCardsKeepOtherGamesAndUseArgosyZipNames() {
+        val player = filteredCard()
+        docs.put("card/a.gci", "GAME01-old")
+        docs.put("card/other.gci", "OTHER2-precious")
+        val spots = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        val observed = saves.changedSince("romm", GAME, player, spots)
+        val bytes = Files.readAllBytes(Paths.get(URI(observed.slots.single().contentUri!!)))
+        assertEquals(setOf("a.gci"), saveEntries(bytes, setOf(""))!!.keys)
+        saves.noteHandedOver("romm", GAME, player, spots, observed)
+        docs.library[SERVER] = zipOf("b.gci" to "GAME01-new")
+        assertTrue(saves.place("romm", GAME, player, spots, listOf(placed())))
+        assertNull(docs.text("card/a.gci"))
+        assertEquals("GAME01-new", docs.text("card/b.gci"))
+        assertEquals("OTHER2-precious", docs.text("card/other.gci"))
+        assertEquals(1L, Files.walk(backups).use { paths -> paths.filter(Files::isRegularFile).count() })
+    }
+
+    @Test
+    fun filteredCardRefusesAnotherGamesBytesAndNameCollisionsBeforeWriting() {
+        val player = filteredCard()
+        val spots = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        docs.put("card/collision.gci", "OTHER2-precious")
+        for (zip in listOf(zipOf("foreign.gci" to "OTHER2-new"), zipOf("collision.gci" to "GAME01-new"), zipOf("../escape.gci" to "GAME01-new"))) {
+            docs.library[SERVER] = zip
+            assertFalse(saves.place("romm", GAME, player, spots, listOf(placed())))
+        }
+        assertEquals(0, docs.writes)
+        assertEquals("OTHER2-precious", docs.text("card/collision.gci"))
+    }
+
+    @Test
+    fun filteredCardKeepsBothCopiesAcrossDeathDuringReplacement() {
+        val player = filteredCard()
+        docs.put("card/a.gci", "GAME01-old")
+        val spots = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM_URI))
+        saves.noteHandedOver("romm", GAME, player, spots, saves.changedSince("romm", GAME, player, spots))
+        docs.library[SERVER] = zipOf("a.gci" to "GAME01-new", "b.gci" to "GAME01-new2")
+        docs.dieWritingTo = "card/b.gci"
+        assertThrows(AppDied::class.java) { saves.place("romm", GAME, player, spots, listOf(placed())) }
+        assertTrue(saves.changedSince("romm", GAME, player, spots).slots.isEmpty())
+        val backup = Files.walk(backups).use { paths -> paths.filter(Files::isRegularFile).findFirst().get() }
+        assertArrayEquals("GAME01-old".toByteArray(), saveEntries(Files.readAllBytes(backup), setOf(""))!!["a.gci"])
+        assertArrayEquals(zipOf("a.gci" to "GAME01-new", "b.gci" to "GAME01-new2"), docs.library[SERVER])
+    }
+
+    private fun filteredCard(): Player = object : Player by Folders(listOf(SaveFolderPart("", "card"))) {
+        override fun saveArchiveFilter(slot: String, game: app.foldcade.api.plugin.GameFileReader) = object : SaveArchiveFilter {
+            override val headerSize = 6
+            override fun accepts(path: String, header: ByteArray) = '/' !in path && String(header) == "GAME01"
+        }
     }
 
     @Test
@@ -375,7 +429,7 @@ class PlayerSaveFoldersTest {
 
         override fun displayName(uri: String): String? = names[uri]
 
-        override fun head(uri: String, size: Int): ByteArray? = heads[uri]?.let { it.copyOf(minOf(size, it.size)) }
+        override fun head(uri: String, size: Int): ByteArray? = (heads[uri] ?: read(uri))?.let { it.copyOf(minOf(size, it.size)) }
 
         override fun find(folderUri: String, name: String): String? = uri(name).takeIf { name in files }
 
