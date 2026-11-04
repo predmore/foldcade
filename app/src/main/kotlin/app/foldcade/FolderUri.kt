@@ -16,7 +16,7 @@ internal fun folderGrantUri(uri: String): String {
 /** A save folder roots at its document, or at its tree when no document is named. */
 internal fun folderDocumentId(uri: String): String {
     val parts = URI(uri).rawPath.orEmpty().split('/')
-    val document = parts.indexOf("document").takeIf { it >= 0 } ?: parts.indexOf("tree")
+    val document = parts.indexOf("document").takeIf { it >= 0 } ?: parts.indexOf("tree").takeIf { it >= 0 } ?: parts.indexOf("root")
     require(document >= 0 && document + 1 < parts.size)
     return decodeDocumentId(parts[document + 1])
 }
@@ -26,13 +26,18 @@ internal fun folderTreeId(uri: String): String = folderDocumentId(folderGrantUri
 internal fun folderDocumentUri(tree: String, documentId: String): String =
     "${folderGrantUri(tree)}/document/${encodeDocumentId(documentId)}"
 
-/** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
 /** A tree on [authority] rooted at [documentId], encoded as `DocumentsContract.buildTreeDocumentUri` encodes it. */
 internal fun treeUri(authority: String, documentId: String): String = "content://$authority/tree/${encodeDocumentId(documentId)}"
 
+/** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
 internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
-    if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
+    if (URI(uri).authority == "org.dolphinemu.dolphinemu.user" && id.trimEnd('/') == "root") app.foldcade.language.Copy.dolphinFiles
+    else if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
 }
+
+/** A folder on Android's own storage by its document id (`primary:ROMs`, `1A2B-3C4D:roms`), where a picker can open. */
+internal fun storageFolderDocument(documentId: String): String =
+    "content://${SharedPaths.EXTERNAL_STORAGE_AUTHORITY}/document/${encodeDocumentId(documentId)}"
 
 internal fun primaryFolderDocument(path: String): String =
     "content://com.android.externalstorage.documents/document/${encodeDocumentId("primary:$path")}"

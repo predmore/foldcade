@@ -80,6 +80,8 @@ Combine any of these sources in one home. Systems and sources get their own fold
 
 A game in a local folder that your RomM server also has is one tile: it opens the file already on your Thor, and its saves sync through RomM.
 
+On a first start Foldcade finds your `ROMs` folder by itself and asks once for file access. With no ROMs folder on the Thor it asks where your games are instead: **Sign in to RomM** shows a code to approve on your phone, and **Add a folder** opens Android's picker. Until you have a folder or a server, Home ends in an **Add games** tile that offers the same.
+
 See the [integration guides](docs/integrations/README.md) for setup and troubleshooting, and the [emulator guide](docs/integrations/emulators.md) for supported apps and formats.
 
 ### One press, and you are playing
@@ -175,7 +177,7 @@ No. Folders on your Thor or SD card, Android games, GameNative, DroidDeck, and M
 Any RomM 5.x server to browse, download, and play. Save sync needs 5.4.0 or newer.
 
 **Which saves sync?**
-melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, and Eden account saves. Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
+melonDS, RetroArch battery saves, Azahar, DuckStation memory cards, ARMSX2 folder memory cards, aPS3e, Eden account saves, PPSSPP game saves, and Dolphin’s GameCube Slot A GCI saves (ISO/GCM games). Other emulators keep their saves on the Thor. Save states are not synced. See [save sync](docs/integrations/romm.md#save-sync) for setup.
 
 **Does Foldcade keep my password?**
 No. RomM sign-in uses a token, and Foldcade does not store your password.

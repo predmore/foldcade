@@ -21,6 +21,8 @@ class SaveLaunchOfferTest {
         for (answer in listOf(SaveFolderAnswer.PlayWithoutSyncing, SaveFolderAnswer.PickerCancelled)) {
             val continuation = saveLaunchContinuation(player.id, answer, needsFolderToStart = false) as SaveLaunchContinuation.Launch
             assertEquals(player.id, continuation.declinedFor)
+            assertTrue(saveSyncForLaunch(player, continuation.declinedFor))
+            assertTrue(saveSyncForLaunch(player, null))
             assertNull(saveLaunchOffer(player, true, declinedFor = continuation.declinedFor))
             assertEquals(SaveLaunchOffer.Folder, saveLaunchOffer(player, true))
         }
@@ -76,7 +78,7 @@ class SaveLaunchOfferTest {
             val work = LaunchWork()
             val generation = work.begin()
             val actions = mutableListOf<String>()
-            answerEdenSaveHold(
+            answerUnresolvedSaveHold(
                 choice.button,
                 cancel = { work.cancel(); actions += "cancel" },
                 openPlayer = { actions += "open" },
@@ -89,7 +91,7 @@ class SaveLaunchOfferTest {
 
     @Test fun settingUpAHeldEdenSaveCancelsBeforeOpeningThePlayer() {
         val actions = mutableListOf<String>()
-        answerEdenSaveHold(
+        answerUnresolvedSaveHold(
             DialogButton.SetUpSaves,
             cancel = { actions += "cancel" },
             openPlayer = { actions += "open" },
@@ -105,7 +107,7 @@ class SaveLaunchOfferTest {
         val choice = reduce(model, Meaning.Activate).second as Effect.DialogChoice
         val actions = mutableListOf<String>()
         var declinedFor: String? = null
-        answerEdenSaveHold(
+        answerUnresolvedSaveHold(
             choice.button,
             cancel = { actions += "cancel" },
             openPlayer = { actions += "open" },

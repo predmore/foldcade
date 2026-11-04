@@ -90,6 +90,7 @@ import app.foldcade.language.chordIndex
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.folderCount
+import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.HeroItem
 import app.foldcade.language.HeroSubject
 import app.foldcade.language.HomeFolder
@@ -145,6 +146,10 @@ import app.foldcade.language.focusAndActivateDialog
 import app.foldcade.language.finishIslandRetire
 import app.foldcade.language.replaceIsland
 import app.foldcade.language.findGamesPrompt
+import app.foldcade.language.addGamesDialog
+import app.foldcade.language.noLibraryActions
+import app.foldcade.language.retroArchCoresFirstDialog
+import app.foldcade.language.RomFolderOffer
 import app.foldcade.language.homePrompt
 import app.foldcade.language.panelRows
 import app.foldcade.language.previewDialogState
@@ -160,6 +165,10 @@ import androidx.compose.runtime.setValue
 import kotlin.coroutines.cancellation.CancellationException
 
 private const val HOME_RETURN_WAIT_MS = 30_000L
+private const val ADD_GAMES_HERO = "add-games"
+
+/** Home's Add games tile and its top screen wear the plus Settings › Library's Add wears. */
+internal const val ADD_GAMES_GLYPH = "control.add"
 
 /** How long after a landing a Home recall counts as the same press reaching the other screen. */
 private const val HOME_RECALL_ECHO_MS = 1_000L
@@ -930,6 +939,15 @@ class ShellController(
             publish(next)
             return effect
         }
+        // A or X on Home's Add games tile offers the ways to bring games, the one that fits first.
+        // It is an action, not a thing, so Y has nothing to move or file there, unless it undoes.
+        if (onAddGamesTile() && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom || meaning == Meaning.Options && !undoOffered())) {
+            if (meaning == Meaning.Options || repeatCount > 0) return null
+            heldActions.capture(meaning.ordinal)
+            publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, model.romFolderOffer)))
+            cue(model.themeIndex, "open")
+            return null
+        }
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
             model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
             homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary || it == HomeKeys.FindResults } &&
@@ -1675,7 +1693,7 @@ class ShellController(
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
-        (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
+        !(onAddGamesTile() && !undoOffered()) && (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
             (find != null || model.count > 0 || model.tileActions?.undo == true)
 
     fun homeEditing(): Boolean =
@@ -2814,6 +2832,95 @@ class ShellController(
         model = model.copy(allFilesGranted = granted)
     }
 
+    /**
+     * ROM folders Foldcade saw and may not read yet, or null. While set, the empty library and
+     * Add games lead with Find games, and Add a folder opens Android's picker there. The empty
+     * library's buttons follow it, so its focus starts again on the first.
+     */
+    fun setRomFolderOffer(offer: RomFolderOffer?) {
+        if (model.romFolderOffer == offer) return
+        val next = model.copy(romFolderOffer = offer)
+        publish(
+            if (next.libraryGrid && next.gridKind == GridKind.NoLibrary) {
+                next.copy(count = noLibraryActions(next).size, focus = if (next.focus.chrome == null) GridFocus() else next.focus)
+            } else next,
+        )
+    }
+
+    /** Android's all-files page is open beside Foldcade, whose other screen says how to answer it. */
+    fun setAllFilesPage(open: Boolean) {
+        if (model.allFilesPage != open) publish(model.copy(allFilesPage = open))
+    }
+
+    /**
+     * Whether the player has a place games come from: a folder, found or picked, a RomM server,
+     * or ROMs already on the board. Streams and Android games alone leave Home's way in.
+     */
+    private fun hasGameSource(): Boolean =
+        model.folders.isNotEmpty() || model.rommSaved || store.rommOrigin() != null || store.folderTrees().isNotEmpty() ||
+            (model.allFilesGranted && store.foundRoots().isNotEmpty()) || libraryItems.any { it.kind == HomeKind.Rom }
+
+    /**
+     * Home's root strip ends in an Add games tile, in the first slot past the last tile, while
+     * no folder or RomM server brings games. Its slot, or null. Gone once a source exists, and
+     * while the board is being arranged.
+     */
+    fun addGamesSlot(): Int? {
+        if (!showingHome() || !home.board.atRoot || home.board.editing || home.board.hold != null || home.selection != null) return null
+        if (hasGameSource()) return null
+        return home.visibleCount()
+    }
+
+    private fun undoOffered(): Boolean = model.tileActions?.undo == true
+
+    /** Home with nothing over it and no tool holding the keys, where an ask can come up by itself. */
+    private fun homeIdle(): Boolean = homeActive() && find == null && homeKeys() == HomeKeys.Idle
+
+    /** The cursor rests on Home's Add games tile, with nothing open over Home. */
+    fun onAddGamesTile(): Boolean =
+        homeActive() && find == null && homeKeys() == HomeKeys.Idle && model.focus.chrome == null &&
+            model.focus.cellIndex == addGamesSlot()
+
+    /**
+     * Once, on a first run with no ROM folder seen and no RomM server, asks where the games are:
+     * RomM's phone sign-in first, then a folder. A player who already has a source never sees it.
+     * Never over another dialog. Returns whether it showed.
+     */
+    fun maybeAskAddGames(): Boolean {
+        // Owed while anything else has the keys: a page, a form, a menu, or a Home tool.
+        if (store.addGamesAsked() || !homeIdle() || model.romFolderOffer != null) return false
+        if (hasGameSource()) {
+            store.setAddGamesAsked()
+            return false
+        }
+        publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, null, ask = true)))
+        return true
+    }
+
+    /**
+     * Systems in the library an installed RetroArch can play, by name, A to Z. The first-run
+     * cores ask names them.
+     */
+    internal fun retroArchSystems(): List<String> =
+        libraryGames.values.map { it.platformId }.distinct().map(::canonicalSystem).distinct().filter { id ->
+            plugins.playersFor(id).any { it is RetroArchPlayer && it.packageNames.any(installedPlayers::contains) }
+        }.map { id -> plugins.platformDefinitions().firstOrNull { it.id == id }?.displayName ?: id }.sortedBy { it.lowercase() }
+
+    /**
+     * Once the library has games RetroArch plays, asks for its cores folder before any launch,
+     * so the first game starts without a stop. Asked once, as the launch's own offer is, and
+     * never while Foldcade can already see the cores. Returns whether it showed.
+     */
+    fun maybeOfferRetroArchCores(): Boolean {
+        // Only over Home itself: a page, a menu, the sign-in form, or a Home tool finishes first.
+        if (store.retroArchCoresOffered() || !homeIdle()) return false
+        val retroArch = model.retroArch ?: return false
+        if (retroArch.cores != null) return false
+        val systems = retroArchSystems().takeIf { it.isNotEmpty() } ?: return false
+        publish(model.copy(dialog = retroArchCoresFirstDialog(model.layout.gridScreen, systems)))
+        return true
+    }
+
     /** Once, after a session exists. Never on a cold start, and never over another dialog. */
     fun maybeOfferUsageAccess(hasTrackedSession: Boolean, granted: Boolean, screen: HostScreen) {
         val blocked = model.dialog != null
@@ -3237,6 +3344,12 @@ class ShellController(
         val carried = homeCarry()?.let { home.faceOf(it.id) }?.let(::homeShelf)
         if (carried != null) return heroItem(carried)
         if (showingHome() && home.face(model.focus.cellIndex)?.empty == true) return restoredGapHero(model.focus.cellIndex)
+        if (model.focus.chrome == null && model.focus.cellIndex == addGamesSlot()) return HeroSubject.Item(HeroItem(
+            key = ADD_GAMES_HERO,
+            title = Copy.addGames,
+            detail = FoundFolderCopy.addGamesLine(model.romFolderOffer),
+            control = ADD_GAMES_GLYPH,
+        ))
         if (model.gridKind == GridKind.Platforms) {
             val entry = focusedEntry() ?: return null
             return HeroSubject.Folder(
@@ -3419,7 +3532,7 @@ class ShellController(
         platformOrder = emptyList()
         show(
             cells = emptyList(),
-            count = 2,
+            count = noLibraryActions(model).size,
             kind = GridKind.NoLibrary,
             empty = EmptyGrid.None,
             atRoot = true,

@@ -53,8 +53,9 @@ class EmulatorPlayerTest {
         assertEquals(ids.distinct(), ids)
         assertEquals(EMULATORS.sumOf { it.platformIds.size }, ids.size)
         assertEquals(EMULATORS.map { it.id }.distinct(), EMULATORS.map { it.id })
-        assertTrue("dolphin.gamecube" in ids)
-        assertTrue("dolphin.wii" in ids)
+        assertFalse("dolphin.gamecube" in ids)
+        assertFalse("ppsspp.psp" in ids)
+        assertFalse("dolphin.wii" in ids)
         assertTrue("pizza-boy-sc.game-gear" in ids)
     }
 
@@ -86,16 +87,16 @@ class EmulatorPlayerTest {
     fun platformOrderFollowsTheCatalog() {
         fun order(platformId: String) = entry.players.filter { it.platformId == platformId }.map { it.displayName }
         assertEquals(listOf("My Boy!", "Pizza Boy GBA", "GBA.emu"), order(GBA))
-        assertEquals(listOf("Dolphin", "Dolphin MMJR"), order(WII))
+        assertEquals(listOf("Dolphin MMJR"), order(WII))
         assertEquals(listOf("NetherSX2", "EmuCoreX"), order(PLAYSTATION_2))
         assertEquals(listOf("Flycast", "Redream"), order(DREAMCAST))
     }
 
     @Test
     fun dataHandoffPutsTheUriInDataWithARead() {
-        val intent = launch("ppsspp.psp", "content://games/title.iso", "org.ppsspp.ppsspp")
-        assertEquals("org.ppsspp.ppsspp", intent.packageName)
-        assertEquals("org.ppsspp.ppsspp.PpssppActivity", intent.componentClass)
+        val intent = launch("my-boy.game-boy-advance", "content://games/title.iso", "com.fastemulator.gba")
+        assertEquals("com.fastemulator.gba", intent.packageName)
+        assertEquals("com.fastemulator.gba.EmulatorActivity", intent.componentClass)
         assertEquals(ACTION_VIEW, intent.action)
         assertEquals("content://games/title.iso", intent.dataUri)
         assertTrue(intent.grantReadUri)
@@ -112,10 +113,6 @@ class EmulatorPlayerTest {
         assertTrue(intent.grantReadUri)
         assertEquals(listOf(PlayerExtra.Text("bootPath", "content://games/title.chd")), intent.extras)
         assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask), intent.flags)
-
-        val dolphin = launch("dolphin.wii", "content://games/title.rvz")
-        assertEquals("org.dolphinemu.dolphinemu.ui.main.TvMainActivity", dolphin.componentClass)
-        assertEquals(listOf(PlayerExtra.Text("AutoStartFile", "content://games/title.rvz")), dolphin.extras)
 
         val emucorex = launch("emucorex.playstation-2", "content://games/title.iso")
         assertEquals("com.sbro.emucorex", emucorex.packageName)

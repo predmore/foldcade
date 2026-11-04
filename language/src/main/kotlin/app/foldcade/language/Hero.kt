@@ -13,6 +13,8 @@ data class HeroItem(
     val packageName: String? = null,
     val emptyShelfHint: Boolean = false,
     val availability: String? = null,
+    /** A one-ink control glyph by its slot, for an action rather than a thing, as Add games's plus. */
+    val control: String? = null,
 )
 
 /**
