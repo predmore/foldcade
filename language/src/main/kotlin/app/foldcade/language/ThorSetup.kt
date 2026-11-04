@@ -21,7 +21,7 @@ object ThorSetupCopy {
     const val appliedNotice = "Azahar’s Thor setup is ready"
     const val failed = "Couldn’t change the settings. Your config and any backups are kept. Check the user folder, or set these options in Azahar."
     const val intro = "Foldcade sets untouched options once. Your own settings stay yours, even if you change them later."
-    const val driver = "Turnip is installed privately by Azahar. Pick your GPU driver in Azahar; Foldcade keeps that choice."
+    const val driver = "Pick your GPU driver in Azahar. Foldcade leaves that choice alone."
     const val restoreBody = "Restore the whole original config file? Today’s settings are backed up beside it and in Foldcade first. The Thor setup won’t be applied again."
     const val closeBody = "Finish playing and save your game first. Then open App info and choose Force stop. Return here to Set up, or launch your next game to apply the preset."
     const val closeRestoreBody = "Finish playing and save your game first. Then open App info and choose Force stop. Come back here to restore the original settings."
@@ -73,7 +73,12 @@ fun thorSetupDialog(playerId: String, setup: ThorSetupSetting, screen: HostScree
         kind = DialogKind.ThorSetup,
         title = ThorSetupCopy.title,
         body = body,
-        buttons = if (action == null) listOf(DialogButton.Ok) else listOf(action, DialogButton.NotNow),
+        // An applied setup is news, not an offer: it closes with OK beside Restore.
+        buttons = when (action) {
+            null -> listOf(DialogButton.Ok)
+            DialogButton.RestoreThorSetup -> listOf(action, DialogButton.Ok)
+            else -> listOf(action, DialogButton.NotNow)
+        },
         index = if (action == DialogButton.RestoreThorSetup) 1 else 0,
         safeIndex = if (action == null) 0 else 1,
         screen = screen,

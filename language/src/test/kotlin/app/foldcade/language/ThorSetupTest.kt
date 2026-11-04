@@ -7,7 +7,7 @@ class ThorSetupTest {
     @Test fun `restore asks explicitly and defaults to leaving settings alone`() {
         val dialog = thorSetupDialog("azahar", ThorSetupSetting(ThorSetupStatus.Applied,
             setOf(ThorSetupOption.OtherScreen), canRestore = true), HostScreen.Top)
-        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.index])
+        assertEquals(DialogButton.Ok, dialog.buttons[dialog.index])
         assertTrue(dialog.body.contains(ThorSetupCopy.option(ThorSetupOption.OtherScreen)))
         assertFalse(dialog.body.contains(ThorSetupCopy.option(ThorSetupOption.Resolution)))
         val confirm = restoreThorSetupDialog("azahar", HostScreen.Top)
