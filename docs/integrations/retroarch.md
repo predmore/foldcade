@@ -53,7 +53,7 @@ Foldcade uses [libretro’s Android nightly feed](https://buildbot.libretro.com/
 
 The verified core is staged under `Android/media/<Foldcade package>/retroarch-cores`. RetroArch’s exported [CoreSideloadActivity](https://github.com/libretro/RetroArch/blob/v1.22.2/pkg/android/phoenix/src/com/retroarch/browser/debug/CoreSideloadActivity.java) copies it into its core directory and starts the game in one handoff, after Foldcade prepares saves. No `.info` download, updater visit, core-list refresh, or writable folder grant is needed. Installed cores are left alone; the existing ordered table and standalone-emulator preferences still apply. Thor uses the `arm64-v8a` feed, with no special core override.
 
-Android protects its direct runtime-permissions page from normal apps on Thor, so the 1.22.2 file-access shortcut opens App info. This step cannot be fully automatic. Newer RetroArch builds that request all-files access have a direct Android permission page.
+Android protects its direct runtime-permissions page from normal apps on Thor, so the 1.22.2 file-access shortcut opens App info. This step cannot be fully automatic.
 
 Disc systems need their BIOS files in RetroArch's system folder (`RetroArch/system`). Check each core's documentation for the file names.
 

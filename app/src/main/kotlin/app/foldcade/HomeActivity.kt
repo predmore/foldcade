@@ -1060,6 +1060,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun launchGame(index: Int, saveSyncDeclinedFor: String? = null, foldersChecked: Boolean = false, coresChecked: Boolean = false) {
         val game = Shelf.games.getOrNull(index) ?: return
+        if ((foldcade.shell.activity[game.id] as? app.foldcade.language.TileActivity.Downloading)?.core != null) return
         if (waitForSavePreparation {
             val currentIndex = Shelf.games.indexOfFirst { it.id == game.id }
             if (currentIndex >= 0) launchGame(currentIndex, saveSyncDeclinedFor, foldersChecked, coresChecked)
@@ -3197,13 +3198,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val pkg = foldcade.retroArchPlayer()?.cores?.activePackage() ?: return
         // MANAGE_APP_PERMISSIONS is protected by GRANT_RUNTIME_PERMISSIONS on AOSP/Thor.
         // App info is the public deep link for this legacy READ_EXTERNAL_STORAGE build.
-        // New RetroArch builds requesting all-files access can open its permission directly.
-        val allFiles = runCatching {
-            packageManager.getPackageInfo(pkg, PackageManager.GET_PERMISSIONS).requestedPermissions
-                ?.contains("android.permission.MANAGE_EXTERNAL_STORAGE") == true
-        }.getOrDefault(false)
-        val intent = Intent(if (allFiles) Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:$pkg"))
+        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
         try {
             retroArchStorageSettings.launch(intent)
         } catch (_: ActivityNotFoundException) {
