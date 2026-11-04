@@ -313,7 +313,7 @@ interface SaveFolderAccess {
 
 /**
  * One file or folder directly inside a [SaveFolderAccess] path.
- * [size] is the file's length in bytes, or 0 when the provider does not report one.
+ * [size] is the file's length in bytes, or -1 when the provider does not report one.
  * Added in API minor 13.
  */
 data class SaveFolderEntry(val name: String, val isFolder: Boolean, val size: Long)

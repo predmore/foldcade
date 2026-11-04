@@ -211,5 +211,4 @@ internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot
 
 /** Do not fetch large BIOS archives until a standalone player's data folder is reachable. */
 internal fun canPrepareFirmware(player: Player): Boolean = player !is app.foldcade.api.plugin.SaveFolderHolder ||
-    player.hasSaveFolder() || player is app.foldcade.plugins.retroarch.RetroArchPlayer ||
-    player is app.foldcade.plugins.melonds.MelonDsPlayer
+    player.hasSaveFolder() || player is app.foldcade.plugins.retroarch.RetroArchPlayer

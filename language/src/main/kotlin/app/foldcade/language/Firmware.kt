@@ -15,9 +15,13 @@ object FirmwareCopy {
     fun folderNoticeTitle(player: String): String = "$player BIOS folder"
     const val wrongFolder = "Choose RetroArch or its system folder. That one pick covers your BIOS."
     const val chooseTitle = "A home for your BIOS"
-    const val melonSetup = "In melonDS Settings › System › Custom BIOS and firmware, choose RetroArch/system/nds for DS or RetroArch/system/dsi for DSi."
     const val readyBody = "Your BIOS is in place. Time to play."
 }
+
+/** A required RetroArch BIOS may already live in a custom System/BIOS directory. */
+fun missingFirmwareDialog(body: String, screen: HostScreen, firmwarePlayerId: String? = null): DialogState =
+    if (firmwarePlayerId != null) firmwareFolderDialog(firmwarePlayerId, body, screen)
+    else playerNotice(FirmwareCopy.title, body, screen)
 
 fun firmwareFolderDialog(playerId: String, body: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.FirmwareFolder,

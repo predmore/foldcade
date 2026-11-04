@@ -4,15 +4,11 @@ import app.foldcade.api.plugin.FirmwareBytes
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
-import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 
 /** Optional BIOS must never add storage discovery, downloads or setup to a game start. */
 internal fun firmwareRequired(player: Player, game: Game): Boolean = when (player) {
     is RetroArchPlayer -> player.needsFirmwareFolder(game)
-    // Android has no public API to select an external BIOS. Leave its own
-    // configured folders alone; default DS play uses the bundled BIOS.
-    is MelonDsPlayer -> false
     else -> player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
 }
 

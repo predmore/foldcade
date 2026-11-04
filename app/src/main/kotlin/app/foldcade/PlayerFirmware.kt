@@ -29,6 +29,8 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
     private val docs = AndroidSaveDocuments(context.contentResolver)
     private val android = AndroidSaveFolderFinder(context)
     private val sourceCache = FirmwareSourceCache()
+    // App updates can change either core-info or candidate rules; both invalidate filtered trees.
+    private val cacheRevision by lazy { context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode }
 
     /** Payloads wait until their destination is writable; an unknown folder is optional setup. */
     fun canPlace(player: Player, game: Game, picked: String?, target: LaunchTarget): Boolean {
@@ -53,7 +55,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
 
     private fun firmwareGrants(player: Player): List<SaveFolderGrant> {
         val holder = player as? SaveFolderHolder
-        val holders = if (holder == null) emptyList() else listOf(if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
+        val holders = if (holder == null) emptyList() else listOf(if (player is RetroArchPlayer) {
             object : SaveFolderHolder by holder {
                 override val saveFolderPlaces = holder.saveFolderPlaces + listOf("RetroArch", "RetroArch/system")
             }
@@ -144,7 +146,7 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
                 }
                 val remaining = LOCAL_UNPACK_CAP - unpackedBytes
                 val unpacked = unpackLocalFirmwareZip(zip.toPath(), keepFolders = player.firmwareKeepsFolders,
-                    totalCap = remaining, selectionKey = "v2:$playerKey", candidate = { name, size ->
+                    totalCap = remaining, selectionKey = "$cacheRevision:$playerKey", candidate = { name, size ->
                         size in 1..LOCAL_FILE_CAP && player.firmwareFileName(name) != null && localCandidate(player, SaveChild(name, "", false, size))
                     }) { player.firmwareFileName(it) != null }
                 unpackedBytes += unpacked.sumOf { it.second.toFile().length() }
@@ -173,8 +175,6 @@ internal class PlayerFirmware(private val context: Context, private val saves: P
         is RetroArchPlayer -> player.localFirmwareCandidate(file.name, file.size)
         is app.foldcade.plugins.duckstation.DuckStationPlayer -> file.size <= 0 || file.size in setOf(524288L, 4194304L, 0x3E66F0L)
         is app.foldcade.plugins.armsx2.ArmsX2Player -> file.size <= 0 || file.size in setOf(1048576L, 2097152L, 4194304L)
-        is app.foldcade.plugins.melonds.MelonDsPlayer -> file.size <= 0 || file.name.substringAfterLast('/').lowercase() in setOf("nand.bin", "dsi_nand.bin") ||
-            file.size in setOf(4096L, 16384L, 65536L, 131072L, 262144L, 524288L)
         else -> true
     }
 

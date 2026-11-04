@@ -2175,8 +2175,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val name = foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId
                 foldcade.postNotice(app.foldcade.language.FoldNotice(
                     id = "firmware:${player.id}", title = app.foldcade.language.FirmwareCopy.ready(name),
-                    body = if (player is app.foldcade.plugins.melonds.MelonDsPlayer) app.foldcade.language.FirmwareCopy.melonSetup
-                        else app.foldcade.language.FirmwareCopy.readyBody, postedMillis = System.currentTimeMillis(),
+                    body = app.foldcade.language.FirmwareCopy.readyBody, postedMillis = System.currentTimeMillis(),
                     packageName = player.packageNames.firstOrNull(),
                 ))
             }
@@ -2191,11 +2190,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     true
                 }
                 result.blocksLaunch -> {
-                    foldcade.shell.showDialog(playerNotice(app.foldcade.language.FirmwareCopy.title,
-                        app.foldcade.language.FirmwareCopy.missing(
-                            foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId,
-                            result.missing, result.place,
-                            rommConnected = canUseRommFirmware(firmwareBackendId, foldcade.store.rommOrigin() != null)), hostScreen()))
+                    val message = app.foldcade.language.FirmwareCopy.missing(
+                        foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId,
+                        result.missing, result.place,
+                        rommConnected = canUseRommFirmware(firmwareBackendId, foldcade.store.rommOrigin() != null))
+                    foldcade.shell.showDialog(app.foldcade.language.missingFirmwareDialog(message, hostScreen(),
+                        firmwarePlayerId = (player as? RetroArchPlayer)?.id))
                     false
                 }
                 else -> true
@@ -3031,7 +3031,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** Optional BIOS setup opens from R1 without holding or restarting a game launch. */
     private fun openFirmwareFolder(player: Player) {
         settingsPlayerId = player.id
-        if (player is RetroArchPlayer || player is app.foldcade.plugins.melonds.MelonDsPlayer) {
+        if (player is RetroArchPlayer) {
             folderPurpose = FolderPurpose.Firmware
             folderPicker.launch(Uri.parse(foldcade.store.playerFirmwareFolder("retroarch") ?: app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
         } else {

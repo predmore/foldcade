@@ -525,6 +525,9 @@ class RomFolderTest {
             val ps2 = unpackLocalFirmwareZip(zip, selectionKey = "ps2", candidate = { _, size -> size == 2097152L }) { true }
             assertEquals(listOf("bios.zip/ps2.bin"), ps2.map { it.first })
             assertEquals(ps1, unpackLocalFirmwareZip(zip, selectionKey = "ps1", candidate = { _, _ -> error("replanned unchanged archive") }) { true })
+            // An app update may add a needed file or widen candidate rules.
+            assertEquals(2, unpackLocalFirmwareZip(zip, selectionKey = "new-version:ps1",
+                candidate = { _, size -> size in setOf(524288L, 2097152L) }) { true }.size)
             Files.write(zip, zipOf("new.bin" to byteArrayOf(1)))
             assertTrue(stampLocalFirmwareZip(zip) { path -> hashes++; java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(path)) })
             assertEquals(2, hashes)

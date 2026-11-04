@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FirmwareTest {
+    @Test fun missingRetroArchBiosOffersItsCustomFolderAndNotNowStillCancels() {
+        val body = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
+        val dialog = missingFirmwareDialog(body, HostScreen.Top, "retroarch.sega-cd")
+        assertEquals(DialogKind.FirmwareFolder, dialog.kind)
+        assertEquals("retroarch.sega-cd", dialog.subject)
+        assertEquals(body, dialog.body)
+        assertEquals(listOf(DialogButton.ChooseSaveFolder, DialogButton.NotNow), dialog.buttons)
+        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
+        assertEquals(DialogKind.Ok, missingFirmwareDialog(body, HostScreen.Top).kind)
+    }
     @Test fun missingBiosNamesTheSystemAndOnlyOffersAnExistingRommConnection() {
         val local = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
         assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system, then retry.", local)
