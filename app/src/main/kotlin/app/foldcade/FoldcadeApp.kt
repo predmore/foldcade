@@ -2785,6 +2785,9 @@ class FoldcadeApp : Application() {
                 LoadedLibrary.NoPlatforms -> if ((hasSteamFiles || onlyFound) && folderReported) {
                     shell.dropLibrary(libraryId)
                     shell.showCuratedHome(fromStartup = startup)
+                } else if (onlyFound) {
+                    // A card that is out may still hold games: they stay until a complete scan says otherwise.
+                    shell.showCuratedHome(fromStartup = startup)
                 } else {
                     shell.showNoPlatforms(libraryId)
                 }
