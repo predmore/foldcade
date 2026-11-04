@@ -684,7 +684,7 @@ internal class RommLibrary internal constructor(
                                 if (!moved.get()) reporter(RomProgress.Receiving(before, total))
                                 // A zip is offered as itself and, when the player wants one, as each file it holds.
                                 val members = runInterruptible(Dispatchers.IO) {
-                                    unpackFirmwareZip(path, planning = { progress.note(GameActivity.Checking) }) {
+                                    unpackFirmwareZip(path, planning = { progress.note(GameActivity.Checking) }, keepFolders = player.firmwareKeepsFolders) {
                                         player.wantsFirmware(it)
                                     }
                                 }
@@ -723,7 +723,7 @@ internal class RommLibrary internal constructor(
         } else {
             // Headers are read here, off the caller, with the other firmware disk reads.
             runInterruptible(Dispatchers.IO) {
-                val files = checkedFirmware(firmwareDir(wiring, platformId)).filter { player.wantsFirmware(it.first) }
+                val files = checkedFirmware(firmwareDir(wiring, platformId), player.firmwareKeepsFolders).filter { player.wantsFirmware(it.first) }
                 CheckedFirmware(
                     files.map { (name, path) -> FirmwareBytes(name = name, contentUri = wiring.contentUris.uriFor(path)) },
                     firmwareIsUsable(player, files),
@@ -1573,7 +1573,7 @@ internal fun cacheAvailability(cacheRoot: Path, rom: RomSummary, verifyBytes: Bo
  * with its verified marker. A newer copy that stopped part way, beside it, does
  * not touch it, since firmware is moved into place only once it is whole.
  */
-internal fun checkedFirmware(dir: Path): List<Pair<String, Path>> {
+internal fun checkedFirmware(dir: Path, keepFolders: Boolean = false): List<Pair<String, Path>> {
     if (!Files.isDirectory(dir)) return emptyList()
     val files = Files.list(dir).use { stream -> stream.collect(java.util.stream.Collectors.toList()) }
     val checked = files
@@ -1581,7 +1581,7 @@ internal fun checkedFirmware(dir: Path): List<Pair<String, Path>> {
         .filter { RommClient.isVerifiedRom(it, null, null, besidePartial = true) }
         .map { it.fileName.toString() to it }
     // A zip's files, unpacked beside it, under `<zip name>/<file name>`.
-    val members = checked.flatMap { checkedZipMembers(it.second) }
+    val members = checked.flatMap { checkedZipMembers(it.second, keepFolders) }
     return (checked + members).sortedBy { it.first }
 }
 

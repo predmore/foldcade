@@ -16,8 +16,6 @@ import kotlin.coroutines.cancellation.CancellationException
 internal class LaunchSaves(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
-    /** The folder the user picked for a player, where its firmware goes, or null. */
-    private val pickedFolder: (Player) -> String? = { null },
     private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
@@ -30,7 +28,21 @@ internal class LaunchSaves(
      * The caller runs one save flow at a time.
      */
     suspend fun prepare(route: GameRoute, player: Player, local: LaunchTarget, syncing: Boolean = true): PreparedLaunch {
-        if (!syncing) return PreparedLaunch(local, emptyList(), route.saves)
+        if (!syncing) {
+            val firmware = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                player.firmwareFileName("bios.bin") != null || player.firmwareFileName("PS3UPDAT.PUP") != null
+            }
+            if (!firmware) {
+                return PreparedLaunch(local, emptyList(), route.saves)
+            }
+            // Firmware is independent of save sync. Ask the library with no save slots.
+            val firmwareOnly = object : Player by player {
+                override fun supportsSaveSync(game: Game) = false
+                override fun saveDeclarations(game: Game) = emptyList<app.foldcade.api.plugin.SaveDeclaration>()
+            }
+            val placement = plugins.prepareSaves(route.saves.backendId, route.saves, firmwareOnly, local)
+            return PreparedLaunch(placement.target, emptyList(), route.saves)
+        }
         val candidates = candidates(route)
         val edenSpots = if (player is EdenPlayer) saves.spots(player, route.saves, local, forLaunch = true) else null
         // Eden may not have made its user yet. Do not let negotiation acknowledge
@@ -83,8 +95,6 @@ internal class LaunchSaves(
             // Card setup counts as a change too: a running player would still be holding the old card.
             if (written.isNotEmpty() || setup.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
-            // A BIOS the library has goes beside the saves. A file already there stays.
-            saves.placeFirmware(player, owner, placement.target, pickedFolder(player))
             return PreparedLaunch(placement.target, spots, owner)
         } catch (cancelled: CancellationException) {
             throw cancelled

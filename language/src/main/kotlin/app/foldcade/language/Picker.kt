@@ -92,6 +92,7 @@ enum class DialogKind {
     MissingPlayer,
     ClosePlayer,
     SaveFolder,
+    FirmwareFolder,
 
     /** Restart a game still open in its player. Not now leaves it paused. */
     RestartGame,
@@ -636,6 +637,8 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "eden-wrong-folder" -> edenWrongFolderDialog(screen)
         "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
         "retroarch-storage" -> retroArchStorageDialog(screen)
+        "missing-bios" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing(listOf("bios_CD_U.bin"), "RetroArch/system"), screen)
+        "firmware-folder" -> firmwareFolderDialog("retroarch.sega-cd", FirmwareCopy.folder("RetroArch", "RetroArch/system", listOf("bios_CD_U.bin")), screen)
         else -> return null
     }
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)

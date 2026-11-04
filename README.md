@@ -34,6 +34,7 @@ Your games live on your own server, and Foldcade makes that server the Thor's li
 - **Saves that come with you.** With RomM 5.4 or newer, Foldcade fetches the newest melonDS or RetroArch save before a game starts and sends yours back when you return to Home. Stop on one Thor and keep going on another. A paused game resumes as you left it, without a sync. Offline play waits for the next sync.
 - **Saves are never lost to a sync.** Before a sync replaces a save on your Thor, Foldcade sets the old one aside. If two devices both saved, it asks which one to play and keeps both.
 - **Already have the files?** A game in a folder on your SD card with the same system and file name as on your server is one tile. It opens the copy on your Thor without downloading, and its saves still sync through RomM.
+- **BIOS in place.** Your own dumps from RomM or [local BIOS folders](docs/integrations/local-games.md#bios) follow your games into DuckStation, ARMSX2, aPS3e and [RetroArch](docs/integrations/retroarch.md#bios). Existing BIOS files stay yours.
 - **Switch updates and DLC, handled.** When RomM files a game's update and DLC beside it, Foldcade downloads them with the game, and [Eden](docs/integrations/emulators.md) loads them at start. There is nothing to install in Eden.
 - **Achievements on the other screen.** During a single-screen RomM game, the other screen shows your RetroAchievements progress for it.
 - **One home, any number of servers.** Add a server at home and a friend's; each keeps its own sign-in, and their games share one Home.

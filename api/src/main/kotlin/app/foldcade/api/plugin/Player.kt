@@ -95,8 +95,8 @@ interface Player {
      * declarations name, unless Foldcade hosts that one, see [HostedSaveFolder].
      * A library that has [name] for the game's platform downloads it and
      * returns it in [LaunchTarget.ContentUri.firmware], and the shell writes it
-     * there. A file already there is replaced only when it still holds what the
-     * shell last wrote, so a file the user put there stays. Null means the player
+     * there. Android publishes a checked temporary file by rename and never
+     * replaces an existing BIOS. Null means the player
      * does not use [name]. Added in API minor 12.
      *
      * [name] may be `<zip name>/<file name>`: a file inside a zip the library
@@ -108,6 +108,25 @@ interface Player {
      * Added in API minor 13.
      */
     fun firmwareFileName(name: String): String? = null
+
+    /**
+     * Destination after reading the offered bytes. Allows a known BIOS hash to
+     * supply its core's canonical name even when the source was renamed.
+     * Null refuses the file. Added in API minor 21.
+     */
+    fun firmwareDestination(offer: FirmwareOffer): String? = firmwareFileName(offer.name)
+
+    /** Keep safe paths inside firmware ZIPs, for directory bundles such as blueMSX. API minor 21. */
+    val firmwareKeepsFolders: Boolean
+        get() = false
+
+    /**
+     * Required firmware still missing from the resolved firmware folder, for
+     * this game. Each string names exactly one file, or alternatives separated
+     * by " / ". Empty permits launch, including cores with HLE BIOS support.
+     * The shell calls this off Main after placement. Added in API minor 21.
+     */
+    fun missingFirmware(game: Game, folder: SaveFolderAccess): List<String> = emptyList()
 
     /**
      * How many bytes from the start of each firmware file the shell reads for

@@ -446,6 +446,29 @@ class RomFolderTest {
     }
 
     @Test
+    fun localDirectoryBundlesKeepSafePathsWithoutChangingFlatDumpArchives() {
+        val dir = Files.createTempDirectory("local-firmware-tree")
+        try {
+            val zip = dir.resolve("bios.zip")
+            Files.write(zip, zipOf(
+                "bundle/Databases/msxromdb.xml" to "database".toByteArray(),
+                "bundle/Machines/A/config.ini" to "A".toByteArray(),
+                "bundle/Machines/B/config.ini" to "B".toByteArray(),
+                "../escape.bin" to "unsafe".toByteArray(),
+            ))
+            val tree = unpackLocalFirmwareZip(zip, keepFolders = true) { true }
+            assertEquals(listOf("bios.zip/bundle/Databases/msxromdb.xml", "bios.zip/bundle/Machines/A/config.ini", "bios.zip/bundle/Machines/B/config.ini"), tree.map { it.first })
+            assertEquals(listOf("database", "A", "B"), tree.map { Files.readString(it.second) })
+            assertFalse(Files.exists(dir.parent.resolve("escape.bin")))
+            // Independent cache: an ARMSX2/DuckStation request still gets flattened names.
+            assertTrue(unpackLocalFirmwareZip(zip) { true }.any { it.first == "bios.zip/config.ini" })
+            Files.write(zip, zipOf("bundle/Machines/A/config.ini" to "new".toByteArray()))
+            val changed = unpackLocalFirmwareZip(zip, keepFolders = true) { true }
+            assertEquals("new", Files.readString(changed.single().second))
+        } finally { dir.toFile().deleteRecursively() }
+    }
+
+    @Test
     fun aZipOverTheCapIsNotUnpacked() {
         assertEquals(32L * 1024 * 1024, FIRMWARE_ZIP_FILE_CAP)
         assertEquals(1024L * 1024 * 1024, FIRMWARE_ZIP_TOTAL_CAP)

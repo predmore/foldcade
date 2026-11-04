@@ -51,6 +51,12 @@ Choose a folder's tile in **Settings › Library**, then **Remove**, to stop rea
 
 For exported `.steam` files, follow [GameNative](gamenative.md) or [DroidDeck](droiddeck.md).
 
+## BIOS
+
+Foldcade looks in `bios` and `BIOS` inside or beside your library folders, including ES-DE and Batocera layouts, and in `RetroArch/system` for standalone players. Existing readable grants are reused. Optional all-files access also covers shared roots such as `bios`, `ROMs/bios`, `ES-DE/bios`, `Batocera/bios`, and `Emulation/bios`. SD-card BIOS roots work through the library's grant too.
+
+Choose the common parent of your games and `bios` if you want Foldcade to find both with one grant. Android does not let a grant on a system folder reach a sibling outside it. BIOS files can be individual dumps or ZIPs. Known hashes identify renamed dumps where upstream documents them; PS2 uses the console's ROM directory. Existing emulator BIOS files stay untouched. When required BIOS cannot be found, the message names what is missing and the emulator folder to put it in.
+
 ## Saves
 
 The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the same file, with the same name and system, the folder's game and the server's are one tile with one save: it opens the folder's copy and syncs saves through RomM with a supported save setup. Its play time, places, and art carry over from both. A file renamed later is a new game.

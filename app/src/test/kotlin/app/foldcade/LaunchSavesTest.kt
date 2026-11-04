@@ -58,6 +58,20 @@ class LaunchSavesTest {
     }
 
     @Test
+    fun playingWithoutSyncingStillAsksForFirmwareWithoutOfferingSaveSlots() = runBlocking {
+        val firmware = object : Player by Melon {
+            override fun firmwareFileName(name: String) = "bios/$name"
+        }
+        val prepared = LaunchSaves(saves, plugins) { awaiting += it }
+            .prepare(GameRoute("tile", play, owner), firmware, local, syncing = false)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
+        assertEquals(local, prepared.target)
+        assertTrue(prepared.spots.isEmpty())
+        assertTrue(awaiting.isEmpty())
+        assertTrue(docs.files.isEmpty())
+    }
+
+    @Test
     fun aSaveTheFolderCopyMadeGoesToTheServerFirst() = runBlocking {
         docs.files["$SAVES/Tetris DS (USA).sav"] = "played in the folder".toByteArray()
         server.toPlace = "server copy"

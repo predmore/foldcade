@@ -1373,7 +1373,9 @@ class FoldcadeApp : Application() {
     }
 
     internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
-        saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
+        (if (player is app.foldcade.plugins.retroarch.RetroArchPlayer)
+            app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER else null)
+            ?: saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
     }
 
     /** True when the picker opens at a folder that is there: a place found on the device, or the player's own. */

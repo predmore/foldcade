@@ -157,6 +157,26 @@ class RetroArchPlayer internal constructor(
         return "${core.libraryName}/$base.srm"
     }
 
+    // Firmware lands in the separately resolved system directory, never saves/.
+    override fun firmwareFileName(name: String): String? {
+        val leaf = biosLeaf(name) ?: return null
+        if (firmwareList().isEmpty()) return null
+        return leaf
+    }
+
+    override val firmwareKeepsFolders: Boolean get() = firmwareCore() == "bluemsx"
+
+    override val firmwareHeaderSize: Int = FIRMWARE_HEADER_SIZE
+
+    override fun firmwareDestination(offer: app.foldcade.api.plugin.FirmwareOffer): String? =
+        if (firmwareKeepsFolders) blueMsxPath(offer.name) else identifyBios(firmwareList(), offer)?.path
+
+    override fun chooseFirmware(offered: List<app.foldcade.api.plugin.FirmwareOffer>): List<app.foldcade.api.plugin.FirmwareOffer> =
+        offered.filter { firmwareDestination(it) != null }.distinctBy { firmwareDestination(it) }
+
+    override fun missingFirmware(game: Game, folder: app.foldcade.api.plugin.SaveFolderAccess): List<String> =
+        missingBios(game, folder)
+
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         val packageName = request.resolvedPackage
         if (packageName !in PACKAGES) throw PluginException.NotFound("RetroArch is not installed.")
@@ -245,6 +265,6 @@ const val SHARED_STORAGE: String = "/storage/emulated/0"
 
 /** RetroArch's default save directory, `RetroArch/saves` on primary shared storage, as a document. */
 const val DEFAULT_SAVE_FOLDER: String =
-    "content://com.android.externalstorage.documents/document/primary%3ARetroArch%2Fsaves"
+    "content://com.android.externalstorage.documents/document/primary%3ARetroArch"
 
 const val ACTION_MAIN: String = "android.intent.action.MAIN"

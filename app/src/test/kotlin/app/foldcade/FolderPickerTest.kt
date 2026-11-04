@@ -31,6 +31,13 @@ class FolderPickerTest {
         assertEquals(FolderPickerState(), decodeFolderPickerState("not-a-purpose\n\n"))
     }
 
+    @Test fun firmwarePickSurvivesRecreationWithoutRebindingSavesOrBecomingALibrary() {
+        val state = FolderPickerState(FolderPurpose.Firmware, settingsPlayerId = "melonds")
+        assertEquals(state, decodeFolderPickerState(state.encode()))
+        assertEquals(FolderPickResult.UseFirmwareFolder, folderPickResult(state, true))
+        assertEquals(FolderPickResult.Ignore, folderPickResult(state, false))
+    }
+
     @Test
     fun aLostPurposeWouldScanTheChosenFolderAsALibrary() {
         val fresh = FolderPickerState()

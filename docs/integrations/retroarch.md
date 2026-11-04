@@ -48,11 +48,30 @@ Foldcade uses the first core in each row that is installed. If none is installed
 | WonderSwan, WonderSwan Color | `wonderswan`, `wonderswancolor` | Beetle WonderSwan |
 | ColecoVision | `colecovision` | Gearcoleco, blueMSX |
 
-Disc systems need their BIOS files in RetroArch's system folder (`RetroArch/system`). Check each core's documentation for the file names.
+## BIOS
+
+Foldcade brings your BIOS from the platform's RomM firmware or your local BIOS folders into `RetroArch/system` before launch. Choose the **RetroArch** folder once when Foldcade asks: that single grant covers both `system` and `saves`. Existing grants on that folder, `system`, or optional all-files access are reused. A previous grant on `saves` alone cannot reach its sibling `system`; choose **RetroArch** once in Settings › Emulators › RetroArch to extend it. A BIOS already there is never overwritten.
+
+Names, required flags and known MD5s are pinned from [libretro-core-info](https://github.com/libretro/libretro-core-info/tree/eac3a2784d428444aa2bd472039b5c5540141af1), in the plugin's `firmware.tsv`. Hashes identify renamed dumps and verify documented BIOS files. The installed or selected core determines the files. A required BIOS that is missing stops launch with its exact filename and `RetroArch/system` as the place to put it. “PlayStation BIOS ready” appears in R1 after placement.
+
+| Core / system | BIOS in `system` |
+| --- | --- |
+| Genesis Plus GX / PicoDrive, Sega CD | `bios_CD_U.bin`, `bios_CD_E.bin`, `bios_CD_J.bin` (the disc's region) |
+| Beetle PCE Fast / PCE, PC Engine CD | `syscard3.pce` |
+| PCSX-ReARMed / SwanStation / Beetle PSX | `scph5500.bin`, `scph5501.bin`, `scph5502.bin`; supported alternatives follow the core info. PCSX-ReARMed also accepts `scph1001.bin`, `scph7001.bin` and `scph101.bin` from its [BIOS documentation](https://docs.libretro.com/library/pcsx_rearmed/#bios), and can use HLE. |
+| YabaSanshiro / Yabause | `saturn_bios.bin` (optional with Yabause) |
+| Beetle Saturn | `sega_101.bin` (Japan), `mpr-17933.bin` (US/Europe) |
+| Flycast | `dc/dc_boot.bin` (optional) |
+| gpSP | `gba_bios.bin` |
+| Beetle Lynx / Handy | `lynxboot.img` (optional with Handy) |
+| Gearcoleco | `colecovision.rom` |
+| blueMSX | `Databases/msxromdb.xml`, `Machines/Shared Roms/MSX.rom` |
+
+Other optional files use the paths in the pinned core info too. blueMSX receives the complete `Databases` and `Machines` trees from a folder or ZIP; their core-info entries represent those bundles. Sega CD and PC Engine BIOS entries are optional for the shared cartridge/CD cores, but required when playing CD games. The user's own RomM or storage are the only sources; Foldcade never downloads BIOS from the internet.
 
 ## Saves
 
-RetroArch keeps its own saves, so they work without any setup in Foldcade. For [RomM save sync](romm.md#save-sync), choose RetroArch's save folder once under **Settings › Emulators › RetroArch**. The picker opens at `RetroArch/saves`; choose **Use this folder**. One folder covers every system. Before a server launch, **Play without syncing** skips this setup for that launch. Foldcade asks again next time.
+RetroArch keeps its own saves, so they work without any setup in Foldcade. For [RomM save sync](romm.md#save-sync), choose RetroArch's save folder once under **Settings › Emulators › RetroArch**. The picker opens at `RetroArch`; choose **Use this folder**. Foldcade resolves `saves` beneath it, leaving the same grant available for BIOS in `system`. One folder covers every system. Before a server launch, **Play without syncing** skips this setup for that launch. Foldcade asks again next time.
 
 Foldcade syncs battery saves, the `.srm` files RetroArch writes to `saves/<core name>/<game name>.srm`. That is RetroArch's default layout. Keep **Settings › Saving › Sort Saves into Folders by Core Name** on, and **Write Saves to Content Directory** off. Save states stay on the device.
 

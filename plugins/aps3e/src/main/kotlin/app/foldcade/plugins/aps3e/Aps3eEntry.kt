@@ -129,6 +129,9 @@ class Aps3ePlayer : Player, SaveFolderHolder {
 
     override fun needsFirmware(folder: SaveFolderAccess): Boolean = !folderHas(folder, INSTALLED)
 
+    override fun missingFirmware(game: Game, folder: SaveFolderAccess): List<String> =
+        if (folderHas(folder, INSTALLED) || folderHas(folder, FIRMWARE_FILE)) emptyList() else listOf("PS3UPDAT.PUP")
+
     /**
      * Ready once aPS3e's first-run setup has written `default_config.yml` and it has
      * installed firmware. Started before that, aPS3e writes a `config.yml` with no
