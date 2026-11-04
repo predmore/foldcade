@@ -139,8 +139,9 @@ class SetupRoundThreeRegressionTest {
         onMeaning(Meaning.MoveRight, HostScreen.Bottom)
         val target = settingsRows(categories[category], model).indexOf(row)
         if (row.settingsTile()) {
-            repeat(target / quickTileColumns) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
-            repeat(target % quickTileColumns) { onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
+            val tiles = settingsRows(categories[category], model).count { it.settingsTile() }
+            repeat(SettingsShelf.line(target, tiles)) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+            repeat(SettingsShelf.column(target, tiles)) { onMeaning(Meaning.MoveRight, HostScreen.Bottom) }
         } else {
             repeat(target) { onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         }

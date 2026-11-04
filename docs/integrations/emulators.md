@@ -2,6 +2,8 @@
 
 Set up an emulator on your Thor, then add its games through [local folders](local-games.md) or [RomM](romm.md). Foldcade detects supported installed emulators; it does not import their game lists.
 
+**Settings › Emulators** shows a tile for each installed emulator. A check means its saves sync; the amber cloud means one of its rows needs you, and those tiles come first. Up to eight tiles fit on screen. With more, the shelf scrolls sideways like the Home grid, with a bar under it showing where you are.
+
 ## Supported emulators and formats
 
 With more than one emulator installed for a system, you choose which one opens its games:

@@ -1,6 +1,10 @@
 package app.foldcade.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,13 +27,32 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,12 +73,12 @@ import app.foldcade.language.SettingsCategory
 import app.foldcade.language.SettingsCopy
 import app.foldcade.language.SettingsInner
 import app.foldcade.language.SettingsPage
+import app.foldcade.language.SettingsShelf
 import app.foldcade.language.Theme
 import app.foldcade.language.TileStatus
 import app.foldcade.language.emulatorShelf
 import app.foldcade.language.menuFit
 import app.foldcade.language.promptKeyOf
-import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowControl
 import app.foldcade.language.rowText
 import app.foldcade.language.settingsCategories
@@ -64,9 +87,12 @@ import app.foldcade.language.settingsInnerRows
 import app.foldcade.language.settingsInnerTitle
 import app.foldcade.language.settingsRows
 import app.foldcade.language.settingsShown
+import app.foldcade.language.shownShelfFirst
 import app.foldcade.language.settingsTile
 import app.foldcade.language.settingsTileStatus
 import app.foldcade.language.settingsTitle
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen settings, laid out like Cocoon's: the header over the categories on the left,
@@ -179,6 +205,8 @@ private fun CategoryCard(
             inner = shownInner,
             fitRows = category == SettingsCategory.Screens && shownInner == null,
             focus = page.row.takeIf { live && page.onRows && it in rows.indices },
+            // A card on its way out keeps the strip where it was.
+            shelfFirst = if (live) shownShelfFirst(page, model) else 0,
             // The card on its way out takes no taps: its rows are not the page's now.
             interactive = live,
             hint = live && category == SettingsCategory.Personalization && model.capturingConfirm,
@@ -196,6 +224,7 @@ private fun CardRows(
     inner: SettingsInner?,
     fitRows: Boolean,
     focus: Int?,
+    shelfFirst: Int,
     interactive: Boolean,
     hint: Boolean,
     scale: Float,
@@ -227,29 +256,21 @@ private fun CardRows(
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
             if (inner != null) InnerHeader(model, inner)
-            // Tiles sit in lines of four, each a child of this column, so the one highlight reaches them too.
-            tiles.chunked(quickTileColumns).forEachIndexed { line, chunk ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = if (line == (tiles.size - 1) / quickTileColumns) TILE_BLOCK_GAP else TILE_LINE_GAP),
-                ) {
-                    chunk.forEachIndexed { column, row ->
-                        val index = line * quickTileColumns + column
-                        ShelfTile(
-                            row = row,
-                            model = model,
-                            focused = focus == index,
-                            scale = scale,
-                            art = Modifier.selectionSlot(slots, index, depth = 3),
-                            modifier = Modifier.weight(1f).keepInView(focus == index).then(
-                                if (interactive) Modifier.press { onEffect(app.shell.touchSettingsRow(index, screen)) } else Modifier,
-                            ),
-                        )
-                    }
-                    // A short last line keeps the columns of the lines above it.
-                    repeat(quickTileColumns - chunk.size) { Spacer(Modifier.weight(1f)) }
-                }
+            // The tiles are one strip, a child of this column, which tells the one highlight where each rests.
+            if (tiles.isNotEmpty()) {
+                ShelfStrip(
+                    tiles = tiles,
+                    model = model,
+                    focus = focus?.takeIf { it < tiles.size },
+                    first = shelfFirst,
+                    slots = slots,
+                    interactive = interactive,
+                    scale = scale,
+                    onTap = { index -> onEffect(app.shell.touchSettingsRow(index, screen)) },
+                    onScroll = { app.shell.scrollSettingsShelf(it, screen) },
+                    modifier = Modifier.padding(bottom = if (SettingsShelf.scrolls(tiles.size)) 0.dp else TILE_BLOCK_GAP),
+                )
+                if (SettingsShelf.scrolls(tiles.size)) ShelfBar(tiles.size, shelfFirst, scale)
             }
             rows.forEachIndexed { index, row ->
                 if (index < tiles.size) return@forEachIndexed
@@ -340,7 +361,6 @@ private fun ShelfTile(
     model: PickerModel,
     focused: Boolean,
     scale: Float,
-    art: Modifier,
     modifier: Modifier,
 ) {
     val theme = LocalFoldTheme.current.theme
@@ -357,7 +377,7 @@ private fun ShelfTile(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(TILE_LABEL_GAP),
     ) {
-        Box(art.size(TILE_ART), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(TILE_ART), contentAlignment = Alignment.Center) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -382,6 +402,186 @@ private fun ShelfTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/**
+ * A category's tiles as one strip, as the grid is ([SettingsShelf]): columns of one or two
+ * tiles, four on screen. The strip glides a column at a time to follow the focus and runs
+ * out to the card's own edge, fading there while more is beyond it. A tile that changes
+ * place, as one whose saves start syncing leaves the front, travels to its new one.
+ *
+ * The card's one highlight lands where the focused tile's square rests once the strip
+ * has, so the highlight and the strip arrive together rather than the highlight chasing.
+ */
+@Composable
+private fun ShelfStrip(
+    tiles: List<Row>,
+    model: PickerModel,
+    focus: Int?,
+    first: Int,
+    slots: SelectionSlots,
+    interactive: Boolean,
+    scale: Float,
+    onTap: (Int) -> Unit,
+    onScroll: (Int) -> Unit,
+    modifier: Modifier,
+) {
+    val motion = LocalFoldTheme.current.theme.motion
+    val density = LocalDensity.current
+    val count = tiles.size
+    val lines = SettingsShelf.lines(count)
+    val last = SettingsShelf.lastFirst(count)
+    val scrolls = SettingsShelf.scrolls(count)
+    val reach = ringReach()
+    val reachPx = with(density) { reach.toPx() }
+    val roomPx = with(density) { BADGE_ROOM.toPx() }
+    val gapPx = with(density) { TILE_LINE_GAP.toPx() }
+    val artPx = with(density) { TILE_ART.toPx() }
+    val fadePx = with(density) { (reach + SHELF_FADE).toPx() }
+    val anim = remember { Animatable(first.toFloat()) }
+    val shift by glideState(first.toFloat(), motion.durationTravel, scale, anim = anim)
+    // The strip's place in the card's column, which the highlight draws in.
+    var frame by remember { mutableStateOf<Rect?>(null) }
+    // Each tile's column and line, gliding when the tiles reorder, read only while placing.
+    val places = tiles.mapIndexed { index, row ->
+        key(row) {
+            eased(SettingsShelf.column(index, count).toFloat(), motion.durationTravel, scale) to
+                eased(SettingsShelf.line(index, count).toFloat(), motion.durationTravel, scale)
+        }
+    }
+    frame?.let { strip ->
+        val column = strip.width / SettingsShelf.shown
+        val tile = (strip.height - roomPx - gapPx * (lines - 1)) / lines
+        SideEffect {
+            for (index in 0 until count) {
+                val at = SettingsShelf.column(index, count)
+                if (at !in first until first + SettingsShelf.shown) {
+                    slots.rows.remove(index)
+                    continue
+                }
+                val rect = Rect(
+                    Offset(strip.left + (at - first) * column + (column - artPx) / 2f, strip.top + roomPx + SettingsShelf.line(index, count) * (tile + gapPx)),
+                    Size(artPx, artPx),
+                )
+                if (slots.round[index] == true) slots.round[index] = false
+                if (slots.rows[index] != rect) slots.rows[index] = rect
+            }
+        }
+    }
+    val swipes = rememberCoroutineScope()
+    val drag = rememberDraggableState { delta ->
+        val column = (frame?.width ?: 0f) / SettingsShelf.shown
+        if (column > 0f) swipes.launch { anim.snapTo((anim.value - delta / column).coerceIn(-SHELF_GIVE, last + SHELF_GIVE)) }
+    }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .keepInView(focus != null)
+            .onGloballyPositioned { coordinates ->
+                val column = coordinates.parentLayoutCoordinates ?: return@onGloballyPositioned
+                val rect = column.localBoundingBoxOf(coordinates, clipBounds = false)
+                if (frame != rect) frame = rect
+            }
+            // Out over the card's margin on each side, so tiles slide off at the card's edge.
+            .layout { measurable, constraints ->
+                val wide = constraints.maxWidth + reachPx.roundToInt() * 2
+                val placeable = measurable.measure(constraints.copy(minWidth = wide, maxWidth = wide))
+                layout(constraints.maxWidth, placeable.height) { placeable.place(-reachPx.roundToInt(), 0) }
+            }
+            .then(if (scrolls) Modifier.shelfFade({ shift }, last, fadePx) else Modifier)
+            .clipToBounds()
+            .draggable(
+                state = drag,
+                orientation = Orientation.Horizontal,
+                enabled = interactive && scrolls,
+                onDragStopped = { velocity ->
+                    val column = (frame?.width ?: 0f) / SettingsShelf.shown
+                    if (column <= 0f) return@draggable
+                    val target = (anim.value - velocity / column * SHELF_FLICK_SECONDS).roundToInt().coerceIn(0, last)
+                    onScroll(target)
+                    anim.animateTo(target.toFloat(), motion.glide(motion.durationTravel, scale, target - anim.value, anim.velocity))
+                },
+            ),
+    ) {
+        Layout(
+            content = {
+                tiles.forEachIndexed { index, row ->
+                    key(row) {
+                        ShelfTile(
+                            row = row,
+                            model = model,
+                            focused = focus == index,
+                            scale = scale,
+                            modifier = if (interactive) Modifier.press { onTap(index) } else Modifier,
+                        )
+                    }
+                }
+            },
+        ) { measurables, constraints ->
+            val column = (constraints.maxWidth - reachPx * 2) / SettingsShelf.shown
+            val placeables = measurables.map { it.measure(Constraints.fixedWidth(column.roundToInt().coerceAtLeast(0))) }
+            val tile = placeables.maxOfOrNull { it.height } ?: 0
+            val height = (roomPx + tile * lines + gapPx * (lines - 1)).roundToInt()
+            layout(constraints.maxWidth, height) {
+                placeables.forEachIndexed { index, placeable ->
+                    val (at, line) = places.getOrNull(index) ?: return@forEachIndexed
+                    placeable.place(
+                        (reachPx + (at.value - shift) * column).roundToInt(),
+                        (roomPx + line.value * (tile + gapPx)).roundToInt(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Fades the strip's edge while a column is beyond it, in as the strip leaves its end. */
+private fun Modifier.shelfFade(shift: () -> Float, last: Int, band: Float): Modifier =
+    graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+        drawContent()
+        if (size.width <= 0f) return@drawWithContent
+        val edge = (band / size.width).coerceAtMost(0.5f)
+        // A mask: only its alpha counts.
+        val solid = androidx.compose.ui.graphics.Color.Black
+        val clear = androidx.compose.ui.graphics.Color.Transparent
+        val before = shift().coerceIn(0f, 1f)
+        val after = (last - shift()).coerceIn(0f, 1f)
+        drawRect(
+            Brush.horizontalGradient(
+                0f to lerp(solid, clear, before),
+                edge to solid,
+                1f - edge to solid,
+                1f to lerp(solid, clear, after),
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
+
+/** Under a strip with tiles off screen: where the screen sits along it, as the grid's bar does. */
+@Composable
+private fun ShelfBar(count: Int, first: Int, scale: Float) {
+    val theme = LocalFoldTheme.current.theme
+    val start by glideState(first.toFloat(), theme.motion.durationTravel, scale)
+    val columns = SettingsShelf.columns(count).toFloat()
+    val density = LocalDensity.current
+    val track = with(density) { SHELF_BAR_PX.toDp() }
+    val thumb = track * (SettingsShelf.shown / columns)
+    Box(Modifier.fillMaxWidth().padding(bottom = TILE_BLOCK_GAP), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .width(track)
+                .height(with(density) { theme.style.tile.stripPx.toDp() })
+                .background(theme.muted.copy(alpha = theme.style.tile.stripAlpha), theme.style.shape.control()),
+        ) {
+            Box(
+                Modifier
+                    .graphicsLayer { translationX = (track * (start / columns)).toPx() }
+                    .width(thumb)
+                    .fillMaxHeight()
+                    .background(theme.onBackground, theme.style.shape.control()),
+            )
+        }
     }
 }
 
@@ -469,14 +669,29 @@ private val ROW_HEIGHT = 52.dp
 private val ROW_GAP = 4.dp
 
 /**
- * A shelf's tiles. Library with RomM, two folders, a computer, and Add is two lines of
- * tiles over four rows, and fits the card on the Thor's top screen without scrolling.
+ * A shelf's tiles. Two lines of them over three rows, with the strip's bar when it
+ * scrolls, fit the card on the Thor's top screen without the card scrolling.
  */
 private val TILE_ART = 56.dp
 private val TILE_LABEL_GAP = 2.dp
 private val TILE_LINE_GAP = 6.dp
 private val TILE_BLOCK_GAP = 6.dp
 private val BADGE_SIZE = 22.dp
+
+/** Above the strip's first line, for the badge that sits over a tile's corner. */
+private val BADGE_ROOM = 8.dp
+
+/** How far past the ring's reach the strip's edge fades. */
+private val SHELF_FADE = 8.dp
+
+/** The strip's bar: as long as the grid's, in pixels as the grid's is. */
+private const val SHELF_BAR_PX = 160f
+
+/** How far a flick carries the strip: its speed as the finger lifts, for this long. */
+private const val SHELF_FLICK_SECONDS = 0.15f
+
+/** How far past either end a finger can pull the strip, in columns. */
+private const val SHELF_GIVE = 0.3f
 private val HEADER_ART = 56.dp
 
 /** Beyond the ring's reach inside the card's scroll. */

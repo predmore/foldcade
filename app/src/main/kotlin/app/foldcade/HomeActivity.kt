@@ -130,6 +130,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private companion object {
         const val EXTRA_DIALOG = "foldcade.dialog"
+        const val EXTRA_SHELF_PREVIEW = "foldcade.shelfPreview"
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
@@ -419,7 +420,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.SaveRommToken -> saveRommToken()
             Effect.RetryRommDeviceCode -> beginRommDeviceCode()
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
-            Effect.SaveArtKey -> saveArtKey()
+            Effect.SaveArtKey -> foldcade.saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
             is Effect.ForgetFolder -> foldcade.forgetFolder(effect.uri)
             is Effect.PairStreamHost -> foldcade.pairMoonlightHost(effect.key, hostScreen())
@@ -673,6 +674,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.onSaveConflicts = { refreshSaveConflict() }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
+        applyShelfPreview(intent)
         applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
@@ -877,6 +879,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         acceptFolderLibrary(intent)
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
+        applyShelfPreview(intent)
         // Home relaunches this activity before a debug capture intent arrives.
         applyIslandPreview(intent, replace = true)
     }
@@ -891,6 +894,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             HostScreen.Bottom
         }
         foldcade.shell.showPreviewDialog(kind, index, screen)
+    }
+
+    /** Debug builds: `--ei foldcade.shelfPreview 16` fills Settings' shelves with stand-ins, 0 clears them. */
+    private fun applyShelfPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (!intent.hasExtra(EXTRA_SHELF_PREVIEW)) return
+        foldcade.shell.previewShelf(intent.getIntExtra(EXTRA_SHELF_PREVIEW, 0))
     }
 
     private fun applySaveConflictPreview(intent: Intent) {
@@ -2720,58 +2730,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         },
     )
-
-    /**
-     * Checks the typed SteamGridDB key with one search, then keeps it in the
-     * credential store. A refused or unreachable key leaves the form open with a note.
-     */
-    private fun saveArtKey() {
-        val key = foldcade.shell.connectToken.trim()
-        if (key.isEmpty()) return
-        val ticket = foldcade.shell.beginSetupValidation() ?: return
-        foldcade.scope.launch {
-            try {
-                val accepted = foldcade.checkSteamGridDbKey(key)
-                if (accepted != true) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (foldcade.shell.setupValidationCurrent(ticket)) {
-                            foldcade.shell.showConnectNote(if (accepted == false) Copy.artKeyRefused else Copy.artKeyUnreachable)
-                        }
-                    }
-                    return@launch
-                }
-                foldcade.editCredentials {
-                    if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.setupValidationCurrent(ticket) }) return@editCredentials
-                    val saved = try {
-                        foldcade.credentials.put(
-                            SteamGridDb.CREDENTIAL_ID,
-                            SteamGridDb.CREDENTIAL_KEY,
-                            Credential.ApiToken(key),
-                        )
-                        true
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        false
-                    }
-                    if (saved) {
-                        foldcade.steamGridDbKey = key
-                        foldcade.art.forgetMisses()
-                    }
-                    withContext(Dispatchers.Main.immediate) {
-                        if (saved) foldcade.shell.setArtKeySaved(true)
-                        if (foldcade.shell.setupValidationCurrent(ticket)) {
-                            if (saved) foldcade.shell.closeConnect() else foldcade.shell.showConnectNote(Copy.artKeyUnreachable)
-                        }
-                    }
-                }
-            } finally {
-                withContext(NonCancellable + Dispatchers.Main.immediate) {
-                    foldcade.shell.finishSetupValidation(ticket)
-                }
-            }
-        }
-    }
 
     private fun forgetArtKey() {
         foldcade.scope.launch {

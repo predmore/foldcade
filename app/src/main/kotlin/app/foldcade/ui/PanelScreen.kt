@@ -736,7 +736,7 @@ private fun motionFloat(target: Float, spec: FiniteAnimationSpec<Float>, snap: B
     motionState(target, spec, snap).value
 
 /** What [glideState] follows. [jump] is a token: a new one lands at once, as [snap] does. */
-private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
+internal data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?, val scale: Float)
 
 /**
  * [target] reached with [motion.glide], as state. One coroutine follows every change and
@@ -747,7 +747,7 @@ private data class GlideTo(val target: Float, val snap: Boolean, val jump: Any?,
  * glide started there to the new target is left to run.
  */
 @Composable
-private fun glideState(
+internal fun glideState(
     target: Float,
     base: Int,
     scale: Float,
