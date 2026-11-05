@@ -68,8 +68,9 @@ import java.util.Date
 @Composable
 private fun rememberPlayWeek(app: FoldcadeApp, weeksBack: Int, game: String? = null): PlayWeek {
     val stamp = app.plays.stamp
+    val catalogEpoch = app.shell.model.shelfEpoch
     val dateStyle = rememberDateStyle(app)
-    return remember(stamp, weeksBack, dateStyle, game) {
+    return remember(stamp, catalogEpoch, weeksBack, dateStyle, game) {
         val spans = app.plays.spans().let { all -> if (game == null) all else all.filter { it.gameId == game } }
         playWeek(spans, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, weeksBack)
     }
@@ -324,7 +325,7 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
     val stamp = app.plays.stamp
     val type = LocalFoldTheme.current.theme.style.type
     val played = remember(stamp, game) { app.plays.played() }
-    val total = played[game]?.activeMillis ?: 0L
+    val total = app.plays.shown(game).activeMillis
     val model = app.shell.model
     val reach = ringReach()
     val slots = rememberSelectionSlots()

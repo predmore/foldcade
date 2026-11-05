@@ -403,8 +403,10 @@ class FoldcadeApp : Application() {
 
     /** A tile's play time for its Y menu, read once per change to the log: menus ask on every publish. */
     private fun playTimeOf(tileId: String): Long {
-        if (playTimeStamp != plays.stamp) {
+        val catalog = shell.catalogNow()
+        if (playTimeStamp != plays.stamp || playTimeCatalog !== catalog) {
             playTimeStamp = plays.stamp
+            playTimeCatalog = catalog
             playTimes.clear()
             playFound.clear()
         }
@@ -413,6 +415,7 @@ class FoldcadeApp : Application() {
     }
 
     private var playTimeStamp = -1
+    private var playTimeCatalog: List<Any>? = null
     private val playTimes = HashMap<Pair<String, Set<String>>, Long>()
 
     /**
@@ -937,12 +940,13 @@ class FoldcadeApp : Application() {
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
+        plays.usageGames = shell::usageGameIds
         // A game's cover is kept when it is played, so its history keeps showing it after it leaves.
         plays.onStarted = { tile -> keepPlayArt(tile, again = true) }
         shell.playSources = ::playSources
         shell.playTimeOf = ::playTimeOf
         shell.playFoundFor = ::playFoundFor
-        shell.anyPlay = plays::hasTrackedSession
+        shell.anyPlay = plays::hasPlay
         shell.playDaySessions = { weeksBack, day ->
             app.foldcade.language.playDaySessions(plays.spans(), System.currentTimeMillis(), java.time.ZoneId.systemDefault(), weeksBack, day)
                 .map { it.sessionId }

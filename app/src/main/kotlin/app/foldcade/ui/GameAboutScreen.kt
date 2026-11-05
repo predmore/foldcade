@@ -136,8 +136,7 @@ private fun AboutCover(app: FoldcadeApp, record: Game?, query: ArtQuery?, mark: 
 /**
  * The words, in one card over the art: the facts, a screenshot beside them when one is
  * known, then the summary, as much of it as fits. With neither facts nor summary, the
- * one line on where they come from. Only a summary takes the card to the bottom; without
- * one it is as tall as what it holds.
+ * one line on where they come from. A short summary lets the card hug its content.
  */
 @Composable
 private fun AboutCard(
@@ -166,7 +165,7 @@ private fun AboutCard(
         // The facts may grow to what leaves the summary its first lines.
         val factRoom = constraints.maxHeight - if (summary != null) gapPx + bodyLine * SUMMARY_MIN_LINES else 0
         Column(
-            Modifier.fillMaxWidth().then(if (summary != null) Modifier.fillMaxHeight() else Modifier),
+            Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(GAP),
         ) {
             if (facts.isNotEmpty() || shot != null) {
@@ -189,7 +188,7 @@ private fun AboutCard(
                 }
             }
             when {
-                summary != null -> FittedText(summary, body, Modifier.weight(1f).fillMaxWidth())
+                summary != null -> FittedText(summary, body, Modifier.weight(1f, fill = false).fillMaxWidth())
                 facts.isEmpty() -> BasicText(GameAboutCopy.noInfo, style = aboutText(theme.muted, theme, design.type.dialogBody))
             }
         }

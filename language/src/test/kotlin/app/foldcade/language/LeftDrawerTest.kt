@@ -84,6 +84,7 @@ class LeftDrawerTest {
         }
         assertEquals(listOf(PromptKey.FaceA, PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(page).map { it.key })
         assertEquals(listOf(PlayCopy.sessions, PlayCopy.week, Copy.back), playActivityHints(page).map { it.label })
+        assertEquals(listOf(PlayCopy.week, Copy.back), playActivityHints(page, hasSessions = false).map { it.label })
     }
 
     @Test

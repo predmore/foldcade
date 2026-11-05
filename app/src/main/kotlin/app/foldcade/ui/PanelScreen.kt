@@ -856,7 +856,8 @@ private fun Modifier.wakesCommandCenter(app: FoldcadeApp, panel: Panel?): Modifi
 private sealed interface CenterSubject {
     data class App(val panel: Panel, val running: RunningApp?) : CenterSubject
 
-    data class Page(val title: String, val icon: Int?, val mark: String?, val settings: Boolean) : CenterSubject
+    data class Page(val title: String, val icon: Int?, val mark: String?, val settings: Boolean,
+        val game: String? = null, val platform: String? = null) : CenterSubject
 }
 
 /**
@@ -883,7 +884,7 @@ private fun centerSubject(app: FoldcadeApp, panel: Panel): CenterSubject {
 /**
  * Settings, Play activity, or a game's About filling the other screen while both are Foldcade's.
  * This screen then says where the user is, the way it would beside an app: About names the
- * game and wears its platform's mark.
+ * game and wears its cover, with its platform as the secondary line.
  */
 private fun pageBeside(
     app: FoldcadeApp,
@@ -904,7 +905,8 @@ private fun pageBeside(
             CenterSubject.Page(PlayCopy.activity, R.drawable.ic_status_playtime, null, settings = false)
         about != null && about.screen != screen -> {
             val game = app.shell.aboutGame(about.game)
-            CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false)
+            CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false,
+                game = about.game, platform = game?.shortText?.takeIf { it.isNotBlank() })
         }
         else -> null
     }
@@ -957,6 +959,17 @@ private fun CommandCenterScreen(
                 when (subject) {
                     is CenterSubject.App -> CenterArt(app, subject.running)
                     is CenterSubject.Page -> when {
+                        subject.game != null -> {
+                            val game = app.shell.aboutGame(subject.game)
+                            val art = rememberArt(app, game?.let(app.shell::artRecord), game?.let(app.shell::artQuery))
+                            val cover = art?.cover?.let { rememberCoverPainter(app, it, 512) }
+                            if (cover != null) Image(cover.painter, null,
+                                (if (cover.ratio < 1f) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
+                                    .aspectRatio(cover.ratio)
+                                    .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp / 2)),
+                                contentScale = ContentScale.Fit)
+                            else MarkIcon(subject.mark ?: MARK_CONSOLE, theme.style.hero.markScale)
+                        }
                         subject.icon != null -> InkIcon(subject.icon, Modifier.fillMaxSize(0.62f))
                         subject.mark != null -> MarkIcon(subject.mark, theme.style.hero.markScale)
                     }
@@ -987,6 +1000,10 @@ private fun CommandCenterScreen(
                 val line = achievements?.let { found ->
                     val total = found.achievements.size
                     achievementLine(if (found.progressKnown) found.achievements.count { it.earned } else null, total)
+                }
+                if (subject is CenterSubject.Page && subject.platform != null) {
+                    BasicText(subject.platform, Modifier.widthIn(max = titleMax),
+                        style = text(theme.muted, theme.style.type.heroMeta, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (line != null) {
                     BasicText(text = line, style = text(theme.focus, LocalFoldTheme.current.theme.style.type.heroMeta, theme), maxLines = 1)
@@ -1210,9 +1227,16 @@ private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, o
                 if (name != null) {
                     val theme = foldTheme()
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        BasicText(ArtCopy.matched(name), Modifier.clip(RoundedCornerShape(theme.style.shape.toastCornerDp.dp))
+                        Row(Modifier.clip(RoundedCornerShape(theme.style.shape.toastCornerDp.dp))
                             .background(theme.surface.copy(alpha = theme.style.dialog.toastAlpha)).padding(horizontal = 12.dp, vertical = 4.dp),
-                            style = text(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if ((app.shell.artPicker?.matches?.size ?: 0) > 1) PromptImage(promptGlyph(PromptKey.L2), 24.dp,
+                                Modifier.hostPress { app.shell.artInput(Meaning.LetterBackward) })
+                            BasicText(ArtCopy.matched(name), Modifier.weight(1f, fill = false),
+                                style = text(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if ((app.shell.artPicker?.matches?.size ?: 0) > 1) PromptImage(promptGlyph(PromptKey.R2), 24.dp,
+                                Modifier.hostPress { app.shell.artInput(Meaning.LetterForward) })
+                        }
                     }
                 }
             }
@@ -1275,6 +1299,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 }
             }
             val inset = px(design.metrics.heroInsetPx)
+            // The match chip occupies its own band below the islands while Art is open.
+            val matchSpace by eased(if (screen == model.layout.menuScreen && app.shell.artPicker != null) 44f else 0f,
+                motion.durationTravel, scale)
             // Wide enough for a platform, both screens, and play time on one line.
             val cardMax = this@BoxWithConstraints.maxWidth * 0.72f
             // Cocoon's hero: the art centred between the islands, a name card centred under it.
@@ -1285,7 +1312,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                         start = inset,
                         end = inset,
                         // Under the islands, on the screen that has them.
-                        top = if (screen == model.layout.menuScreen) inset + 48.dp else inset,
+                        top = if (screen == model.layout.menuScreen) inset + 48.dp + matchSpace.dp else inset,
                         bottom = inset,
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -3313,7 +3340,10 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     )
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
-    val page = model.playActivity?.takeIf { model.dialog == null }?.let { playActivityHints(model) }
+    val page = model.playActivity?.takeIf { model.dialog == null }?.let {
+        app.plays.stamp // Usage reconciliation and removals change which days have launch sessions.
+        playActivityHints(model, app.shell.playDaySessions(it.weeksBack, it.day).isNotEmpty())
+    }
         ?: model.gameAbout?.takeIf { model.dialog == null }?.let { gameAboutHints(model) }
     val find = shell.findHints()
     val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(

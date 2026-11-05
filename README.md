@@ -62,7 +62,7 @@ Foldcade is made for one device, so it uses everything the Thor has.
 
 Move with the D-pad across a continuous shelf of box art. The selected game fills the top screen with wide art and a logo, or its cover beside a title-screen image.
 
-Art comes from RomM, Steam, libretro, Moonlight's own box art, and an optional SteamGridDB key. With a key saved, choose **Y › Art** on a game to browse tile art, heroes, and logos. L1/R1 switch kinds, L2/R2 change the matched game, A saves an image, X restores automatic art for that kind, and B returns Home. The top screen names the SteamGridDB match. Image choices and chosen matches stay with the game across restarts. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
+Art comes from RomM, Steam, libretro, Moonlight's own box art, and an optional SteamGridDB key. With a key saved, choose **Y › Art** on a game to browse tile art, heroes, and logos. L1/R1 switch kinds, L2/R2 change the matched game, A applies an alternative (the current image needs no action), X restores automatic art for that kind, and B returns Home. The art in use comes first with a check, including art from RomM or a local media folder; choosing it keeps your current automatic or custom choice. The top screen names the SteamGridDB match. If there are no alternatives, try another match or Automatic. Image choices and chosen matches stay with the game across restarts. See [artwork setup](docs/integrations/README.md#artwork) to configure downloads.
 
 ### Everything in one place
 
@@ -88,6 +88,8 @@ See the [integration guides](docs/integrations/README.md) for setup and troubles
 ### One press, and you are playing
 
 Press **A** to play on the top screen or **X** on the bottom. Games that need both screens get both. Foldcade opens the appropriate app; when several emulators support a system, it uses the first installed one on its list. [RetroArch](docs/integrations/retroarch.md) goes first for a system once it has a core for it. When a RetroArch game needs a missing core, Foldcade gets it and starts the game; B cancels the download.
+
+Play activity and the hero use the same optional Android usage-access time for Android games, including play started elsewhere. Usage replaces Foldcade’s launch time for that app, so one launch counts once. ROMs keep their own launch history. Non-game apps and emulators keep their Foldcade launch history in every view. The week includes usage time; A Sessions appears only for days with a Foldcade launch, whose time you can remove.
 
 **A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
 

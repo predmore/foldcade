@@ -106,13 +106,22 @@ class ArtPickerTest {
         assertTrue(original.matches.isEmpty())
     }
 
-    @Test fun hintsPairBothKindsAndMatchesWithOneLabelEach() {
-        val groups = artPickerHintGroups(FaceMap.standard())
-        assertEquals(5, groups.size)
-        assertEquals(listOf(HintKey(PromptKey.L1, ""), HintKey(PromptKey.R1, ArtCopy.kind)), groups[0])
-        assertEquals(listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)), groups[1])
-        assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.kind })
-        assertEquals(1, artPickerHints(FaceMap.standard()).count { it.label == ArtCopy.match })
+    @Test fun footerKeepsOnlyApplyAutomaticAndBack() {
+        val hints = artPickerHints(FaceMap.standard())
+        assertEquals(listOf(ArtCopy.apply, ArtCopy.automatic, Copy.back), hints.map { it.label })
+    }
+
+    @Test fun currentProviderArtComesFirstAndDeduplicatesAnAlternative() {
+        val current = "content://media/local-cover.png"
+        val state = ArtPickerState("game", candidates = candidates).withCurrent(mapOf(ArtKind.Tile to current))
+        assertEquals(current, state.focused?.url)
+        assertEquals(candidates.size + 1, state.options.size)
+        assertEquals(candidates.first(), state.navigate(Meaning.MoveDown).focused)
+        val selected = state.withCurrent(mapOf(ArtKind.Tile to candidates[3].url))
+        assertEquals(candidates[3].url, selected.options.first().url)
+        assertEquals(candidates.size, selected.options.size)
+        assertEquals(candidates[3].url, selected.copy(candidates = emptyList(), loading = false).focused?.url)
+        assertEquals(current, state.copy(kind = ArtKind.Hero).navigate(Meaning.LeftPanel).focused?.url)
     }
 
     @Test fun changingKindsAfterAnEmptyOrFailedMatchSearchKeepsItsSettledState() {
@@ -151,6 +160,17 @@ class ArtPickerTest {
             assertTrue(state.candidates.isEmpty())
             assertNull(state.focused)
         }
+    }
+
+    @Test fun applyIsOfferedOnlyWhenTheFocusedImageCanChangeTheArt() {
+        val current = candidates.first().url
+        val state = ArtPickerState("game", candidates = candidates, currentArt = mapOf(ArtKind.Tile to current))
+        assertFalse(state.canApply)
+        assertFalse(artPickerHints(FaceMap.standard(), state.canApply).any { it.label == ArtCopy.apply })
+        val alternative = state.navigate(Meaning.MoveDown)
+        assertTrue(alternative.canApply)
+        assertTrue(artPickerHints(FaceMap.standard(), alternative.canApply).any { it.label == ArtCopy.apply })
+        assertFalse(state.copy(currentArt = emptyMap(), candidates = emptyList()).canApply)
     }
 
 }

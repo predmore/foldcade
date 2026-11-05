@@ -6,8 +6,8 @@ import java.time.ZoneId
 import java.time.format.TextStyle
 
 /**
- * One stretch a game was in front, from Foldcade's play log. Wall-clock milliseconds.
- * [sessionId] is the launch it belongs to; one session can be several stretches.
+ * One stretch a game was in front, from launch history or usage access. Wall-clock milliseconds.
+ * [sessionId] is its Foldcade launch, if any; one session can be several stretches.
  */
 data class PlaySpan(val gameId: String, val startMillis: Long, val endMillis: Long, val sessionId: String = "")
 
@@ -66,7 +66,7 @@ object PlayCopy {
     const val activity = "Play activity"
     const val pastWeek = "Past 7 days"
     const val mostPlayed = "Most played"
-    const val nothing = "Nothing played these days"
+    const val nothing = "No play this week"
     const val week = "Week"
     const val sessions = "Sessions"
     const val remove = "Remove"
@@ -86,7 +86,7 @@ object PlayCopy {
 
     /** A game with play that no library has any more: its file was renamed, replaced, or removed. */
     const val gone = "Gone"
-    const val noSources = "No other games played yet"
+    const val noSources = "No other play yet"
 
     /** Settings › System. Its dialog offers both ways. */
     const val history = "Play history"
@@ -284,7 +284,7 @@ private fun applyPlayGame(model: PickerModel, page: PlayActivityPage, game: Stri
 }
 
 /** The hint row under the page: the week's keys, the open day's, or a game's. */
-fun playActivityHints(model: PickerModel): List<HintKey> {
+fun playActivityHints(model: PickerModel, hasSessions: Boolean = true): List<HintKey> {
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
     val page = model.playActivity
     if (page?.game != null) {
@@ -299,8 +299,8 @@ fun playActivityHints(model: PickerModel): List<HintKey> {
     if (model.playActivity?.sessions != null) {
         return listOf(HintKey(actionFaces(model.faceMap).bottomGlyph, PlayCopy.remove), back)
     }
-    return listOf(
-        HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, PlayCopy.sessions),
+    return listOfNotNull(
+        if (hasSessions) HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, PlayCopy.sessions) else null,
         HintKey(PromptKey.DpadSides, PlayCopy.week),
         back,
     )
