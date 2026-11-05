@@ -26,3 +26,23 @@ Thor QA, 2026-11-04 ~20:10–20:18 PST:
 - Existing routing observation passed to uxr-routing: page D-pad week moves worked from display 4; injected display-0 left was ignored. B on top still closed About.
 
 Cleanup: no save-backups directory existed; deleted only the .uxrpages RomM device (HTTP 204), uninstalled .uxrpages, set stay-on false, and released. The next holder acquired immediately; subsequent device settings belong to its turn. HOME never changed and Wi-Fi stayed enabled.
+
+Review round 1 verified findings and follow-up:
+- Fixed game page Total to shown(game), the displayed source, rather than launch-only played().
+- Chose one eligibility policy across hero, totals and activity: non-game apps/emulators retain launch history everywhere. Catalog changes invalidate cached totals/week/today after a game is filed as an app or vice versa.
+- Only alternatives offer Apply. Current and empty lists offer Automatic / Back.
+- Companion cover takes its own fitted image bounds with the same theme corner as About; clipping the square container alone would leave portrait-cover corners square.
+- An animated 44dp match band below the islands reserves space in the cover/title-screen layout.
+- Verified an additional reachability gap: shell.anyPlay used launch-only hasTrackedSession(), hiding Y › Play time for a usage-only game. Added hasPlay() for that menu gate, retaining the actual-session gate for the usage-permission prompt.
+- One settled candidate is now a larger centered art tile; the transition between single-art and alternatives uses the existing theme crossfade. Multi-candidate navigation remains the three-row strip.
+- Full testDebugUnitTest --rerun-tasks passes after all review fixes (2,676 tests).
+
+
+Thor QA round 2, 2026-11-04 21:15:30–21:22 PST:
+- Pokémon HOME’s Y › Play time is available without a Foldcade launch. Its row, week and Total all read 2m. The empty sources line reads “No other play yet” on one line.
+- Calendar’s hero no longer imports outside usage; its launch log is empty, matching Play activity’s policy.
+- r2-art-tile/hero/logo show the larger checked current image with Automatic / Back and no dead Apply hint. Current images request 1024px to stay sharp at the larger size.
+- r2-art-cover-layout-top uses a match with no wide art to exercise cover + screenshot: the match chip is above both with clear space.
+- r2-about shows a content-sized facts/summary card, and the companion’s fitted portrait cover has theme-rounded corners.
+- No game/app/stream was launched. HOME stayed app.foldcade and Wi-Fi stayed 1. No save-backups directory existed; own test RomM device deleted HTTP204, .uxrpages removed, stay-on set false, turn released. The next holder acquired immediately.
+- Round 1 Opus findings addressed: Total source, non-game consistency, Apply hint, match-chip overlap, companion corners. An additional usage-only page gate and one orphaned “yet” were fixed during verification.
