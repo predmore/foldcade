@@ -32,6 +32,8 @@ class HomeSelectionAdmissionTest {
             BulkAction.NewCollection -> {
                 choose(shell, Row.AddToCollection)
                 choose(shell, Row.NewCollection)
+                // The collection is made when its name is saved.
+                shell.onMeaning(Meaning.Done, HostScreen.Bottom)
             }
             BulkAction.Collection -> {
                 choose(shell, Row.AddToCollection)

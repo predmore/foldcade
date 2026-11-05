@@ -1367,6 +1367,8 @@ class ShellController(
     fun typingHero(): HeroSubject? {
         if (!showingHome()) return null
         val id = home.renamingId ?: return null
+        // A new collection is not on the board until Done; its preview stands for it.
+        home.namingPreview?.takeIf { it.id == id }?.let { return folderHero(it, count = it.slots.count { slot -> slot != null }) }
         return home.board.folders[id]?.let(::folderHero)
     }
 
@@ -1419,10 +1421,10 @@ class ShellController(
             HeroSubject.Folder(HeroFolder(key = HIDDEN_HERO_KEY, name = Copy.hiddenApps, count = null, mark = MARK_HIDDEN, note = Copy.noHiddenApps))
         } else null
 
-    private fun folderHero(folder: HomeFolder): HeroSubject {
+    private fun folderHero(folder: HomeFolder, count: Int = folderCount(home.board, folder.id)): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
         return HeroSubject.Folder(
-            HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark, apps = folder.holdsApps),
+            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark, apps = folder.holdsApps),
         )
     }
 
