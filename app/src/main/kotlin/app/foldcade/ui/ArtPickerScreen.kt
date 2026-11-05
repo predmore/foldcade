@@ -126,7 +126,11 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
             val shown = tabs[kind] ?: state.copy(kind = kind, candidates = emptyList(), loading = true)
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val rows = if (large) 1 else 3
-                val cellWidth = if (large) minOf(maxWidth * 0.62f, maxHeight * 1.1f) else (maxWidth - reach * 2) / 4
+                val cellWidth = when {
+                    large && kind != ArtKind.Tile -> maxWidth - reach * 2
+                    large -> minOf(maxWidth * 0.62f, maxHeight * 1.1f)
+                    else -> (maxWidth - reach * 2) / 4
+                }
                 val cellHeight = maxHeight / rows
                 val padding = if (large) PaddingValues(horizontal = (maxWidth - cellWidth) / 2, vertical = reach) else PaddingValues(reach)
                 val scroll = rememberLazyListState()
