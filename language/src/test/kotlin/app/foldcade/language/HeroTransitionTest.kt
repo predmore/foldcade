@@ -105,7 +105,7 @@ class HeroTransitionTest {
     }
 
     @Test
-    fun rapidFocusReplacesTheDestinationAndDropsTheLayerAlreadyLeaving() {
+    fun rapidFocusRetargetsFromTheMoreVisibleLayer() {
         val resting = HeroBlend(front = "a", back = null, frontAlpha = 1f, backAlpha = 0f)
         val towardB = retargetHero(resting, "b").copy(frontAlpha = 0.4f, backAlpha = 0.55f)
         val towardC = retargetHero(towardB, "c")
@@ -113,11 +113,42 @@ class HeroTransitionTest {
         assertEquals("b", towardC.back)
         assertEquals(0f, towardC.frontAlpha, 0.001f)
         assertEquals(0.4f, towardC.backAlpha, 0.001f)
-        assertFalse(towardC.back == "a")
         val stillC = retargetHero(towardC.copy(frontAlpha = 0.25f), "c")
         assertEquals("c", stillC.front)
         assertEquals("b", stillC.back)
         assertEquals(0.25f, stillC.frontAlpha, 0.001f)
+    }
+
+    @Test
+    fun aReadyUpgradeKeepsTheVisibleArtWhenItsCoverHasNotFadedIn() {
+        val next = retargetHero(HeroBlend("cover", "old art", frontAlpha = 0f, backAlpha = 1f), "wide")
+        assertEquals("old art", next.back)
+        assertEquals(1f, next.backAlpha, 0.001f)
+        assertEquals("wide", next.front)
+        assertEquals(0f, next.frontAlpha, 0.001f)
+
+        val mostlyIn = retargetHero(HeroBlend("cover", "old art", frontAlpha = 0.8f, backAlpha = 0.2f), "wide")
+        assertEquals("cover", mostlyIn.back)
+        assertEquals(0.8f, mostlyIn.backAlpha, 0.001f)
+    }
+
+    @Test
+    fun returningToTheLeavingArtKeepsTheTwoLayerKeysDistinct() {
+        val next = retargetHero(HeroBlend("cover", "old art", frontAlpha = 0.2f, backAlpha = 0.8f), "old art")
+        assertEquals("old art", next.front)
+        assertEquals("cover", next.back)
+        assertFalse(next.front == next.back)
+    }
+
+    @Test
+    fun aMostlyOpaqueFrontOccludesTheOlderBackdropDuringQuickMoves() {
+        // Around the scene dwell boundary, the leave curve can still exceed the arrive
+        // curve numerically. Most of that old layer is covered by the newer front.
+        for (target in listOf("c", null)) {
+            val next = retargetHero(HeroBlend("b", "a", frontAlpha = 0.84f, backAlpha = 0.86f), target)
+            assertEquals("b", next.back)
+            assertEquals(0.84f, next.backAlpha, 0.001f)
+        }
     }
 
     @Test
