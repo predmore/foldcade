@@ -335,7 +335,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                         BasicText(
                             when {
                                 hint != null -> hint
-                                unusable -> rommAddressFix(model.connectOrigin, warned = model.connectWarning != null)
+                                unusable -> rommAddressFix(model.connectOrigin)
                                 waitingForCode -> Copy.rommGettingCode
                                 phoneUrl != null -> if ((phone as? app.foldcade.language.KeyDrop.Open)?.phoneHere == true) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
                                 phone == app.foldcade.language.KeyDrop.Offline && app.foldcade.language.rommNeedsAddress(model) -> RommPhoneCopy.offline

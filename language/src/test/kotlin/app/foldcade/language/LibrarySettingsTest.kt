@@ -48,11 +48,13 @@ class LibrarySettingsTest {
 
     @Test
     fun aTypedRommAddressSaysWhatToFix() {
-        assertEquals(Copy.rommFixAddress, rommAddressFix("http://192.0.2.1", warned = true))
-        assertEquals(Copy.rommAddressScheme, rommAddressFix("romm.local", warned = false))
-        assertEquals(Copy.rommAddressScheme, rommAddressFix("ftp://romm.local", warned = false))
-        assertEquals(Copy.rommAddressCredentials, rommAddressFix("https://user:secret@romm.example", warned = false))
-        assertEquals(Copy.rommFixAddress, rommAddressFix("https:///api", warned = false))
+        assertEquals(Copy.rommFixAddress, rommAddressFix("http://192.0.2.1"))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("romm.local"))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("ftp://romm.local"))
+        assertEquals(Copy.rommAddressCredentials, rommAddressFix("https://user:secret@romm.example"))
+        // A LAN http:// address with a password warns about encryption too, but the password is what stops the code.
+        assertEquals(Copy.rommAddressCredentials, rommAddressFix("http://user:pw@192.168.1.2"))
+        assertEquals(Copy.rommFixAddress, rommAddressFix("https:///api"))
     }
 
     @Test

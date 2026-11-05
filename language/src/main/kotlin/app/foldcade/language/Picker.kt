@@ -1256,15 +1256,16 @@ data class PairingCode(val code: String, val url: String) {
  * can approve the code on screen.
  */
 /**
- * What to fix in a typed RomM address Foldcade can't use, under the phone's square: http:// off
- * the home network ([warned]), a username or password in it, or no http(s):// at all.
+ * What to fix in a typed RomM address Foldcade can't use, under the phone's square: no http(s)://
+ * at all, a username or password in it, or else the address itself, as http:// off the home
+ * network, whose warning sits under the field.
  */
-fun rommAddressFix(origin: String, warned: Boolean): String {
+fun rommAddressFix(origin: String): String {
     val text = origin.trim()
     val scheme = text.substringBefore("://", "").lowercase()
     return when {
-        warned -> Copy.rommFixAddress
         scheme != "http" && scheme != "https" -> Copy.rommAddressScheme
+        // Before the http warning: a LAN http:// address with a password still warns about encryption.
         '@' in text.substringAfter("://").substringBefore('/') -> Copy.rommAddressCredentials
         else -> Copy.rommFixAddress
     }

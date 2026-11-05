@@ -43,7 +43,8 @@ fun keyDropQr(drop: KeyDrop?): String? = when (drop) {
 
 object KeyDropCopy {
     const val opening = "Getting a code…"
-    const val scan = "Scan with your phone to add a key"
+    /** The page is served on this Wi-Fi only, so the line says so (LanDrop). */
+    const val scan = "Scan on this Wi-Fi to add a key"
     const val phoneHere = "Paste your key on your phone"
     const val sent = "Got it"
     const val scanOffline = "Scan for your key, then type it here"
