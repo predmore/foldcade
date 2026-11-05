@@ -1950,12 +1950,21 @@ private fun HeroLabel(
 /** The title makes room for its decoded logo over the same fade, without moving the art in one frame. */
 private fun Modifier.collapsingHeroTitle(progress: () -> Float): Modifier = clipToBounds().layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    val shown = progress().coerceIn(0f, 1f)
-    val height = (placeable.height * shown).roundToInt()
+    val (room, alpha) = titleCollapse(progress())
+    val height = (placeable.height * room).roundToInt()
     layout(placeable.width, height) {
-        // The words are gone before the shrinking card cuts them (review-B S5′).
-        placeable.placeWithLayer(0, (height - placeable.height) / 2) { alpha = ((shown - 0.5f) * 2f).coerceIn(0f, 1f) }
+        placeable.placeWithLayer(0, (height - placeable.height) / 2) { this.alpha = alpha }
     }
+}
+
+/**
+ * How much of its line a collapsing title keeps, and how opaque it is, at [shown] (1 whole, 0 gone).
+ * The words fade out first at full height, then the line closes, so no letter is cut while it
+ * can be read (review-B S5′, review bot on #388).
+ */
+internal fun titleCollapse(shown: Float): Pair<Float, Float> {
+    val t = shown.coerceIn(0f, 1f)
+    return (t * 2f).coerceAtMost(1f) to ((t - 0.5f) * 2f).coerceIn(0f, 1f)
 }
 
 /** Lines of a game's summary the name card opens to, and the space above them. */

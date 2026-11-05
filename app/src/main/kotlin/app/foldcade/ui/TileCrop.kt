@@ -42,8 +42,8 @@ internal object TileCrops {
         shares[uri] = share
     }
 
-    /** Where [uri]'s tile square sat in the box, from its top: 0 top, 0.5 centred, 1 bottom. */
-    fun share(uri: String?): Float = uri?.let(shares::get) ?: 0.5f
+    /** Where [uri]'s tile square sat in the box, from its top: 0 top, 0.5 centred, 1 bottom. Null before its tile decoded. */
+    fun share(uri: String?): Float? = uri?.let(shares::get)
 }
 
 /** How many columns the box is read at. Enough for letters to show as edges, cheap on a 384 px tile. */

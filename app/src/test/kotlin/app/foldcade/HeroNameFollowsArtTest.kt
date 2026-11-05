@@ -2,7 +2,9 @@ package app.foldcade
 
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroSubject
+import app.foldcade.ui.bloomCropBias
 import app.foldcade.ui.namedSubject
+import app.foldcade.ui.titleCollapse
 import app.foldcade.ui.richestShare
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -33,5 +35,25 @@ class HeroNameFollowsArtTest {
         // Even detail keeps the middle, and a square has nowhere to go.
         assertEquals(0.5f, richestShare(IntArray(72) { 100 }, window = 48), 0f)
         assertEquals(0.5f, richestShare(IntArray(48) { it }, window = 48), 0f)
+    }
+
+    @Test fun aCollapsingTitleIsGoneBeforeItsLineClosesOnIt() {
+        for (step in 0..100) {
+            val (room, alpha) = titleCollapse(step / 100f)
+            if (room < 1f) assertEquals(0f, alpha, 0f)
+        }
+        assertEquals(1f to 1f, titleCollapse(1f))
+        assertEquals(0f to 0f, titleCollapse(0f))
+    }
+
+    @Test fun aBloomFromATileKeepsTheBandItsTileKept() {
+        // The tile kept the bottom of its box, its title, so every frame does, square stand-in or sharp cover.
+        assertEquals(1f, bloomCropBias(wide = false, fromTile = true, tileShare = 1f, grow = 0f), 0f)
+        assertEquals(1f, bloomCropBias(wide = false, fromTile = true, tileShare = 1f, grow = 1f), 0f)
+        // No tile cut, or a hero's whole cover: centred first, then up toward the title most boxes carry.
+        assertEquals(0.5f, bloomCropBias(wide = false, fromTile = true, tileShare = null, grow = 0f), 0f)
+        assertEquals(0.5f, bloomCropBias(wide = false, fromTile = false, tileShare = 1f, grow = 0f), 0f)
+        assertEquals(true, bloomCropBias(wide = false, fromTile = false, tileShare = 1f, grow = 1f) < 0.5f)
+        assertEquals(0.5f, bloomCropBias(wide = true, fromTile = true, tileShare = 0f, grow = 1f), 0f)
     }
 }
