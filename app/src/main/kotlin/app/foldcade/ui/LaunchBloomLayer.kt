@@ -116,7 +116,8 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
         var last = Long.MIN_VALUE
         while (true) {
             val frame = withFrameMillis { it }
-            if (last != Long.MIN_VALUE) grown += (frame - last).coerceIn(0L, BLOOM_FRAME_STEP_MS)
+            // Growth waits for art to draw, so the first frame shown is the tile's size, not a jump past it.
+            if (last != Long.MIN_VALUE && !missing) grown += (frame - last).coerceIn(0L, BLOOM_FRAME_STEP_MS)
             // Each screen's first frame, on one clock, so the two screens can be checked against each other.
             if (last == Long.MIN_VALUE) Log.i("Foldcade", "launch-bloom $panel first frame +${bloom.elapsed()}ms")
             last = frame
