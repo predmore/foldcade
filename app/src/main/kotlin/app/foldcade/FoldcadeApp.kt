@@ -2185,6 +2185,9 @@ class FoldcadeApp : Application() {
         // A folder that brings nothing says so where it was picked, with the way to pick again.
         scope.launch(Dispatchers.Main.immediate) {
             reload.join()
+            // Art and info are sorted out after the scan, and a folder of art alone is no empty pick.
+            mediaIndexJob?.join()
+            if ((plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan() == null) return@launch
             val folder = libraryFolders().firstOrNull { it.uri == picked } ?: return@launch
             val read = boundForest?.reportedTrees?.contains(picked) == true
             if (!read || folder.games > 0 || folder.media) return@launch

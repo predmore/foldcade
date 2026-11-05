@@ -462,7 +462,9 @@ fun retainSettingsShelf(previous: PickerModel, next: PickerModel): PickerModel {
     ) {
         val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() }
         val rows = settingsShown(page, next).second
-        if (held != null && rows.getOrNull(page.row) != held) {
+        // A folder just added takes the focus on purpose ([withFolders]), even where its tile lands on the old tile's place.
+        val added = (rows.getOrNull(page.row) as? Row.SettingsTile)?.page.let { it is SettingsInner.Folder && previous.folders.none { folder -> folder.uri == it.uri } }
+        if (held != null && !added && rows.getOrNull(page.row) != held) {
             val moved = rows.indexOf(held)
             if (moved >= 0) settled = settled.copy(row = moved)
         }

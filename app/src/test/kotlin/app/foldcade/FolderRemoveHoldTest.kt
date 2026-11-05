@@ -50,6 +50,18 @@ class FolderRemoveHoldTest {
         assertEquals(SettingsInner.Folder(roms.uri), shell.model.settings?.inner)
     }
 
+    @Test
+    fun aFolderAddedFromTheAddTileKeepsTheFocusWhereAddWas() {
+        // No other source: the new folder's tile lands on Add's place, which the shelf would otherwise hold to Add.
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
+        shell.onMeaning(Meaning.Menu, HostScreen.Bottom)
+        repeat(settingsCategories(shell.model).indexOf(SettingsCategory.Library)) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(Row.SettingsTile(SettingsInner.Add), settingsFocus(shell.model))
+        shell.setFolders(listOf(roms))
+        assertEquals(Row.SettingsTile(SettingsInner.Folder(roms.uri)), settingsFocus(shell.model))
+    }
+
     private fun onRemove(): ShellController {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
         shell.setFolders(listOf(roms))

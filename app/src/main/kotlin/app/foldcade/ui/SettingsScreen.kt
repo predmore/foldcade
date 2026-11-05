@@ -312,7 +312,7 @@ private fun CardRows(
                         held = model.held,
                         scale = scale,
                         // Remove fills while held, and shakes when let go early, as a download's does.
-                        modifier = (if (!interactive) place else if (row.destructive()) place.holdPress(app, index, screen) else place.press(tap))
+                        modifier = (if (!interactive) place else if (row.destructive()) place.holdPress(app, index, screen, onEffect) else place.press(tap))
                             .then(holdFeedback(model, row, scale)),
                         labelStyle = labelStyle,
                         height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
@@ -848,12 +848,13 @@ private fun CategoryRow(
 }
 
 /** A held row's press: A is held while the finger is down, and letting go early leaves the row as it was. */
-private fun Modifier.holdPress(app: FoldcadeApp, index: Int, screen: HostScreen): Modifier = pointerInput(index) {
+private fun Modifier.holdPress(app: FoldcadeApp, index: Int, screen: HostScreen, onEffect: (Effect?) -> Unit): Modifier = pointerInput(index) {
     detectTapGestures(onPress = {
         val key = promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA
         app.shell.setPromptHeld(key, true, app.shell.inputWindow(screen))
         app.shell.touchSettingsRow(index, screen)
-        try { tryAwaitRelease() } finally { app.shell.setPromptHeld(key, false, app.shell.inputWindow(screen)) }
+        // A release after the hold is done, before the next tick, completes it here: its effect must run.
+        try { tryAwaitRelease() } finally { onEffect(app.shell.setPromptHeld(key, false, app.shell.inputWindow(screen))) }
     })
 }
 
