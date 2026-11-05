@@ -524,6 +524,7 @@ Play activity: the week, the days and their sessions. The bars are `colors.progr
 | `play.trackAlpha` | 0.06 | A day's track |
 | `play.hourAlpha` | 0.1 | The hour lines across it |
 | `play.hourDp` | 1 | Their width |
+| `play.markMinWidthDp` | 8 | Minimum width of a played stretch, kept inside the day's track |
 | `play.emptyBarAlpha` | 0.12 | A day of the week with no play |
 | `play.barCornerDp` | 3 | A day's bar's corner |
 

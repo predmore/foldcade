@@ -127,6 +127,8 @@ data class HomeFace(
     val onServer: Boolean = false,
     /** A folder's label when [title] does not fit under its tile ([folderShortName]). */
     val shortTitle: String? = null,
+    /** Home keeps this RomM member while the source has no catalog entry for it. */
+    val waitingForRomm: Boolean = false,
 )
 
 /**
@@ -138,6 +140,8 @@ class HomeSession(
     nowMillis: Long = System.currentTimeMillis(),
     /** Each copy's id to the one tile it folds into ([foldSameGames]), as last saved. */
     sameGames: Map<String, String> = emptyMap(),
+    /** Already loaded history/metadata names for a retained RomM member; never reads disk or the network. */
+    private val rememberedName: (String) -> String? = { null },
 ) {
     /** Restored games waiting for a source have places, but no tile until the catalog knows them. */
     internal var restoredGaps: Set<String> = emptySet()
@@ -341,6 +345,7 @@ class HomeSession(
             remoteKey = game?.remoteKey ?: shelfGame?.remoteKey,
             emptyShelfHint = shelfGame?.emptyShelfHint == true,
             availabilityLabel = shelfGame?.availabilityLabel,
+            waitingForRomm = face.waitingForRomm,
         )
     }
 
@@ -391,12 +396,37 @@ class HomeSession(
     private var facesIcon: IconPick? = null
     private var facesGaps: Set<String>? = null
     private var facesCache: List<HomeFace> = emptyList()
+    private val waitingNames = HashMap<String, String>()
 
-    fun face(index: Int): HomeFace? = faces().getOrNull(index)
+    private fun waitingName(id: String): String? {
+        // Prefer the current memory source; the last name is only a fallback across a miss.
+        val current = rememberedName(id)?.trim()?.takeIf { it.isNotEmpty() && it != id }
+        if (current != null) waitingNames[id] = current
+        return current ?: waitingNames[id]
+    }
 
-    fun faces(): List<HomeFace> {
+    fun face(index: Int): HomeFace? = faces(index).getOrNull(index)
+
+    fun faces(): List<HomeFace> = faces(null)
+
+    private fun faces(only: Int?): List<HomeFace> {
         if (board.allOpen) return allFaces()
-        if (facesBoard === board && facesMerge == merges && facesIcon === iconPick && facesGaps === restoredGaps) return facesCache
+        if (facesBoard === board && facesMerge == merges && facesIcon === iconPick && facesGaps === restoredGaps) {
+            // History/metadata can gain a name without a board merge. Refresh only waiting
+            // faces being read, and keep the cached list when no displayed value changed.
+            var changed: MutableList<HomeFace>? = null
+            val indices = if (only == null) facesCache.indices else only..only
+            for (index in indices) {
+                val before = facesCache.getOrNull(index)?.takeIf { it.waitingForRomm } ?: continue
+                val after = faceFor(before.id)
+                if (after != before) {
+                    if (changed == null) changed = facesCache.toMutableList()
+                    changed[index] = after
+                }
+            }
+            if (changed != null) facesCache = changed
+            return facesCache
+        }
         return (if (board.foldersOpen) folderFaces() else slots().map(::faceFor)).also {
             facesCache = it
             facesBoard = board
@@ -1301,11 +1331,16 @@ class HomeSession(
         val item = catalogById[id]
         val game = games[id]
         if (id in restoredGaps && item == null) return faceFor(null)
+        val waitingForRomm = item == null && id.startsWith("lib:romm:")
+        val waitingTitle = app.foldcade.language.BackupCopy.waiting("RomM")
+        val keptTitle = sequenceOf(game?.label, board.ranks[id]?.title)
+            .mapNotNull { it?.trim()?.takeIf { name -> name.isNotEmpty() && name != id } }.firstOrNull()
+            ?: if (waitingForRomm) waitingName(id) else null
         return HomeFace(
             id = id,
-            title = item?.title ?: id,
-            shortText = platformName(item?.platformId ?: game?.platformId),
-            mark = item?.mark,
+            title = item?.title ?: if (waitingForRomm) keptTitle ?: waitingTitle else id,
+            shortText = if (waitingForRomm && keptTitle != null) waitingTitle else platformName(item?.platformId ?: game?.platformId),
+            mark = if (waitingForRomm) "cloud" else item?.mark,
             empty = false,
             folder = false,
             allTile = false,
@@ -1314,6 +1349,7 @@ class HomeSession(
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,
             onServer = copies(id).let { it.isNotEmpty() && it.all { copy -> copy.availability == Availability.RemoteOnly } },
+            waitingForRomm = waitingForRomm,
         )
     }
 

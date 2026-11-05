@@ -26,6 +26,8 @@ data class ShelfGame(
     val availabilityLabel: String? = null,
     /** An Android shortcut stands for this game, so Delete shortcut can remove it. */
     val shortcut: Boolean = true,
+    /** A retained Home member without a RomM catalog entry. Its screen requirements are unknown. */
+    val waitingForRomm: Boolean = false,
 )
 
 object Shelf {

@@ -287,7 +287,7 @@ object Copy {
     const val retroArchCoresBody = "Foldcade gets missing cores for you. Next, tap Use this folder, then Allow."
     fun gettingCore(name: String) = "Getting $name…"
     fun coreDownloadFailed(name: String) = "Couldn’t get $name"
-    const val coreDownloadFailedBody = "Try again, or install it in RetroArch’s Online Updater › Core Downloader."
+    const val coreDownloadFailedBody = "Try again, or get it in RetroArch › Online Updater."
     const val retroArchStorageTitle = "RetroArch can’t read games yet"
     const val retroArchStorageBody = "Allow RetroArch to read files in Android’s app settings. Come back here and your game carries on."
     const val allowFiles = "Allow file access"

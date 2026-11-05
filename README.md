@@ -93,6 +93,8 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 
 Play activity and the hero use the same optional Android usage-access time for Android games, including play started elsewhere. Usage replaces Foldcade’s launch time for that app, so one launch counts once. ROMs keep their own launch history. Non-game apps and emulators keep their Foldcade launch history in every view. The week includes usage time; A Sessions appears only for days with a Foldcade launch, whose time you can remove.
 
+Empty days show a quiet dash, and short stretches of play stay visible on the week. A fresh profile says **No play yet**; a quiet week says **No play this week**. A game's Play time shows **Move time from** only when another game's time is available. RomM games kept on Home without catalog details show its cloud and **Waiting for RomM**, with a name from play history or cached metadata when available; **A Play** tries the game again.
+
 **A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
 
 ### Two drawers, always a press away

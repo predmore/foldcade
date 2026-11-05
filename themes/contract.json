@@ -281,6 +281,7 @@
     "play.trackAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.06},
     "play.hourAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.1},
     "play.hourDp": {"kind":"number","unit":"dp","role":"stroke","min":0.0,"afterglow":1.0},
+    "play.markMinWidthDp": {"kind":"number","unit":"dp","role":"stroke","min":0.0,"afterglow":8.0},
     "play.emptyBarAlpha": {"kind":"number","role":"fill","min":0.0,"max":1.0,"afterglow":0.12},
     "play.barCornerDp": {"kind":"number","unit":"dp","role":"corner","min":0.0,"afterglow":3.0},
     "collections.gold": {"kind":"color","afterglow":"#FFC15A"},

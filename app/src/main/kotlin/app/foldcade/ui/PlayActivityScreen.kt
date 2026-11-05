@@ -60,6 +60,8 @@ import app.foldcade.language.promptKeyOf
 import app.foldcade.language.Theme
 import app.foldcade.language.playDaySessions
 import app.foldcade.language.playDuration
+import app.foldcade.language.playDayTotal
+import app.foldcade.language.playMarkRange
 import app.foldcade.language.playWeek
 import java.time.ZoneId
 import java.util.Date
@@ -176,9 +178,9 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                             style = playText(if (index == page.day && game == null) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow),
                         )
                         DayTrack(day.blocks, theme, Modifier.weight(1f).height(22.dp))
-                        // Every day says its total, one without play too, so today reads like the rest.
+                        // Empty days stay quiet beside the days with play.
                         BasicText(
-                            playDuration(day.totalMillis),
+                            playDayTotal(day.totalMillis),
                             modifier = Modifier.width(DAY_TOTAL),
                             style = playText(if (day.totalMillis > 0L) theme.onBackground else theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow)
                                 .copy(textAlign = TextAlign.End),
@@ -215,7 +217,7 @@ private fun MostPlayed(app: FoldcadeApp, week: PlayWeek, theme: Theme) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         BasicText(PlayCopy.mostPlayed, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
         if (week.top.isEmpty()) {
-            BasicText(PlayCopy.nothing, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
+            BasicText(PlayCopy.empty(app.plays.hasPlay()), style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
         }
         val current = week.top.map { (gameId, _) -> gameId to app.shell.playTitle(gameId) }
         // A name a catalog still has is kept, so the row still reads once the game is gone.
@@ -343,11 +345,13 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
                 BasicText(playDuration(total), style = playText(theme.onBackground, theme, type.sideRow, bold = true))
             }
         }
-        BasicText(
-            if (page.sources.isEmpty()) PlayCopy.noSources else PlayCopy.moveFrom,
-            modifier = Modifier.padding(horizontal = reach, vertical = 4.dp),
-            style = playText(theme.muted, theme, type.sideRow),
-        )
+        if (page.sources.isNotEmpty()) {
+            BasicText(
+                PlayCopy.moveFrom,
+                modifier = Modifier.padding(horizontal = reach, vertical = 4.dp),
+                style = playText(theme.muted, theme, type.sideRow),
+            )
+        }
         Column(
             Modifier
                 .weight(1f)
@@ -531,10 +535,8 @@ private fun DayTrack(blocks: List<ClosedFloatingPointRange<Float>>, theme: Theme
                 drawLine(theme.onBackground.copy(alpha = play.hourAlpha), Offset(x, 0f), Offset(x, size.height), strokeWidth = play.hourDp.dp.toPx())
             }
             blocks.forEach { block ->
-                val start = size.width * block.start
-                // A short session still shows as a sliver.
-                val width = (size.width * (block.endInclusive - block.start)).coerceAtLeast(2.dp.toPx())
-                drawRoundRect(color = theme.style.colors.progress ?: theme.focus, topLeft = Offset(start, 0f), size = Size(width, size.height), cornerRadius = radius)
+                val mark = playMarkRange(block, size.width, play.markMinWidthDp.dp.toPx())
+                drawRoundRect(color = theme.style.colors.progress ?: theme.focus, topLeft = Offset(mark.start, 0f), size = Size(mark.endInclusive - mark.start, size.height), cornerRadius = radius)
             }
         },
     )

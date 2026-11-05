@@ -67,6 +67,8 @@ object PlayCopy {
     const val pastWeek = "Past 7 days"
     const val mostPlayed = "Most played"
     const val nothing = "No play this week"
+    const val nothingYet = "No play yet"
+    fun empty(hasPlay: Boolean): String = if (hasPlay) nothing else nothingYet
     const val week = "Week"
     const val sessions = "Sessions"
     const val remove = "Remove"
@@ -86,7 +88,6 @@ object PlayCopy {
 
     /** A game with play that no library has any more: its file was renamed, replaced, or removed. */
     const val gone = "Gone"
-    const val noSources = "No other play yet"
 
     /** Settings › System. Its dialog offers both ways. */
     const val history = "Play history"
@@ -217,6 +218,19 @@ fun playDuration(millis: Long): String {
         hours > 0L -> "${hours}h"
         else -> "${rest}m"
     }
+}
+
+/** Empty days stay quiet beside the days with play. Totals elsewhere still say 0m. */
+fun playDayTotal(millis: Long): String = if (millis <= 0L) "–" else playDuration(millis)
+
+/** A visible play mark, kept inside the track even for a short session just before midnight. */
+fun playMarkRange(block: ClosedFloatingPointRange<Float>, trackWidth: Float, minWidth: Float): ClosedFloatingPointRange<Float> {
+    val track = trackWidth.coerceAtLeast(0f)
+    val from = block.start.coerceIn(0f, 1f) * track
+    val to = block.endInclusive.coerceIn(0f, 1f) * track
+    val width = (to - from).coerceAtLeast(minWidth.coerceAtLeast(0f)).coerceAtMost(track)
+    val start = from.coerceIn(0f, track - width)
+    return start..(start + width)
 }
 
 /**

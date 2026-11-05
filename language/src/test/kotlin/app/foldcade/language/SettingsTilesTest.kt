@@ -156,6 +156,28 @@ class SettingsTilesTest {
     }
 
     @Test
+    fun emulatorFolderPickersKeepTheirPageRowAndGridFocusFromEitherScreen() {
+        for (screen in HostScreen.entries) {
+            for ((row, effect) in listOf(Row.RetroArchCores to Effect.ShowRetroArchCores, Row.EdenFolder to Effect.ShowEdenFolder)) {
+                val before = emulators.copy(focus = GridFocus(cellIndex = 3)).onSetting(row)
+                val (opened, actual) = reduce(before, Meaning.Activate, screen)
+                assertEquals(effect, actual)
+                assertEquals(before.settings, opened.settings)
+                assertEquals(before.focus, opened.focus)
+                assertEquals(row, settingsFocus(opened))
+                assertNull(opened.panel)
+                // A held press returning from Android cannot open the picker again.
+                assertNull(reduce(opened, Meaning.Activate, screen, repeatCount = 1).second)
+                // A grant updates the row on this same page; cancellation simply leaves it as-is.
+                val granted = opened.copy(retroArch = opened.retroArch?.copy(cores = 3), eden = opened.eden?.copy(fromRomm = true))
+                assertEquals(row, settingsFocus(granted))
+                assertEquals(opened.settings, granted.settings)
+                assertNull(reduce(granted, Meaning.Back, screen).first.settings?.inner)
+            }
+        }
+    }
+
+    @Test
     fun tilesMoveInTwoDirectionsAndTheRowsUnderThemInOne() {
         val rows = settingsRows(SettingsCategory.Library, library)
         // RomM, two folders, the computer, and Add; then Sync games, Find games, Game art, SteamGridDB.

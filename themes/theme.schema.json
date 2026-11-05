@@ -2017,6 +2017,12 @@
                             "default": 1.0,
                             "description": "dp; follows base.strokeScale"
                         },
+                        "markMinWidthDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
                         "emptyBarAlpha": {
                             "type": "number",
                             "minimum": 0.0,

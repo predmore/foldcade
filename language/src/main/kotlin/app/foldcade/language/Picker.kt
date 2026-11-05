@@ -2943,8 +2943,8 @@ private fun activateRow(
         }
         is Row.ThorSetup -> model.copy(panel = panel) to Effect.ShowThorSetup(row.playerId)
         is Row.PlayerSetup -> model.copy(panel = null, focus = panel.grid) to Effect.ShowPlayerSetup(row.playerId)
-        Row.RetroArchCores -> model.copy(panel = null, focus = panel.grid) to Effect.ShowRetroArchCores
-        Row.EdenFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ShowEdenFolder
+        Row.RetroArchCores -> model.copy(panel = panel) to Effect.ShowRetroArchCores
+        Row.EdenFolder -> model.copy(panel = panel) to Effect.ShowEdenFolder
         Row.EdenUser -> model.copy(panel = null, focus = panel.grid) to Effect.OpenPlayer(EDEN_SHELF_KEY)
         Row.Apps -> model.copy(panel = null, focus = panel.grid) to Effect.OpenFolder(HOME_ANDROID_APPS)
         Row.Hidden -> openGrid(model, panel, HomeGrid.Hidden)
