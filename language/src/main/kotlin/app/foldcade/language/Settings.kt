@@ -629,6 +629,7 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
+    SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
     // An unpaired computer's tile is dim; its page says why, and its one row pairs it.
     is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.let { if (it.paired) Copy.hostPaired else Copy.hostNotPaired }

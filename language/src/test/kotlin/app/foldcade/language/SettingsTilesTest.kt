@@ -283,6 +283,7 @@ class SettingsTilesTest {
         assertNull(effect)
         assertEquals(SettingsInner.Romm, opened.settings?.inner)
         assertNull(opened.panel)
+        assertEquals("romm.example", settingsInnerDetail(opened.settings!!.inner!!, opened.copy(rommHost = "romm.example")))
         assertEquals(onRomm.settings, reduce(opened, Meaning.Back, HostScreen.Top).first.settings)
     }
 
