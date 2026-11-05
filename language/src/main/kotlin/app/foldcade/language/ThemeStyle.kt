@@ -488,8 +488,8 @@ class ThemeTile internal constructor(reader: ThemeStyleReader) {
     val statusChipPx = reader.number("tile", "statusChipPx", 36f, TokenDomain.Positive)
     val statusIconPx = reader.number("tile", "statusIconPx", 24f, TokenDomain.Positive)
     val statusBackingAlpha = reader.fraction("tile", "statusBackingAlpha", .72f, TokenRole.Fill)
-    val downloadBarPx = reader.number("tile", "downloadBarPx", 6f, role = TokenRole.Stroke)
-    val downloadTrackAlpha = reader.fraction("tile", "downloadTrackAlpha", .22f, TokenRole.Fill)
+    val downloadBarPx = reader.number("tile", "downloadBarPx", 12f, role = TokenRole.Stroke)
+    val downloadTrackAlpha = reader.fraction("tile", "downloadTrackAlpha", .4f, TokenRole.Fill)
 
     /** The bar under a wide grid that shows where the screen is, and its track's strength over `muted`. */
     val stripPx = reader.number("tile", "stripPx", 6f, TokenDomain.Positive, TokenRole.Stroke)

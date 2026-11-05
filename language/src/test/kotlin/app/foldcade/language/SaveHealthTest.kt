@@ -30,13 +30,13 @@ class SaveHealthTest {
                 }
     }
 
-    @Test fun onlyLiveWorkAndItsBriefResultCoverPersistentHealth() {
+    @Test fun attentionStaysFirstDuringDownloadsAndTheirResults() {
         for (health in listOf(SaveHealth.Waiting, SaveHealth.NotSyncing(SaveIssue.NoFolder), SaveHealth.DeviceOnly)) {
             assertTrue(saveHealthLeads(health, null))
             assertTrue(saveHealthLeads(health, TileActivity.Paused))
             assertTrue(saveHealthLeads(health, TileActivity.OnHost("Computer")))
             for (activity in listOf(TileActivity.Downloading(null), TileActivity.Checking, TileActivity.Syncing,
-                TileActivity.Synced(SyncMark.Synced, 2400))) assertFalse(saveHealthLeads(health, activity))
+                TileActivity.Synced(SyncMark.Synced, 2400))) assertEquals(health.needsAttention, saveHealthLeads(health, activity))
         }
         assertNull(saveHealthLine(SaveHealth.Fine))
         assertEquals("Saves stay on this device", saveHealthLine(SaveHealth.DeviceOnly))

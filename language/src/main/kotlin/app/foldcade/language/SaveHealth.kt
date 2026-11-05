@@ -28,6 +28,6 @@ fun saveHealthLine(health: SaveHealth): String? = when (health) {
     SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
 }
 
-/** A paused game is standing still; only work and its brief result cover save health. */
+/** A save warning stays first even while a transfer is running or reporting its result. */
 fun saveHealthLeads(health: SaveHealth, activity: TileActivity?): Boolean = saveHealthLine(health) != null &&
-    (activity == null || activity == TileActivity.Paused || activity is TileActivity.OnHost)
+    (health.needsAttention || activity == null || activity == TileActivity.Paused || activity is TileActivity.OnHost)

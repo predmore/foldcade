@@ -5,6 +5,11 @@ import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,12 +94,18 @@ internal fun bleedBounds(px: Int): Pair<Int, Int> {
 
 /**
  * An app's icon away from the grid. A full-bleed icon takes the largest square that
- * fits and the tile's corner, so it never shows as a raw square; a legacy icon draws as it is.
+ * fits and the tile's corner, so it never shows as a raw square; a legacy icon keeps its native pixels inside a small theme frame.
  */
 @Composable
 internal fun LauncherImage(art: LauncherArt, contentDescription: String?, modifier: Modifier = Modifier) {
     if (!art.fullBleed) {
-        Image(bitmap = art.image, contentDescription = contentDescription, modifier = modifier, contentScale = ContentScale.Fit)
+        // Inside caps scaling at 1: androidx/compose/ui/layout/ContentScale.kt (AndroidX).
+        val theme = LocalFoldTheme.current.theme
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Image(bitmap = art.image, contentDescription = contentDescription,
+                modifier = Modifier.clip(theme.style.shape.control()).background(theme.surface).padding(16.dp),
+                contentScale = ContentScale.Inside)
+        }
         return
     }
     val radius = LocalFoldTheme.current.theme.iconRadius

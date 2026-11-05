@@ -15,6 +15,7 @@ data class HeroItem(
     val availability: String? = null,
     /** A one-ink control glyph by its slot, for an action rather than a thing, as Add games's plus. */
     val control: String? = null,
+    val game: Boolean = true,
 )
 
 /**
@@ -95,15 +96,9 @@ fun heroGameFacts(
     return line
 }
 
-/**
- * The hero's word on a game that is only on a server: where it is, and how much playing it
- * downloads when the library knows, as "On RomM · 512 MB". [server] is the library's own
- * name; without one it is only not here.
- */
-fun downloadFacts(server: String?, sizeBytes: Long?): String = listOfNotNull(
-    server?.trim()?.ifEmpty { null }?.let { "On $it" } ?: Copy.notOnDevice,
-    sizeBytes?.takeIf { it > 0L }?.let(::formatDownloadSize),
-).joinToString(" · ")
+/** Where a remote game is. Download size belongs in About. */
+fun downloadFacts(server: String?): String =
+    server?.trim()?.ifEmpty { null }?.let { "On $it" } ?: Copy.notOnDevice
 
 /**
  * Where a streamed game is: the computer [host], and that it does not answer

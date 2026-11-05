@@ -12,6 +12,8 @@ internal class LaunchWork {
     var retroArchCore: PreparedRetroArchCore? = null
     val active: Boolean get() = job?.isActive == true
 
+    val pendingSubject: String? get() = subjectId.takeIf { active }
+
     fun pending(id: String): Boolean = active && subjectId == id
 
     fun begin(subject: String? = null): Int {

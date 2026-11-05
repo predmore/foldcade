@@ -70,6 +70,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.graphics.lerp
+import app.foldcade.HeroLayout
+import app.foldcade.HeroImageRole
+import app.foldcade.loadHeroLayout
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.ui.Alignment
@@ -298,6 +301,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
@@ -606,8 +610,8 @@ private fun PanelBody(
                 drawn.surface = surface
                 drawn.heroBeside = heroBeside
             }
-            TravelFade(target = drawn.surface, scale = scale) { shown ->
-                when (shown) {
+            TravelFade(target = drawn.copy(), scale = scale) { shown ->
+                when (shown.surface) {
                     null, Surface.Dark -> Unit
                     Surface.Hero -> if (connectHere) Unit else ArtPreviewHero(app, screen, scale, activity::dispatch)
                     Surface.Picker -> Picker(
@@ -617,7 +621,7 @@ private fun PanelBody(
                         activity::dispatch,
                         editorHere = session.editorPanel() == panel,
                         live = session.surfaceOn(panel) == Surface.Picker,
-                        iconsOnly = drawn.heroBeside,
+                        iconsOnly = shown.heroBeside,
                     )
                     Surface.CommandCenter -> CommandCenterScreen(
                         app,
@@ -659,7 +663,7 @@ private fun PanelBody(
 }
 
 /** The surface a panel draws, and how its grid is laid out, which a growing launch holds back from the session's. */
-private class SurfaceHold(var surface: Surface?, var heroBeside: Boolean)
+private data class SurfaceHold(var surface: Surface?, var heroBeside: Boolean)
 
 /** [base] under its own identity, so every layer under it counts it as a new density. */
 private class WindowDensity(base: Density) : Density by base
@@ -1269,12 +1273,24 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     }
     // The label follows focus at once. The art follows once it is whole.
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
-    val shown = staged.subject
+    val islandOver = model.panel?.let { it.side != Side.Tile && it.screen == screen } == true && model.dialog?.screen != screen
+    val islandDim = motionState(
+        if (islandOver) 1f else 0f,
+        if (islandOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
+    )
     // The grid's neighbours, not Find's: the grid is what is under the ring.
     WarmNeighbours(app, place.takeIf { find == null })
     // The shown game's scene decides how the name card sits over it.
-    val scene = shown?.let { rememberScene(app, records[it.key], queries[it.key]) }
-    val sceneArt = scene != null || shown?.let { rememberArt(app, records[it.key], queries[it.key]) } != null
+    val sceneArt = staged.images.backdrop != null
+    // Keep the title until the decoded replacement logo has finished arriving.
+    var namedByLogo by remember { mutableStateOf<StagedHero?>(null) }
+    LaunchedEffect(staged.subject?.key, staged.images) {
+        namedByLogo = null
+        if (staged.images.logo != null) {
+            delay(maxOf(motion.heroDuration(model.motionSpeed, scale), motion.sceneDuration(model.motionSpeed, scale)).toLong())
+            namedByLogo = staged
+        }
+    }
     val fadeOnly = motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = LocalTilt.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1283,11 +1299,11 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
             // The game fills the screen behind everything: its wide art, or its box art blurred.
             // It travels less than the art in front, so the two read at different depths.
             HeroCrossfade(
-                target = shown,
+                target = staged.takeIf { it.subject != null },
                 travel = staged.travel,
                 travelMillis = motion.sceneDuration(model.motionSpeed, scale),
                 fadeOnly = fadeOnly,
-                keyOf = { it.key },
+                keyOf = { it.subject?.key to it.images },
                 // The scene is as deep as the theme's backdrop, so moving the Thor slides it as far.
                 layer = Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true),
                 depth = motion.sceneDepth,
@@ -1295,14 +1311,14 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 dissolves = true,
             ) { layer ->
                 CompositionLocalProvider(LocalBackdropOpaque provides (LocalBackdropOpaque.current && editor.shown == null)) {
-                    SceneBackdrop(app, records[layer.key], queries[layer.key], model.motionSpeed, scale)
+                    SceneBackdrop(app, null, null, model.motionSpeed, scale, prepared = layer.images)
                 }
             }
             val inset = px(design.metrics.heroInsetPx)
             // The match chip occupies its own band below the islands while Art is open.
             val matchSpace by eased(if (screen == model.layout.menuScreen && app.shell.artPicker != null) 44f else 0f,
                 motion.durationTravel, scale)
-            // Wide enough for a platform, both screens, and play time on one line.
+            // Room for the platform, location and play time on one line.
             val cardMax = this@BoxWithConstraints.maxWidth * 0.72f
             // Cocoon's hero: the art centred between the islands, a name card centred under it.
             Column(
@@ -1326,12 +1342,13 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                     contentAlignment = Alignment.Center,
                 ) {
                     HeroCrossfade(
-                        target = shown,
+                        target = staged.takeIf { it.subject != null },
                         travel = staged.travel,
                         travelMillis = motion.heroDuration(model.motionSpeed, scale),
                         fadeOnly = fadeOnly,
-                        keyOf = { it.key },
-                    ) { layer ->
+                        keyOf = { it.subject?.key to it.images },
+                    ) { art ->
+                        val layer = art.subject
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             when (layer) {
                                 is HeroSubject.Item -> HeroArt(
@@ -1344,8 +1361,10 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                     record = records[layer.key],
                                     query = queries[layer.key],
                                     control = layer.item.control,
+                                    prepared = art.images,
                                 )
-                                is HeroSubject.Folder -> HeroArt(app, screen, null, layer.folder.name, layer.folder.mark, null, null, null)
+                                is HeroSubject.Folder -> HeroArt(app, screen, null, layer.folder.name, layer.folder.mark, null, null, null, prepared = art.images)
+                                null -> Unit
                             }
                         }
                     }
@@ -1370,7 +1389,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 if (subject != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
-                        if (subject != null) Box(Modifier.graphicsLayer { alpha = 1f - max(typing.progress.value, finding.progress.value) }) {
+                        if (subject != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - islandDim.value) }) {
                             HeroLabel(
                                 app,
                                 subject,
@@ -1381,7 +1400,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 scale = scale,
                                 overArt = sceneArt,
                                 // A logo on wide art already says the name, once that art is the focused game's.
-                                named = !(shown?.key == subject.key && scene?.background != null && scene.logo != null),
+                                named = !(namedByLogo?.subject?.key == subject.key && namedByLogo?.images === staged.images),
                             )
                         }
                         finding.shown?.let { session ->
@@ -1437,11 +1456,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         IconEditorLayer(app, editor, screen, scale)
         // L1's or R1's island open over the hero on this screen dims it, so the name card under the
         // card reads as behind it rather than cut (UX-08). Y's menu is on the grid's screen and leaves it.
-        val islandOver = model.panel?.let { it.side != Side.Tile && it.screen == screen } == true && model.dialog?.screen != screen
-        val dim = motionState(
-            if (islandOver) 1f else 0f,
-            if (islandOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
-        )
+        val dim = islandDim
         val dimmed by remember { derivedStateOf { dim.value > 0f } }
         if (dimmed) {
             val scrim = design.colors.scrim
@@ -1572,7 +1587,7 @@ private fun <T> HeroCrossfade(
             val leaving = shown === previous
             key(keyOf(shown)) {
                 val fade = when {
-                    leaving -> Modifier.fadingHero(outgoing.asState(), outX.asState(), outY.asState(), depth, grows, fadeOnly)
+                    leaving -> Modifier.fadingHero(outgoing.asState(), outX.asState(), outY.asState(), depth, grows, fadeOnly, holdAlpha = dissolves && current != null)
                     active -> Modifier.fadingHero(incoming.asState(), inX.asState(), inY.asState(), depth, grows, fadeOnly)
                     else -> Modifier
                 }
@@ -1845,18 +1860,17 @@ private fun HeroLabel(
                 ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
             } else {
                 val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
-                val both = focusedGame?.occupiesBothDisplays == true
                 // What the library is doing with this game leads the line, in the focus colour.
                 val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
                 val activity = focusedGame?.let { app.shell.activityFor(it.id) }
                 val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
-                val live = activity?.takeIf { saveLine == null }?.let(::activityLine)
+                val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
+                val live = stopped?.let { Copy.downloadStopped } ?: activity?.let(::activityLine)
                 val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
                 val rest = listOf(
                     item?.availability.takeIf { live == null },
-                    Copy.usesBothScreens.takeIf { both },
                     played?.let {
-                        heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle)
+                        heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, game = item.game)
                     },
                 )
                 val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
@@ -1869,7 +1883,7 @@ private fun HeroLabel(
                     // The line is measured as the card draws it, the save or activity word in front included.
                     val measurer = rememberTextMeasurer()
                     val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
-                    val lead = live ?: saveLine
+                    val lead = listOfNotNull(saveLine, live).joinToString(" · ")
                     heroGameFacts(copy.title, copy.detail, year, genre, rest) { line ->
                         val whole = listOfNotNull(lead, line.ifEmpty { null }).joinToString(" · ")
                         measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
@@ -1878,11 +1892,12 @@ private fun HeroLabel(
                 if (facts.isNotEmpty() || live != null || saveLine != null) {
                     BasicText(
                         text = buildAnnotatedString {
+                            if (saveLine != null) {
+                                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
+                                if (live != null || facts.isNotEmpty()) append(" · ")
+                            }
                             if (live != null) {
                                 withStyle(SpanStyle(color = theme.focus)) { append(live) }
-                                if (facts.isNotEmpty()) append(" · ")
-                            } else if (saveLine != null) {
-                                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
                                 if (facts.isNotEmpty()) append(" · ")
                             }
                             append(facts)
@@ -1935,12 +1950,13 @@ private fun Modifier.fadingHero(
     depth: Float,
     grows: Boolean,
     fadeOnly: Boolean,
+    holdAlpha: Boolean = false,
 ): Modifier {
     val motion = LocalFoldTheme.current.theme.motion
     return     focusProperties { canFocus = false }
         .clearAndSetSemantics { }
         .graphicsLayer {
-            this.alpha = alpha.value
+            this.alpha = if (holdAlpha) 1f else alpha.value
             val drawn = if (grows) motion.heroScale(alpha.value, fadeOnly) else motion.scaleRest
             scaleX = drawn
             scaleY = drawn
@@ -1988,16 +2004,16 @@ internal fun rememberScene(app: FoldcadeApp, record: Game?, query: ArtQuery?): A
  * Without either, nothing is drawn and the theme's background shows.
  */
 @Composable
-internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, speed: MotionSpeed, animatorScale: Float) {
+internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, speed: MotionSpeed, animatorScale: Float, prepared: HeroImages? = null) {
     val motion = LocalFoldTheme.current.theme.motion
-    val scene = rememberScene(app, record, query)
-    val wide = scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) }
+    val scene = if (prepared == null) rememberScene(app, record, query) else null
+    val wide = if (prepared == null) scene?.background?.let { rememberCoverPainter(app, it, BACKDROP_PX) } else prepared.backdrop.takeIf { prepared.wide }
     if (wide != null) {
         val coverage = coversBackdrop(wide)
         // Wide art lands a little close and settles back over a long breath, once per
         // game. It stays drawn just past the screen's edges, so its travel shows none.
         val still = motion.heroFadeOnly(speed, animatorScale)
-        val settle = remember(scene.background) { Animatable(if (still) 0f else 1f) }
+        val settle = remember(wide) { Animatable(if (still) 0f else 1f) }
         LaunchedEffect(settle, still) {
             if (still) {
                 settle.snapTo(0f)
@@ -2036,8 +2052,10 @@ internal fun SceneBackdrop(app: FoldcadeApp, record: Game?, query: ArtQuery?, sp
         }
         return
     }
-    val cover = rememberArt(app, record, query)?.cover ?: return
-    val ambient = rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
+    val ambient = if (prepared != null) prepared.backdrop ?: return else {
+        val cover = rememberArt(app, record, query)?.cover ?: return
+        rememberCoverPainter(app, cover, AMBIENT_PX) ?: return
+    }
     val design = foldTheme().style
     val coverage = coversBackdrop(ambient)
     Image(
@@ -2095,20 +2113,21 @@ private fun HeroArt(
     record: Game?,
     query: ArtQuery?,
     control: String? = null,
+    prepared: HeroImages? = null,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val themedApp = appGlyph(packageName, 640)
     val icon = if (themedApp == null) launcherIcon(packageName) else null
-    val cover = rememberArt(app, record, query)?.cover
-    val scene = rememberScene(app, record, query)
-    val logo = scene?.logo?.takeIf { scene.background != null }?.let { rememberCoverPainter(app, it, LOGO_PX) }
-    val screenShot = scene?.screen?.takeIf { scene.background == null }
+    val cover = if (prepared == null) rememberArt(app, record, query)?.cover else null
+    val scene = if (prepared == null) rememberScene(app, record, query) else null
+    val logo = if (prepared != null) prepared.logo else scene?.logo?.takeIf { scene.background != null }?.let { rememberCoverPainter(app, it, LOGO_PX) }
+    val screenShot = if (prepared != null) prepared.screen else scene?.screen?.takeIf { scene.background == null }
         ?.let { rememberCoverPainter(app, it, SCREEN_PX, FilterQuality.None) }
     val glyph = themedApp ?: mark?.let { markGlyph(it, 640) }
     val accent = glyph?.accent ?: theme.focus
     val kept = rememberCatalogWaitCover(app, key)
-    val loaded = cover?.let { rememberCoverPainter(app, it, COVER_PX) } ?: kept
+    val loaded = prepared?.cover ?: cover?.let { rememberCoverPainter(app, it, COVER_PX) } ?: kept
     // A logo, or a box beside its title screen, takes the width it needs. The game's own
     // art is behind them, so they draw no glow. A lone box or mark stays in its square, lit
     // from behind when the theme's glow.heroPeak asks for it (Afterglow's is 0).
@@ -2396,7 +2415,34 @@ private suspend fun warmCover(app: FoldcadeApp, context: Context, uri: String, p
 private data class HeroPlace(val grid: String, val index: Int)
 
 /** The subject the top screen's art shows, and the way the cursor went to reach it. */
-private data class StagedHero(val subject: HeroSubject?, val travel: HeroTravel)
+private data class StagedHero(val subject: HeroSubject?, val travel: HeroTravel, val images: HeroImages = HeroImages())
+
+/** A whole decoded layout, retained independently of Coil's evictable memory cache. */
+internal typealias HeroImages = HeroLayout<LoadedCover>
+
+private data class HeroSources(val cover: String?, val scene: ArtScene?)
+
+private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: HeroSources): HeroImages? =
+    withContext(Dispatchers.Default) {
+        suspend fun decode(uri: String?, px: Int, filter: FilterQuality = FilterQuality.Low): LoadedCover? {
+            if (uri == null) return null
+            val result = app.images.execute(coverRequest(context, uri, px)) as? SuccessResult ?: return null
+            val image = result.image.takeIf { it.width > 0 && it.height > 0 } ?: return null
+            result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
+            // A fixed painter draws on its first frame. The hero owns the single crossfade.
+            return LoadedCover(image.asPainter(context, filter), image.width.toFloat() / image.height, image)
+        }
+        loadHeroLayout(sources.cover, sources.scene) { uri, role ->
+            val px = when (role) {
+                HeroImageRole.Backdrop -> BACKDROP_PX
+                HeroImageRole.Ambient -> AMBIENT_PX
+                HeroImageRole.Cover -> COVER_PX
+                HeroImageRole.Logo -> LOGO_PX
+                HeroImageRole.Screen -> SCREEN_PX
+            }
+            decode(uri, px, if (role == HeroImageRole.Screen) FilterQuality.None else FilterQuality.Low)
+        }
+    }
 
 private fun gridToken(app: FoldcadeApp): String {
     val model = app.shell.model
@@ -2426,21 +2472,27 @@ private fun rememberStagedHero(
 ): StagedHero {
     val motion = LocalFoldTheme.current.theme.motion
     val context = LocalContext.current
+    val record = subject?.let { records[it.key] }
+    val query = subject?.let { queries[it.key] }
+    val sources = HeroSources(rememberArt(app, record, query)?.cover, rememberScene(app, record, query))
     var staged by remember { mutableStateOf(StagedHero(subject, HeroTravel.None)) }
     var stagedPlace by remember { mutableStateOf(place) }
     var stagedAt by remember { mutableLongStateOf(0L) }
     val dwell = motion.sceneDuration(app.shell.model.motionSpeed, animatorScale) / 2
-    LaunchedEffect(subject?.key) {
-        if (subject?.key == staged.subject?.key) return@LaunchedEffect
-        if (subject != null) {
-            // Keeps warming after the wait gives up, until focus moves on.
-            val ready = launch { prepareHeroArt(app, context, records[subject.key], queries[subject.key]) }
-            withTimeoutOrNull(HERO_ART_WAIT_MS) { ready.join() }
-        }
+    LaunchedEffect(subject?.key, sources) {
+        val loading = async { decodeHero(app, context, sources) }
+        val decoded = withTimeoutOrNull(HERO_ART_WAIT_MS) { loading.await() }
         delay(stagedAt + dwell - SystemClock.uptimeMillis())
-        staged = StagedHero(subject, travelOf(stagedPlace, place))
-        stagedPlace = place
-        stagedAt = SystemClock.uptimeMillis()
+        val sameGame = subject?.key == staged.subject?.key
+        if (!sameGame || decoded != null && (sources.cover != null || sources.scene != null)) {
+            staged = StagedHero(subject, if (sameGame) HeroTravel.None else travelOf(stagedPlace, place), decoded ?: HeroImages())
+            stagedPlace = place
+            stagedAt = SystemClock.uptimeMillis()
+        }
+        val ready = loading.await()
+        if (ready != null && ready != staged.images && (sources.cover != null || sources.scene != null)) {
+            staged = StagedHero(subject, HeroTravel.None, ready)
+        }
     }
     val current = staged
     if (subject != null && subject.key == current.subject?.key && subject != current.subject) {
@@ -4460,6 +4512,7 @@ private fun DownloadBar(fraction: Float, animatorScale: Float, modifier: Modifie
             .height(px(tile.downloadBarPx))
             .clip(theme.style.shape.control())
             .drawBehind {
+                drawRect(theme.background.copy(alpha = tile.statusBackingAlpha))
                 drawRect(theme.onBackground.copy(alpha = tile.downloadTrackAlpha))
                 drawRect(color = theme.style.colors.progress ?: theme.focus, size = Size(size.width * filled, size.height))
             },

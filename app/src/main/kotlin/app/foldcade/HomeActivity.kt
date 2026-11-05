@@ -357,6 +357,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
         if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
+        if (meaning == app.foldcade.language.Meaning.Back && repeatCount > 0 && foldcade.shell.stoppedDownload != null) return
         if (commandCenterKey(meaning)) return
         if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return
         if (app.foldcade.language.cancelsPendingLaunch(
@@ -365,7 +366,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 conflictOpen = foldcade.shell.model.saveConflict != null,
             )
         ) {
+            val stopped = foldcade.launchWork.pendingSubject?.takeIf { foldcade.shell.isDownloading(it) }
             cancelLaunches()
+            if (meaning == app.foldcade.language.Meaning.Back && stopped != null) {
+                val notice = foldcade.shell.noteDownloadStopped(stopped)
+                foldcade.scope.launch(Dispatchers.Main.immediate) {
+                    delay(app.foldcade.language.Motion.durationSyncMark.toLong())
+                    foldcade.shell.clearDownloadStopped(notice)
+                }
+                // This B belongs to the transfer; it must not also leave the folder.
+                return
+            }
         }
         foldcade.music.duckForThemeSound(meaning)
         val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop) ?: return

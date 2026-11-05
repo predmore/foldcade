@@ -46,9 +46,10 @@ fun lastPlayedLine(atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateSt
 }
 
 /** Time played and when, for the hero's line of facts. Null for a game never played. */
-fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle): String? {
+fun heroPlayLine(activeMillis: Long, atMillis: Long?, nowMillis: Long, zone: ZoneId, style: DateStyle, game: Boolean = true): String? {
     if (activeMillis <= 0L && atMillis == null) return null
     val played = playedLine(activeMillis).removePrefix("Played  ")
     val last = lastPlayedLine(atMillis, nowMillis, zone, style).removePrefix("Last played  ")
-    return "Played $played · $last"
+    val verb = if (game) "Played" else "Used"
+    return "$verb $played · $last"
 }
