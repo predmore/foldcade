@@ -5,9 +5,44 @@ import app.foldcade.language.AndroidSetting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Test
 
 class AndroidSettingsTest {
+    @Test fun androidPanelReturnsOnResumeEvenWithoutAStop() {
+        val store = SessionStore(MemoryPrefs())
+        store.handoffAndroidSetting(Panel.Top) { true }
+        assertEquals(OTHER_APP_ID, store.session.externalOn(Panel.Top)?.id)
+        assertEquals(Surface.CommandCenter, store.session.surfaceOn(Panel.Bottom))
+        // Home's onResume does this after a translucent panel; onStop is not needed.
+        store.update { it.foldcadeResumed(Panel.Top) }
+        assertTrue(store.session.bothScreensFree())
+        assertEquals(Surface.Picker, store.session.surfaceOn(Panel.Bottom))
+    }
+
+    @Test fun failedAndroidHandoffsRestoreHomeForFalseAndForExceptions() {
+        for (panel in Panel.entries) {
+            val store = SessionStore(MemoryPrefs())
+            val other = ExternalApp("other")
+            store.place(panel.flip(), other)
+            assertFalse(store.handoffAndroidSetting(panel) { false })
+            assertNull(store.session.externalOn(panel))
+            assertEquals(other, store.session.externalOn(panel.flip()))
+            for (failure in listOf(SecurityException("denied"), IllegalStateException("failed"))) {
+                try {
+                    store.handoffAndroidSetting(panel) { throw failure }
+                    fail("launch should throw")
+                } catch (actual: RuntimeException) {
+                    assertSame(failure, actual)
+                }
+                assertNull(store.session.externalOn(panel))
+                assertEquals(other, store.session.externalOn(panel.flip()))
+            }
+        }
+    }
+
     @Test
     fun wifiAndSoundPreferSettingsPanels() {
         val wifi = androidSettingTargets(AndroidSetting.Wifi)

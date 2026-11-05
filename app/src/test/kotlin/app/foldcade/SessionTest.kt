@@ -9,6 +9,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionTest {
+    @Test fun aStoppedSettingsPageDoesNotClearAReplacementOrPretendHomeResumed() {
+        val page = Session().place(Panel.Top, ExternalApp("themes", foldcadePage = true))
+        val covered = page.settingsPageCovered(Panel.Top)
+        assertEquals(OTHER_APP_ID, covered.externalOn(Panel.Top)?.id)
+        assertFalse(covered.pageAvailable(Panel.Top))
+        assertFalse(covered.besideFoldcadePage(Panel.Bottom))
+        val replaced = page.place(Panel.Top, ExternalApp("another-app"))
+        assertSame(replaced, replaced.settingsPageCovered(Panel.Top))
+        val home = page.foldcadeResumed(Panel.Top)
+        assertSame(home, home.settingsPageCovered(Panel.Top))
+    }
+
     @Test fun settingsActivitiesArePageDestinationsWithoutASecondGrid() {
         for (layout in ScreenLayout.entries) {
             val page = Session(layout = layout).place(Panel.Top, ExternalApp("themes", foldcadePage = true))
@@ -27,6 +39,8 @@ class SessionTest {
         assertFalse(game.besideFoldcadePage(Panel.Bottom))
         assertNull(game.pageKeyTarget(Panel.Bottom))
         val below = Session().place(Panel.Bottom, ExternalApp("licenses", foldcadePage = true))
+        assertFalse(below.pageAvailable(Panel.Top))
+        assertTrue(below.pageAvailable(Panel.Bottom))
         assertEquals(Panel.Bottom, below.pageKeyTarget(Panel.Top))
         assertNull(below.pageKeyTarget(Panel.Bottom))
     }

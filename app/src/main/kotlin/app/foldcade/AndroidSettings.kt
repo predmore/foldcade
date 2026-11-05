@@ -69,6 +69,18 @@ internal fun androidSettingTargets(setting: AndroidSetting): List<SettingTarget>
     }
 }
 
+/** A rejected or throwing launch must not leave Home covered in the session. */
+internal inline fun SessionStore.handoffAndroidSetting(panel: Panel?, launch: () -> Boolean): Boolean {
+    if (panel != null) place(panel, ExternalApp(OTHER_APP_ID))
+    var opened = false
+    try {
+        opened = launch()
+        return opened
+    } finally {
+        if (!opened && panel != null) update { it.foldcadeResumed(panel) }
+    }
+}
+
 /**
  * Opens [setting]. [packageName] is the app whose details screen [AndroidSetting.AppInfo]
  * asks for; every other setting ignores it. A screen this device does not have is skipped.

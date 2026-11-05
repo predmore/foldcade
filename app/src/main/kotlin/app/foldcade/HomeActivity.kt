@@ -363,8 +363,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (foldcade.shell.model.folderGuide != null) return
         // The companion's keys drive Themes or Licenses, keeping the parent Settings inactive.
         val inputPanel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
-        if (inputPanel != null && foldcade.store.session.pageKeyTarget(inputPanel) != null) {
-            (foldcade.settingsPageActivity as? PanelKeyActivity)?.dispatchPanelMeaning(meaning, repeatCount)
+        val pageActivity = foldcade.settingsPageActivity
+        if (inputPanel != null && foldcade.store.session.pageKeyTarget(inputPanel) != null &&
+            pageActivity?.lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) == true
+        ) {
+            pageActivity.dispatchPanelMeaning(meaning, repeatCount)
             return
         }
         if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
@@ -483,8 +486,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // Wi-Fi can be a translucent Android panel: Home pauses without stopping, so
                 // noteCovered alone cannot give its companion the command center.
                 val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
-                if (panel != null) foldcade.store.place(panel, ExternalApp(OTHER_APP_ID))
-                if (!openAndroidSetting(effect.setting) && panel != null) foldcade.store.update { it.foldcadeResumed(panel) }
+                foldcade.store.handoffAndroidSetting(panel) { openAndroidSetting(effect.setting) }
             }
             Effect.OpenAllFilesAccess -> openAllFilesAccess()
             Effect.OpenLicenses -> openSettingsPage(LicensesActivity::class.java)
@@ -3132,6 +3134,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val displayId = if (screen == HostScreen.Top) assignment.topDisplayId else assignment.bottomDisplayId
         val host = displayId?.let(foldcade::homeOnDisplay) ?: this
+        // Settings may be on the free screen while Android covers its previous native page.
+        foldcade.settingsPageActivity?.finish()
         foldcade.noteSettingsPage(host)
         try {
             host.startActivity(Intent(host, page))

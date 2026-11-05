@@ -105,7 +105,6 @@ class ThemesActivity : PanelKeyActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        (application as FoldcadeApp).noteSettingsPage(this)
         page = ThemesPage(app.themeEntries(), restartable = app.themesChanged)
         val theme = app.paintFor(app.shell.model.themeIndex)
         setContent {
@@ -120,11 +119,17 @@ class ThemesActivity : PanelKeyActivity() {
     override fun onStart() {
         super.onStart()
         app.settingsPageActivity = this
+        app.noteSettingsPage(this)
     }
 
     override fun onStop() {
-        if (app.settingsPageActivity === this) app.settingsPageActivity = null
+        app.settingsPageCovered(this)
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        if (app.settingsPageActivity === this) app.settingsPageActivity = null
+        super.onDestroy()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

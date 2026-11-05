@@ -147,6 +147,8 @@ Track how long you played and when, see your week in L1, and open All games' **R
 - **Afterglow:** True black and soft neon tiles, with drifting ribbons, embers, a still background, or plain black. Adjust the motion speed in Settings.
 - **Music:** Night Route, an original track, plays while you browse and fades when you launch a game. Switch to Lanternlight, adjust the volume, or turn it off.
 
+Adding a theme opens Android's ZIP picker. Settings stays usable on the free screen while you choose a file; cancelling returns to Themes. Closing an R1 Android panel returns both screens to Home.
+
 **Settings › Look › Button labels** shows your current Confirm button. Open it to choose a different face button, or press Start to cancel. You can change it again at any time.
 
 <img src="docs/images/settings.webp" alt="Settings, with Look, Sound, Library, Emulators, and System on the left, and Theme, Icons, Background, Motion, and Button labels on the right." width="640">

@@ -9,6 +9,45 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CommandCenterSettingsTest {
+    @Test fun replacingACoveredPageOnBottomKeepsItsParentThereWhenTopReturns() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        store.afterSessionChanged = shell::noteSessionChanged
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        store.place(Panel.Top, ExternalApp("themes", foldcadePage = true))
+        store.update { it.settingsPageCovered(Panel.Top) }
+        val settings = shell.model.settings!!
+        assertEquals(HostScreen.Bottom, settings.screen)
+        store.place(Panel.Bottom, ExternalApp("replacement-themes", foldcadePage = true))
+        store.update { it.foldcadeResumed(Panel.Top) }
+        assertEquals(settings, shell.model.settings)
+        assertEquals(Panel.Bottom, store.session.pageKeyTarget(Panel.Top))
+        store.update { it.foldcadeResumed(Panel.Bottom) }
+        assertEquals(settings.copy(screen = HostScreen.Top), shell.model.settings)
+    }
+
+    @Test fun coveringASettingsActivityHandsTheFreeScreenBackToSettingsAndRestoresOnReturn() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        store.afterSessionChanged = shell::noteSessionChanged
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Top)
+        val original = shell.model.settings!!
+        val themes = ExternalApp("themes", foldcadePage = true)
+        store.place(Panel.Top, themes)
+        store.update { it.settingsPageCovered(Panel.Top) }
+        assertNull(store.session.pageKeyTarget(Panel.Bottom))
+        assertEquals(original.copy(screen = HostScreen.Bottom), shell.model.settings)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        val moved = shell.model.settings!!
+        assertNotEquals(original.row, moved.row)
+        store.place(Panel.Top, themes)
+        assertEquals(moved.copy(screen = HostScreen.Top), shell.model.settings)
+        assertEquals(Panel.Top, store.session.pageKeyTarget(Panel.Bottom))
+        store.update { it.foldcadeResumed(Panel.Top) }
+        assertEquals(moved.copy(screen = HostScreen.Top), shell.model.settings)
+    }
+
     @Test fun anActivityBackedSettingsPageKeepsItsParentOnTheSameScreen() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
