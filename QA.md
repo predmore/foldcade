@@ -16,3 +16,14 @@ Cleanup: catalog restored in finally; original Wi-Fi restored; HOME role never c
 Unit validation: ./gradlew testDebugUnitTest --rerun-tasks passed: 2,737 cases, 0 failures/errors, 2 existing skips. New regressions cover both picker rows from both input screens, held-A return, row updates, first offline missing catalog, kept names/raw-id rejection, catalog arrival, quiet day totals, short marks and midnight bounds. Updated the old Eden test that expected Settings to close. Theme contract/schema regenerated and ThemeContractTest passed. Side-by-side APK assembled with CI music assets and application ID verified with aapt2.
 
 Before captures are the corresponding round-2 captures copied from /tmp/foldcade-uxr/r2/shots; after captures are from this build. No RomM host is visible in the PR-selected captures.
+
+## Opus review fixes and second Thor pass
+
+Head 59d0275b1c8683ce07443cb1449de4e4106316b9, rebased on main 3798bbd4; APK SHA-256 4ebd741979c7da5be70e9ea8f643005be7454bcdafc37be46795af60fafe9672.
+
+- Round-1 Opus review accepted all other assignments at 9/10 and found two P3 gaps: saved names only appeared during A, and fresh Play activity still said No play this week.
+- Waiting Home tiles now use the same already loaded history/metadata identity as A. Positive names are retained in memory and refresh the visible-face cache; this adds no disk/network lookup to drawing. Regressions start with a disk-loaded board with no ranks and a durable/reopened PlayNames file, remove that file before shell use, and verify one title before/during/after A. Metadata-only cold startup and later visible-face refresh are also covered.
+- The second Thor pass uses the same authenticated missing-catalog fixture as the first pass in app.foldcade.uxr2flow: the existing setup board, only its own catalog moved aside, a saved Sonic name, and Wi-Fi off. No game or emulator is launched. rv2-237-named-waiting-*, rv2-217-named-error-*, and rv2-218-named-return-* show that same name and Waiting for RomM before A, during the existing error and after B. The no-name fallback remains covered by the first pass.
+- rv2-236-no-play-yet-* is a fresh install before any grants or fixture data. rv2-quiet-week-* has only this test build's two fixture history events from 30 days earlier, to show No play this week for an empty current week with existing history.
+- Second-pass cleanup restores the catalog and original Wi-Fi, leaves HOME unchanged, sets stay-on false, deletes only this build's RomM registration (HTTP 204), uninstalls the test build and releases the Thor. No game or save was written; only the throwaway build's fixture history was seeded.
+- ./gradlew testDebugUnitTest --rerun-tasks passes on this rebased head: 2,755 cases, zero failures/errors, two existing skips. The app was assembled and its application ID checked again.
