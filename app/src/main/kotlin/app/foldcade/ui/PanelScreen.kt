@@ -466,6 +466,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     onFocus = { focus -> activity.dispatch(app.shell.touchSaveConflict(focus)) },
                     onLater = { activity.dispatch(app.shell.touchSaveConflictLater()) },
                     backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB,
+                    confirmKey = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA,
                 )
             }
             // A launching game's art grows over everything here, then waits for the game. The dark

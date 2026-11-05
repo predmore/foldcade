@@ -17,7 +17,7 @@ class FindSavesSettingTest {
         for (granted in listOf(false, true)) {
             val current = model.copy(allFilesGranted = granted)
             val text = rowText(Row.FindSaves, current)
-            assertEquals("Find saves", text.label)
+            assertEquals("Auto-find saves", text.label)
             assertEquals(if (granted) "Allowed" else "Ask", text.value)
             assertEquals(RowControl.Toggle(granted), rowControl(Row.FindSaves, current))
         }

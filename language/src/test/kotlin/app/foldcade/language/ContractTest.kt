@@ -707,7 +707,8 @@ class ContractTest {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
             // Only an emulator Foldcade knows is installed has a tile.
             assertTrue(settingsRows(SettingsCategory.Players, model).isEmpty())
-            val installed = model.copy(playerSaves = listOf(setting.copy(installed = true)))
+            // A game on Home plays on it, so its saves are at stake and its tile says so.
+            val installed = model.copy(playerSaves = listOf(setting.copy(installed = true)), boardEmulators = setOf(setting.playerId))
             val rows = settingsInnerRows(SettingsInner.Emulator(setting.playerId), installed)
             assertEquals(if (setting.chosen) Copy.playerSavesSet else Copy.choose,
                 rowText(Row.PlayerSave(setting.playerId), model).value)

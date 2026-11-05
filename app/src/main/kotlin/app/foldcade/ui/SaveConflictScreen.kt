@@ -1,6 +1,7 @@
 package app.foldcade.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,7 +30,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -69,11 +73,12 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
 }
 
 /**
- * Both saves, side by side at one width, with Play this one under each and Leave as is focused first.
- * The ring is the same green-to-blue stroke as every other chip, drawn heavier so a
- * controller focus reads across the bottom screen. Decide later is B, or a touch.
- * A short panel tightens the spacing. Anything that still does not fit scrolls, and the
- * focused action brings itself into view. Decide later follows the calibrated back button.
+ * The choice on one opaque card, as every dialog is, over the scrim, so no tile reads through it.
+ * Both saves sit side by side at one width, and each card is the thing you press: A plays the
+ * focused one. Leave as is starts focused, with Decide later, the back button, beside it. The
+ * ring is the same green-to-blue stroke as every other chip, drawn heavier so a controller focus
+ * reads across the bottom screen. A short panel tightens the spacing. Anything that still does
+ * not fit scrolls, and the focused action brings itself into view.
  */
 @Composable
 internal fun SaveConflictBottom(
@@ -82,17 +87,22 @@ internal fun SaveConflictBottom(
     onFocus: (SaveConflictFocus) -> Unit,
     onLater: () -> Unit,
     backKey: PromptKey = PromptKey.FaceB,
+    confirmKey: PromptKey = PromptKey.FaceA,
 ) {
     val theme = LocalFoldTheme.current.theme
-    val type = theme.style.type
+    val design = theme.style
+    val type = design.type
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
-            .background(theme.style.colors.scrim.copy(alpha = theme.style.dialog.conflictScrimAlpha)),
+            .blocksTouch()
+            .background(design.colors.scrim.copy(alpha = design.dialog.conflictScrimAlpha)),
     ) {
         val fit = saveConflictFit(maxWidth.value, maxHeight.value)
         val edge = fit.edge.dp
         val gap = fit.gap.dp
+        val corner = RoundedCornerShape(design.metrics.cardCornerDp.dp)
+        val border = with(LocalDensity.current) { design.metrics.dialogBorderPx.toDp() }
         Column(
             Modifier
                 .fillMaxSize()
@@ -102,77 +112,101 @@ internal fun SaveConflictBottom(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            BasicLine(Copy.saveConflictTitle, theme.onBackground, type.heroTitle.value, theme, TextAlign.Center, maxLines = 1, display = true)
-            BasicLine(prompt.gameLabel, theme.onBackground, type.heroMeta.value, theme, TextAlign.Center, maxLines = 2)
-            BasicLine(Copy.saveConflictBody, theme.muted, type.dialogBody.value, theme, TextAlign.Center)
-            Row(
+            Column(
                 Modifier
-                    .padding(top = gap)
-                    .width(fit.cardWidth.dp * 2 + gap)
-                    .height(IntrinsicSize.Min),
-                horizontalArrangement = Arrangement.spacedBy(gap),
-                verticalAlignment = Alignment.Top,
+                    // The cards keep their one width on a wide screen; a narrow one fits the card to it.
+                    .widthIn(max = fit.cardWidth.dp * 2 + gap + edge * 2)
+                    .fillMaxWidth()
+                    .clip(corner)
+                    .background(theme.surface)
+                    .border(border, theme.onBackground.copy(alpha = design.dialog.borderAlpha), corner)
+                    .padding(edge),
+                verticalArrangement = Arrangement.spacedBy(if (fit.compact) 2.dp else 6.dp),
             ) {
-                val newer = newerSide(prompt)
-                SaveColumn(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, Modifier.weight(1f)) {
-                    onFocus(SaveConflictFocus.Local)
+                BasicLine(Copy.saveConflictTitle, theme.onBackground, type.dialogTitle.value, theme, TextAlign.Start, maxLines = 1, display = true, weight = type.strongWeight)
+                BasicLine(prompt.gameLabel, theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+                BasicLine(Copy.saveConflictBody, theme.muted, type.dialogBody.value, theme, TextAlign.Start)
+                Row(
+                    Modifier
+                        .padding(top = gap)
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    val newer = newerSide(prompt)
+                    SaveCard(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, confirmKey, Modifier.weight(1f)) {
+                        onFocus(SaveConflictFocus.Local)
+                    }
+                    SaveCard(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, newer == SaveConflictFocus.Remote, confirmKey, Modifier.weight(1f)) {
+                        onFocus(SaveConflictFocus.Remote)
+                    }
                 }
-                SaveColumn(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, newer == SaveConflictFocus.Remote, Modifier.weight(1f)) {
-                    onFocus(SaveConflictFocus.Remote)
+                Row(
+                    Modifier.padding(top = gap),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ConflictChip(
+                        label = Copy.keepBoth,
+                        focused = prompt.focus == SaveConflictFocus.KeepBoth,
+                        compact = fit.compact,
+                        modifier = Modifier,
+                        onClick = { onFocus(SaveConflictFocus.KeepBoth) },
+                    )
+                    LaterChip(compact = fit.compact, backKey = backKey, modifier = Modifier, onClick = onLater)
                 }
             }
-            ConflictChip(
-                label = Copy.keepBoth,
-                focused = prompt.focus == SaveConflictFocus.KeepBoth,
-                compact = fit.compact,
-                modifier = Modifier.padding(top = gap).widthIn(min = 220.dp),
-                onClick = { onFocus(SaveConflictFocus.KeepBoth) },
-            )
-            LaterChip(
-                compact = fit.compact,
-                backKey = backKey,
-                modifier = Modifier.padding(top = if (fit.compact) 8.dp else 16.dp),
-                onClick = onLater,
-            )
         }
     }
 }
 
+/** One save, pressed as a whole: who made it, when, its size, Newer on the later one, and A Play this one. */
 @Composable
-private fun SaveColumn(
+private fun SaveCard(
     side: SaveConflictSide,
     dateStyle: DateStyle,
     focused: Boolean,
     compact: Boolean,
     newer: Boolean,
+    confirmKey: PromptKey,
     modifier: Modifier,
     onKeep: () -> Unit,
 ) {
     val theme = LocalFoldTheme.current.theme
     val type = theme.style.type
-    Column(modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(theme.style.shape.highlightCornerDp.dp))
-                .background(theme.surface)
-                .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 10.dp else 16.dp),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
+    val source = remember { MutableInteractionSource() }
+    val grow = if (focused) CARD_GROW else LocalFoldTheme.current.theme.motion.scaleRest
+    Column(
+        modifier
+            .fillMaxHeight()
+            .keepInView(focused)
+            .graphicsLayer {
+                clip = false
+                scaleX = grow
+                scaleY = grow
+            }
+            .conflictCard(focused)
+            .clickable(interactionSource = source, indication = null, onClick = onKeep)
+            .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 10.dp else 16.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 6.dp),
+    ) {
+        BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
+        BasicLine(formatSaveWhen(side.updatedAtMillis, dateStyle), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
+        // The newer copy says so in the focus colour, so the two times need no comparing.
+        val size = formatSaveSize(side.sizeBytes)
+        BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+        // What A does here, at full ink on the focused card, so the card reads as its own button.
+        // It sits at the card's foot, so the two line up whatever their names' lengths.
+        Spacer(Modifier.weight(1f))
+        Row(
+            Modifier.padding(top = if (compact) 6.dp else 10.dp).graphicsLayer { alpha = if (focused) 1f else theme.style.menu.labelRestAlpha },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
-            BasicLine(formatSaveWhen(side.updatedAtMillis, dateStyle), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
-            // The newer copy says so in the focus colour, so the two times need no comparing.
-            val size = formatSaveSize(side.sizeBytes)
-            BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+            PromptImage(promptGlyph(confirmKey), 22.dp)
+            BasicLine(Copy.keepThisOne, if (focused) theme.onBackground else theme.muted, type.hint.value, theme, TextAlign.Start, maxLines = 1, weight = if (focused) type.strongWeight else null)
         }
-        ConflictChip(
-            label = Copy.keepThisOne,
-            focused = focused,
-            compact = compact,
-            modifier = Modifier.padding(top = if (compact) 10.dp else 16.dp),
-            onClick = onKeep,
-        )
     }
 }
 
@@ -246,6 +280,7 @@ private fun BasicLine(
     align: TextAlign,
     maxLines: Int = Int.MAX_VALUE,
     display: Boolean = false,
+    weight: FontWeight? = null,
 ) {
     androidx.compose.foundation.text.BasicText(
         text = text,
@@ -254,12 +289,33 @@ private fun BasicLine(
             color = color,
             fontSize = sizeSp.sp,
             fontFamily = if (display) theme.displayFont else theme.font,
+            fontWeight = weight,
             textAlign = align,
         ),
         overflow = TextOverflow.Ellipsis,
         maxLines = maxLines,
     )
 }
+
+/** A save card's soft fill on the dialog card, ringed like the chips while it has the focus. */
+@Composable
+private fun Modifier.conflictCard(focused: Boolean): Modifier {
+    val theme = LocalFoldTheme.current.theme
+    val lift = theme.onBackground
+    val dialog = theme.style.dialog
+    val cornerDp = theme.style.shape.highlightCornerDp.dp
+    return this.graphicsLayer { clip = false }.drawBehind {
+        val corner = cornerDp.toPx()
+        drawRoundRect(
+            color = lift.copy(alpha = if (focused) dialog.chipStrongAlpha else dialog.chipAlpha),
+            cornerRadius = CornerRadius(corner, corner),
+        )
+        if (focused) with(FocusRing(theme)) { drawFocusRing(corner, pronounced = true) }
+    }
+}
+
+/** A focused save card grows a little, less than a chip, as it is so much larger. */
+private const val CARD_GROW = 1.03f
 
 /** The shared chip ring, with a heavier stroke so the focused action is obvious. */
 @Composable

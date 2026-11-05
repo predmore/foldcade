@@ -20,7 +20,7 @@ class EdenSettingsTest {
         val otherLibrary = installed.copy(signedIn = listOf(SignedInBackend("steam", "Steam")))
         assertFalse(Row.EdenFolder in settingsRows(SettingsCategory.Players, otherLibrary))
 
-        val setup = installed.copy(signedIn = listOf(SignedInBackend("romm", "RomM")))
+        val setup = installed.copy(signedIn = listOf(SignedInBackend("romm", "RomM")), boardEmulators = setOf(EDEN_SHELF_KEY))
         val eden = Row.SettingsTile(SettingsInner.Emulator(EDEN_SHELF_KEY))
         assertEquals(listOf(eden, Row.SaveSetup, Row.FindSaves), settingsRows(SettingsCategory.Players, setup))
         assertEquals(listOf(Row.EdenFolder), settingsInnerRows(SettingsInner.Emulator(EDEN_SHELF_KEY), setup))

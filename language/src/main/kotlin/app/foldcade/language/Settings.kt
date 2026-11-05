@@ -64,7 +64,8 @@ object SettingsCopy {
     const val sound = "Sound"
     const val library = "Library"
     const val players = "Emulators"
-    const val findSaves = "Find saves"
+    /** The same Android switch as Library's Auto-find games, so it reads the same way. */
+    const val findSaves = "Auto-find saves"
     /** A folder that brings a frontend's art and facts, as ES-DE's or Batocera's. */
     const val artAndInfo = "art and info"
     const val accessAllowed = "Allowed"
@@ -140,9 +141,9 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     }
     SettingsCategory.Players -> buildList {
         val shelf = emulatorShelf(model)
-        // An emulator that is not syncing leads the shelf, so the one to fix is the nearest.
-        val (needsYou, fine) = shelf.partition { entry -> entry.rows.any { rowNeedsYou(it, model) } }
-        addAll((needsYou + fine).map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
+        // One whose games' saves don't sync leads the shelf, so the one to fix is the nearest; ones no game on Home plays on go last.
+        val ranked = shelf.sortedBy { entry -> saveSetupRank(entry.key in model.boardEmulators, entry.rows.any { rowNeedsYou(it, model) }) }
+        addAll(ranked.map { Row.SettingsTile(SettingsInner.Emulator(it.key)) })
         // Only once a system has more than one emulator to choose, or a choice to clear.
         if (model.systemPlayers.any { it.choice.visible }) add(Row.Systems)
         if (shelf.isNotEmpty()) {
@@ -381,8 +382,10 @@ enum class TileStatus {
 
 /**
  * An emulator tile wears a check while all its rows are fine, and the not-syncing mark
- * while any says Not syncing or waits to be set up. A folder awaiting its restored
- * grant wears Attention too, as RomM does while it waits for a sign-in; other source tiles wear none.
+ * while any says Not syncing or waits to be set up and a game on Home plays on it, as
+ * [savesDue] counts. One no game on Home plays on has no saves at stake yet, so it wears
+ * nothing until one does. A folder awaiting its restored grant wears Attention too, as
+ * RomM does while it waits for a sign-in; other source tiles wear none.
  */
 fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     // RomM waiting for a sign-in wears it too: its saves wait until then.
@@ -391,7 +394,11 @@ fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     if (inner is SettingsInner.Folder) return TileStatus.Attention.takeIf { model.folders.any { it.uri == inner.uri && it.pickAgain } }
     if (inner !is SettingsInner.Emulator) return null
     val needsYou = settingsInnerRows(inner, model).any { rowNeedsYou(it, model) }
-    return if (needsYou) TileStatus.Attention else TileStatus.Fine
+    return when {
+        !needsYou -> TileStatus.Fine
+        inner.key in model.boardEmulators -> TileStatus.Attention
+        else -> null
+    }
 }
 
 /** True while an emulator's row says Not syncing or waits to be set up. Set up saves reads its steps' progress from this too. */

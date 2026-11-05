@@ -690,7 +690,9 @@ internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.RecentOnHome -> R.drawable.symbol_clock
     Row.PlayTime -> R.drawable.ic_status_playtime
     Row.About -> R.drawable.ic_status_info
-    Row.OpenWith, Row.Systems -> R.drawable.symbol_emulators
+    Row.OpenWith -> R.drawable.symbol_emulators
+    // Under the Emulators shelf, so not the shelf's own mark: a system is a console.
+    Row.Systems -> R.drawable.symbol_console
     else -> null
 }
 

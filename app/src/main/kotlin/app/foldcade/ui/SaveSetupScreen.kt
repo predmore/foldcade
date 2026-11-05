@@ -61,6 +61,7 @@ import app.foldcade.language.saveSetupFinished
 import app.foldcade.language.saveSetupPause
 import app.foldcade.language.savesDue
 import app.foldcade.language.savesRest
+import app.foldcade.language.saveSetupResting
 import app.foldcade.language.saveSetupTiles
 import app.foldcade.language.setupStatus
 import app.foldcade.language.SAVE_SETUP_COLUMNS
@@ -139,7 +140,7 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val tiles = saveSetupTiles(model, page)
     val due = savesDue(model, tiles).size
-    val rest = savesRest(model, tiles).size
+    val rest = savesRest(tiles).size
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier
@@ -178,6 +179,7 @@ private fun Grid(app: FoldcadeApp, page: SaveSetupPage, scale: Float, modifier: 
     val theme = LocalFoldTheme.current.theme
     val tiles = saveSetupTiles(app.shell.model, page)
     val focus = tiles.indexOfFirst { it.key == page.focus }
+    val ring = ringIndex(tiles, page, focus)
     val delays = flipDelays(tiles, (theme.motion.durationSetupStagger * scale).toLong())
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val reach = ringReach()
@@ -190,7 +192,7 @@ private fun Grid(app: FoldcadeApp, page: SaveSetupPage, scale: Float, modifier: 
         Column(
             Modifier
                 .padding(reach)
-                .selectionHighlight(slots, focus.takeIf { it >= 0 }, ring = true, scale = scale),
+                .selectionHighlight(slots, ring, ring = true, scale = scale),
             verticalArrangement = Arrangement.spacedBy(LINE_GAP),
         ) {
             tiles.chunked(SAVE_SETUP_COLUMNS).forEachIndexed { line, chunk ->
@@ -228,7 +230,7 @@ private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, labels: Boolea
     val theme = LocalFoldTheme.current.theme
     val model = app.shell.model
     val tiles = saveSetupTiles(model, page)
-    val focus = tiles.indexOfFirst { it.key == page.focus }
+    val focus = ringIndex(tiles, page, tiles.indexOfFirst { it.key == page.focus }) ?: -1
     val delays = flipDelays(tiles, (theme.motion.durationSetupStagger * scale).toLong())
     BoxWithConstraints(Modifier.fillMaxWidth().clipToBounds()) {
         val reach = ringReach()
@@ -258,7 +260,7 @@ private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, labels: Boolea
                     StripTile(
                         tile = tile,
                         status = setupStatus(tile, page),
-                        focused = index == focus,
+                        focused = index == focus && page.focus != null,
                         flipDelay = delays[tile.key] ?: 0L,
                         art = art,
                         label = labels,
@@ -271,6 +273,13 @@ private fun Strip(app: FoldcadeApp, page: SaveSetupPage, art: Dp, labels: Boolea
         }
     }
 }
+
+/**
+ * Where the ring sits: on the focused tile, or on the end on the first one skipped, which any
+ * D-pad press reopens ([saveSetupResting]). That tile stays unlit, as the top shows the end.
+ */
+private fun ringIndex(tiles: List<SetupTile>, page: SaveSetupPage, focus: Int): Int? =
+    focus.takeIf { it >= 0 } ?: saveSetupResting(tiles, page)?.let { key -> tiles.indexOfFirst { it.key == key } }?.takeIf { it >= 0 }
 
 /**
  * How long each tile that has just started syncing waits before its badge flips, so checks that
@@ -350,13 +359,18 @@ private fun SetupArt(tile: SetupTile, fill: Float) {
     else SymbolIcon("emulators", fill * SYMBOL_FILL, theme.onBackground)
 }
 
-/** What a status wears: the check in focus once it syncs, the not-syncing cloud in amber while it doesn't. */
+/**
+ * What a status wears: the check in focus once it syncs, the not-syncing cloud in amber while
+ * Home's games' saves don't, and nothing for Not set up, so the clouds are exactly the count.
+ */
 private enum class StatusLook { Syncing, NeedsYou, Quiet }
 
 private fun statusLook(tile: SetupTile, status: SetupStatus): StatusLook = when {
     status == SetupStatus.Syncing -> StatusLook.Syncing
     // Find saves is a shortcut, not a save that fails to sync, so it never wears the amber mark.
     tile.findSaves -> StatusLook.Quiet
+    // No game on Home plays on it, so no save is at stake yet: Not set up, without the cloud.
+    !tile.onHome -> StatusLook.Quiet
     else -> StatusLook.NeedsYou
 }
 
@@ -694,7 +708,7 @@ private fun End(
     }
     val model = app.shell.model
     val due = savesDue(model, tiles).size
-    val rest = savesRest(model, tiles).size
+    val rest = savesRest(tiles).size
     val mark = @Composable { modifier: Modifier ->
         Box(
             modifier

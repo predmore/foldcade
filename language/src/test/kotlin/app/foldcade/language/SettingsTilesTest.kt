@@ -30,6 +30,8 @@ class SettingsTilesTest {
         playerSaves = listOf(retroArchPlayer, melonds, armsx2, azahar, edenPlayer),
         retroArch = RetroArchSetting(cores = 2, packageName = "com.retroarch.aarch64"),
         eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator"),
+        // Home has games for each, so one that is not syncing wears the cloud.
+        boardEmulators = setOf("retroarch.nes", "melonds", "armsx2", "azahar", "eden"),
     )
 
     private val library = PickerModel(
@@ -91,6 +93,25 @@ class SettingsTilesTest {
         assertEquals(TileStatus.Attention, settingsTileStatus(tile("eden"), noKeys))
         // Sources have no badge.
         assertNull(settingsTileStatus(Row.SettingsTile(SettingsInner.Add), library))
+    }
+
+    @Test
+    fun anEmulatorNoGameOnHomePlaysOnIsQuietAndGoesLast() {
+        val noGames = emulators.copy(boardEmulators = setOf("armsx2", "eden"), retroArch = RetroArchSetting(cores = null, packageName = "com.retroarch.aarch64"))
+        // Azahar and RetroArch wait for a step but have no games on Home: no cloud, and no check either.
+        assertNull(settingsTileStatus(tile("azahar"), noGames))
+        assertNull(settingsTileStatus(tile("retroarch.nes"), noGames))
+        assertEquals(TileStatus.Fine, settingsTileStatus(tile("armsx2"), noGames))
+        // Its own page still says what is left.
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), noGames))
+        assertEquals(
+            listOf(tile("armsx2"), tile("eden"), tile("azahar"), tile("retroarch.nes"), Row.SaveSetup, Row.FindSaves),
+            settingsRows(SettingsCategory.Players, noGames),
+        )
+        // The moment a game for it lands on Home, it wears the cloud and leads.
+        val played = noGames.copy(boardEmulators = noGames.boardEmulators + "azahar")
+        assertEquals(TileStatus.Attention, settingsTileStatus(tile("azahar"), played))
+        assertEquals(tile("azahar"), settingsRows(SettingsCategory.Players, played).first())
     }
 
     @Test
