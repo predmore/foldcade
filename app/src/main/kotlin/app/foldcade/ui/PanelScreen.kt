@@ -3587,7 +3587,8 @@ internal fun HintWord(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PromptImage(if (held) "${glyph}_filled" else glyph, 24.dp)
-        if (hint.label.isNotEmpty()) BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        // One line: a hint that can't fit moves whole to the next line, as a dialog's buttons do.
+        if (hint.label.isNotEmpty()) BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()), maxLines = 1, softWrap = false)
     }
 }
 
@@ -5082,23 +5083,63 @@ internal fun DialogFrame(
                 if (!detail.isNullOrBlank()) {
                     BasicText(text = detail, style = text(theme.muted, design.type.dialogBody, theme))
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Buttons that do not fit one line move whole to the next, at any font size, rather than squeeze.
-                    FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(px(8f))) {
-                        buttons.forEachIndexed { index, label ->
-                            DialogAction(label = label, focused = focused == index, onClick = { onButton(index) })
-                        }
+                DialogButtonRow(gap = px(8f), hintGap = px(16f), hasHints = hints.isNotEmpty()) {
+                    buttons.forEachIndexed { index, label ->
+                        DialogAction(label = label, focused = focused == index, onClick = { onButton(index) })
                     }
                     if (hints.isNotEmpty()) {
-                        Row(
-                            Modifier.padding(start = px(16f)),
-                            horizontalArrangement = Arrangement.spacedBy(px(16f)),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
                             hints.forEach { HintWord(app.shell.model, it) }
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A dialog's buttons from the left, and its keys ([hasHints]: the last child) at the right.
+ * Buttons that do not fit a line move whole to the next, at any font size, rather than squeeze.
+ * The keys sit on the last line of buttons when they fit beside it, else on a line of their own,
+ * still at the right. Each line centres its items on one another.
+ */
+@Composable
+private fun DialogButtonRow(gap: androidx.compose.ui.unit.Dp, hintGap: androidx.compose.ui.unit.Dp, hasHints: Boolean, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, Modifier.fillMaxWidth()) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val placeables = measurables.map { it.measure(loose) }
+        val buttons = if (hasHints) placeables.dropLast(1) else placeables
+        val hint = if (hasHints) placeables.last() else null
+        val gapPx = gap.roundToPx()
+        val hintGapPx = hintGap.roundToPx()
+        // Each line: its items and where each starts.
+        val lines = mutableListOf(mutableListOf<Pair<androidx.compose.ui.layout.Placeable, Int>>())
+        var x = 0
+        for (button in buttons) {
+            val line = lines.last()
+            val start = if (line.isEmpty()) 0 else x + gapPx
+            if (line.isNotEmpty() && start + button.width > width) {
+                lines.add(mutableListOf(button to 0))
+                x = button.width
+            } else {
+                line.add(button to start)
+                x = start + button.width
+            }
+        }
+        if (hint != null) {
+            val line = lines.last()
+            val fits = line.isEmpty() || x + hintGapPx + hint.width <= width
+            if (!fits) lines.add(mutableListOf())
+            lines.last().add(hint to (width - hint.width).coerceAtLeast(0))
+        }
+        val heights = lines.map { line -> line.maxOfOrNull { it.first.height } ?: 0 }
+        layout(width, heights.sum()) {
+            var y = 0
+            lines.forEachIndexed { index, line ->
+                line.forEach { (placeable, start) -> placeable.placeRelative(start, y + (heights[index] - placeable.height) / 2) }
+                y += heights[index]
             }
         }
     }

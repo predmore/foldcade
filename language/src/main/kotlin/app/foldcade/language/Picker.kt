@@ -2928,7 +2928,8 @@ private fun activateRow(
             else model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         Row.SignInRomm -> model.openRommSignIn(panel.grid)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
-        is Row.PickFolderAgain -> model.copy(panel = null, focus = panel.grid) to Effect.PickFolderAgain(row.uri)
+        // Android's folder picker returns to the folder's page it was opened from, as PlayerSave's does.
+        is Row.PickFolderAgain -> model.copy(panel = panel) to Effect.PickFolderAgain(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id)
         Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(

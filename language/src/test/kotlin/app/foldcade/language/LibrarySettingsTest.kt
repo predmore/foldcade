@@ -27,6 +27,20 @@ class LibrarySettingsTest {
         val found = read.copy(found = true)
         assertEquals(listOf(Row.ForgetFolder(found.uri, found.label)), settingsInnerRows(SettingsInner.Folder(found.uri), library.copy(folders = listOf(found))))
         assertEquals(RowControl.Opens, rowControl(Row.PickFolderAgain(read.uri), library))
+        // Pick again keeps the folder's page: Android's picker comes back to it.
+        val page = library.copy(folders = listOf(read)).onSetting(Row.PickFolderAgain(read.uri))
+        val (next, effect) = reduce(page, Meaning.Activate, HostScreen.Top)
+        assertEquals(Effect.PickFolderAgain(read.uri), effect)
+        assertEquals(SettingsInner.Folder(read.uri), next.settings?.inner)
+    }
+
+    @Test
+    fun rommsPageRowsThatOpenTheFormWearTheOpensMark() {
+        assertEquals(RowControl.Opens, rowControl(Row.EditRomm("romm"), library))
+        assertEquals(RowControl.Opens, rowControl(Row.SignInRomm, library))
+        // The form and the page beside it share one title.
+        assertEquals(Copy.addRommServer, rommConnectTitle(library, saved = false))
+        assertEquals(Copy.signInRomm, rommConnectTitle(library, saved = true))
     }
 
     @Test
