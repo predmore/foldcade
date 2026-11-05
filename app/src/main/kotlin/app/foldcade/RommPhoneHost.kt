@@ -10,6 +10,7 @@ import app.foldcade.language.RommPhonePage
 import app.foldcade.net.LanDrop
 import app.foldcade.romm.normalizeRommPhoneAddress
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +25,8 @@ internal class RommPhoneHost(
     private val scope: CoroutineScope,
     private val colors: () -> KeyDropPage.Colors,
     private val onAddress: suspend (String) -> String?,
+    private val main: CoroutineDispatcher = Dispatchers.Main.immediate,
+    private val addressOf: () -> java.net.InetAddress? = { lanAddress(connectivity) },
 ) {
     var state by mutableStateOf<KeyDrop?>(null)
         private set
@@ -54,7 +57,7 @@ internal class RommPhoneHost(
         val pageColors = colors()
         opening = scope.launch(Dispatchers.IO) {
             while (true) {
-                val address = lanAddress(connectivity)
+                val address = addressOf()
                 val opened = address?.let { address ->
                     runCatching {
                         // The listener never uses the server until Main has installed it below.
@@ -66,7 +69,7 @@ internal class RommPhoneHost(
                                 // This is LanDrop's thread. Main keeps drawing while RomM creates a challenge.
                                 val url = if (origin == null) null else runBlocking {
                                     withTimeoutOrNull(10_000) {
-                                        withContext(Dispatchers.Main.immediate) {
+                                        withContext(main) {
                                             if (!wanted || epoch != attempt) return@withContext null
                                             state = KeyDrop.Sent
                                             onAddress(origin)
@@ -76,26 +79,26 @@ internal class RommPhoneHost(
                                 return RommPhonePage.done(url, origin == null, pageColors)
                             }
                         }, object : LanDrop.Listener {
-                            override fun visited() { scope.launch(Dispatchers.Main.immediate) {
+                            override fun visited() { scope.launch(main) {
                                 if (wanted && epoch == attempt) (state as? KeyDrop.Open)?.let { state = it.copy(phoneHere = true) }
                             } }
-                            override fun received(value: String?) { scope.launch(Dispatchers.Main.immediate) {
+                            override fun received(value: String?) { scope.launch(main) {
                                 if (wanted && epoch == attempt && (value?.let(::normalizeRommPhoneAddress) == null || state == KeyDrop.Sent)) arm()
                             } }
-                            override fun stopped() { scope.launch(Dispatchers.Main.immediate) {
+                            override fun stopped() { scope.launch(main) {
                                 if (wanted && epoch == attempt && drop?.isOpen == false) arm()
                             } }
                         })
                     }.getOrNull()
                 }
                 if (opened == null) {
-                    withContext(Dispatchers.Main.immediate) { if (wanted && epoch == attempt) state = KeyDrop.Offline }
+                    withContext(main) { if (wanted && epoch == attempt) state = KeyDrop.Offline }
                     delay(5_000)
                     continue
                 }
                 var held = false
                 try {
-                    withContext(Dispatchers.Main.immediate) {
+                    withContext(main) {
                         if (wanted && epoch == attempt) {
                             drop = opened
                             state = KeyDrop.Open(opened.url)
@@ -105,8 +108,8 @@ internal class RommPhoneHost(
                 } finally { if (!held) opened.close() }
                 while (opened.isOpen) {
                     delay(2_000)
-                    if (opened.isOpen && lanAddress(connectivity) != address) {
-                        withContext(Dispatchers.Main.immediate) { if (wanted && drop === opened) arm() }
+                    if (opened.isOpen && addressOf() != address) {
+                        withContext(main) { if (wanted && drop === opened) arm() }
                         return@launch
                     }
                 }

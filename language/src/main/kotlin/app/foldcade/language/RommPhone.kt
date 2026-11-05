@@ -16,7 +16,7 @@ object RommPhoneCopy {
     const val send = "Continue to RomM"
     const val approve = "Approve Foldcade on RomM"
     const val changeServerToken = "To change servers, enter its token."
-    const val failed = "Check Foldcade for the next step. If there’s a new QR code, scan it to try again."
+    const val failed = "If Foldcade shows an approval QR code, scan it to continue. Otherwise, check Foldcade for the next step or scan its new address QR to try again."
     const val invalid = "Use an http:// or https:// server address, without a password or token. Scan the new code on Foldcade to try again."
 }
 

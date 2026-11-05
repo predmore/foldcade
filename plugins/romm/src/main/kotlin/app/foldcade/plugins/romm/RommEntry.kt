@@ -108,6 +108,10 @@ class RommSupply(
     val tokenSource: RommTokenSource = RommTokenSource { null },
     val artCacheRoot: Path = cacheRoot,
 ) {
+    /** An unregistered pairing client. Cancelling or expiring it never changes the live library's origin. */
+    fun pendingSignIn(origin: String): LibraryBackend =
+        RommLibrary.open { this }.apply { configure(mapOf(ROMM_ORIGIN_KEY to origin)) }
+
     fun wiring(origin: String): RommWiring = RommWiring(
         origin = origin,
         tokenSource = tokenSource,

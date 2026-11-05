@@ -33,6 +33,8 @@ The phone page exists only while this form is shown. Its random, one-time URL ac
 
 Foldcade stores a token, not your RomM password.
 
+If the phone cannot continue to the approval page, scan the approval QR on the Thor instead. An approval link to a different server address is not opened by the phone page.
+
 If the code expires or is declined, choose **Pair with phone** for a new one. To use a token instead, paste it into **Token (optional)**; the button then reads **Connect**. See [RomM's token guide](https://docs.romm.app/latest/developers/client-api-tokens/).
 
 A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, and `firmware.read`.
@@ -44,6 +46,8 @@ Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**. Sign out asks first: saves stop syncing and RomM's games leave Home.
 
 While signed in, changing to a different server address asks for that server's token. Your existing token stays on its own server until the new connection is checked. A setup restored without a sign-in can use phone pairing for a different address.
+
+Pairing uses a separate connection until approval and sign-in checks finish. Backing out, declining, or letting a code expire keeps the saved library and its saves on their existing server.
 
 ## Signed out
 

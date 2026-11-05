@@ -168,7 +168,7 @@ class LanDrop private constructor(
     /** Starts listening. */
     private fun start(): LanDrop = apply { thread.start() }
 
-    /** Stops listening at once. A page open on the phone can no longer send. */
+    /** Stops listening at once. A spent POST's accepted socket can still finish its response. Never joins the serve thread. */
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         runCatching { server.close() }

@@ -12,6 +12,7 @@ import java.net.Socket
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
 
 class LanDropTest {
     private val pages = object : LanDrop.Pages {
@@ -37,6 +38,40 @@ class LanDropTest {
     fun closeAll() = drops.forEach { it.close() }
 
     private fun open(heard: Heard) = LanDrop.open(loopback, pages, heard).also { drops += it }
+
+    @Test fun aSecondThreadCanCloseDuringHandoffWithoutBlockingOrLosingTheResponse() {
+        val heard = Heard()
+        val receiving = CountDownLatch(1)
+        val continueResponse = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        val drop = LanDrop.open(loopback, object : LanDrop.Pages {
+            override fun form(action: String) = "form"
+            override fun done(received: Boolean) = "done"
+            override fun received(value: String?): String {
+                receiving.countDown()
+                check(continueResponse.await(4, TimeUnit.SECONDS))
+                return "<a href=\"https://romm.example/pair/device?user_code=ABCD1234\">Approve</a>"
+            }
+        }, heard).also { drops += it }
+        try {
+            val response = pool.submit<Pair<Int, String>> { post(drop, "key=https%3A%2F%2Fromm.example") }
+            assertTrue(receiving.await(2, TimeUnit.SECONDS))
+            assertFalse(drop.isOpen)
+            // Represents Main hiding the form while the server thread awaits the device challenge.
+            pool.submit { drop.close() }.get(1, TimeUnit.SECONDS)
+            assertFalse(response.isDone)
+            continueResponse.countDown()
+            val (status, page) = response.get(2, TimeUnit.SECONDS)
+            assertEquals(200, status)
+            assertTrue(page.contains("user_code=ABCD1234"))
+            assertTrue(heard.got.await(1, TimeUnit.SECONDS))
+            assertEquals(1, heard.receivedCount)
+            assertEquals(1L, heard.stoppedLatch.count)
+        } finally {
+            continueResponse.countDown()
+            pool.shutdownNow()
+        }
+    }
 
     @Test fun continuationRunsAfterTheOneTimeListenerHasClosed() {
         val heard = Heard()
