@@ -821,38 +821,28 @@ internal fun glideState(
 private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> Unit) {
     val motion = LocalFoldTheme.current.theme.motion
     val view = LocalView.current
-    var front by remember { mutableStateOf(target) }
-    var back by remember { mutableStateOf<T?>(null) }
-    val incoming = remember { Animatable(1f) }
-    val outgoing = remember { Animatable(0f) }
+    val travel = remember { SurfaceTravel(target) }
     LaunchedEffect(target) {
-        if (target == front) return@LaunchedEffect
-        back = front
-        incoming.snapTo(0f)
-        outgoing.snapTo(1f)
-        front = target
-        // Starting another app can hold this window's draws. Do not spend the dissolve
-        // before its first frame has reached the renderer (review-C 85-F1).
-        view.awaitFrameCommit()
-        withContext(SteadyMenu) {
-            coroutineScope {
-                launch { incoming.animateTo(1f, motion.arrive(motion.durationTravel, scale)) }
-                launch { outgoing.animateTo(0f, motion.leave(motion.durationTravel, scale)) }
+        travel.change(target, awaitDraw = { view.awaitFrameCommit() }) { frame ->
+            withContext(SteadyMenu) {
+                coroutineScope {
+                    launch { frame.incoming.animateTo(1f, motion.arrive(motion.durationTravel, scale)) }
+                    launch { frame.outgoing.animateTo(0f, motion.leave(motion.durationTravel, scale)) }
+                }
             }
         }
-        back = null
-        incoming.snapTo(1f)
     }
-    val moving by remember { derivedStateOf { back != null || incoming.value < 0.999f } }
+    val frame = travel.frame
+    val moving = frame.back != null
     // Keep each surface in one keyed slot, including its settled frame. In particular the
     // departing grid retains the hints it drew before the session handed away a screen.
     Box(Modifier.fillMaxSize()) {
-        for (shown in listOfNotNull(back, front)) key(shown) {
-            val leaving = shown == back
+        for (shown in listOfNotNull(frame.back, frame.front)) key(shown) {
+            val leaving = shown == frame.back
             val layer = if (!moving) Modifier else Modifier
                 .focusProperties { canFocus = false }
                 .clearAndSetSemantics { }
-                .graphicsLayer { alpha = if (leaving) outgoing.value else incoming.value }
+                .graphicsLayer { alpha = if (leaving) frame.outgoing.value else frame.incoming.value }
             Box(layer) {
                 CompositionLocalProvider(
                     LocalBackdropOpaque provides (LocalBackdropOpaque.current && !moving),
