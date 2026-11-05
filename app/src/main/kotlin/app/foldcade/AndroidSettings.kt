@@ -73,7 +73,7 @@ internal fun androidSettingTargets(setting: AndroidSetting): List<SettingTarget>
  * Opens [setting]. [packageName] is the app whose details screen [AndroidSetting.AppInfo]
  * asks for; every other setting ignores it. A screen this device does not have is skipped.
  */
-internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: String = this.packageName) {
+internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: String = this.packageName): Boolean {
     for (target in androidSettingTargets(setting)) {
         val intent = Intent(target.action)
         if (target.packageData) {
@@ -84,9 +84,10 @@ internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: St
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
-            return
+            return true
         } catch (_: ActivityNotFoundException) {
             continue
         }
     }
+    return false
 }

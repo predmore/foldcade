@@ -46,7 +46,7 @@ RomM games sit beside everything else, in the same folders, collections, and Fin
 Foldcade is made for one device, so it uses everything the Thor has.
 
 - **Two screens, one home.** Browse on the bottom screen while the top shows the selected game large. Games that need both screens, such as DS and 3DS, get both. Settings › System › Layout puts the art on the bottom and the grid on top, or keeps everything on the top screen and turns the bottom one dark. Play on picks the screen **A** opens a game on, and **X** opens it on the other.
-- **The other screen stays useful.** During a single-screen game, the other screen shows a dim command center with the time, battery, game art, and a RomM game's achievements. Press a button to wake it or open a second app there.
+- **The other screen stays useful.** During a single-screen game, the other screen shows a dim command center with the time, battery, game art, and a RomM game's achievements. Press a button to wake it or open a second app there. Foldcade pages and connect forms have a bright command center beside them; Android folder pickers show a guide on the free screen.
 - **Pick up where you left off.** Press Home during a game and its tile says **Paused**. **A** resumes the game already running instead of starting it a second time.
 - **Close the lid, stop the clock.** Play time stops counting while the clamshell is closed.
 - **A screen with depth.** The top screen's art slides slightly when you tilt the Thor and drifts back to rest. Motion Off keeps it still.

@@ -512,8 +512,9 @@ class ContractTest {
         assertEquals("RomM", rowLabel(connection, signedIn))
         val (actions, openConnection) = reduce(signedIn.onSetting(connection), Meaning.Activate)
         assertNull(openConnection)
-        assertEquals(PanelLevel.RommConnection, actions.panel?.level)
-        assertEquals(listOf(Row.EditRomm("romm"), Row.SignOut("romm", "RomM")), panelRows(actions.panel!!, actions))
+        assertEquals(SettingsInner.Romm, actions.settings?.inner)
+        assertNull(actions.panel)
+        assertEquals(listOf(Row.EditRomm("romm"), Row.SignOut("romm", "RomM")), settingsInnerRows(SettingsInner.Romm, actions))
         val closed = reduce(opened, Meaning.Back).first
         assertNull(closed.panel)
         val right = reduce(opened, Meaning.RightPanel, HostScreen.Top).first

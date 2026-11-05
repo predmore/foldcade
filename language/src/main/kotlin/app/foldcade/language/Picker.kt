@@ -1943,6 +1943,8 @@ data class PickerModel(
     val settings: SettingsPage? = null,
     val dialog: DialogState? = null,
     val connectOpen: Boolean = false,
+    /** Android's tree picker owns [FolderGuide.screen]; the other screen shows its guide alone. */
+    val folderGuide: FolderGuide? = null,
     val atLibraryRoot: Boolean = true,
     /** Which screen has the grid and which the hero. Settings › System › Layout. */
     val layout: ScreenLayout = ScreenLayout.Default,
@@ -2102,6 +2104,7 @@ fun reduce(
     screen: HostScreen = HostScreen.Bottom,
     repeatCount: Int = 0,
 ): Pair<PickerModel, Effect?> {
+    if (model.folderGuide != null) return model to null
     val coerced = model.copy(focus = coerce(model.focus, model))
     val dialog = coerced.dialog
     if (dialog != null) {
@@ -2791,18 +2794,12 @@ private fun applySettings(
                 return next.copy(panel = null, settings = current, focus = model.focus) to effect
             }
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
+            if (row is Row.RommConnection) return model.copy(settings = current.copy(inner = SettingsInner.Romm, row = 0)) to null
             // Back from Set up saves returns to this row.
             if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null
             // Rows act through the menu path. A stand-in panel tells "stays open" from "leaves".
             val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
             val (next, effect) = activateRow(model.copy(panel = standIn), standIn, row, current.screen)
-            if (next.panel?.level == PanelLevel.RommConnection) {
-                return next.copy(
-                    // On this page's screen, which is Foldcade's: the islands draw it there.
-                    panel = next.panel.copy(connectionSettings = current),
-                    settings = null,
-                ) to effect
-            }
             // The folder goes; the shelf stays, its focus where the folder's tile was.
             if (row is Row.ForgetFolder) return next.copy(panel = null, settings = shelf, focus = model.focus) to effect
             val stays = next.panel != null
@@ -2810,6 +2807,7 @@ private fun applySettings(
                 panel = null,
                 settings = if (stays) current else null,
                 connectReturnSettings = if (next.connectOpen) current else next.connectReturnSettings,
+                connectReturnPanel = if (next.connectOpen) null else next.connectReturnPanel,
                 focus = if (stays) model.focus else next.focus,
             ) to effect
         }
@@ -2872,13 +2870,13 @@ private fun activateRow(
         Row.Music -> model.copy(panel = panel, music = model.music.toggled()) to null
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
-        Row.AndroidSettings -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
+        Row.AndroidSettings -> model.copy(panel = panel.takeUnless { it.side == Side.Right }, focus = panel.grid) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         // Settings opens its page itself, see [applySettings].
         is Row.SettingsTile -> model.copy(panel = panel) to null
         Row.Version -> model.copy(panel = panel, versionCopied = true) to Effect.CopyDebugInfo
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
-        is Row.QuickTile -> model.copy(panel = panel) to Effect.OpenAndroidSetting(row.setting.androidSetting())
+        is Row.QuickTile -> model.copy(panel = null, focus = panel.grid) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         // Left and right move the slider. A asks for access, and does nothing once it is granted.
         Row.Brightness -> if (model.brightnessAllowed) {
             model.copy(panel = panel) to null

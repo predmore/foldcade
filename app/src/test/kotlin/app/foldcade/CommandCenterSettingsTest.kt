@@ -9,6 +9,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CommandCenterSettingsTest {
+    @Test fun anActivityBackedSettingsPageKeepsItsParentOnTheSameScreen() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        store.afterSessionChanged = shell::noteSessionChanged
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        val settings = shell.model.settings
+        store.place(Panel.Top, ExternalApp("licenses", foldcadePage = true))
+        assertEquals(settings, shell.model.settings)
+        assertEquals(Surface.CommandCenter, store.session.surfaceOn(Panel.Bottom))
+        assertFalse(commandCenterDimmed(store.session, Panel.Bottom, awake = null))
+        store.update { it.foldcadeResumed(Panel.Top) }
+        assertEquals(settings, shell.model.settings)
+    }
     @Test fun startBesideATopGameOpensSettingsBelowAndStartClosesIt() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))

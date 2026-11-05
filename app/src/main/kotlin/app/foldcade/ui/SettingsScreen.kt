@@ -627,6 +627,7 @@ private sealed interface ShelfArt {
 }
 
 private fun innerArt(inner: SettingsInner, model: PickerModel): ShelfArt = when (inner) {
+    SettingsInner.Romm -> ShelfArt.Mark("cloud")
     is SettingsInner.Emulator -> ShelfArt.App(emulatorShelf(model).firstOrNull { it.key == inner.key }?.packageName)
     is SettingsInner.Folder -> ShelfArt.Mark("folder")
     is SettingsInner.Host -> ShelfArt.Mark("moonlight")

@@ -247,4 +247,4 @@ class CommandCenter(
 
 /** Dim while [panel] shows its command center and the user has not woken it. */
 fun commandCenterDimmed(session: Session, panel: Panel, awake: Panel?): Boolean =
-    session.surfaceOn(panel) == Surface.CommandCenter && awake != panel
+    session.surfaceOn(panel) == Surface.CommandCenter && !session.besideFoldcadePage(panel) && awake != panel

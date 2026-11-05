@@ -27,6 +27,8 @@ data class SettingsPage(
 
 /** A page one step inside a Settings category. A tile on the category's shelf opens it, and B returns to that tile. */
 sealed interface SettingsInner {
+    /** The saved RomM source's connection actions, inside Settings › Library. */
+    data object Romm : SettingsInner
     /** Each system's emulator, Automatic first. Settings › Emulators › Systems opens it. */
     data object Systems : SettingsInner
 
@@ -286,6 +288,8 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
 
 /** The rows [inner] lists, or none once what it was about has gone. */
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
+    SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
+        listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -304,6 +308,7 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
  * less room, says only [settingsTileLabel].
  */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
+    SettingsInner.Romm -> model.signedIn.firstOrNull { it.pluginId == "romm" }?.label ?: "RomM"
     SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -366,7 +371,7 @@ fun settingsTileShortcut(row: Row, model: PickerModel): Row? =
 
 /** The tile on [category]'s shelf that opens [inner], or -1. */
 fun settingsTileIndex(category: SettingsCategory, inner: SettingsInner, model: PickerModel): Int =
-    settingsRows(category, model).indexOfFirst { (it is Row.SettingsTile && it.page == inner) || (it == Row.Systems && inner == SettingsInner.Systems) }
+    settingsRows(category, model).indexOfFirst { (it is Row.SettingsTile && it.page == inner) || (it == Row.Systems && inner == SettingsInner.Systems) || (it is Row.RommConnection && inner == SettingsInner.Romm) }
 
 /** How a tile's corner badge reads. */
 enum class TileStatus {
@@ -624,6 +629,7 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
+    SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
     // An unpaired computer's tile is dim; its page says why, and its one row pairs it.
     is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.let { if (it.paired) Copy.hostPaired else Copy.hostNotPaired }

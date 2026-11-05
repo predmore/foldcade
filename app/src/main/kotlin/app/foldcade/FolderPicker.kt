@@ -40,6 +40,7 @@ internal data class FolderPickerState(
     val purpose: FolderPurpose = FolderPurpose.Library,
     val pendingLaunch: Int? = null,
     val settingsPlayerId: String? = null,
+    val guide: app.foldcade.language.FolderGuide? = null,
 ) {
     fun encode(): String = buildString {
         append(purpose.name)
@@ -47,12 +48,18 @@ internal data class FolderPickerState(
         append(pendingLaunch?.toString().orEmpty())
         append('\n')
         append(settingsPlayerId.orEmpty())
+        append('\n')
+        append(guide?.screen?.name.orEmpty())
+        append('\n')
+        append(guide?.playerId.orEmpty())
+        append('\n')
+        append(guide?.opensThere?.toString().orEmpty())
     }
 }
 
 internal fun decodeFolderPickerState(raw: String?): FolderPickerState {
     if (raw.isNullOrBlank()) return FolderPickerState()
-    val lines = raw.split('\n', limit = 3)
+    val lines = raw.split('\n')
     val purpose = lines.getOrNull(0)?.let { name ->
         FolderPurpose.entries.firstOrNull { it.name == name }
     } ?: FolderPurpose.Library
@@ -60,6 +67,9 @@ internal fun decodeFolderPickerState(raw: String?): FolderPickerState {
         purpose = purpose,
         pendingLaunch = lines.getOrNull(1)?.toIntOrNull(),
         settingsPlayerId = lines.getOrNull(2)?.takeIf { it.isNotEmpty() },
+        guide = lines.getOrNull(3)?.let { name -> app.foldcade.language.HostScreen.entries.firstOrNull { it.name == name } }?.let { screen ->
+            app.foldcade.language.FolderGuide(screen, lines.getOrNull(4)?.takeIf { it.isNotEmpty() }, lines.getOrNull(5) != "false")
+        },
     )
 }
 

@@ -4,6 +4,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FolderPickerTest {
+    @Test fun aLivePickerGuideSurvivesRecreationAndOldStateDoesNotCreateOne() {
+        val guide = app.foldcade.language.FolderGuide(app.foldcade.language.HostScreen.Top, "melonds", opensThere = false)
+        val state = FolderPickerState(FolderPurpose.Settings, settingsPlayerId = "melonds", guide = guide)
+        assertEquals(state, decodeFolderPickerState(state.encode()))
+        assertEquals(null, decodeFolderPickerState("Settings\n\nmelonds").guide)
+        assertEquals(null, decodeFolderPickerState("Library\n\n\ninvalid\n\ntrue").guide)
+    }
     @Test fun aPendingLibraryTreeCanPrefillTheExistingPickerWithoutChangingItsPurpose() {
         val tree = "content://documents/tree/primary%3AROMs"
         assertEquals(tree, libraryFolderStart(tree))

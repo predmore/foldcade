@@ -133,15 +133,15 @@ class ScreenLayoutTest {
     }
 
     @Test
-    fun aConnectionDrawerFromSettingsLeftOnTheOldScreenOpensWhereThePageWas() {
-        // Settings opened in Classic, on top, then Layout stepped to Swapped: the page stays put,
-        // and RomM's drawer opens on that screen, which Foldcade still shows. The islands draw it there.
+    fun aRommSubpageStaysOnTheSettingsScreen() {
+        // Settings keeps the larger top screen after the layout changes; RomM stays inside that page.
         val signedIn = PickerModel(count = 2, rowsPerPage = 2, signedIn = listOf(SignedInBackend("romm", "RomM")))
         val connection = librarySources(signedIn).first()
         val swapped = signedIn.onSetting(connection, HostScreen.Top).copy(layout = ScreenLayout.ShowcaseBottom)
         val drawer = reduce(swapped, Meaning.Activate).first
-        assertEquals(PanelLevel.RommConnection, drawer.panel?.level)
-        assertEquals(HostScreen.Top, drawer.panel?.screen)
+        assertEquals(SettingsInner.Romm, drawer.settings?.inner)
+        assertEquals(HostScreen.Top, drawer.settings?.screen)
+        assertNull(drawer.panel)
     }
 
     @Test
@@ -175,8 +175,8 @@ class ScreenLayoutTest {
     fun theConnectFormOpensOnTopWhicheverScreenAsked() {
         val signedIn = PickerModel(count = 2, rowsPerPage = 2, signedIn = listOf(SignedInBackend("romm", "RomM")))
         val drawer = reduce(signedIn.onSetting(librarySources(signedIn).first()), Meaning.Activate).first
-        val edit = panelRows(drawer.panel!!, drawer).indexOf(Row.EditRomm("romm"))
-        val onEdit = drawer.copy(panel = drawer.panel.copy(index = edit))
+        val edit = settingsInnerRows(SettingsInner.Romm, drawer).indexOf(Row.EditRomm("romm"))
+        val onEdit = drawer.copy(settings = drawer.settings!!.copy(row = edit))
         for (from in HostScreen.entries) {
             val form = reduce(onEdit, Meaning.Activate, from).first
             assertEquals(true, form.connectOpen)

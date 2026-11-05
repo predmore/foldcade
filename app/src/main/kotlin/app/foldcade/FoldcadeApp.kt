@@ -251,10 +251,16 @@ class FoldcadeApp : Application() {
         private set
 
     /**
-     * How many of Settings' own pages that are activities of their own, Themes and Licenses,
-     * are in front. The screen beside one is then Settings' command center, not an app's.
+     * The visible Settings activity, so Open an app on its companion can return Home.
+     * Themes and Licenses keep the parent Settings page on their own screen.
      */
-    var settingsPagesOpen by mutableStateOf(0)
+    internal var settingsPageActivity: android.app.Activity? = null
+
+    /** Mark the page before Home stops, so its Settings parent never moves to the other screen. */
+    internal fun noteSettingsPage(activity: android.app.Activity) {
+        val panel = Displays(this).panelFor(activity, store.session.defaultDisplayIsTop) ?: return
+        store.place(panel, ExternalApp("foldcade:settings-page", foldcadePage = true))
+    }
 
     /** The other app in front of a screen, for the command center beside it. */
     val frontApps by lazy { FrontApps(UsageAccess(this), packageName) }

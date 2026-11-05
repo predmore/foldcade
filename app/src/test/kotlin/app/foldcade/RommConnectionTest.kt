@@ -7,7 +7,7 @@ import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SignedInBackend
 import app.foldcade.language.Effect
-import app.foldcade.language.PanelLevel
+import app.foldcade.language.SettingsInner
 import app.foldcade.language.Side
 import app.foldcade.language.Row
 import app.foldcade.language.SettingsCategory
@@ -27,6 +27,22 @@ import app.foldcade.language.Meaning
 import org.junit.Test
 
 class RommConnectionTest {
+    @Test fun openAnAppFromAFormSkipsItsSettingsReturnPage() {
+        val session = SessionStore(MemoryPrefs()).apply { setRommOrigin("https://one.example") }
+        val shell = ShellController(session, host(MemoryCredentialStore()))
+        shell.setSignedIn(listOf(SignedInBackend("romm", "RomM")))
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
+        val source = settingsRows(SettingsCategory.Library, shell.model).indexOfFirst { it is Row.RommConnection }
+        shell.touchSettingsRow(source, HostScreen.Top)
+        shell.touchSettingsRow(0, HostScreen.Top)
+        assertEquals(SettingsInner.Romm, shell.model.connectReturnSettings?.inner)
+        shell.closeConnect(returnToPage = false)
+        assertFalse(shell.model.connectOpen)
+        assertNull(shell.model.settings)
+        assertNull(shell.model.panel)
+        assertNull(shell.model.connectReturnSettings)
+    }
     @Test
     fun devicePairingCannotRepointALiveOrRefusedTokenToAnUnapprovedServer() = runBlocking {
         val credentials = MemoryCredentialStore()
@@ -59,15 +75,16 @@ class RommConnectionTest {
         shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
         val library = settingsRows(SettingsCategory.Library, shell.model)
         shell.touchSettingsRow(library.indexOfFirst { it is Row.RommConnection }, HostScreen.Top)
-        shell.touchPanel(1, HostScreen.Top)
-        assertNull(shell.touchPanel(1, HostScreen.Top))
+        shell.touchSettingsRow(1, HostScreen.Top)
+        assertNull(shell.touchSettingsRow(1, HostScreen.Top))
         assertEquals(DialogKind.RommSignOut, shell.model.dialog?.kind)
         // Not now is focused. A closes it, and A held from there reaches nothing under it.
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top))
         assertNull(shell.model.dialog)
         repeat(3) { assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Top, repeatCount = it + 1)) }
         assertNull(shell.model.dialog)
-        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
+        assertEquals(SettingsInner.Romm, shell.model.settings?.inner)
+        assertNull(shell.model.panel)
     }
 
     @Test
@@ -84,22 +101,23 @@ class RommConnectionTest {
         shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
         val library = settingsRows(SettingsCategory.Library, shell.model)
         assertNull(shell.touchSettingsRow(library.indexOfFirst { it is Row.RommConnection && it.pluginId == "romm" }, HostScreen.Top))
-        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
+        assertEquals(SettingsInner.Romm, shell.model.settings?.inner)
+        assertNull(shell.model.panel)
         assertFalse(shell.model.connectOpen)
 
-        assertEquals(Effect.EditRommConnection, shell.touchPanel(0, HostScreen.Top))
+        assertEquals(Effect.EditRommConnection, shell.touchSettingsRow(0, HostScreen.Top))
         assertTrue(shell.editRommConnection())
         assertEquals("https://one.example", shell.model.connectOrigin)
         shell.editOrigin("https://changed.example")
         saveRommConnection(session, credentials, shell.model.connectOrigin, "rmm_changed")
         shell.closeConnect()
-        assertEquals(PanelLevel.RommConnection, shell.model.panel?.level)
-        assertEquals("romm", shell.model.panel?.connection?.pluginId)
+        assertEquals(SettingsInner.Romm, shell.model.settings?.inner)
+        assertNull(shell.model.panel)
         assertEquals("https://changed.example", session.rommOrigin())
         assertEquals("rmm_changed", token(credentials, "access-token"))
 
-        shell.touchPanel(1, HostScreen.Top)
-        assertNull(shell.touchPanel(1, HostScreen.Top))
+        shell.touchSettingsRow(1, HostScreen.Top)
+        assertNull(shell.touchSettingsRow(1, HostScreen.Top))
         assertEquals(Effect.ForgetCredentials("romm"), shell.touchDialog(0, HostScreen.Top))
         removeRommServer(credentials, session)
         assertNull(session.rommOrigin())
