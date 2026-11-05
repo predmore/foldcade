@@ -29,24 +29,65 @@ class HeroLayoutTest {
         assertEquals(listOf("wide" to HeroImageRole.Backdrop, "logo" to HeroImageRole.Logo), calls)
     }
 
-    @Test fun failedReplacementCannotPublishAPartialLayout() = runBlocking {
-        for (failed in listOf("wide", "logo")) {
-            assertNull(loadHeroLayout("box", ArtScene(background = "wide", logo = "logo")) { uri, _ ->
-                uri.takeUnless { it == failed }
-            })
-        }
-        for (failed in listOf("box", "snap")) {
-            assertNull(loadHeroLayout("box", ArtScene(screen = "snap")) { uri, _ -> uri.takeUnless { it == failed } })
-        }
+    @Test fun aFailedLogoKeepsTheWideArtWithTheBoxAndTextTitle() = runBlocking {
+        val ready = loadHeroLayout("box", ArtScene(background = "wide", logo = "logo")) { uri, _ ->
+            uri.takeUnless { it == "logo" }
+        }!!
+        assertTrue(ready.wide)
+        assertEquals("wide", ready.backdrop)
+        assertEquals("box", ready.cover)
+        assertNull(ready.logo)
     }
 
-    @Test fun fallbackIsACompleteBoxAndSnapLayoutAndMissingArtIsValid() = runBlocking {
-        val ready = loadHeroLayout("box", ArtScene(screen = "snap")) { uri, role -> "$uri:$role" }!!
+    @Test fun failedWideArtFallsBackToTheCompleteBoxAndSnapLayout() = runBlocking {
+        val ready = loadHeroLayout("box", ArtScene(background = "wide", logo = "logo", screen = "snap")) { uri, _ ->
+            uri.takeUnless { it == "wide" }
+        }!!
         assertFalse(ready.wide)
-        assertEquals("box:Ambient", ready.backdrop)
-        assertEquals("box:Cover", ready.cover)
-        assertEquals("snap:Screen", ready.screen)
+        assertEquals("box", ready.backdrop)
+        assertEquals("box", ready.cover)
+        assertEquals("snap", ready.screen)
         assertNull(ready.logo)
+    }
+
+    @Test fun failedScreenshotKeepsTheBoxAndFailedBoxKeepsTheScreenshot() = runBlocking {
+        val box = loadHeroLayout("box", ArtScene(screen = "snap")) { uri, _ -> uri.takeUnless { it == "snap" } }!!
+        assertEquals("box", box.backdrop)
+        assertEquals("box", box.cover)
+        assertNull(box.screen)
+        val shot = loadHeroLayout("box", ArtScene(screen = "snap")) { uri, _ -> uri.takeUnless { it == "box" } }!!
+        assertEquals("snap", shot.backdrop)
+        assertEquals("snap", shot.cover)
+        assertNull(shot.screen)
+        assertNull(loadHeroLayout<String>("bad", ArtScene(background = "bad", logo = "bad")) { _, _ -> null })
+    }
+
+    @Test fun boxAndSnapDecodeConcurrentlyAndPublishTogether() = runBlocking {
+        val ambient = CompletableDeferred<String?>()
+        val box = CompletableDeferred<String?>()
+        val screen = CompletableDeferred<String?>()
+        val started = mutableSetOf<HeroImageRole>()
+        val allStarted = CompletableDeferred<Unit>()
+        val pending = async {
+            loadHeroLayout("box", ArtScene(screen = "snap")) { _, role ->
+                started += role
+                if (started.size == 3) allStarted.complete(Unit)
+                when (role) {
+                    HeroImageRole.Ambient -> ambient.await()
+                    HeroImageRole.Cover -> box.await()
+                    HeroImageRole.Screen -> screen.await()
+                    else -> error("Unexpected role")
+                }
+            }
+        }
+        allStarted.await()
+        assertEquals(setOf(HeroImageRole.Ambient, HeroImageRole.Cover, HeroImageRole.Screen), started)
+        ambient.complete("ambient")
+        box.complete("box")
+        yield()
+        assertFalse(pending.isCompleted)
+        screen.complete("snap")
+        assertEquals(HeroLayout("ambient", cover = "box", screen = "snap"), pending.await())
         assertEquals(HeroLayout<String>(), loadHeroLayout<String>(null, null) { _, _ -> error("No images to decode") })
     }
 }

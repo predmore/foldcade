@@ -1282,15 +1282,6 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     WarmNeighbours(app, place.takeIf { find == null })
     // The shown game's scene decides how the name card sits over it.
     val sceneArt = staged.images.backdrop != null
-    // Keep the title until the decoded replacement logo has finished arriving.
-    var namedByLogo by remember { mutableStateOf<StagedHero?>(null) }
-    LaunchedEffect(staged.subject?.key, staged.images) {
-        namedByLogo = null
-        if (staged.images.logo != null) {
-            delay(maxOf(motion.heroDuration(model.motionSpeed, scale), motion.sceneDuration(model.motionSpeed, scale)).toLong())
-            namedByLogo = staged
-        }
-    }
     val fadeOnly = motion.heroFadeOnly(model.motionSpeed, scale)
     val tilt = LocalTilt.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -1309,6 +1300,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 depth = motion.sceneDepth,
                 grows = false,
                 dissolves = true,
+                covers = { it.images.backdrop != null },
             ) { layer ->
                 CompositionLocalProvider(LocalBackdropOpaque provides (LocalBackdropOpaque.current && editor.shown == null)) {
                     SceneBackdrop(app, null, null, model.motionSpeed, scale, prepared = layer.images)
@@ -1400,7 +1392,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 scale = scale,
                                 overArt = sceneArt,
                                 // A logo on wide art already says the name, once that art is the focused game's.
-                                named = !(namedByLogo?.subject?.key == subject.key && namedByLogo?.images === staged.images),
+                                named = !(staged.subject?.key == subject.key && staged.images.logo != null),
                             )
                         }
                         finding.shown?.let { session ->
@@ -1493,6 +1485,7 @@ private fun <T> HeroCrossfade(
     depth: Float = 1f,
     grows: Boolean = true,
     dissolves: Boolean = false,
+    covers: (T) -> Boolean = { false },
     content: @Composable (T) -> Unit,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
@@ -1587,7 +1580,7 @@ private fun <T> HeroCrossfade(
             val leaving = shown === previous
             key(keyOf(shown)) {
                 val fade = when {
-                    leaving -> Modifier.fadingHero(outgoing.asState(), outX.asState(), outY.asState(), depth, grows, fadeOnly, holdAlpha = dissolves && current != null)
+                    leaving -> Modifier.fadingHero(outgoing.asState(), outX.asState(), outY.asState(), depth, grows, fadeOnly, holdAlpha = dissolves && current?.let(covers) == true)
                     active -> Modifier.fadingHero(incoming.asState(), inX.asState(), inY.asState(), depth, grows, fadeOnly)
                     else -> Modifier
                 }
@@ -1826,6 +1819,11 @@ private fun HeroLabel(
     // Each game starts closed, so moving on closes the card at once and never shows the last game's words.
     val unfold = remember(shown.key) { Animatable(0f) }
     val still = motion.heroFadeOnly(app.shell.model.motionSpeed, scale)
+    val titleShown = remember(shown.key) { Animatable(1f) }
+    LaunchedEffect(shown.key, named, scale) {
+        titleShown.animateTo(if (named) 1f else 0f,
+            motion.dissolve(motion.heroDuration(app.shell.model.motionSpeed, scale), 1f))
+    }
     // R3 opens it ([unfolds]); R3 again, B, or moving on folds it.
     LaunchedEffect(shown.key, summary != null, unfolds, still) {
         if (summary == null || !unfolds) {
@@ -1846,11 +1844,11 @@ private fun HeroLabel(
         // The name and its line, as they always were. The summary opens under them.
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(px(4f)),
         ) {
-            if (named) {
+            Box(Modifier.collapsingHeroTitle { titleShown.value }) {
                 BasicText(
                     text = copy.title,
+                    modifier = Modifier.padding(bottom = px(4f)),
                     style = centred.copy(fontWeight = design.type.strongWeight),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1919,6 +1917,16 @@ private fun HeroLabel(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/** The title makes room for its decoded logo over the same fade, without moving the art in one frame. */
+private fun Modifier.collapsingHeroTitle(progress: () -> Float): Modifier = clipToBounds().layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val shown = progress().coerceIn(0f, 1f)
+    val height = (placeable.height * shown).roundToInt()
+    layout(placeable.width, height) {
+        placeable.placeWithLayer(0, (height - placeable.height) / 2) { alpha = shown }
     }
 }
 
@@ -2246,7 +2254,7 @@ private fun HeroArt(
                     .then(if (screen != null) Modifier.bloomSource(app, screen, BloomFrom.Cover, coverCornerPx, key) else Modifier),
                 contentScale = ContentScale.Crop,
             )
-            icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale))
+            icon != null -> LauncherImage(icon, contentDescription = title, modifier = Modifier.fillMaxSize(theme.artScale), framed = true)
             glyph != null -> MarkIcon(glyph, glyph.heroScale(theme))
             control != null -> themeIconOrNull(control, HERO_CONTROL_PX)?.let { ink ->
                 Image(
@@ -2422,7 +2430,7 @@ internal typealias HeroImages = HeroLayout<LoadedCover>
 
 private data class HeroSources(val cover: String?, val scene: ArtScene?)
 
-private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: HeroSources): HeroImages? =
+private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: HeroSources, decoded: MutableMap<Pair<String, HeroImageRole>, LoadedCover>): HeroImages? =
     withContext(Dispatchers.Default) {
         suspend fun decode(uri: String?, px: Int, filter: FilterQuality = FilterQuality.Low): LoadedCover? {
             if (uri == null) return null
@@ -2440,7 +2448,8 @@ private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: Hero
                 HeroImageRole.Logo -> LOGO_PX
                 HeroImageRole.Screen -> SCREEN_PX
             }
-            decode(uri, px, if (role == HeroImageRole.Screen) FilterQuality.None else FilterQuality.Low)
+            decoded[uri to role] ?: decode(uri, px, if (role == HeroImageRole.Screen) FilterQuality.None else FilterQuality.Low)
+                ?.also { decoded[uri to role] = it }
         }
     }
 
@@ -2474,24 +2483,51 @@ private fun rememberStagedHero(
     val context = LocalContext.current
     val record = subject?.let { records[it.key] }
     val query = subject?.let { queries[it.key] }
-    val sources = HeroSources(rememberArt(app, record, query)?.cover, rememberScene(app, record, query))
+    val allowed = app.shell.model.artwork
+    val connections = app.shell.model.signedIn
+    val revision = app.artRevision
+    val artKeySaved = app.shell.model.artKeySaved
+    val preview = LocalArtPreview.current?.takeIf { it.gameId == query?.key }
     var staged by remember { mutableStateOf(StagedHero(subject, HeroTravel.None)) }
     var stagedPlace by remember { mutableStateOf(place) }
     var stagedAt by remember { mutableLongStateOf(0L) }
     val dwell = motion.sceneDuration(app.shell.model.motionSpeed, animatorScale) / 2
-    LaunchedEffect(subject?.key, sources) {
-        val loading = async { decodeHero(app, context, sources) }
-        val decoded = withTimeoutOrNull(HERO_ART_WAIT_MS) { loading.await() }
+    LaunchedEffect(subject?.key, record, query, allowed, connections, artKeySaved, revision, preview) {
+        val decoded = ConcurrentHashMap<Pair<String, HeroImageRole>, LoadedCover>()
+        fun chosen(cover: String?, scene: ArtScene?): HeroSources = when (preview?.kind) {
+            ArtKind.Tile -> HeroSources(preview.url, scene)
+            ArtKind.Hero -> HeroSources(cover, (scene ?: ArtScene()).copy(background = preview.url))
+            ArtKind.Logo -> HeroSources(cover, (scene ?: ArtScene()).copy(logo = preview.url))
+            null -> HeroSources(cover, scene)
+        }
+        // Source lookup belongs inside the same 400 ms wait as decoding. An uncached
+        // lookup must not publish an empty layout on its first composition.
+        val sources = async(Dispatchers.Default) {
+            if (record == null && query == null) return@async HeroSources(null, null)
+            app.art.restore()
+            val cover = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
+            chosen(cover?.cover, app.covers.cachedScene(record, query))
+        }
+        val loading = async { decodeHero(app, context, sources.await(), decoded) }
+        val first = withTimeoutOrNull(HERO_ART_WAIT_MS) { loading.await() }
         delay(stagedAt + dwell - SystemClock.uptimeMillis())
-        val sameGame = subject?.key == staged.subject?.key
-        if (!sameGame || decoded != null && (sources.cover != null || sources.scene != null)) {
-            staged = StagedHero(subject, if (sameGame) HeroTravel.None else travelOf(stagedPlace, place), decoded ?: HeroImages())
+        fun commit(images: HeroImages) {
+            val sameGame = subject?.key == staged.subject?.key
+            staged = StagedHero(subject, if (sameGame) HeroTravel.None else travelOf(stagedPlace, place), images)
             stagedPlace = place
             stagedAt = SystemClock.uptimeMillis()
         }
-        val ready = loading.await()
-        if (ready != null && ready != staged.images && (sources.cover != null || sources.scene != null)) {
-            staged = StagedHero(subject, HeroTravel.None, ready)
+        if (first != null) commit(first)
+        else if (subject?.key != staged.subject?.key) commit(HeroImages())
+        val initial = loading.await()
+        if (initial != null && initial != staged.images) commit(initial)
+        val found = sources.await()
+        if ((record != null || query != null) && found.scene?.complete != true) {
+            val refreshed = withContext(Dispatchers.Default) { chosen(found.cover, app.covers.fetchScene(record, query)) }
+            if (refreshed != found) {
+                val images = decodeHero(app, context, refreshed, decoded)
+                if (images != null && images != staged.images) commit(images)
+            }
         }
     }
     val current = staged

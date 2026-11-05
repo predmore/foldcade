@@ -19,7 +19,7 @@ object GameAboutCopy {
     const val developer = "Developer"
     const val publisher = "Publisher"
     const val players = "Players"
-    const val download = "Download"
+    const val size = "Size"
     const val screens = "Screens"
 
     /** The page's one line when nothing about the game is known yet. */
@@ -48,8 +48,6 @@ fun aboutFacts(
     sizeBytes: Long? = null,
     bothScreens: Boolean = false,
 ): List<AboutFact> = buildList {
-    sizeBytes?.takeIf { it > 0 }?.let { add(AboutFact(GameAboutCopy.download, formatDownloadSize(it))) }
-    if (bothScreens) add(AboutFact(GameAboutCopy.screens, Copy.usesBothScreens))
     year?.let { add(AboutFact(GameAboutCopy.released, it.toString())) }
     val named = genres.mapNotNull { it.trim().ifEmpty { null } }
     if (named.isNotEmpty()) add(AboutFact(if (named.size == 1) GameAboutCopy.genre else GameAboutCopy.genres, named.joinToString(", ")))
@@ -58,6 +56,8 @@ fun aboutFacts(
     madeBy?.let { add(AboutFact(GameAboutCopy.developer, it)) }
     sentBy?.takeUnless { madeBy != null && it.equals(madeBy, ignoreCase = true) }?.let { add(AboutFact(GameAboutCopy.publisher, it)) }
     players?.trim()?.ifEmpty { null }?.let { add(AboutFact(GameAboutCopy.players, it)) }
+    sizeBytes?.takeIf { it > 0 }?.let { add(AboutFact(GameAboutCopy.size, formatDownloadSize(it))) }
+    if (bothScreens) add(AboutFact(GameAboutCopy.screens, Copy.usesBothScreens))
 }
 
 /**
