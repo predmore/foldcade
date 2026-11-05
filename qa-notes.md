@@ -52,3 +52,5 @@ Final verification after rebase onto main 5d86095e: testDebugUnitTest --rerun-ta
 Review round 2: no correctness findings; About page/companion and both Play activity pages scored9. Art scored8.5 solely because a single Hero/Logo used Tile's narrow current-image size. Verified the captures and changed only single Hero/Logo width to the available width; Tile and multi-candidate layouts stay the same. Full testDebugUnitTest --rerun-tasks passed after this adjustment (1m23s). Third Thor capture and final UX check pending.
 
 Thor QA round3, 2026-11-04 21:41:04–21:44 PST: verified r3-art-hero and r3-art-logo use the available width, and r3-art-tile retains its portrait-friendly size. All show the current check and Automatic / Back. No game or stream launched. HOME stayed app.foldcade; Wi-Fi stayed1. No save-backups existed. The test RomM device was deleted (HTTP204), .uxrpages removed, stay-on set false, and turn released. Rebased without conflicts onto main1303e2c7; final integration test rerun pending.
+
+Final integration rerun on main1303e2c7 passed: 2712 tests, 0 failures (1m20s).
