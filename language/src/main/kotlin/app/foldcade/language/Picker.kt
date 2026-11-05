@@ -1326,7 +1326,7 @@ data class TileActions(
     val moveGame: HostScreen? = null,
     val saves: Boolean = false,
     val openWith: PlayerChoiceRow? = null,
-    /** The game's play time, for its Play time row. Null leaves the row out: not a game, or no play anywhere yet. */
+    /** The game's play time, for its Play time row. Null or 0 with nothing [playFound] leaves the row out: not a game, or never played. */
     val playTime: Long? = null,
     /** With no play of its own, the time a gone game of its name left: the row says it was found. */
     val playFound: Long? = null,
@@ -1382,7 +1382,8 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
     if (tile.openWith != null) add(Row.OpenWith)
-    if (tile.playTime != null) add(Row.PlayTime)
+    // A game never played says nothing with "0m", so the row waits for real time or time found to move.
+    if (tile.playTime != null && (tile.playTime > 0L || tile.playFound != null)) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
     if (tile.showOnHome != null) add(Row.ShowOnHome)
     // After Show on Home, so Find's Select keeps showing where a game lives.

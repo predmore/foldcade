@@ -99,6 +99,7 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
     val wide = uri != null && uri == scene?.background
+    val tileShare = TileCrops.share(uri)
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
     // How far the growth has gone, counted in frames shown: the start keeps the main thread busy
     // for a frame or a few, and growth timed by the clock would leap across them. It pauses instead.
@@ -151,8 +152,9 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
             null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(grown), 1f)
         }
         // A box's title is near its top. As the box fills a wide screen, the crop moves up to
-        // keep it; the first frame is still centred, as the tile was drawn. Wide art stays centred.
-        val bias = if (wide) 0.5f else 0.5f + (BLOOM_COVER_BIAS - 0.5f) * grow
+        // keep it; the first frame is where the tile cut its square ([TileCrop]). Wide art stays centred.
+        val start = if (anchor?.from == BloomFrom.Tile) tileShare else 0.5f
+        val bias = if (wide) 0.5f else start + (BLOOM_COVER_BIAS - start) * grow
         val push = scale * timing.pushScale(grown)
         withTransform({ scale(push, push, full.center) }) {
             drawCropped(painter, rect, corner, alpha * presence, path, bias)

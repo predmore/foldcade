@@ -101,7 +101,7 @@ Play activity and the hero use the same optional Android usage-access time for A
 | :---: | :---: |
 | ![The L1 drawer: this week's play activity as a small bar chart, round buttons for Home, Games, and Apps, then Edit home and Settings.](docs/images/menu-l1.webp) | ![The R1 drawer: date, battery, and Wi-Fi, round buttons for Wi-Fi, Bluetooth, Battery, and Android settings, and a brightness slider.](docs/images/menu-r1.webp) |
 
-**L1** opens Home, Games, Apps, Edit home, and Settings. **Games** opens All games, every game you have on every system; **Apps** opens the Android Apps folder. **Start** opens Settings from the grid and closes it again. **Select** opens Find. **L2 / R2** step All games' tabs, jump letters in Hidden with a brief letter on the top screen, and on Home, inside folders and inside collections move one screen (four columns) at a time. **R3**, the right stick's click, opens the focused game's summary on the top screen when it has one (the hint row says **R3 Info**); R3 again, **B**, or moving on folds it. The left stick's click does nothing. The Android Home button closes a folder or All games and returns to its Home tile.
+**L1** opens Home, Games, Apps, Edit home, and Settings. **Games** opens All games, every game you have on every system; **Apps** opens the Apps folder of installed apps. **Start** opens Settings from the grid and closes it again. **Select** opens Find. **L2 / R2** step All games' tabs, jump letters in Hidden with a brief letter on the top screen, and on Home, inside folders and inside collections move one screen (four columns) at a time. **R3**, the right stick's click, opens the focused game's summary on the top screen when it has one (the hint row says **R3 Info**); R3 again, **B**, or moving on folds it. The left stick's click does nothing. The Android Home button closes a folder or All games and returns to its Home tile.
 
 ### Every game in one place
 
@@ -130,7 +130,7 @@ After **Hide**, **Unpin**, **Remove**, or **Tidy**, the hint bar offers **Y Undo
 
 **Delete download** and **Delete shortcut** require holding **A** for 0.8 seconds while their row fills. Release early to cancel. Where the row has an X shortcut, hold X after opening the Y menu instead. **Delete shortcut** removes a Moonlight or DroidDeck shortcut from Android and Home; **Hide** lets you bring it back through Hidden.
 
-Installed apps live in the Android Games and Android Apps folders on Home, with the same Add to, Hide, and Show as every game. **Move to Android Games/Apps** in an app's Y menu moves it to the other folder, which also decides whether All games lists it as a game.
+Installed apps live in the Android Games and Apps folders on Home, with the same Add to, Hide, and Show as every game. **Move to Android Games** or **Move to Apps** in an app's Y menu moves it to the other folder, which also decides whether All games lists it as a game.
 
 ### Find anything with Select
 

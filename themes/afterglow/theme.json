@@ -394,6 +394,11 @@
       "tint": false,
       "accent": "#A9CBEF"
     },
+    "app.com.virtualapplications.play": {
+      "file": "icons/app_play.xml",
+      "tint": false,
+      "accent": "#6464FF"
+    },
     "app.com.whatsapp": {
       "file": "icons/app_whatsapp.xml",
       "tint": false,

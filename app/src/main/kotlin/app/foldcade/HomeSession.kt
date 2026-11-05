@@ -21,6 +21,7 @@ import app.foldcade.language.steppedTab
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeKind
 import app.foldcade.language.hideGame
+import app.foldcade.language.removeFolder
 import app.foldcade.language.showHidden
 import app.foldcade.language.hiddenItems
 import app.foldcade.language.deleteShortcut
@@ -202,7 +203,7 @@ class HomeSession(
             BulkAction.Hide -> bulkHide(board, ids)
         }
         bulkAfter = board
-        if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, fresh = true)
+        if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, Unmade(bulkBefore!!, board, index))
         return index
     }
 
@@ -746,13 +747,17 @@ class HomeSession(
         val name = "${Copy.collection} $count"
         val game = gameAt(index, gameId)
         if (game == null && !board.atRoot) return index
+        val before = board
         board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)
         if (collectionId !in board.folders) return index
         val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
-        openNaming(collectionId, focus, fresh = true)
+        openNaming(collectionId, focus, Unmade(before, board, index))
         made = if (game != null) MadeCollection(collectionId, game) else null
         return focus
     }
+
+    /** The board [before] a collection was made, the board just [after], and the cell focus was on. */
+    private class Unmade(val before: HomeBoard, val after: HomeBoard, val cell: Int)
 
     /** A collection just made to hold a game, while its name is typed. See [takeMade]. */
     private var made: MadeCollection? = null
@@ -772,15 +777,16 @@ class HomeSession(
         made = null
         val id = slots().getOrNull(index) ?: return
         if (id !in board.folders) return
-        openNaming(id, index, fresh = false)
+        openNaming(id, index, unmade = null)
     }
 
     /**
      * The keyboard over [id]'s name; focus goes back to [cell] when it closes. Quick names
      * offer the platform its games share, then ideas for a collection, leaving out names
-     * the user already gave another collection. A [fresh] one starts the cursor on them.
+     * the user already gave another collection. A fresh one, made just now and still [unmade]
+     * by B, starts the cursor on them.
      */
-    private fun openNaming(id: String, cell: Int, fresh: Boolean) {
+    private fun openNaming(id: String, cell: Int, unmade: Unmade?) {
         val folder = board.folders[id] ?: return
         val shared = folder.slots.filterNotNull()
             .map { slot -> platformName(catalog().firstOrNull { it.id == slot }?.platformId ?: games[slot]?.platformId) }
@@ -793,7 +799,7 @@ class HomeSession(
         typing = TypingSession(
             text = folder.name,
             chips = quickNames(listOfNotNull(shared), taken),
-            startOnChips = fresh,
+            startOnChips = unmade != null,
             onDone = { name ->
                 board = renameFolder(board, id, name)
                 // Saved: Add to comes back with the new collection ticked ([takeMade]).
@@ -802,6 +808,12 @@ class HomeSession(
             },
             onCancel = {
                 made = null
+                // B Cancel on a collection made a moment ago means nothing happened (review-C 70):
+                // the board goes back as it was, or loses just that collection if a scan landed since.
+                if (unmade != null) {
+                    board = if (board == unmade.after) unmade.before else removeFolder(board, id)
+                    renameCell = unmade.cell
+                }
                 closeTyping()
             },
         )

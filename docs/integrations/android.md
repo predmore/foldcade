@@ -1,16 +1,16 @@
 # Android games and apps
 
-Foldcade automatically finds installed apps with launcher icons. Games start in **Android Games**, other apps in **Android Apps**, and recognized emulators and streaming apps in **Emulators**.
+Foldcade automatically finds installed apps with launcher icons. Games start in **Android Games**, other apps in **Apps**, and recognized emulators and streaming apps in **Emulators**.
 
 ## Add a game
 
 1. Install the game and return to Foldcade.
-2. Find it in **Android Games**, **Android Apps**, or **All**. The L1 drawer also opens the Games and Apps lists.
+2. Find it in **Android Games**, **Apps**, or **All**. The L1 drawer also opens the Games and Apps lists.
 3. Press **A** to open it on the top screen or **X** on the bottom.
 
 Android decides whether an app is a game. Use **Y › Move to Android Games/Apps** from its Home folder or L1 shelf to change its classification.
 
-Empty default folders are hidden. If Android Games is absent, check Android Apps and All.
+Empty default folders are hidden. If Android Games is absent, check Apps and All.
 
 ## Arrange your apps
 

@@ -22,15 +22,17 @@ class PlayGamePageTest {
         assertEquals(RowControl.Value("2h 5m"), rowControl(Row.PlayTime, model))
         // A tile that is not a game, or nothing played anywhere yet, has no row.
         assertFalse(Row.PlayTime in actionRows(tile.copy(playTime = null)))
-        assertEquals(RowText(PlayCopy.playTime, "0m"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playTime = 0L))))
+        // A game never played has no "0m" row either.
+        assertFalse(Row.PlayTime in actionRows(tile.copy(playTime = 0L)))
         // A renamed ROM, with no play of its own, says the old file's time was found.
+        assertTrue(Row.PlayTime in actionRows(tile.copy(playTime = 0L, playFound = 12 * 3_600_000L)))
         assertEquals(RowText(PlayCopy.playTime, "Found 12h"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playTime = 0L, playFound = 12 * 3_600_000L))))
         assertEquals(RowText(PlayCopy.playTime, "2h 5m"), rowText(Row.PlayTime, model.copy(tileActions = tile.copy(playFound = 60_000L))))
     }
 
     @Test
     fun playTimeOpensTheGamesPageAndAsksTheShellForItsSources() {
-        val tile = TileActions(move = true, playTime = 0L, game = game)
+        val tile = TileActions(move = true, playTime = 60_000L, game = game)
         val menu = reduce(PickerModel(count = 1, rowsPerPage = 1, tileActions = tile), Meaning.Options).first
         val at = menu.copy(panel = menu.panel!!.copy(index = panelRows(menu.panel!!, menu).indexOf(Row.PlayTime)))
         val (opened, effect) = reduce(at, Meaning.Activate)

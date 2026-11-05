@@ -77,7 +77,7 @@ class HomeGridOrderTest {
             emptySet(),
         )
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
-        assertEquals(listOf(LibraryCopy.title, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
+        assertEquals(listOf(LibraryCopy.title, "Android Games", "Apps", "Nintendo 3DS"), titles(shell))
         assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
         // All counts its games as every folder does; Notes is an app, so it is not one of them.
         assertEquals("2 games", shell.homeFace(0)?.shortText)
@@ -376,7 +376,7 @@ class HomeGridOrderTest {
         assertFalse(shell.focusedLaunchesOnOneScreen())
 
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        focus(shell, titles(shell).indexOf("Android Apps"))
+        focus(shell, titles(shell).indexOf("Apps"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Notes"))
         assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
