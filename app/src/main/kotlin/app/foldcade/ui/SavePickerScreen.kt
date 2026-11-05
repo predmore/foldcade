@@ -38,11 +38,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.RunningApp
+import app.foldcade.language.keptSave
+import app.foldcade.language.genericSlot
 import app.foldcade.language.Copy
 import app.foldcade.language.DateStyle
 import app.foldcade.language.Effect
@@ -370,19 +373,25 @@ private fun SaveList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?,
     val now = System.currentTimeMillis()
     val focus = (state.index - 1).takeIf { it >= 0 }
     val names = saveNames(state.saves, state.ownSlots, dates, now)
+    // Pictures only when RomM holds a screenshot: otherwise every row wore the same console mark.
+    val thumbs = state.saves.any { it.screenshotUri != null }
     Column(
         Modifier
             .fillMaxSize()
+            .wholeRows(state.saves.size)
             .menuFade(scroll)
+            // The card's inset sits outside the scroll and only the ring's room inside it, so a
+            // row beyond either end shows less than its own empty margin, a thumbnail's included.
+            .padding(CARD_INSET)
             .verticalScroll(scroll)
-            .padding(ringReach() + CARD_INSET)
+            .padding(ringReach())
             .selectionHighlight(slots, focus, ring = state.confirmation == null, scale = scale),
         verticalArrangement = Arrangement.spacedBy(ROW_GAP),
     ) {
         state.saves.forEachIndexed { index, save ->
             val focused = focus == index
             SaveRow(
-                app, save, names[save.id] ?: SavePickerCopy.slot(save), relativeSaveWhen(save.updatedAtMillis, now, dates), art, focused, scale,
+                app, save, names[save.id] ?: SavePickerCopy.slot(save), relativeSaveWhen(save.updatedAtMillis, now, dates), art.takeIf { thumbs }, thumbs, focused, scale,
                 Modifier.selectionSlot(slots, index).keepInView(focused).hostPress { dispatch(app.shell.touchSavePickerSave(state.target, save.id)) },
             )
         }
@@ -402,16 +411,20 @@ private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: Runni
     Column(
         Modifier
             .fillMaxSize()
+            .wholeRows(destinations.size)
             .menuFade(scroll)
+            // The card's inset sits outside the scroll and only the ring's room inside it, so a
+            // row beyond either end shows less than its own empty margin, a thumbnail's included.
+            .padding(CARD_INSET)
             .verticalScroll(scroll)
-            .padding(ringReach() + CARD_INSET)
+            .padding(ringReach())
             .selectionHighlight(slots, state.destinationIndex, ring = state.confirmation == null, scale = scale),
         verticalArrangement = Arrangement.spacedBy(ROW_GAP),
     ) {
         destinations.forEachIndexed { index, destination ->
             val focused = state.destinationIndex == index
             DestinationRow(
-                destination, destinationName(destination, state.saves, names, state.ownSlots), art, focused, scale,
+                destination, destinationName(destination, state.saves, names, state.ownSlots), focused, scale,
                 Modifier.selectionSlot(slots, index).keepInView(focused).hostPress { dispatch(app.shell.touchSavePickerDestination(state.target, destination)) },
             )
         }
@@ -423,7 +436,7 @@ private fun DestinationList(app: FoldcadeApp, state: SavePickerState, art: Runni
  * is not this device, how long ago, and Playing on the one Foldcade plays. A Backup rests quieter.
  */
 @Composable
-private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenText: String, art: RunningApp?, focused: Boolean, scale: Float, modifier: Modifier) {
+private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenText: String, art: RunningApp?, thumb: Boolean, focused: Boolean, scale: Float, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
@@ -434,7 +447,7 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenTe
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Thumb(app, save.screenshotUri, if (save.backup) "shield" else art?.mark, lit, lift, rest)
+        if (thumb) Thumb(app, save.screenshotUri, if (save.backup) "shield" else art?.mark, lit, lift, rest)
         BasicText(
             name,
             modifier = Modifier.weight(1f).graphicsLayer { alpha = rest + (1f - rest) * lit.value },
@@ -457,18 +470,16 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenTe
 
 /** A slot to copy into: its slot, and whose it is. */
 @Composable
-private fun DestinationRow(destination: SaveDestination, name: String, art: RunningApp?, focused: Boolean, scale: Float, modifier: Modifier) {
+private fun DestinationRow(destination: SaveDestination, name: String, focused: Boolean, scale: Float, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
-    val lift = bouncy(if (focused) 1f else 0f, scale)
     val rest = design.menu.labelRestAlpha
     Row(
         modifier.fillMaxWidth().height(design.saves.rowHeightDp.dp).padding(horizontal = ROW_PAD),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Thumb(null, null, art?.mark, lit, lift, rest)
         BasicText(
             name,
             modifier = Modifier.weight(1f).graphicsLayer { alpha = rest + (1f - rest) * lit.value },
@@ -607,9 +618,13 @@ private fun healthBadge(health: SaveHealth, theme: Theme): Pair<Int, Color> = wh
  */
 @Composable
 private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SavePickerChoice, dates: DateStyle, modifier: Modifier, onButton: (Int) -> Unit) {
-    val destination = (choice as? SavePickerChoice.Copy)?.destination?.let {
+    val copyTo = (choice as? SavePickerChoice.Copy)?.destination
+    val destination = copyTo?.let {
         destinationName(it, state.saves, saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis()), state.ownSlots)
     }.orEmpty()
+    // A slot named by its day is named by whose it is; the day is the save there now, which is kept.
+    val generic = copyTo != null && genericSlot(copyTo.slot, state.ownSlots)
+    val current = copyTo?.let { keptSave(it, state.saves, destination, state.ownSlots) }
     val action = when (choice) {
         is SavePickerChoice.Play -> SavePickerCopy.play
         is SavePickerChoice.Copy -> SavePickerCopy.copy
@@ -617,8 +632,8 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
     }
     DialogFrame(
         app = app,
-        title = SavePickerCopy.confirmationTitle(choice, state.playerName, destination),
-        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots),
+        title = SavePickerCopy.confirmationTitle(choice, state.playerName, destination, generic),
+        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current),
         buttons = listOf(action, SavePickerCopy.cancel),
         focused = state.confirmIndex,
         hints = listOf(HintKey(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB, SavePickerCopy.cancel)),
@@ -665,6 +680,27 @@ private val ROW_PAD = 12.dp
 private val CARD_INSET = 4.dp
 private val CARD_PAD = 24.dp
 private val THUMB = 36.dp
+
+/**
+ * A save list's height in whole rows, when it holds more than fit: the card's edge then never
+ * cuts a row in half, and the rows sit centred in the card. A list that fits fills the card.
+ * Only the ring's room is inside the scroll, so the first and last rows' rings are never
+ * clipped, and the card's inset is outside it. At either end of the scroll, what shows of the
+ * next row is then less than its own empty margin above or below its words or thumbnail.
+ */
+@Composable
+private fun Modifier.wholeRows(rows: Int): Modifier {
+    val pad = ringReach() + CARD_INSET
+    val row = LocalFoldTheme.current.theme.style.saves.rowHeightDp.dp
+    return layout { measurable, constraints ->
+        val pitch = (row + ROW_GAP).roundToPx()
+        val fits = ((constraints.maxHeight - (pad * 2).roundToPx() + ROW_GAP.roundToPx()) / pitch).coerceAtLeast(1)
+        val height = if (rows <= fits || !constraints.hasBoundedHeight) constraints.maxHeight
+            else (fits * pitch - ROW_GAP.roundToPx() + (pad * 2).roundToPx()).coerceAtMost(constraints.maxHeight)
+        val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+        layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(0, (constraints.maxHeight - height) / 2) }
+    }
+}
 private const val THUMB_PX = 144
 private val MARK_SIZE = 14.dp
 private val SOURCE_MAX = 120.dp

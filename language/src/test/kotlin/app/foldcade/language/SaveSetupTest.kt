@@ -41,7 +41,7 @@ class SaveSetupTest {
         for (key in listOf("gba-emu.game-boy-advance", "gbc-emu.game-boy", "nes-emu.nes", "snes9x-ex.snes", "md-emu.genesis")) {
             for (done in listOf(false, true)) {
                 val tile = SetupTile(key, "EX app", null, listOf(SetupStep.Folder(key, FolderPick.Browse, true, done)))
-                assertTrue(SaveSetupCopy.stepBody(tile)!!.contains(SaveSetupCopy.exLaunchMode("EX app")))
+                assertTrue(SaveSetupCopy.stepBody(tile)!!.contains(SaveSetupCopy.exLaunchModeStep))
             }
         }
         assertNull(SaveSetupCopy.stepBody(SetupTile("melonds", "melonDS", null, emptyList())))
@@ -150,10 +150,14 @@ class SaveSetupTest {
             eden = EdenSetting(fromRomm = true, packageName = "dev.eden.eden_emulator"),
         )
         val tiles = ready.openSaveSetup(HostScreen.Top).tiles()
+        // With a game on Home for each, a tile wears the cloud exactly while its step waits.
+        val played = ready.copy(boardEmulators = tiles.map { it.key }.toSet())
         for (tile in tiles) {
             val row = Row.SettingsTile(SettingsInner.Emulator(tile.key))
-            val attention = settingsTileStatus(row, ready) == TileStatus.Attention
+            val attention = settingsTileStatus(row, played) == TileStatus.Attention
             assertEquals(tile.key, attention, !tile.done)
+            // With none, one still waiting wears nothing: no saves are at stake yet.
+            assertEquals(tile.key, if (tile.done) TileStatus.Fine else null, settingsTileStatus(row, ready))
         }
         val aps = tiles.first { it.key == "aps3e" }
         assertEquals(SetupStep.InApp("aps3e", InAppStep.Setup, "Install firmware in aPS3e.", done = false), aps.step)
@@ -295,7 +299,7 @@ class SaveSetupTest {
         )
         // R1, the Settings row and the page's head all read this one list.
         assertEquals(listOf("melonds", "retroarch.nes"), savesDue(board).map { it.key })
-        assertEquals("2 to go", SaveSetupCopy.head(savesDue(board).size, savesRest(board, opened.tiles()).size))
+        assertEquals("2 to go", SaveSetupCopy.head(savesDue(board).size, savesRest(opened.tiles()).size))
         // A skip is for this run alone: the count holds.
         val skipped = opened.on("melonds").press(Meaning.ActivateBottom).first
         assertEquals(2, savesDue(skipped, skipped.tiles()).size)
@@ -303,7 +307,7 @@ class SaveSetupTest {
         val synced = board.saves("melonds") { it.copy(chosen = true) }.saves("retroarch.nes") { it.copy(chosen = true) }
             .copy(retroArch = board.retroArch!!.copy(cores = 3))
         assertTrue(savesDue(synced).isEmpty())
-        val rest = savesRest(synced, saveSetupTiles(synced, SaveSetupPage())).size
+        val rest = savesRest(saveSetupTiles(synced, SaveSetupPage())).size
         assertEquals(SaveSetupCopy.gamesSync, SaveSetupCopy.head(0, rest))
         assertEquals(SaveSetupCopy.doneForNow, SaveSetupCopy.endTitle(0, rest))
         assertEquals("Your games sync. Finish any time in Settings › Emulators.", SaveSetupCopy.endBody(0, rest))
@@ -312,7 +316,9 @@ class SaveSetupTest {
 
     @Test fun exStepsAreNumberedWhileTheFolderWaits() {
         val tile = SetupTile("gba-emu.game-boy-advance", "GBA.emu", null, listOf(SetupStep.Folder("gba-emu.game-boy-advance", FolderPick.Browse, true, false)))
-        assertEquals(listOf(SaveSetupCopy.browse("GBA.emu"), SaveSetupCopy.exLaunchMode("GBA.emu")), numberedSteps(SaveSetupCopy.stepBody(tile)))
+        // The title already names GBA.emu, so its step starts at the menu, and "(No State)." never wraps alone.
+        assertEquals(listOf(SaveSetupCopy.browse("GBA.emu"), SaveSetupCopy.exLaunchModeStep), numberedSteps(SaveSetupCopy.stepBody(tile)))
+        assertTrue(SaveSetupCopy.exLaunchModeStep.endsWith("Main\u00A0Slot\u00A0(No\u00A0State)."))
     }
 
     @Test fun aSkippedFindSavesIsNotASkippedEmulator() {
@@ -324,14 +330,15 @@ class SaveSetupTest {
         // melonDS's folder picked: everything that saves syncs, so All set, Find saves skipped or not.
         val picked = passed.settle { it.saves("melonds") { s -> s.copy(chosen = true) } }.on(null)
         assertTrue(saveSetupFinished(picked.tiles(), picked.page()))
-        assertEquals("All set", SaveSetupCopy.endTitle(savesDue(picked, picked.tiles()).size, savesRest(picked, picked.tiles()).size))
+        assertEquals("All set", SaveSetupCopy.endTitle(savesDue(picked, picked.tiles()).size, savesRest(picked.tiles()).size))
     }
 
     @Test fun skippingNeverQuietsTheSettingsBadgeOrTheNotice() {
-        val skipped = model.openSaveSetup(HostScreen.Top).on("melonds").press(Meaning.ActivateBottom).first
+        val skipped = model.copy(boardEmulators = setOf("melonds")).openSaveSetup(HostScreen.Top).on("melonds").press(Meaning.ActivateBottom).first
         assertEquals(TileStatus.Attention, settingsTileStatus(Row.SettingsTile(SettingsInner.Emulator("melonds")), skipped))
         assertEquals(model.playerSaves, skipped.playerSaves)
         assertEquals(model.notices, skipped.notices)
+        assertEquals(SaveSetupCopy.skipped, SaveSetupCopy.status(skipped.tile("melonds"), skipped.page()))
         assertTrue(saveSetupWanted(skipped))
     }
 
@@ -339,7 +346,7 @@ class SaveSetupTest {
         val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms, duck.copy(hostedInUse = true)), boardEmulators = setOf("armsx2"))
         val opened = one.openSaveSetup(HostScreen.Top)
         assertEquals("armsx2", opened.page().focus)
-        assertEquals("1 to go", SaveSetupCopy.head(savesDue(opened, opened.tiles()).size, savesRest(opened, opened.tiles()).size))
+        assertEquals("1 to go", SaveSetupCopy.head(savesDue(opened, opened.tiles()).size, savesRest(opened.tiles()).size))
         val done = opened.press(Meaning.ActivateBottom).first
         assertNull(done.page().focus)
         assertTrue(saveSetupFinished(done.tiles(), done.page()))
@@ -352,9 +359,54 @@ class SaveSetupTest {
         assertEquals("1 still not syncing. Finish any time in Settings › Emulators.", SaveSetupCopy.endBody(due, 0))
         assertEquals(listOf(HintKey(PromptKey.FaceA, SaveSetupCopy.done)), saveSetupActions(done, done.page()))
         assertNull(done.press(Meaning.Activate).first.saveSetup)
-        // From All set, the D-pad still reaches the tiles.
-        assertEquals("duckstation", done.press(Meaning.MoveLeft).first.page().focus)
-        assertEquals("armsx2", done.press(Meaning.MoveRight).first.page().focus)
+        // The ring rests on the skipped one, and any D-pad press reopens it.
+        assertEquals("armsx2", saveSetupResting(done.tiles(), done.page()))
+        for (move in listOf(Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown)) {
+            assertEquals(move.name, "armsx2", done.press(move).first.page().focus)
+        }
+    }
+
+    @Test fun aPageOpenedBeforeHomesGamesLoadedRanksAgainWhenTheyDo() {
+        // Right after a sign-in the page opens before Home names its emulators: none is due yet.
+        val early = model.copy(allFilesGranted = true).saves("duckstation") { it.copy(hostedInUse = true) }.openSaveSetup(HostScreen.Top)
+        assertEquals("duckstation", early.tiles().first().key)
+        val loaded = retainSaveSetup(early, early.copy(boardEmulators = setOf("melonds", "armsx2")))
+        assertEquals(listOf("armsx2", "melonds", "duckstation"), loaded.tiles().take(3).map { it.key })
+        // The focus stays where it was.
+        assertEquals(early.page().focus, loaded.page().focus)
+    }
+
+    @Test fun fromAllSetTheDpadStillReachesTheEnds() {
+        val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms.copy(saveSyncing = true, saveSyncSteps = null), duck.copy(hostedInUse = true)))
+        val end = one.openSaveSetup(HostScreen.Top)
+        assertNull(end.page().focus)
+        assertNull(saveSetupResting(end.tiles(), end.page()))
+        assertEquals(end.tiles().last().key, end.press(Meaning.MoveLeft).first.page().focus)
+        assertEquals(end.tiles().first().key, end.press(Meaning.MoveRight).first.page().focus)
+    }
+
+    @Test fun dueFirstThenSyncingThenNotSetUpAndTheOrderHoldsWhileTheWalkGoesOn() {
+        // melonDS and ARMSX2 have games on Home; DuckStation syncs; aPS3e and Eden have none.
+        val board = model.copy(boardEmulators = setOf("melonds", "armsx2", "duckstation"), allFilesGranted = true)
+            .saves("duckstation") { it.copy(hostedInUse = true) }
+        val opened = board.openSaveSetup(HostScreen.Top)
+        val keys = opened.tiles().map { it.key }
+        assertEquals(listOf("armsx2", "melonds"), keys.take(2))
+        val synced = opened.tiles().indexOfFirst { it.done }
+        val quiet = opened.tiles().indexOfFirst { !it.done && !it.onHome }
+        assertTrue("$keys", synced in 2 until quiet)
+        assertTrue("$keys", opened.tiles().drop(quiet).all { !it.onHome && !it.done })
+        // A not-set-up one reads so, quietly; a due one needs you.
+        assertEquals(SaveSetupCopy.notSetUp, SaveSetupCopy.status(opened.tile("aps3e"), opened.page()))
+        assertEquals(SaveSetupCopy.needsYou, SaveSetupCopy.status(opened.tile("melonds"), opened.page()))
+        // melonDS starting to sync keeps its place, so the strip never shuffles under the focus.
+        val picked = opened.settle { it.saves("melonds") { s -> s.copy(chosen = true) } }
+        assertTrue(picked.tile("melonds").done)
+        assertEquals(keys, picked.tiles().map { it.key })
+        // The next run puts it with the ones that sync.
+        val again = picked.press(Meaning.Back).first.openSaveSetup(HostScreen.Top)
+        assertEquals("armsx2", again.tiles().first().key)
+        assertTrue(again.tiles().indexOfFirst { it.key == "melonds" } > 0)
     }
 
     @Test fun nothingLeftOpensOnAllSetAndASyncingTileOpensItsSettingsPage() {

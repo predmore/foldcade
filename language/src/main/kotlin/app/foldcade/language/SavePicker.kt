@@ -214,6 +214,8 @@ object SavePickerCopy {
     const val today = "Today"
     const val yesterday = "Yesterday"
     const val emptySlot = "Empty slot"
+    /** The save a named slot holds now, in "Its current save is kept on RomM." */
+    const val currentSave = "current"
     fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
     /** Under the game's name on the top screen, once the saves are known. */
@@ -237,16 +239,58 @@ object SavePickerCopy {
         SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
         SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
     }
-    fun confirmationTitle(choice: SavePickerChoice, player: String, destination: String = (choice as? SavePickerChoice.Copy)?.destination?.slot.orEmpty()): String = when (choice) {
+    /**
+     * The confirmation's title. A copy names where it lands: a slot someone named by its name, and
+     * one named by its day by whose it is, "Copy to Argosy’s save?", as a date read like a change of date.
+     * [destination] is the slot's name on the page, [generic] whether that name is only its day.
+     */
+    fun confirmationTitle(
+        choice: SavePickerChoice,
+        player: String,
+        destination: String = (choice as? SavePickerChoice.Copy)?.destination?.slot.orEmpty(),
+        generic: Boolean = false,
+    ): String = when (choice) {
         is SavePickerChoice.Play -> "Play this save?"
-        is SavePickerChoice.Copy -> "Copy to $destination?"
+        is SavePickerChoice.Copy -> owner(choice.destination)?.takeIf { generic }?.let { "Copy to ${possessive(it)} save?" } ?: "Copy to $destination?"
         SavePickerChoice.Setup -> "Set up $player first"
     }
-    fun confirmationBody(choice: SavePickerChoice, playerId: String?, player: String, style: DateStyle, restartsOpenGame: Boolean = false, ownSlots: List<String> = emptyList()): String = when (choice) {
+
+    /** Whose slot [destination] is, as a player says it, or null when no one is known. */
+    private fun owner(destination: SaveDestination): String? = destination.source.substringBefore(" · ").trim()
+        .takeIf { it.isNotEmpty() && it != unknown }
+
+    private fun possessive(owner: String): String = if (owner == thisDevice) "this device’s" else "$owner’s"
+
+    /** Who plays the copy next, at the start of a sentence. */
+    private fun subject(owner: String): String = if (owner == thisDevice) "This device" else owner
+    /**
+     * What a copy does, named by owner: "Argosy plays this one next. Its Oct 8 save is kept on RomM."
+     * [current] is the save in that slot now, by its day, or [currentSave] for a slot someone named, or null for an empty slot.
+     */
+    fun copyBody(destination: SaveDestination, current: String?): String {
+        val owner = owner(destination)
+        val next = owner?.let { "${subject(it)} plays this one next." } ?: "This becomes the save in that slot."
+        val kept = when {
+            current == null -> null
+            owner != null -> "Its $current save is kept on RomM."
+            else -> "The $current save is kept on RomM."
+        }
+        return listOfNotNull(next, kept).joinToString(" ")
+    }
+
+    fun confirmationBody(
+        choice: SavePickerChoice,
+        playerId: String?,
+        player: String,
+        style: DateStyle,
+        restartsOpenGame: Boolean = false,
+        ownSlots: List<String> = emptyList(),
+        current: String? = null,
+    ): String = when (choice) {
         is SavePickerChoice.Play -> "From ${sourceDetail(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
             (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${named(choice.save.emulator, choice.save)}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
-        is SavePickerChoice.Copy -> "This becomes the save there. The one there now is kept on RomM." +
+        is SavePickerChoice.Copy -> copyBody(choice.destination, current) +
             (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
     }
@@ -304,6 +348,18 @@ fun destinationName(destination: SaveDestination, saves: List<SavePickerSave>, n
     if (!genericSlot(destination.slot, ownSlots)) return destination.slot
     val newest = saves.filter { !it.backup && it.slot == destination.slot }.maxByOrNull { it.updatedAtMillis }
     return newest?.let { names[it.id] } ?: SavePickerCopy.emptySlot
+}
+
+/**
+ * The save a copy into [destination] keeps, as its confirmation names it: [name] (the slot's
+ * name on the page, its day for a generic slot), [SavePickerCopy.currentSave] for a slot someone
+ * named, or null when the slot is empty. A slot is one slot string across devices and emulators:
+ * [destinations] lists it once, and RomM's copy writes the new head over the newest save in that
+ * slot string, whichever device made it, so that newest save is the one kept.
+ */
+fun keptSave(destination: SaveDestination, saves: List<SavePickerSave>, name: String, ownSlots: List<String>): String? {
+    if (saves.none { !it.backup && it.slot == destination.slot }) return null
+    return if (genericSlot(destination.slot, ownSlots)) name else SavePickerCopy.currentSave
 }
 
 fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.isNullOrBlank() && !player.isNullOrBlank() &&

@@ -24,6 +24,8 @@ class SettingsShelfTest {
         playerSaves = order.take(count).map { name ->
             PlayerSaveSetting(name.lowercase(), name, chosen = name !in unsynced, installed = true, packages = listOf("pkg.${name.lowercase()}"))
         },
+        // Home has games for every one, so the ones not syncing wear the cloud and lead.
+        boardEmulators = order.map { it.lowercase() }.toSet(),
     )
 
     private fun tile(name: String) = Row.SettingsTile(SettingsInner.Emulator(name.lowercase()))

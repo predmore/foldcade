@@ -258,9 +258,9 @@ object Copy {
     const val closePlayerBody = "The game you picked uses both screens, so this one has to close first."
     const val closeIt = "Close it"
     const val saveFolderTitle = "Save folder"
-    const val saveFolderBody = "Choose where this player keeps its saves."
+    const val saveFolderBody = "Choose where your emulator keeps its saves."
     /** The same ask before a game whose saves sync with its server. */
-    const val saveFolderSyncBody = "Choose where this player keeps its saves to keep them on RomM."
+    const val saveFolderSyncBody = "Choose your emulator’s save folder so its saves reach RomM."
     const val playWithoutSyncing = "Play without syncing"
     const val savesNotSyncing = "Saves not syncing"
     const val savesWaiting = "Saves waiting to upload"
@@ -274,11 +274,12 @@ object Copy {
     fun savesNotSyncingEmulatorsBody(count: Int) = "$count emulators need setup."
     const val savesNotSyncingBody = "Set up to keep them on RomM."
     fun syncSavesTitle(player: String) = "Sync $player saves?"
-    fun syncSavesBody(player: String) = "Foldcade keeps $player saves on RomM. Choose $player’s save folder to start."
+    /** One sentence for why, then the picker's own words for what to tap ([saveFolderOpensThere]). */
+    fun syncSavesBody(player: String) = "Choose $player’s save folder so this game’s saves reach RomM."
     /** The same ask for a player that cannot start a game without its folder. Not now only closes. */
-    const val saveFolderNeededBody = "This player needs its folder to start games and sync saves."
+    const val saveFolderNeededBody = "This emulator needs its folder to start games and sync saves."
     /** The ask for a named player's folder, when the picker opens at it. */
-    const val saveFolderOpensThere = "It opens there: tap Use this folder, then Allow."
+    const val saveFolderOpensThere = SaveSetupCopy.useThisFolder
     /** Settings › an emulator's save folder row, and its values. Its page already names the emulator. */
     const val saveFolder = "Save folder"
     const val playerSavesSet = "Set"

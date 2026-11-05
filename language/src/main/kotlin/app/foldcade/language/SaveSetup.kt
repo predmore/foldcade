@@ -29,6 +29,11 @@ data class SaveSetupPage(
      * when the emulators are still loading. It takes the focus then, unless the user has moved.
      */
     val restoring: String? = null,
+    /**
+     * The strip's order as the page opened ([saveSetupRank]), so a tile that starts syncing keeps
+     * its place while the focus walks on. Tiles that arrive later follow it in rank.
+     */
+    val order: List<String> = emptyList(),
 )
 
 data class SetupNote(val key: String, val text: String)
@@ -93,6 +98,12 @@ data class SetupTile(
     val foundIn: String? = null,
     /** On Find saves: the emulators whose folders Foldcade found on its own, A to Z. */
     val found: List<String> = emptyList(),
+    /**
+     * A game on Home plays on it ([PickerModel.boardEmulators]), so its saves are at stake: while it
+     * needs you it wears the amber not-syncing cloud and counts in [savesDue]. One no game on Home
+     * plays on has no saves to lose yet, so it reads Not set up, quietly, and sorts last.
+     */
+    val onHome: Boolean = false,
 ) {
     /** The step to do now, or null once everything is done. */
     val step: SetupStep? get() = steps.firstOrNull { !it.done }
@@ -137,14 +148,29 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
 }
 
 /**
+ * Where an emulator sits on Set up saves and on Settings › Emulators: the ones Home's games play on
+ * that still need you, then the ones that sync, then the ones not set up that no game on Home
+ * plays on. The amber marks then sit together at the start and the quiet ones at the end.
+ */
+fun saveSetupRank(onHome: Boolean, needsYou: Boolean): Int = when {
+    needsYou && onHome -> 0
+    !needsYou -> 1
+    else -> 2
+}
+
+/**
  * The strip: Find saves first while all-files access is off and could find a folder someone
- * still needs (and, once offered, for the rest of the run), then the emulators Home's games play
- * on, then every other emulator on Settings › Emulators, A to Z within each.
+ * still needs (and, once offered, for the rest of the run), then the emulators in
+ * [saveSetupRank], A to Z within each, held in [SaveSetupPage.order] once the page is open.
  */
 fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
     val emulators = emulatorShelf(model).map { entry ->
-        SetupTile(entry.key, entry.label, entry.packageName, setupSteps(entry, model), model.playerSaves.firstOrNull { it.playerId == entry.key }?.foundIn)
-    }.sortedBy { it.key !in model.boardEmulators }
+        SetupTile(
+            entry.key, entry.label, entry.packageName, setupSteps(entry, model),
+            model.playerSaves.firstOrNull { it.playerId == entry.key }?.foundIn,
+            onHome = entry.key in model.boardEmulators,
+        )
+    }.sortedWith(compareBy({ page.order.indexOf(it.key).let { at -> if (at < 0) Int.MAX_VALUE else at } }, { saveSetupRank(it.onHome, !it.done) }))
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
     val find = (!model.allFilesGranted && helps) || (model.allFilesGranted && page.offeredFind)
     if (!find) return emulators
@@ -166,11 +192,18 @@ fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = ti
  * this run alone, so a skipped one still counts. Find saves is a shortcut, never a save that fails.
  */
 fun savesDue(model: PickerModel, tiles: List<SetupTile> = saveSetupTiles(model, SaveSetupPage())): List<SetupTile> =
-    tiles.filter { !it.findSaves && !it.done && it.key in model.boardEmulators }
+    tiles.filter { !it.findSaves && !it.done && it.onHome }
 
-/** Emulators no game on Home plays on that still need a step, which the page lists after [savesDue]. */
-fun savesRest(model: PickerModel, tiles: List<SetupTile>): List<SetupTile> =
-    tiles.filter { !it.findSaves && !it.done && it.key !in model.boardEmulators }
+/** Emulators no game on Home plays on that still need a step: Not set up, listed after the rest. */
+fun savesRest(tiles: List<SetupTile>): List<SetupTile> =
+    tiles.filter { !it.findSaves && !it.done && !it.onHome }
+
+/**
+ * On the end, the tile the ring rests on: the first one skipped. Any D-pad press reopens it, so a
+ * player who skipped too fast sees the way back. Null while a tile has the focus, or on All set.
+ */
+fun saveSetupResting(tiles: List<SetupTile>, page: SaveSetupPage): String? =
+    if (page.focus != null) null else tiles.firstOrNull { it.key in page.skipped && !it.done }?.key
 
 /**
  * How long [tile]'s fresh check holds the focus. On Find saves it waits one stagger more for each
@@ -205,7 +238,12 @@ fun PickerModel.openSaveSetup(
         settings = null,
         playActivity = null,
         gameAbout = null,
-        saveSetup = fresh.copy(focus = focus, offeredFind = tiles.any { it.findSaves }, restoring = target?.takeIf { key -> tiles.none { it.key == key } }),
+        saveSetup = fresh.copy(
+            focus = focus,
+            offeredFind = tiles.any { it.findSaves },
+            restoring = target?.takeIf { key -> tiles.none { it.key == key } },
+            order = tiles.map { it.key },
+        ),
     )
 }
 
@@ -218,7 +256,8 @@ const val SAVE_SETUP_COLUMNS = 4
 
 /**
  * Left and right move along the tiles; up and down move a line of [SAVE_SETUP_COLUMNS], to the
- * last tile when the line below is shorter. Confirm does the focused
+ * last tile when the line below is shorter. On the end, any of them reopens the tile the ring
+ * rests on ([saveSetupResting]). Confirm does the focused
  * tile's step, or opens its Settings page once it syncs, or closes on All set. The bottom
  * button skips the tile for this run and glides to the next that needs you, as it dismisses
  * everywhere else. Back closes, to the Settings page that opened it if one did. A held key,
@@ -231,6 +270,8 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
     val index = tiles.indexOfFirst { it.key == page.focus }
     val tile = tiles.getOrNull(index)
     val moved = { key: String? -> model.copy(saveSetup = page.copy(focus = key, celebrating = null, note = null, restoring = null)) to null }
+    val resting = if (tile == null) saveSetupResting(tiles, page) else null
+    if (resting != null && meaning in setOf(Meaning.MoveLeft, Meaning.MoveRight, Meaning.MoveUp, Meaning.MoveDown)) return moved(resting)
     return when (meaning) {
         Meaning.MoveLeft -> when {
             tiles.isEmpty() -> model to null
@@ -321,6 +362,12 @@ fun retainSaveSetup(previous: PickerModel, next: PickerModel): PickerModel {
     val tiles = saveSetupTiles(next, page)
     var settled = page
     if (tiles.any { it.findSaves } && !settled.offeredFind) settled = settled.copy(offeredFind = true)
+    // A page that opened before the emulators loaded holds its order from the first strip it gets,
+    // and one that opened before Home's games did, as right after a sign-in, ranks again once they
+    // name the emulators they play on: the ones due then lead.
+    if (tiles.isNotEmpty() && (settled.order.isEmpty() || previous.boardEmulators != next.boardEmulators)) {
+        settled = settled.copy(order = saveSetupTiles(next, settled.copy(order = emptyList())).map { it.key })
+    }
     // The tile the page came back for is on the strip now. A pick made behind the picker has landed
     // already, so a done tile's check lands here, and the focus glides on as after any pick.
     settled.restoring?.let { key ->
@@ -374,6 +421,8 @@ object SaveSetupCopy {
     const val title = "Set up saves"
     const val syncing = "Syncing"
     const val needsYou = "Needs you"
+    /** An emulator no game on Home plays on, which still needs a step. No saves are at stake yet. */
+    const val notSetUp = "Not set up"
     const val skipped = "Skipped"
     const val optional = "Optional"
     const val skip = "Skip"
@@ -440,7 +489,11 @@ object SaveSetupCopy {
 
     fun status(tile: SetupTile, page: SaveSetupPage): String = when (setupStatus(tile, page)) {
         SetupStatus.Syncing -> if (tile.findSaves) SettingsCopy.accessAllowed else syncing
-        SetupStatus.NeedsYou -> if (tile.findSaves) optional else needsYou
+        SetupStatus.NeedsYou -> when {
+            tile.findSaves -> optional
+            tile.onHome -> needsYou
+            else -> notSetUp
+        }
         SetupStatus.Skipped -> skipped
     }
 
@@ -467,10 +520,15 @@ object SaveSetupCopy {
         // Two things to do, so two numbered steps: the one A does, then the one in the emulator.
         if (!ex) return body
         if (body == null || tile.step == null) return listOfNotNull(body, exLaunchMode(tile.label)).joinToString("\n")
-        return "1. $body\n2. ${exLaunchMode(tile.label)}"
+        // The title and the art already name it, so the step starts at its menu.
+        return "1. $body\n2. $exLaunchModeStep"
     }
 
-    fun exLaunchMode(name: String) = "In $name: Options › System › Launch Mode › Main Slot (No State)."
+    /** EX's own setting, as a numbered step under its name; the no-break spaces keep "(No State)." on one line. */
+    const val exLaunchModeStep = "Options › System › Launch Mode › Main\u00A0Slot\u00A0(No\u00A0State)."
+
+    /** The same setting on its own, where nothing above names the emulator. */
+    fun exLaunchMode(name: String) = "In $name: $exLaunchModeStep"
 
     private fun stepBodyWithoutNote(tile: SetupTile, checking: Boolean): String? = when (val step = tile.step) {
         null -> when {

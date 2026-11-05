@@ -497,8 +497,10 @@ class ShellController(
                 else next.panel == null || next.panel != current.panel
             val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || (!settingsHold && next.settings != null) || next.connectOpen)
             val previewed = if (shelfPreview > 0 || current.playerSaves.any { it.playerId.startsWith("preview.") }) ShelfPreview.apply(prepared, shelfPreview) else prepared
+            // Home's emulators go in before the pages settle, so Set up saves re-ranks the moment they change.
             val stable = app.foldcade.language.retainSaveSetup(current,
-                app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, previewed))))
+                app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current,
+                    app.foldcade.language.retainMenuRows(current, previewed.copy(boardEmulators = boardEmulators)))))
                 // Off the dark screen, and off one a game holds.
                 .onShownScreens { store.session.pageAvailable(it.panel()) }
             undo = when {
