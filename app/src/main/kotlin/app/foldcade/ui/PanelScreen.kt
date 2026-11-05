@@ -384,7 +384,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                 .focusRequester(activity.panelFocus)
                 .background(if (dark) Color.Black else paint.theme.background)
                 .wakesCommandCenter(app, panel),
-        ) panelContent@ {
+        ) {
             val wallpaper = when (panel) {
                 Panel.Top -> paint.wallpaperTop
                 Panel.Bottom -> paint.wallpaperBottom
@@ -409,7 +409,6 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     }
                 }
             }
-            if (model.folderGuide != null) return@panelContent
             // A page split over two screens puts its showcase half with the hero and its
             // controls with the grid. With no hero, the controls are all there is.
             val heroHere = panel != null && session.heroPanel() == panel
@@ -466,6 +465,12 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             // A launching game's art grows over everything here, then waits for the game. The dark
             // screen stays dark unless the game is opening there.
             if (panel != null && (!dark || app.launchBlooms.current?.gamePanels?.contains(panel) == true)) LaunchBloomLayer(app, panel)
+            // Keep the body and its remembered state mounted. The guide rises over every page
+            // and hint, then leaves them as they were when Android returns a result.
+            val guide = presence(screen?.let(model::folderGuideOn)?.takeIf { drawsHere }, motion.durationIsland, scale)
+            guide.shown?.let { shown ->
+                Box(Modifier.fillMaxSize().blocksTouch().rise { guide.progress.value }) { FolderGuideScreen(app, shown) }
+            }
         }
     }
 }
@@ -545,10 +550,6 @@ private fun PanelBody(
     val app = activity.application as FoldcadeApp
     val session = app.store.session
     val model = app.shell.model
-    if (screen != null && session.draws(screen.panel())) model.folderGuideOn(screen)?.let { guide ->
-        FolderGuideScreen(app, guide)
-        return
-    }
     val cover = remember { BackdropCover() }
     // One camera for both screens: the top's scene slides with the bottom's grid.
     val camera = app.backdropCamera
@@ -648,7 +649,7 @@ private fun PanelBody(
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
             CommandCenterScreen(app, subject, hints = !subject.settings) {
                 when {
-                    model.connectOpen -> app.shell.closeConnect()
+                    model.connectOpen -> app.shell.closeConnect(returnToPage = false)
                     subject.settings -> {
                         app.settingsPageActivity?.finish()
                         app.shell.closeSettings()
@@ -911,7 +912,7 @@ private fun pageBeside(
     val about = model.gameAbout
     return when (model.companionPageOn(screen)) {
         CompanionPage.Romm -> CenterSubject.Page(Copy.rommConnection, null, "cloud", settings = true)
-        CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, null, "cloud", settings = true)
+        CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, R.drawable.symbol_art, null, settings = true)
         CompanionPage.Settings ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
         CompanionPage.PlayActivity ->

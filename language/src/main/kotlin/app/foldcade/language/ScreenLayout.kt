@@ -150,3 +150,13 @@ fun PickerModel.companionPageOn(screen: HostScreen): CompanionPage? = when {
 data class FolderGuide(val screen: HostScreen, val playerId: String? = null, val opensThere: Boolean = true)
 
 fun PickerModel.folderGuideOn(screen: HostScreen): FolderGuide? = folderGuide?.takeIf { it.screen != screen }
+
+object FolderGuideCopy {
+    const val libraryBrowse = "Pick your games folder. Tap Use this folder, then Allow."
+}
+
+fun folderGuideInstruction(guide: FolderGuide, playerName: String?): String = when {
+    guide.opensThere -> SaveSetupCopy.useThisFolder
+    playerName != null -> SaveSetupCopy.browse(playerName)
+    else -> FolderGuideCopy.libraryBrowse
+}

@@ -2609,8 +2609,8 @@ class ShellController(
         if (model.folders != folders) model = model.withFolders(folders)
     }
 
-    /** Leaves the connect form, as after a server accepts the token. */
-    fun closeConnect() {
+    /** Leaves the form. The companion's Open an app skips the Settings return page. */
+    fun closeConnect(returnToPage: Boolean = true) {
         invalidateSetupValidation()
         connectToken = ""
         model = model.copy(
@@ -2619,9 +2619,11 @@ class ShellController(
             connectHint = null,
             connectCode = null,
             connectRetry = false,
-            panel = model.connectReturnPanel,
+            panel = model.connectReturnPanel.takeIf { returnToPage },
             // A server just added shows itself: Library's shelf with RomM's tile focused, not Add.
-            settings = model.connectReturnSettings?.let { if (model.connectKind == ConnectKind.Romm) it.afterRommAdded(model) else it },
+            settings = model.connectReturnSettings?.takeIf { returnToPage }?.let {
+                if (model.connectKind == ConnectKind.Romm) it.afterRommAdded(model) else it
+            },
             connectReturnPanel = null,
             connectReturnSettings = null,
         )

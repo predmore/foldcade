@@ -16,7 +16,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.language.FolderGuide
-import app.foldcade.language.SaveSetupCopy
+import app.foldcade.language.folderGuideInstruction
 import app.foldcade.language.SettingsCopy
 
 /** The free screen during an Android tree pick. There are no controls or stale page hints here. */
@@ -52,7 +52,7 @@ internal fun FolderGuideScreen(app: FoldcadeApp, guide: FolderGuide) {
                 textAlign = TextAlign.Center,
             ))
             BasicText(
-                if (guide.opensThere || player == null) SaveSetupCopy.useThisFolder else SaveSetupCopy.browse(name),
+                folderGuideInstruction(guide, player?.displayName),
                 style = TextStyle(color = theme.muted, fontFamily = theme.font, fontSize = theme.style.type.dialogBody, textAlign = TextAlign.Center),
             )
         }

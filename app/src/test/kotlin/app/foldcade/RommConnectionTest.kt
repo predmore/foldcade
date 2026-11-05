@@ -27,6 +27,22 @@ import app.foldcade.language.Meaning
 import org.junit.Test
 
 class RommConnectionTest {
+    @Test fun openAnAppFromAFormSkipsItsSettingsReturnPage() {
+        val session = SessionStore(MemoryPrefs()).apply { setRommOrigin("https://one.example") }
+        val shell = ShellController(session, host(MemoryCredentialStore()))
+        shell.setSignedIn(listOf(SignedInBackend("romm", "RomM")))
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        shell.touchSettingsCategory(settingsCategories(shell.model).indexOf(SettingsCategory.Library), HostScreen.Top)
+        val source = settingsRows(SettingsCategory.Library, shell.model).indexOfFirst { it is Row.RommConnection }
+        shell.touchSettingsRow(source, HostScreen.Top)
+        shell.touchSettingsRow(0, HostScreen.Top)
+        assertEquals(SettingsInner.Romm, shell.model.connectReturnSettings?.inner)
+        shell.closeConnect(returnToPage = false)
+        assertFalse(shell.model.connectOpen)
+        assertNull(shell.model.settings)
+        assertNull(shell.model.panel)
+        assertNull(shell.model.connectReturnSettings)
+    }
     @Test
     fun devicePairingCannotRepointALiveOrRefusedTokenToAnUnapprovedServer() = runBlocking {
         val credentials = MemoryCredentialStore()

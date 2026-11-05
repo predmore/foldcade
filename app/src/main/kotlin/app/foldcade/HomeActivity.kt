@@ -2486,7 +2486,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun pickLibraryFolder() {
         folderPurpose = FolderPurpose.Library
         val start = foldcade.shell.model.romFolderOffer?.start ?: foldcade.shell.model.folderStart ?: "primary:"
-        launchFolderPicker(Uri.parse(storageFolderDocument(start)))
+        launchFolderPicker(Uri.parse(storageFolderDocument(start)), opensThere = start != "primary:")
     }
 
     /**
@@ -3093,14 +3093,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * OpenDocumentTree supplies EXTRA_INITIAL_URI and returns null for cancellation:
      * https://developer.android.com/reference/androidx/activity/result/contract/ActivityResultContracts.OpenDocumentTree
      */
-    private fun launchFolderPicker(initialUri: Uri?) {
+    private fun launchFolderPicker(initialUri: Uri?, opensThere: Boolean = initialUri != null) {
         val playerId = when (folderPurpose) {
             FolderPurpose.EdenFolder, FolderPurpose.EdenSaveOffer -> foldcade.plugins.playerIds().firstOrNull { foldcade.plugins.player(it) is EdenPlayer }
             FolderPurpose.RetroArchCores -> foldcade.plugins.playerIds().firstOrNull { foldcade.plugins.player(it) is RetroArchPlayer }
             FolderPurpose.Library -> null
             else -> settingsPlayerId
         }
-        val guide = app.foldcade.language.FolderGuide(hostScreen(), playerId, opensThere = initialUri != null)
+        val guide = app.foldcade.language.FolderGuide(hostScreen(), playerId, opensThere)
         folderGuide = guide
         foldcade.shell.showFolderGuide(guide)
         try {

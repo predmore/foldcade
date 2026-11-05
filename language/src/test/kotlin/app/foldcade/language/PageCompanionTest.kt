@@ -6,6 +6,13 @@ import org.junit.Test
 class PageCompanionTest {
     private val home = PickerModel(count = 4, rowsPerPage = 3)
 
+    @Test fun aGuideExplainsWhatToChooseWhenThePickerCannotStartAtTheFolder() {
+        val library = FolderGuide(HostScreen.Top, opensThere = false)
+        assertEquals(FolderGuideCopy.libraryBrowse, folderGuideInstruction(library, null))
+        assertEquals(SaveSetupCopy.useThisFolder, folderGuideInstruction(library.copy(opensThere = true), null))
+        assertEquals(SaveSetupCopy.browse("melonDS"), folderGuideInstruction(library.copy(playerId = "melonds"), "melonDS"))
+    }
+
     @Test fun settingsActivitiesFollowTheirPageRatherThanTheScreenThatReceivesTheKey() {
         for (page in HostScreen.entries) for (input in HostScreen.entries) {
             assertEquals(page, home.copy(settings = SettingsPage(page)).settingsActivityScreen(input))
