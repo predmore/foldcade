@@ -46,3 +46,5 @@ Thor QA round 2, 2026-11-04 21:15:30–21:22 PST:
 - r2-about shows a content-sized facts/summary card, and the companion’s fitted portrait cover has theme-rounded corners.
 - No game/app/stream was launched. HOME stayed app.foldcade and Wi-Fi stayed 1. No save-backups directory existed; own test RomM device deleted HTTP204, .uxrpages removed, stay-on set false, turn released. The next holder acquired immediately.
 - Round 1 Opus findings addressed: Total source, non-game consistency, Apply hint, match-chip overlap, companion corners. An additional usage-only page gate and one orphaned “yet” were fixed during verification.
+
+Final verification after rebase onto main 5d86095e: testDebugUnitTest --rerun-tasks passed (2691 tests, 0 failures). One earlier full run hit an unrelated FindSpeedTest threshold (56ms vs40ms); isolated rerun and full rerun passed.
