@@ -39,6 +39,8 @@ class SessionTest {
         assertFalse(game.besideFoldcadePage(Panel.Bottom))
         assertNull(game.pageKeyTarget(Panel.Bottom))
         val below = Session().place(Panel.Bottom, ExternalApp("licenses", foldcadePage = true))
+        assertFalse(below.pageAvailable(Panel.Top))
+        assertTrue(below.pageAvailable(Panel.Bottom))
         assertEquals(Panel.Bottom, below.pageKeyTarget(Panel.Top))
         assertNull(below.pageKeyTarget(Panel.Bottom))
     }

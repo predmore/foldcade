@@ -3134,6 +3134,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val displayId = if (screen == HostScreen.Top) assignment.topDisplayId else assignment.bottomDisplayId
         val host = displayId?.let(foldcade::homeOnDisplay) ?: this
+        // Settings may be on the free screen while Android covers its previous native page.
+        foldcade.settingsPageActivity?.finish()
         foldcade.noteSettingsPage(host)
         try {
             host.startActivity(Intent(host, page))

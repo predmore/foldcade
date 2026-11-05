@@ -9,6 +9,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CommandCenterSettingsTest {
+    @Test fun replacingACoveredPageOnBottomKeepsItsParentThereWhenTopReturns() {
+        val store = SessionStore(MemoryPrefs())
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        store.afterSessionChanged = shell::noteSessionChanged
+        shell.onMeaning(Meaning.Menu, HostScreen.Top)
+        store.place(Panel.Top, ExternalApp("themes", foldcadePage = true))
+        store.update { it.settingsPageCovered(Panel.Top) }
+        val settings = shell.model.settings!!
+        assertEquals(HostScreen.Bottom, settings.screen)
+        store.place(Panel.Bottom, ExternalApp("replacement-themes", foldcadePage = true))
+        store.update { it.foldcadeResumed(Panel.Top) }
+        assertEquals(settings, shell.model.settings)
+        assertEquals(Panel.Bottom, store.session.pageKeyTarget(Panel.Top))
+        store.update { it.foldcadeResumed(Panel.Bottom) }
+        assertEquals(settings.copy(screen = HostScreen.Top), shell.model.settings)
+    }
+
     @Test fun coveringASettingsActivityHandsTheFreeScreenBackToSettingsAndRestoresOnReturn() {
         val store = SessionStore(MemoryPrefs())
         val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
