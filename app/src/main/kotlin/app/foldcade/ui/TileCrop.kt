@@ -15,8 +15,8 @@ import kotlin.math.roundToInt
  * busiest band on nearly every cover, and a plain sky or gradient the quietest.
  *
  * Runs on Coil's decode thread, once per decode (`coil3.transform.Transformation`,
- * coil-core 3.3.0). Where it put the square is kept per address for [TileCrops.share], so
- * the launch bloom starts from the same picture the tile showed.
+ * coil-core 3.3.0). Where it put the square is kept per address as a [TileCut], so the
+ * launch bloom starts from the same picture and keeps its title as it widens.
  */
 internal class TileCrop(private val uri: String) : Transformation() {
     override val cacheKey: String = "foldcade.tileCrop.1"
@@ -27,8 +27,12 @@ internal class TileCrop(private val uri: String) : Transformation() {
         if (width == height || width <= 0 || height <= 0) return input
         val side = min(width, height)
         // A wide image keeps its middle; only a tall box has a title to look for.
-        val share = if (height > width) richestShare(rowDetail(input)) else 0.5f
-        TileCrops.record(uri, share)
+        val share = if (height > width) {
+            val detail = rowDetail(input)
+            val start = richestStart(detail, DETAIL_COLUMNS)
+            TileCrops.record(uri, TileCut(detail.size, start))
+            start.toFloat() / (detail.size - DETAIL_COLUMNS).coerceAtLeast(1)
+        } else 0.5f
         val left = (width - side) / 2
         val top = ((height - side) * share).roundToInt().coerceIn(0, height - side)
         return Bitmap.createBitmap(input, left, top, side, side)
@@ -36,14 +40,41 @@ internal class TileCrop(private val uri: String) : Transformation() {
 }
 
 internal object TileCrops {
-    private val shares = ConcurrentHashMap<String, Float>()
+    private val cuts = ConcurrentHashMap<String, TileCut>()
 
-    fun record(uri: String, share: Float) {
-        shares[uri] = share
+    fun record(uri: String, cut: TileCut) {
+        cuts[uri] = cut
     }
 
-    /** Where [uri]'s tile square sat in the box, from its top: 0 top, 0.5 centred, 1 bottom. Null before its tile decoded. */
-    fun share(uri: String?): Float? = uri?.let(shares::get)
+    /** How [uri]'s tall box was cut for its tile. Null before its tile decoded, or for art that was not tall. */
+    fun cut(uri: String?): TileCut? = uri?.let(cuts::get)
+}
+
+/**
+ * A tall box's tile cut: the box is [rows] tall read [DETAIL_COLUMNS] wide, and its square of
+ * [DETAIL_COLUMNS] rows [start]s at that row.
+ */
+internal class TileCut(val rows: Int, val start: Int) {
+    /**
+     * Where a crop [window] rows tall sits inside the tile's square: as a share of the whole box,
+     * for the sharp cover, and of the square, for the tile's own copy. Both show the same rows.
+     * It keeps to the end of the square the tile leaned to, where its title is: a square cut low
+     * in the box kept a title at the bottom, and one cut high or centred, a title at the top
+     * (checked against the 37 RomM covers on the Thor; the busiest band inside a narrow crop
+     * found the art, not the title, on Mario Kart DS, Metroid and Gain Ground).
+     */
+    fun band(window: Int): Pair<Float, Float> {
+        val square = minOf(DETAIL_COLUMNS, rows - start)
+        val shown = window.coerceIn(1, square)
+        val low = start * 2 > rows - DETAIL_COLUMNS
+        val inner = if (low) square - shown else 0
+        val box = (rows - shown).let { spare -> if (spare <= 0) 0.5f else (start + inner).toFloat() / spare }
+        val own = (square - shown).let { spare -> if (spare <= 0) 0.5f else inner.toFloat() / spare }
+        return box to own
+    }
+
+    /** Rows of a box this wide that a crop [aspect] (height over width) shows. */
+    fun rowsFor(aspect: Float): Int = (DETAIL_COLUMNS * aspect).roundToInt()
 }
 
 /** How many columns the box is read at. Enough for letters to show as edges, cheap on a 384 px tile. */
@@ -81,6 +112,13 @@ private fun rowDetail(bitmap: Bitmap): IntArray {
 internal fun richestShare(detail: IntArray, window: Int = DETAIL_COLUMNS): Float {
     val spare = detail.size - window
     if (spare <= 0) return 0.5f
+    return richestStart(detail, window).toFloat() / spare
+}
+
+/** The row the busiest run of [window] rows in [detail] starts at. A tie keeps the one nearest the middle. */
+internal fun richestStart(detail: IntArray, window: Int): Int {
+    val spare = detail.size - window
+    if (spare <= 0) return 0
     var sum = 0L
     for (y in 0 until window) sum += detail[y]
     var best = 0
@@ -93,5 +131,5 @@ internal fun richestShare(detail: IntArray, window: Int = DETAIL_COLUMNS): Float
             bestSum = sum
         }
     }
-    return best.toFloat() / spare
+    return best
 }

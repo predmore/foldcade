@@ -2,12 +2,15 @@ package app.foldcade
 
 import app.foldcade.language.HeroFolder
 import app.foldcade.language.HeroSubject
+import app.foldcade.ui.TileCut
 import app.foldcade.ui.bloomCropBias
 import app.foldcade.ui.namedSubject
 import app.foldcade.ui.titleCollapse
 import app.foldcade.ui.richestShare
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import kotlin.math.roundToInt
 import org.junit.Test
 
 /** The name card names the art on screen (review-B S5′), and a tile's square keeps the busy band (60-F2). */
@@ -46,14 +49,29 @@ class HeroNameFollowsArtTest {
         assertEquals(0f to 0f, titleCollapse(0f))
     }
 
-    @Test fun aBloomFromATileKeepsTheBandItsTileKept() {
-        // The tile kept the bottom of its box, its title, so every frame does, square stand-in or sharp cover.
-        assertEquals(1f, bloomCropBias(wide = false, fromTile = true, tileShare = 1f, grow = 0f), 0f)
-        assertEquals(1f, bloomCropBias(wide = false, fromTile = true, tileShare = 1f, grow = 1f), 0f)
+    @Test fun aBloomFromATileKeepsTheTitleItsTileShowedAsItWidens() {
+        // A 2:3 box read 48 wide is 72 rows; a 16:9 frame shows 27 of them.
+        val wide = TileCut(72, 0).rowsFor(9f / 16f)
+        assertEquals(27, wide)
+        fun shown(cut: TileCut): IntRange {
+            val top = (cut.band(wide).first * (72 - wide)).roundToInt()
+            return top until top + wide
+        }
+        // Mario Kart DS: the tile is centred (rows 12-60) and the logo is at its top, rows 12-20.
+        val kart = TileCut(72, 12)
+        assertTrue((12..20).all { it in shown(kart) })
+        // Bravely Second: the tile leans low (rows 17-65) for a title at rows 55-65.
+        val bravely = TileCut(72, 17)
+        assertTrue((55..64).all { it in shown(bravely) })
+        // The tile's own square shows the same rows of itself.
+        val (box, own) = bravely.band(wide)
+        assertEquals((box * (72 - wide)).roundToInt() - 17, (own * (48 - wide)).roundToInt())
+        // At the tile's own shape the crop is the tile exactly.
+        assertEquals(12f / 24f, bloomCropBias(false, true, kart, standIn = false, aspect = 1f, grow = 0f), 0.0001f)
         // No tile cut, or a hero's whole cover: centred first, then up toward the title most boxes carry.
-        assertEquals(0.5f, bloomCropBias(wide = false, fromTile = true, tileShare = null, grow = 0f), 0f)
-        assertEquals(0.5f, bloomCropBias(wide = false, fromTile = false, tileShare = 1f, grow = 0f), 0f)
-        assertEquals(true, bloomCropBias(wide = false, fromTile = false, tileShare = 1f, grow = 1f) < 0.5f)
-        assertEquals(0.5f, bloomCropBias(wide = true, fromTile = true, tileShare = 0f, grow = 1f), 0f)
+        assertEquals(0.5f, bloomCropBias(false, true, null, standIn = false, aspect = 1f, grow = 0f), 0f)
+        assertEquals(0.5f, bloomCropBias(false, false, kart, standIn = false, aspect = 1f, grow = 0f), 0f)
+        assertTrue(bloomCropBias(false, false, kart, standIn = false, aspect = 0.5f, grow = 1f) < 0.5f)
+        assertEquals(0.5f, bloomCropBias(true, true, kart, standIn = false, aspect = 0.5f, grow = 1f), 0f)
     }
 }

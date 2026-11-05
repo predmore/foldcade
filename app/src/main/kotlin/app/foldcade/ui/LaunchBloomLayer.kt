@@ -99,7 +99,9 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
     val wide = uri != null && uri == scene?.background
-    val tileShare = TileCrops.share(uri)
+    val tileCut = TileCrops.cut(uri)
+    // The tile's own square stands in until the sharp cover decodes.
+    val standIn = sharp == null && small != null
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
     // How far the growth has gone, counted in frames shown: the start keeps the main thread busy
     // for a frame or a few, and growth timed by the clock would leap across them. It pauses instead.
@@ -151,7 +153,7 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
             // Art this screen did not show grows out of its middle as it fades in.
             null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(grown), 1f)
         }
-        val bias = bloomCropBias(wide, anchor?.from == BloomFrom.Tile, tileShare, grow)
+        val bias = bloomCropBias(wide, anchor?.from == BloomFrom.Tile, tileCut, standIn, rect.height / rect.width, grow)
         val push = scale * timing.pushScale(grown)
         withTransform({ scale(push, push, full.center) }) {
             drawCropped(painter, rect, corner, alpha * presence, path, bias)
@@ -162,16 +164,16 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
 private data class Frame(val rect: Rect, val corner: Float, val alpha: Float, val scale: Float)
 
 /**
- * Where a growing box's crop sits, from its top, for [drawCropped]. A box whose tile was cut
- * by [TileCrop] keeps that band, its title, the whole way: the tile's own square, drawn while
- * the sharp cover decodes, shows the same end of itself, so neither picture loses the title
- * and the swap between them does not jump (review bot on #388). Any other box starts centred,
- * as it was drawn, and rises to [BLOOM_COVER_BIAS], where most titles are.
- * Wide art stays centred.
+ * Where a growing box's crop sits, from its top, for [drawCropped], while the frame is [aspect]
+ * (height over width). A box whose tile was cut by [TileCrop] shows the busiest rows inside the
+ * tile's square as the frame widens, its title, in the sharp cover and in the tile's own copy
+ * ([standIn]) alike, so neither loses the title and the swap between them does not jump (review
+ * bot on #388). Any other box starts centred, as it was drawn, and rises to [BLOOM_COVER_BIAS],
+ * where most titles are. Wide art stays centred.
  */
-internal fun bloomCropBias(wide: Boolean, fromTile: Boolean, tileShare: Float?, grow: Float): Float = when {
+internal fun bloomCropBias(wide: Boolean, fromTile: Boolean, cut: TileCut?, standIn: Boolean, aspect: Float, grow: Float): Float = when {
     wide -> 0.5f
-    fromTile && tileShare != null -> tileShare
+    fromTile && cut != null -> cut.band(cut.rowsFor(aspect)).let { (box, own) -> if (standIn) own else box }
     else -> 0.5f + (BLOOM_COVER_BIAS - 0.5f) * grow
 }
 
