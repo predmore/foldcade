@@ -2110,6 +2110,11 @@ data class PickerModel(
      * Add a folder opens Android's picker there.
      */
     val folderStart: String? = null,
+    /**
+     * The tree Pick again chose for the folder whose page asked. Once that folder leaves, the shelf
+     * focuses this one, even when the library already read it ([withFolders]).
+     */
+    val folderFocus: String? = null,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
     val gridLabels: List<String> = emptyList(),
     /** Home can retain empty slots after its last actual tile. */

@@ -42,6 +42,12 @@ class LibrarySettingsTest {
         val next = page.withFolders(listOf(roms, replacement))
         assertNull(next.settings?.inner)
         assertEquals(Row.SettingsTile(SettingsInner.Folder(replacement.uri)), settingsFocus(next))
+        // A folder the library already read takes the focus too, once Pick again named it.
+        val chosen = page.copy(folders = listOf(roms, read), folderFocus = roms.uri)
+        val kept = chosen.withFolders(listOf(roms))
+        assertNull(kept.settings?.inner)
+        assertEquals(Row.SettingsTile(SettingsInner.Folder(roms.uri)), settingsFocus(kept))
+        assertNull(kept.folderFocus)
         // Picking the same folder again keeps its page.
         assertEquals(SettingsInner.Folder(read.uri), page.withFolders(listOf(roms, read.copy(empty = false, games = 2))).settings?.inner)
     }

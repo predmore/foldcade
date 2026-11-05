@@ -354,9 +354,12 @@ fun PickerModel.withFolders(folders: List<LibraryFolder>): PickerModel {
     val onAddTile = page.inner == null && page.onRows && settingsRows(category, this).getOrNull(page.row) == Row.SettingsTile(SettingsInner.Add)
     val replaced = (page.inner as? SettingsInner.Folder)?.let { open -> folders.none { it.uri == open.uri } } == true
     if (page.inner != SettingsInner.Add && !onAddTile && !replaced) return next
-    val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } } ?: return next
+    // A replacement may be a folder the library already read: Pick again named it, so it takes the focus.
+    val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } }
+        ?: folderFocus?.takeIf { replaced }?.let { chosen -> folders.firstOrNull { it.uri == chosen } }
+        ?: return next
     val index = settingsTileIndex(category, SettingsInner.Folder(added.uri), next).takeIf { it >= 0 } ?: return next
-    return next.copy(settings = page.copy(inner = null, row = index))
+    return next.copy(settings = page.copy(inner = null, row = index), folderFocus = null)
 }
 
 /**

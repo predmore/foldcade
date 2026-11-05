@@ -239,7 +239,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         contentResolver.takePersistableUriPermission(uri, flags)
                     }) {
                         // Pick again on a source with nothing in it: the new folder takes its place.
-                        replacing?.takeIf { it != uri.toString() }?.let(foldcade::forgetFolder)
+                        replacing?.takeIf { it != uri.toString() }?.let { old ->
+                            // Named before the old folder leaves, so the shelf lands on this one even if the library already read it.
+                            foldcade.shell.focusFolderAfterPick(uri.toString())
+                            foldcade.forgetFolder(old)
+                        }
                         foldcade.useFolder(uri)
                     } else {
                         foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
