@@ -15,7 +15,7 @@ A folder counts when it holds at least one system folder, such as `gba`, `psx`, 
 2. Open Foldcade. When it sees one of these folders it asks once, naming the folder and its systems. Choose **Allow**. Android's page opens on that screen: tap **Allow access to manage all files**, then press Back. Foldcade's other screen says so while the page is open. With the D-pad, move down to the switch first, then press A.
 3. Foldcade scans the folders in the background. R1 says **Found 214 games in ROMs**, and the games join Home and **Games**, sorted by system.
 
-You can also allow it later. Until you have a folder, Home ends in an **Add games** tile with **Find games** first. **L1 › Settings › Library › Find games** is the same Android switch as **Settings › Emulators › Find saves**. Each found folder gets a tile in **Settings › Library**, with where it is and how many games it holds. Its **Remove** stops reading it for good: Foldcade never finds that folder again by itself. Its files stay on the device. Turning all-files access off takes the found folders' games off Home until you allow it again.
+You can also allow it later. Until you have a folder, Home ends in an **Add games** tile with **Find games** first. **L1 › Settings › Library › Auto-find games** is the same Android switch as **Settings › Emulators › Find saves**. Each found folder gets a tile in **Settings › Library**, with where it is and how many games it holds. Its **Remove** stops reading it for good: Foldcade never finds that folder again by itself. Its files stay on the device. Turning all-files access off takes the found folders' games off Home until you allow it again.
 
 Foldcade reads found folders and hands games to emulators read-only. It skips a found folder that a folder you added already covers.
 
@@ -39,9 +39,9 @@ Use this for a folder Foldcade doesn't find, or to keep all-files access off.
        Racing.iso
    ```
 
-3. In Foldcade, choose **Add a folder** on Home's **Add games** tile, or open **L1 › Settings › Library › Add › Add a folder**.
+3. In Foldcade, choose **Add a folder** on Home's **Add games** tile, or the **Add** tile in **L1 › Settings › Library**. With a RomM server already added, **Add** opens the picker straight away; otherwise choose **Folder**.
 4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When Foldcade has seen a ROMs folder, the picker opens there, so **Use this folder** and **Allow** are all it takes. Otherwise it opens at the top of internal storage.
-5. Wait for the scan, then open the system's folder on Home or find the game in **All**.
+5. Wait for the scan, then open the system's folder on Home or find the game in **All**. A folder with no games says so right away, with **Add a folder** to pick another. Its page in **Settings › Library** shows where it is and how many games it holds. Hold **A** on **Remove** to stop reading it.
 
 Foldcade scans subfolders too. It needs access only to the tree you choose.
 
@@ -82,7 +82,7 @@ The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the sa
 
 ## If a game is missing or will not start
 
-- **Missing from All:** Check the extension, system folder, and Android folder grant, then return to Foldcade. A folder Foldcade should find needs a system folder at its top, and **Find games** set to **Allowed**.
+- **Missing from All:** Check the extension, system folder, and Android folder grant, then return to Foldcade. A folder Foldcade should find needs a system folder at its top, and **Auto-find games** on.
 - **In All but missing from Home:** Check [New games on Home](README.md#a-game-is-in-all-but-missing-from-home) or add the tile back with Y.
 - **Wrong system:** Move a shared-format file into the correct system folder and return to Foldcade.
 - **Will not launch:** Check the [supported emulator](emulators.md) and try the game directly in it.

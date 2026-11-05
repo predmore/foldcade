@@ -333,12 +333,36 @@ fun settingsShown(page: SettingsPage, model: PickerModel): Pair<SettingsPage, Li
 /** A folder just added from Add shows itself: the card returns to the shelf with the new folder's tile focused. */
 fun PickerModel.withFolders(folders: List<LibraryFolder>): PickerModel {
     val next = copy(folders = folders)
-    val page = settings?.takeIf { it.inner == SettingsInner.Add } ?: return next
-    val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } } ?: return next
+    // From Add, or from the Add tile, which opens the picker itself while a folder is its one way in.
+    val page = settings ?: return next
     val category = settingsCategories(next).getOrNull(page.category) ?: return next
+    val onAddTile = page.inner == null && page.onRows && settingsRows(category, this).getOrNull(page.row) == Row.SettingsTile(SettingsInner.Add)
+    if (page.inner != SettingsInner.Add && !onAddTile) return next
+    val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } } ?: return next
     val index = settingsTileIndex(category, SettingsInner.Folder(added.uri), next).takeIf { it >= 0 } ?: return next
     return next.copy(settings = page.copy(inner = null, row = index))
 }
+
+/**
+ * Back from the RomM form once a server took the token: from Add, whose RomM row has gone,
+ * the card returns to Library's shelf with RomM's tile focused, so the new source is in sight.
+ */
+fun SettingsPage.afterRommAdded(model: PickerModel): SettingsPage {
+    if (inner != SettingsInner.Add) return this
+    val category = settingsCategories(model).getOrNull(category) ?: return this
+    val index = settingsRows(category, model).indexOfFirst(::opensRomm).takeIf { it >= 0 } ?: return this
+    return copy(inner = null, row = index, onRows = true)
+}
+
+/** RomM's tile on Library's shelf. */
+private fun opensRomm(row: Row): Boolean = row is Row.RommConnection
+
+/**
+ * Add with one way in, as once a RomM server is saved, is no page of its own: its tile does
+ * what that row would. Null when Add has more than one row, or [row] is another tile.
+ */
+fun settingsTileShortcut(row: Row, model: PickerModel): Row? =
+    (row as? Row.SettingsTile)?.takeIf { it.page == SettingsInner.Add }?.let { settingsInnerRows(it.page, model).singleOrNull() }
 
 /** The tile on [category]'s shelf that opens [inner], or -1. */
 fun settingsTileIndex(category: SettingsCategory, inner: SettingsInner, model: PickerModel): Int =
@@ -357,7 +381,7 @@ enum class TileStatus {
  */
 fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     // RomM waiting for a sign-in wears it too: its saves wait until then.
-    if (row is Row.RommConnection) return TileStatus.Attention.takeIf { model.rommSignIn }
+    if (row is Row.RommConnection) return TileStatus.Attention.takeIf { model.rommSignIn || model.librarySync == LibrarySync.RommUnreachable }
     val inner = (row as? Row.SettingsTile)?.page ?: return null
     if (inner is SettingsInner.Folder) return TileStatus.Attention.takeIf { model.folders.any { it.uri == inner.uri && it.pickAgain } }
     if (inner !is SettingsInner.Emulator) return null
@@ -519,7 +543,10 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.RecentOnHome -> RowControl.Toggle(model.recentOnHome)
     Row.FolderOnHome -> RowControl.Toggle(model.tileActions?.folderOnHome?.on == true)
     Row.Artwork -> RowControl.Toggle(model.artwork)
-    is Row.StreamHost -> RowControl.Toggle(model.streamHosts.any { it.key == row.key && it.paired })
+    // Paired, a switch A turns off; unpaired, a way in to the pairing code.
+    is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
+    // RomM out of reach reads in the attention colour until a sync gets through.
+    Row.SyncLibrary -> librarySyncValue(model)?.let { RowControl.Value(it, attention = it == Copy.rommUnreachable) } ?: RowControl.None
     // An emulator choice that is not installed reads in the attention colour, as Not syncing does.
     Row.OpenWith -> RowControl.Choice(value.orEmpty(), attention = model.tileActions?.openWith?.missing == true,
         short = model.tileActions?.openWith?.shortValue())
@@ -588,12 +615,18 @@ fun libraryFolderLabel(name: String, artAndInfo: Boolean): String =
 fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
     // A folder at the top of its storage is named by its path, so the path says nothing more.
     folder.path?.ifEmpty { null }?.takeIf { it != folder.label },
-    folderCountLine(folder.games).takeIf { folder.games > 0 },
+    // "0 games" too: a folder that brings nothing says so. A folder of art alone is titled for that.
+    folderCountLine(folder.games).takeIf { !folder.artAndInfo },
     SettingsCopy.artAndInfo.takeIf { folder.media && !folder.artAndInfo },
 ).joinToString(" · ").ifEmpty { null }
 
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
+    // An unpaired computer's tile is dim; its page says why, and its one row pairs it.
+    is SettingsInner.Host -> model.streamHosts.firstOrNull { it.key == inner.key }?.let { if (it.paired) Copy.hostPaired else Copy.hostNotPaired }
     else -> null
 }
+
+/** The line under RomM's page name: the server it reads, without its scheme. */
+fun rommPageDetail(model: PickerModel): String? = model.rommHost?.ifBlank { null }

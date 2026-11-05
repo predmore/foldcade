@@ -72,6 +72,7 @@ import app.foldcade.language.BackgroundMotion
 import app.foldcade.language.ConnectField
 import app.foldcade.language.SidePanel
 import app.foldcade.language.ConnectKind
+import app.foldcade.language.afterRommAdded
 import app.foldcade.language.PairingCode
 import app.foldcade.language.openRommSignIn
 import app.foldcade.language.Chrome
@@ -478,9 +479,12 @@ class ShellController(
                 if (next.libraryGrid) next else withShelf(next)
             } else next
             // A session's or a move's hold lives on Play activity, which has no menu: the page changing cancels it.
+            // A folder's Remove lives on its Settings page: the page moving cancels it.
+            val settingsHold = current.deleteHold?.row is Row.ForgetFolder
             val holdMoved = if (current.deleteHold?.row in pageHolds) next.playActivity != current.playActivity
+                else if (settingsHold) next.settings != current.settings
                 else next.panel == null || next.panel != current.panel
-            val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || next.settings != null || next.connectOpen)
+            val canceled = current.deleteHold != null && (holdMoved || next.dialog != null || (!settingsHold && next.settings != null) || next.connectOpen)
             val previewed = if (shelfPreview > 0 || current.playerSaves.any { it.playerId.startsWith("preview.") }) ShelfPreview.apply(prepared, shelfPreview) else prepared
             val stable = app.foldcade.language.retainSaveSetup(current,
                 app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, previewed))))
@@ -846,6 +850,8 @@ class ShellController(
         } else if (hold.row == Row.MovePlay) {
             val page = model.playActivity
             if (page?.game == null || page.sources.getOrNull(page.source) != hold.gameId || hold.gameId in page.moved) { cancelDelete(); return null }
+        } else if (hold.row is Row.ForgetFolder) {
+            if (app.foldcade.language.settingsFocus(model) != hold.row) { cancelDelete(); return null }
         } else {
             val selected = model.panel?.let { panelRows(it, model).getOrNull(it.index) }
             if (selected != hold.row || model.tileActions?.game != hold.gameId) { cancelDelete(); return null }
@@ -856,7 +862,8 @@ class ShellController(
             cue(model.themeIndex, "notify")
             // A menu row runs on A; a session's list has no rows, so the key held is pressed again.
             val press = if (session) hold.meaning else Meaning.Activate
-            return try { onMeaning(press, model.layout.menuScreen, inputWindow = hold.inputWindow) } finally { completingDelete = false }
+            val screen = model.settings?.screen?.takeIf { hold.row is Row.ForgetFolder } ?: model.layout.menuScreen
+            return try { onMeaning(press, screen, inputWindow = hold.inputWindow) } finally { completingDelete = false }
         }
         model = model.copy(deleteProgress = hold.progress(nowMillis()))
         return null
@@ -1054,6 +1061,16 @@ class ShellController(
                 heldActions.capture(meaning.ordinal)
                 model = current.copy(panel = panel.copy(index = index),
                     deleteHold = DeleteHold(row, key, nowMillis(), game, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
+            }
+            return null
+        }
+        // Removing a library folder from its Settings page is held first, as deleting a download is.
+        if (!completingDelete && effect is Effect.ForgetFolder && current.settings != null) {
+            val row = app.foldcade.language.settingsFocus(current)
+            if (row is Row.ForgetFolder && repeatCount == 0 && inputWindows[inputWindow] != false) {
+                heldActions.capture(meaning.ordinal)
+                val key = promptKeyOf(current.faceMap.confirmKey) ?: PromptKey.FaceA
+                model = current.copy(deleteHold = DeleteHold(row, key, nowMillis(), null, meaning, inputWindow, inputKeys[inputWindow]), deleteProgress = 0f)
             }
             return null
         }
@@ -2467,6 +2484,26 @@ class ShellController(
         if (model.librarySyncing != syncing) model = model.copy(librarySyncing = syncing)
     }
 
+    /** How the last read of RomM ended: Sync games and RomM's tile say so until the next one. */
+    fun setRommReached(reached: Boolean) {
+        val sync = if (reached) app.foldcade.language.LibrarySync.Done else app.foldcade.language.LibrarySync.RommUnreachable
+        if (model.librarySync != sync) model = model.copy(librarySync = sync)
+    }
+
+    /** A sync that read only folders, which always answer. RomM out of reach stays said until RomM is read. */
+    fun noteLibrarySynced() {
+        if (model.librarySync == app.foldcade.language.LibrarySync.Unknown) model = model.copy(librarySync = app.foldcade.language.LibrarySync.Done)
+    }
+
+    fun setRommHost(host: String?) {
+        if (model.rommHost != host) model = model.copy(rommHost = host)
+    }
+
+    /** A ROM folder Foldcade saw that no source reads yet, where Add a folder's picker opens. */
+    fun setFolderStart(start: String?) {
+        if (model.folderStart != start) model = model.copy(folderStart = start)
+    }
+
     /** A note on the form. One that ends the attempt ([retry]) takes its code away: a phone can no longer approve it. */
     fun showSetupHint(hint: String?, retry: Boolean = false) {
         model = model.copy(connectHint = hint, connectRetry = retry, connectCode = if (retry) null else model.connectCode)
@@ -2495,7 +2532,9 @@ class ShellController(
     fun setSignedIn(backends: List<SignedInBackend>) {
         val signedIn = backends.any { it.pluginId == RommCredentials.PLUGIN_ID }
         val saved = store.rommOrigin() != null
-        model = model.copy(signedIn = backends, rommSaved = saved || signedIn, rommSignIn = saved && !signedIn)
+        // A server gone takes its "Can't reach RomM" with it.
+        val sync = if (!saved && !signedIn && model.librarySync == app.foldcade.language.LibrarySync.RommUnreachable) app.foldcade.language.LibrarySync.Done else model.librarySync
+        model = model.copy(signedIn = backends, rommSaved = saved || signedIn, rommSignIn = saved && !signedIn, rommHost = rommHostLabel(store.rommOrigin()), librarySync = sync)
     }
 
     /** RomM answered with the saved token, so a refusal before it has passed. */
@@ -2525,7 +2564,8 @@ class ShellController(
             connectCode = null,
             connectRetry = false,
             panel = model.connectReturnPanel,
-            settings = model.connectReturnSettings,
+            // A server just added shows itself: Library's shelf with RomM's tile focused, not Add.
+            settings = model.connectReturnSettings?.let { if (model.connectKind == ConnectKind.Romm) it.afterRommAdded(model) else it },
             connectReturnPanel = null,
             connectReturnSettings = null,
         )
@@ -4342,6 +4382,7 @@ class ShellController(
         syncHome()
         return PickerModel(
             rommSaved = store.rommOrigin() != null,
+            rommHost = rommHostLabel(store.rommOrigin()),
             folders = store.libraryFolders(),
             count = home.visibleCount(),
             addNewToHome = home.board.addNewToHome,
@@ -4448,3 +4489,6 @@ internal fun syncMark(result: SyncResult): SyncMark = when (result.outcome) {
 
 /** Holds that live on Play activity's page rather than on a menu row. */
 private val pageHolds = setOf(Row.RemoveSession, Row.MovePlay)
+
+/** A RomM address as its page names it: no scheme, no trailing slash. */
+internal fun rommHostLabel(origin: String?): String? = origin?.substringAfter("://")?.trimEnd('/')?.ifBlank { null }

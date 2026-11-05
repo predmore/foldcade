@@ -115,6 +115,12 @@ object Copy {
     const val addFolder = "Add a folder"
     const val syncGames = "Sync games"
     const val syncing = "Syncing"
+    /** Sync games' value once a sync has finished, and in the attention colour once RomM couldn't be reached. */
+    const val synced = "Synced"
+    const val rommUnreachable = "Can’t reach RomM"
+    /** Settings › Library › Add's rows: the page is already called Add. */
+    const val addFolderRow = "Folder"
+    const val addRommRow = "RomM server"
     const val rommConnection = "RomM connection"
     const val editRommConnection = "Edit connection"
     const val addRommServer = "Add a RomM server"
@@ -142,16 +148,26 @@ object Copy {
     const val steamGridDb = "SteamGridDB"
     const val addKey = "Add key"
     const val forgetKey = "Forget key"
+    /** SteamGridDB's row reads what it holds; A adds a key or asks to forget it. */
+    const val keySaved = "Saved"
+    const val noKey = "Not set"
     /** Settings › Library: the switch for one computer's Moonlight games, on its page. */
     const val hostGames = "Games"
+    /** An unpaired computer's page: its one row pairs it, and the line under its name says it isn't yet. */
+    const val pairHost = "Pair"
+    const val hostNotPaired = "Not paired"
+    const val hostPaired = "Paired"
 
     /** Settings › Library's last tile, and the page it opens. */
     const val add = "Add"
     const val pairHostBody = "In Sunshine or Apollo on that computer, open PIN and type this code. Its games then appear here."
+    /** The pairing card: its title names the computer, the code stands alone under it. */
+    fun pairHostTitle(name: String) = "Pair with $name"
+    const val pairHostWaiting = "Waiting for the computer…"
     const val forgetHost = "Forget"
     const val forgetHostBody = "Its games leave Home, except ones you pinned in Moonlight. Remove Foldcade from the computer’s client list too."
     const val pairWrongPinTitle = "That code didn’t match"
-    const val pairWrongPinBody = "Turn the switch on again for a new code."
+    const val pairWrongPinBody = "Choose Pair again for a new code."
     const val pairUnreachableBody = "Check that it’s on and on this network, then try again."
     const val pairRefusedBody = "It may be pairing another device. Try again in a few minutes."
     const val keepKey = "Keep key"
@@ -181,7 +197,7 @@ object Copy {
     const val usageAccessBody = "Usage access lets Foldcade see when a game is open, including from Recents or another launcher. Without it, play time only follows launches from here, so it stays approximate."
     const val approximatePlay = "Approximate"
     const val playTime = "Play time"
-    const val playTimeEverywhere = "Everywhere"
+    const val playTimeEverywhere = "All games"
     const val playTimeHere = "Foldcade only"
     const val sort = "Sort"
 
@@ -192,7 +208,9 @@ object Copy {
     const val continueGrant = "Continue"
     const val ok = "OK"
     const val folderGrantTitle = "Choose a folder"
-    const val folderGrantBody = "Foldcade lists games from a folder you choose."
+    const val folderGrantBody = "Pick the folder that holds your system folders, like roms, then tap Use this folder."
+    fun emptyFolderTitle(name: String) = "No games in $name"
+    const val emptyFolderBody = "Pick the folder that holds your system folders, like roms. Games copied here later show up by themselves."
     const val folderGrantFailed = "That folder couldn’t be kept. Choose it again."
     const val wifi = "Wi-Fi"
     const val cellular = "Cellular"

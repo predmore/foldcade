@@ -48,12 +48,13 @@ class QaPolishTest {
     fun aFolderPageSaysWhereItIsWhatItHoldsAndWhetherItBringsArt() {
         val both = LibraryFolder("tree", "foldcade-qa1102", path = "ROMs/foldcade-qa1102", games = 38, media = true)
         assertEquals("ROMs/foldcade-qa1102 · 38 games · ${SettingsCopy.artAndInfo}", libraryFolderDetail(both))
-        // A media-only folder's title already says art and info; one with nothing found says only where it is.
+        // A media-only folder's title already says art and info, so it counts no games; any other says it holds none.
         assertEquals("Download/ES-DE", libraryFolderDetail(LibraryFolder("t", "ES-DE", artAndInfo = true, path = "Download/ES-DE", media = true)))
         assertEquals("1 game", libraryFolderDetail(LibraryFolder("t", "x", games = 1)))
         // A folder at the top of its storage would say its name twice.
         assertEquals("9 games · ${SettingsCopy.artAndInfo}", libraryFolderDetail(LibraryFolder("t", "foldcade-qa1102D", path = "foldcade-qa1102D", games = 9, media = true)))
-        assertNull(libraryFolderDetail(LibraryFolder("t", "x")))
+        assertEquals("0 games", libraryFolderDetail(LibraryFolder("t", "x")))
+        assertEquals("roms/new · 0 games", libraryFolderDetail(LibraryFolder("t", "new", path = "roms/new")))
     }
 
     @Test

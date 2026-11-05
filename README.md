@@ -134,7 +134,7 @@ Press **Select** on any grid and start typing on the controller keyboard. Result
 
 ### See where the hours went
 
-Track how long you played and when, see your week in L1, and open All games' **Recent** tab to return to a game: the games you played, the most recent first. **Most played** puts the games you spent longest in first. **Settings › System › Play time › Everywhere** also counts sessions started outside Foldcade.
+Track how long you played and when, see your week in L1, and open All games' **Recent** tab to return to a game: the games you played, the most recent first. **Most played** puts the games you spent longest in first. With **Settings › System › Play time** on **All games**, sessions started outside Foldcade count too.
 
 ### Make it yours
 

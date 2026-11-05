@@ -7,7 +7,7 @@ Set up your computer with [Sunshine](https://github.com/LizardByte/Sunshine) or 
 ## List every game on a computer
 
 1. With the Thor on the same network as the computer, open **L1 › Settings › Library**.
-2. Choose your computer's tile and turn on **Games**. Foldcade shows a four-digit code.
+2. Choose your computer's tile. Its page says **Not paired**; choose **Pair**. Foldcade shows a four-digit code, large, and waits for it.
 3. On the computer, open Sunshine's web page (**https://localhost:47990**), choose **PIN**, type the code, give the device a name such as Foldcade, and send it. Apollo's page works the same way.
 4. Every app on the computer appears in the **Moonlight** folder within a few seconds, with the computer's own box art.
 
@@ -15,9 +15,9 @@ Apps you add or remove on the computer follow within a few minutes while Home is
 
 Foldcade pairs as a device of its own, next to Moonlight. It only lists apps; Moonlight still streams them, so Moonlight must stay paired with the same computer. On Apollo, a second device can list apps but not start them, which is all Foldcade needs.
 
-Turn the switch off and choose **Forget** to stop listing that computer. Its games leave Home, except ones you pinned in Moonlight. Sunshine keeps Foldcade in its client list until you remove it there.
+Once paired, the page has a **Games** switch. Turn it off and choose **Forget** to stop listing that computer. Its games leave Home, except ones you pinned in Moonlight. Sunshine keeps Foldcade in its client list until you remove it there.
 
-If you clear Foldcade's data, reinstall it, or move to another Thor, turn the switch on and pair again: the key Foldcade paired with stays on the device that made it.
+If you clear Foldcade's data, reinstall it, or move to another Thor, choose **Pair** again: the key Foldcade paired with stays on the device that made it.
 
 ## Add one game with a shortcut
 
@@ -52,7 +52,7 @@ Foldcade skips shortcuts Moonlight disables after their computer or game is remo
 ## If something is missing or streaming fails
 
 - **No tile for the computer:** Check that Moonlight is installed and the Thor is on the computer's network, then reopen Settings. The tile appears once Foldcade finds the computer.
-- **That code didn't match:** Turn the switch on again for a new code, and type that one.
+- **That code didn't match:** Choose **Pair** again for a new code, and type that one.
 - **The computer didn't pair:** Another device may be pairing with it. Wait a few minutes and try again.
 - **Only the Moonlight app tile appears:** Pair Foldcade with the computer, or create individual game shortcuts; the tile in Emulators opens Moonlight itself.
 - **"PC not found" when a game starts:** Moonlight is not paired with that computer. Pair it in Moonlight.

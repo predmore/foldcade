@@ -919,7 +919,8 @@ class ContractTest {
         assertEquals("", opened.connectOrigin)
         assertEquals(ConnectKind.Romm, opened.connectKind)
         assertEquals(listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save), connectFields(opened.connectKind))
-        assertEquals("Add a RomM server", rowLabel(Row.AddRomm, opened))
+        // Add's rows sit under its own "Add", so they don't say it again.
+        assertEquals("RomM server", rowLabel(Row.AddRomm, opened))
         assertNull(opened.settings)
 
         // Each folder can be removed on its own, from its own page. Adding another keeps the first.

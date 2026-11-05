@@ -13,6 +13,13 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -40,7 +47,12 @@ import app.foldcade.language.ThemesRow
 import app.foldcade.language.PromptKey
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.themeFacts
+import app.foldcade.language.RowControl
+import app.foldcade.ui.FocusRing
+import app.foldcade.ui.FoldPaint
 import app.foldcade.ui.LocalFoldTheme
+import app.foldcade.ui.MarkIcon
+import app.foldcade.ui.MenuRow
 import app.foldcade.ui.PageHeader
 import app.foldcade.ui.SETTINGS_PAGE_H
 import app.foldcade.ui.SETTINGS_PAGE_V
@@ -98,7 +110,7 @@ class ThemesActivity : PanelKeyActivity() {
         setContent {
             CompositionLocalProvider(LocalFoldTheme provides theme) {
                 val back = promptKeyOf(faceMap().backKey) ?: PromptKey.FaceB
-                ThemesScreen(theme.theme, page, back, theme.theme.motion.animatorScale(LocalContext.current.contentResolver)) { onMeaning(Meaning.Back) }
+                ThemesScreen(theme.theme, page, back, theme.theme.motion.animatorScale(LocalContext.current.contentResolver), ::packPaint) { onMeaning(Meaning.Back) }
             }
         }
         hideSystemBars()
@@ -118,6 +130,10 @@ class ThemesActivity : PanelKeyActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
     }
+
+    /** The pack's own paint, for its preview: its colours, its glow and its marks. */
+    private fun packPaint(entry: ThemeEntry): FoldPaint? =
+        app.themePacks.indexOfFirst { it.resources.id == entry.id }.takeIf { it >= 0 }?.let { app.paintFor(it + 1) }
 
     private fun install(uri: Uri) {
         page = page.adding()
@@ -151,7 +167,7 @@ class ThemesActivity : PanelKeyActivity() {
 private val ZIP_TYPES = arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")
 
 @Composable
-private fun ThemesScreen(theme: Theme, page: ThemesPage, back: PromptKey, scale: Float, onBack: () -> Unit) {
+private fun ThemesScreen(theme: Theme, page: ThemesPage, back: PromptKey, scale: Float, paintOf: (ThemeEntry) -> FoldPaint?, onBack: () -> Unit) {
     val design = theme.style
     // Settings' shell: the head over the packs on the left, and the focused pack's card on the right.
     Row(
@@ -175,21 +191,23 @@ private fun ThemesScreen(theme: Theme, page: ThemesPage, back: PromptKey, scale:
             ) {
                 page.rows.forEachIndexed { index, row ->
                     val focused = index == page.focus
-                    val label = when (row) {
-                        is ThemesRow.Pack -> row.entry.name
-                        ThemesRow.Add -> ThemesCopy.add
-                        ThemesRow.Restart -> ThemesCopy.restart
+                    val (label, icon) = when (row) {
+                        is ThemesRow.Pack -> row.entry.name to R.drawable.symbol_gem
+                        ThemesRow.Add -> ThemesCopy.add to R.drawable.ic_control_add
+                        ThemesRow.Restart -> ThemesCopy.restart to R.drawable.symbol_restart
                     }
-                    BasicText(
-                        label,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectionSlot(slots, index)
-                            .keepInView(focused)
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        style = textStyle(theme, if (focused) theme.onBackground else theme.onBackground.copy(alpha = design.menu.labelRestAlpha), design.type.menuRow),
+                    // Settings' own row: the symbol, the words, the same height and glide.
+                    MenuRow(
+                        label = label,
+                        icon = icon,
+                        iconSlot = true,
+                        focused = focused,
+                        control = RowControl.None,
+                        chord = null,
+                        held = emptySet(),
+                        scale = scale,
+                        modifier = Modifier.fillMaxWidth().selectionSlot(slots, index).keepInView(focused),
+                        labelStyle = textStyle(theme, theme.onBackground, design.type.menuRow).copy(fontWeight = design.type.strongWeight),
                     )
                 }
             }
@@ -205,16 +223,17 @@ private fun ThemesScreen(theme: Theme, page: ThemesPage, back: PromptKey, scale:
                 .settingsCard(theme)
                 .padding(28.dp),
         ) {
-            (page.focused as? ThemesRow.Pack)?.entry?.let { PackDetails(theme, it) }
+            (page.focused as? ThemesRow.Pack)?.entry?.let { PackDetails(theme, it, paintOf(it), scale) }
         }
     }
 }
 
-/** A pack's own words about itself, then anything Foldcade found wrong while loading it. */
+/** A pack's look, then its own words about itself, then anything Foldcade found wrong while loading it. */
 @Composable
-private fun PackDetails(theme: Theme, entry: ThemeEntry) {
+private fun PackDetails(theme: Theme, entry: ThemeEntry, paint: FoldPaint?, scale: Float) {
     val design = theme.style
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        paint?.let { PackPreview(it, scale) }
         BasicText(entry.name, style = textStyle(theme, theme.onBackground, design.type.dialogTitle, display = true))
         val facts = themeFacts(entry)
         if (facts.isNotEmpty()) BasicText(facts.joinToString(" · "), style = textStyle(theme, theme.muted, design.type.hint))
@@ -231,6 +250,51 @@ private fun PackDetails(theme: Theme, entry: ThemeEntry) {
         }
     }
 }
+
+/**
+ * A slice of Home drawn with the pack itself: its background, three of its lit marks on its
+ * sockets, and its focus ring and glow on the middle one, so a pack is seen, not described.
+ */
+@Composable
+private fun PackPreview(paint: FoldPaint, scale: Float) {
+    CompositionLocalProvider(LocalFoldTheme provides paint) {
+        val pack = paint.theme
+        val design = pack.style
+        val ring = remember(pack) { FocusRing(pack) }
+        val corner = design.shape.highlightCornerDp.dp
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                .background(pack.background)
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
+        ) {
+            PREVIEW_MARKS.forEachIndexed { index, mark ->
+                val focused = index == 1
+                Box(
+                    Modifier
+                        .size(PREVIEW_TILE)
+                        .drawBehind {
+                            if (focused) with(ring) { drawFocusRing(corner.toPx()) }
+                        }
+                        .clip(RoundedCornerShape(corner))
+                        .background(pack.onBackground.copy(alpha = design.tile.socketAlpha)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (focused) 1f else design.tile.restAlpha }, contentAlignment = Alignment.Center) {
+                        MarkIcon(mark, PREVIEW_MARK_FILL)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Three systems most packs draw, as Home's first column might show them. */
+private val PREVIEW_MARKS = listOf("nintendo_ds", "nintendo_3ds", "psp")
+private val PREVIEW_TILE = 76.dp
+private const val PREVIEW_MARK_FILL = 0.8f
 
 private fun textStyle(theme: Theme, color: androidx.compose.ui.graphics.Color, size: TextUnit, display: Boolean = false) = TextStyle(
     color = color,

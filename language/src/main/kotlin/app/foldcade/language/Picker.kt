@@ -311,6 +311,11 @@ data class DialogState(
      * or a button that stops it, and the explicit way to play is a button of its own.
      */
     val holdsLaunch: Boolean = false,
+    /**
+     * A code the player carries to another device, as Moonlight's pairing PIN. It stands
+     * alone, large, under the title, with a note that Foldcade is waiting for it.
+     */
+    val code: String? = null,
 )
 
 /**
@@ -325,8 +330,9 @@ data class StreamHostSetting(val key: String, val name: String, val paired: Bool
 /** Foldcade shows [pin]; the user types it into Sunshine or Apollo on [name]. */
 fun pairHostDialog(name: String, pin: String, key: String, screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.PairHost,
-    title = "Enter $pin on $name",
+    title = Copy.pairHostTitle(name),
     body = Copy.pairHostBody,
+    code = pin,
     buttons = listOf(DialogButton.NotNow),
     index = 0,
     safeIndex = 0,
@@ -752,6 +758,20 @@ fun noFileDialog(screen: HostScreen): DialogState = DialogState(
     buttons = listOf(DialogButton.Ok),
     index = 0,
     safeIndex = 0,
+    screen = screen,
+)
+
+/**
+ * A folder just picked that holds no games, said on the screen it was picked from, with the
+ * way to pick the right one. It stays a source: games copied in later show up by themselves.
+ */
+fun emptyFolderDialog(name: String, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.Folder,
+    title = Copy.emptyFolderTitle(name),
+    body = Copy.emptyFolderBody,
+    buttons = listOf(DialogButton.AddFolder, DialogButton.Ok),
+    index = 0,
+    safeIndex = 1,
     screen = screen,
 )
 
@@ -1236,10 +1256,16 @@ data class PairingCode(val code: String, val url: String) {
 fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
     busy -> Copy.connecting
     tokenTyped -> Copy.connect
-    !originTyped -> Copy.waitingForPhone
-    code != null && !retry -> Copy.waitingForPhone
+    // The phone is the way in until a token is typed: the button names what it will do, and
+    // the phone's side says it waits ([rommWaitsForPhone]).
+    !originTyped -> Copy.connect
+    code != null && !retry -> Copy.connect
     else -> Copy.pairWithPhone
 }
+
+/** True while the form waits on the phone, not the button: it reads quieter, and the phone's side says so. */
+fun rommWaitsForPhone(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): Boolean =
+    !busy && !tokenTyped && (!originTyped || code != null && !retry)
 
 /**
  * R1: Android's screens on top, then brightness, then the notices, newest first.
@@ -1482,6 +1508,22 @@ fun speedLabel(speed: MotionSpeed): String = when (speed) {
     MotionSpeed.Off -> Copy.motionOff
 }
 
+/** How the last read of every library ended. Only RomM can be out of reach; a folder read always answers. */
+enum class LibrarySync {
+    /** Nothing has finished since Foldcade started. */
+    Unknown,
+    Done,
+    RommUnreachable,
+}
+
+/** Sync games' value: what the last sync did, or that one is running. Never the action itself, which is A. */
+fun librarySyncValue(model: PickerModel): String? = when {
+    model.librarySyncing -> Copy.syncing
+    model.librarySync == LibrarySync.RommUnreachable -> Copy.rommUnreachable
+    model.librarySync == LibrarySync.Done -> Copy.synced
+    else -> null
+}
+
 /** Label on the left, current value on the right. A null value is a single action row. */
 data class RowText(val label: String, val value: String? = null)
 
@@ -1496,7 +1538,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MotionSpeed -> RowText(Copy.motion, speedLabel(model.motionSpeed))
     Row.UsageAccess -> RowText(Copy.playTime, if (model.usageGranted) Copy.playTimeEverywhere else Copy.playTimeHere)
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
-    Row.FindGames -> RowText(FoundFolderCopy.findGames, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
+    Row.FindGames -> RowText(FoundFolderCopy.autoFindGames, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     // How many emulators still wait, in the attention colour, until every one syncs.
     Row.SaveSetup -> RowText(SaveSetupCopy.title, savesDue(model).size.takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
@@ -1528,13 +1570,14 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         BrightnessCopy.row,
         if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
-    Row.AddFolder -> RowText(Copy.addFolder)
-    Row.SyncLibrary -> RowText(Copy.syncGames, if (model.librarySyncing) Copy.syncing else null)
+    // Only Settings › Library › Add lists these, under its own "Add".
+    Row.AddFolder -> RowText(Copy.addFolderRow)
+    Row.SyncLibrary -> RowText(Copy.syncGames, librarySyncValue(model))
     is Row.RommConnection -> RowText(row.label)
     // Signed out, the connection's first row signs in, and its last removes the server.
     is Row.EditRomm -> RowText(if (model.rommSignIn) Copy.signIn else Copy.editRommConnection)
     Row.SignInRomm -> RowText(Copy.signIn)
-    Row.AddRomm -> RowText(Copy.addRommServer)
+    Row.AddRomm -> RowText(Copy.addRommRow)
     // Both live on a page that already names the connection or the folder.
     is Row.SignOut -> RowText(if (row.pluginId == "romm" && model.rommSignIn) Copy.remove else Copy.signOut)
     is Row.ForgetFolder -> RowText(Copy.remove)
@@ -1594,9 +1637,10 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
-    Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.forgetKey else Copy.addKey)
+    Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.keySaved else Copy.noKey)
+    // Unpaired, the computer's one row pairs it; paired, it is the switch for its games.
     is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
-        RowText(Copy.hostGames, if (host?.paired == true) Copy.on else Copy.off)
+        if (host?.paired == true) RowText(Copy.hostGames, Copy.on) else RowText(Copy.pairHost)
     }
     Row.MoveApp -> RowText(if (model.tileActions?.moveTo == HOME_ANDROID_APPS) Copy.moveToApps else Copy.moveToGames)
     Row.Hide -> RowText(Copy.hideApp)
@@ -1849,7 +1893,7 @@ fun noLibraryActions(model: PickerModel): List<NoLibraryAction> =
  * and that only once.
  */
 fun addFolder(model: PickerModel, screen: HostScreen): Pair<PickerModel, Effect?> =
-    if (model.folderGrantPending && model.romFolderOffer == null) model.copy(dialog = folderExplainer(screen)) to null
+    if (model.folderGrantPending && model.romFolderOffer == null && model.folderStart == null) model.copy(dialog = folderExplainer(screen)) to null
     else model to Effect.AddFolder
 
 /** What a grid cell is. Existing callers stay on [Games], which launches. */
@@ -2012,6 +2056,15 @@ data class PickerModel(
     val checkingSaves: Boolean = false,
     /** Every library is being read again. */
     val librarySyncing: Boolean = false,
+    /** How the last read of the libraries ended, for Sync games' value. */
+    val librarySync: LibrarySync = LibrarySync.Unknown,
+    /** The saved RomM server's address, without its scheme, for RomM's page. */
+    val rommHost: String? = null,
+    /**
+     * A ROM folder Foldcade saw (`ROMs`, `roms`, `Emulation/roms`), as a storage document id.
+     * Add a folder opens Android's picker there.
+     */
+    val folderStart: String? = null,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
     val gridLabels: List<String> = emptyList(),
     /** Home can retain empty slots after its last actual tile. */
@@ -2714,6 +2767,12 @@ private fun applySettings(
         Meaning.LeftPanel, Meaning.RightPanel, Meaning.Menu -> close
         Meaning.Activate -> {
             if (row == Row.Systems) return model.copy(settings = current.copy(inner = SettingsInner.Systems, row = 0)) to null
+            // Add with one way in does it from its tile, which keeps the focus for the way back.
+            settingsTileShortcut(row, model)?.let { only ->
+                val standIn = SidePanel(Side.Left, current.screen, PanelLevel.Root, rowIndex, current.grid)
+                val (next, effect) = activateRow(model.copy(panel = standIn), standIn, only, current.screen)
+                return next.copy(panel = null, settings = current, focus = model.focus) to effect
+            }
             if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
             // Back from Set up saves returns to this row.
             if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null

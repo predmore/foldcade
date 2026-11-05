@@ -119,4 +119,5 @@ data class DeleteHold(val row: Row, val key: PromptKey, val started: Long, val g
     fun release(now: Long): Boolean = complete(now)
 }
 
-fun Row.destructive(): Boolean = this == Row.RemoveDownload || this == Row.DeleteShortcut || this == Row.RemoveSession
+/** Rows that act only once held, so one stray press can't undo something: a download, a shortcut, a session, a library folder. */
+fun Row.destructive(): Boolean = this == Row.RemoveDownload || this == Row.DeleteShortcut || this == Row.RemoveSession || this is Row.ForgetFolder
