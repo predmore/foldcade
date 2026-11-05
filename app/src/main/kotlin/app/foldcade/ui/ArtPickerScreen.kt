@@ -181,8 +181,8 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
 private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current: Boolean, modifier: Modifier, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val context = LocalContext.current
-    val request = remember(candidate?.thumbnail) {
-        ImageRequest.Builder(context).data(candidate?.thumbnail?.let(::CoverImage)).size(384).build()
+    val request = remember(candidate?.thumbnail, current) {
+        ImageRequest.Builder(context).data(candidate?.thumbnail?.let(::CoverImage)).size(if (current) 1024 else 384).build()
     }
     val painter = rememberAsyncImagePainter(request, app.images)
     val status by painter.state.collectAsState()

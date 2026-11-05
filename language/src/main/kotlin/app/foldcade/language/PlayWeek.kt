@@ -86,7 +86,7 @@ object PlayCopy {
 
     /** A game with play that no library has any more: its file was renamed, replaced, or removed. */
     const val gone = "Gone"
-    const val noSources = "No other games played yet"
+    const val noSources = "No other play yet"
 
     /** Settings › System. Its dialog offers both ways. */
     const val history = "Play history"
