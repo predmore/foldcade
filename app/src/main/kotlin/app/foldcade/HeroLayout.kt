@@ -11,7 +11,26 @@ internal data class HeroLayout<T>(
     val cover: T? = null,
     val logo: T? = null,
     val screen: T? = null,
-)
+) {
+    val hasImages: Boolean get() = backdrop != null || cover != null || logo != null || screen != null
+}
+
+/** Keep the current stage while decoding or looking for missing art, even on a slow load. */
+internal suspend fun <T> loadHeroLayouts(
+    initial: suspend () -> HeroLayout<T>?,
+    refresh: suspend () -> HeroLayout<T>?,
+    publish: suspend (HeroLayout<T>?) -> Unit,
+) {
+    val first = initial()
+    if (first?.hasImages == true) publish(first)
+    val updated = refresh()
+    if (updated?.hasImages == true) {
+        if (updated != first) publish(updated)
+    } else if (first?.hasImages != true) {
+        // Only a completed lookup/decode can establish that this subject has no usable art.
+        publish(updated ?: first)
+    }
+}
 
 internal enum class HeroImageRole { Backdrop, Ambient, Cover, Logo, Screen }
 

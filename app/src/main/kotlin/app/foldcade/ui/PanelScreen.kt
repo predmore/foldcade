@@ -73,6 +73,7 @@ import androidx.compose.ui.graphics.lerp
 import app.foldcade.HeroLayout
 import app.foldcade.HeroImageRole
 import app.foldcade.loadHeroLayout
+import app.foldcade.loadHeroLayouts
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.ui.Alignment
@@ -302,10 +303,8 @@ import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
@@ -2481,7 +2480,7 @@ private fun travelOf(from: HeroPlace?, to: HeroPlace?): HeroTravel {
 
 /**
  * The subject the top screen's art shows. It follows [subject] once that
- * subject's art is decoded, or after [HERO_ART_WAIT_MS], so art crossfades in
+ * subject's art is decoded and missing sources have been resolved, so art crossfades in
  * whole instead of filling in after the fade. One arrival is mostly in before
  * the next starts, so a held move does not strobe the screen; the art catches
  * up when the cursor rests. New copy for the same subject shows at once.
@@ -2518,17 +2517,14 @@ private fun rememberStagedHero(
             ArtKind.Logo -> HeroSources(cover, (scene ?: ArtScene()).copy(logo = preview.url))
             null -> HeroSources(cover, scene)
         }
-        // Source lookup belongs inside the same 400 ms wait as decoding. An uncached
-        // lookup must not publish an empty layout on its first composition.
-        val sources = async(Dispatchers.Default) {
-            if (record == null && query == null) return@async HeroSources(null, null)
+        // Source lookup and decoding keep the current stage until they finish. A slow
+        // request is not evidence that the next subject has no art.
+        val found = withContext(Dispatchers.Default) {
+            if (record == null && query == null) return@withContext HeroSources(null, null)
             app.art.restore()
             val cover = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
             chosen(cover?.cover, app.covers.cachedScene(record, query))
         }
-        val loading = async { decodeHero(app, context, sources.await(), decoded) }
-        val first = withTimeoutOrNull(HERO_ART_WAIT_MS) { loading.await() }
-        delay(stagedAt + dwell - SystemClock.uptimeMillis())
         fun retainCurrentImages() {
             val images = staged.images
             // Keep a focused game's previews bounded; outgoing layers own their own images.
@@ -2543,20 +2539,22 @@ private fun rememberStagedHero(
             stagedPlace = place
             stagedAt = SystemClock.uptimeMillis()
         }
-        if (first != null) commit(first)
-        else if (subject?.key != staged.subject?.key) commit(HeroImages())
-        val initial = loading.await()
-        if (initial != null && initial != staged.images) commit(initial)
-        retainCurrentImages()
-        val found = sources.await()
-        if ((record != null || query != null) && found.scene?.complete != true) {
-            val refreshed = withContext(Dispatchers.Default) { chosen(found.cover, app.covers.fetchScene(record, query)) }
-            if (refreshed != found) {
-                val images = decodeHero(app, context, refreshed, decoded)
-                if (images != null && images != staged.images) commit(images)
+        loadHeroLayouts(
+            initial = { decodeHero(app, context, found, decoded) },
+            refresh = {
+                if ((record != null || query != null) && found.scene?.complete != true) {
+                    val refreshed = withContext(Dispatchers.Default) { chosen(found.cover, app.covers.fetchScene(record, query)) }
+                    if (refreshed != found) decodeHero(app, context, refreshed, decoded) else null
+                } else null
+            },
+        ) { images ->
+            if (images != null || subject?.key != staged.subject?.key) {
+                delay(stagedAt + dwell - SystemClock.uptimeMillis())
+                commit(images ?: HeroImages())
                 retainCurrentImages()
             }
         }
+        retainCurrentImages()
     }
     val current = staged
     if (subject != null && subject.key == current.subject?.key && subject != current.subject) {
@@ -2582,9 +2580,6 @@ private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
         }
     }
 }
-
-/** How long the top screen keeps the last game's art while the next one's decodes. */
-private const val HERO_ART_WAIT_MS = 400L
 
 /**
  * Once the cursor rests, warms the tile art a screen of columns either side of
