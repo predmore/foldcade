@@ -194,7 +194,8 @@ fun <T> retargetHero(
     }
     // A fast layout upgrade may arrive before the cover is visible. Keep the stronger
     // outgoing image behind it. The arriving and leaving layers must have different keys.
-    val keepBack = current.back != null && current.backAlpha > current.frontAlpha && !same(next, current.back)
+    val keepBack = current.back != null &&
+        current.backAlpha * (1f - current.frontAlpha) > current.frontAlpha && !same(next, current.back)
     return HeroBlend(
         front = next,
         back = if (keepBack) current.back else current.front,

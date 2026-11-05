@@ -110,12 +110,12 @@ class HeroTransitionTest {
         val towardB = retargetHero(resting, "b").copy(frontAlpha = 0.4f, backAlpha = 0.55f)
         val towardC = retargetHero(towardB, "c")
         assertEquals("c", towardC.front)
-        assertEquals("a", towardC.back)
+        assertEquals("b", towardC.back)
         assertEquals(0f, towardC.frontAlpha, 0.001f)
-        assertEquals(0.55f, towardC.backAlpha, 0.001f)
+        assertEquals(0.4f, towardC.backAlpha, 0.001f)
         val stillC = retargetHero(towardC.copy(frontAlpha = 0.25f), "c")
         assertEquals("c", stillC.front)
-        assertEquals("a", stillC.back)
+        assertEquals("b", stillC.back)
         assertEquals(0.25f, stillC.frontAlpha, 0.001f)
     }
 
@@ -138,6 +138,17 @@ class HeroTransitionTest {
         assertEquals("old art", next.front)
         assertEquals("cover", next.back)
         assertFalse(next.front == next.back)
+    }
+
+    @Test
+    fun aMostlyOpaqueFrontOccludesTheOlderBackdropDuringQuickMoves() {
+        // Around the scene dwell boundary, the leave curve can still exceed the arrive
+        // curve numerically. Most of that old layer is covered by the newer front.
+        for (target in listOf("c", null)) {
+            val next = retargetHero(HeroBlend("b", "a", frontAlpha = 0.84f, backAlpha = 0.86f), target)
+            assertEquals("b", next.back)
+            assertEquals(0.84f, next.backAlpha, 0.001f)
+        }
     }
 
     @Test
