@@ -180,6 +180,34 @@ class SavePickerTest {
         assertEquals("This becomes the save in that slot. The Oct 8 save is kept on RomM.", SavePickerCopy.copyBody(nobody, "Oct 8"))
     }
 
+    @Test fun twoDevicesSharingASlotNameAreOneDestinationAndItsNewestSaveIsTheOneKept() {
+        val zone = ZoneId.of("UTC")
+        val day = { iso: String -> Instant.parse(iso).toEpochMilli() }
+        // The same "sav" slot from two devices, and the save being copied in its own slot.
+        val older = SavePickerSave("1", "sav", "melonds", "Steam Deck", day("2026-10-06T10:00:00Z"), 1, false, null)
+        val newer = SavePickerSave("2", "sav", "melonds", "Argosy", day("2026-10-08T10:00:00Z"), 1, false, null)
+        val source = SavePickerSave("3", "autosave", "melonds", "Grout", day("2026-10-09T10:00:00Z"), 1, false, null)
+        val page = state.copy(saves = listOf(older, newer, source), ownSlots = listOf("sav", "title"), copying = source)
+        val now = day("2026-10-25T10:00:00Z")
+        val names = saveNames(page.saves, page.ownSlots, DateStyle(), now, zone)
+        val destinations = page.destinations()
+        // One "sav", owned by whoever wrote its newest save, and Foldcade's own empty "title".
+        assertEquals(listOf("sav", "title"), destinations.map { it.slot })
+        val sav = destinations.first()
+        val shown = destinationName(sav, page.saves, names, page.ownSlots)
+        assertEquals("Oct 8", shown)
+        // RomM's copy writes over the newest save in that slot string, so that is the one named as kept.
+        assertEquals("Oct 8", keptSave(sav, page.saves, shown, page.ownSlots))
+        assertEquals("Argosy plays this one next. Its Oct 8 save is kept on RomM.",
+            SavePickerCopy.copyBody(sav, keptSave(sav, page.saves, shown, page.ownSlots)))
+        // An own slot no device has used yet keeps nothing.
+        val title = destinations.last()
+        assertNull(keptSave(title, page.saves, destinationName(title, page.saves, names, page.ownSlots), page.ownSlots))
+        // A slot someone named says its current save, not a day.
+        val named = SaveDestination("Boss rush", "melonds", "Argosy")
+        assertEquals(SavePickerCopy.currentSave, keptSave(named, listOf(newer.copy(slot = "Boss rush")), "Boss rush", page.ownSlots))
+    }
+
     @Test fun emulatorFamiliesWarnOnlyWhenDifferentAndDatesAreLocal() {
         assertFalse(emulatorMismatch("retroarch.nes", "retroarch.snes"))
         assertFalse(emulatorMismatch("azahar", "azahar"))

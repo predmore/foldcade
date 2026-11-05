@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
 import app.foldcade.RunningApp
+import app.foldcade.language.keptSave
 import app.foldcade.language.genericSlot
 import app.foldcade.language.Copy
 import app.foldcade.language.DateStyle
@@ -617,8 +618,7 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
     }.orEmpty()
     // A slot named by its day is named by whose it is; the day is the save there now, which is kept.
     val generic = copyTo != null && genericSlot(copyTo.slot, state.ownSlots)
-    val occupied = copyTo != null && state.saves.any { !it.backup && it.slot == copyTo.slot }
-    val current = if (!occupied) null else if (generic) destination else SavePickerCopy.currentSave
+    val current = copyTo?.let { keptSave(it, state.saves, destination, state.ownSlots) }
     val action = when (choice) {
         is SavePickerChoice.Play -> SavePickerCopy.play
         is SavePickerChoice.Copy -> SavePickerCopy.copy

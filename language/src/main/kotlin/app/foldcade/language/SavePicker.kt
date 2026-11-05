@@ -350,6 +350,18 @@ fun destinationName(destination: SaveDestination, saves: List<SavePickerSave>, n
     return newest?.let { names[it.id] } ?: SavePickerCopy.emptySlot
 }
 
+/**
+ * The save a copy into [destination] keeps, as its confirmation names it: [name] (the slot's
+ * name on the page, its day for a generic slot), [SavePickerCopy.currentSave] for a slot someone
+ * named, or null when the slot is empty. A slot is one slot string across devices and emulators:
+ * [destinations] lists it once, and RomM's copy writes the new head over the newest save in that
+ * slot string, whichever device made it, so that newest save is the one kept.
+ */
+fun keptSave(destination: SaveDestination, saves: List<SavePickerSave>, name: String, ownSlots: List<String>): String? {
+    if (saves.none { !it.backup && it.slot == destination.slot }) return null
+    return if (genericSlot(destination.slot, ownSlots)) name else SavePickerCopy.currentSave
+}
+
 fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.isNullOrBlank() && !player.isNullOrBlank() &&
     emulator.substringBefore('.').lowercase() != player.substringBefore('.').lowercase()
 
