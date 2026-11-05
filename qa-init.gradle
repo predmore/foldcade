@@ -1,0 +1,9 @@
+allprojects { p ->
+    p.plugins.withId('com.android.application') {
+        p.androidComponents.finalizeDsl { dsl ->
+            dsl.buildTypes.getByName('debug').applicationIdSuffix = '.uxrpagesfix'
+            dsl.sourceSets.getByName('debug').kotlin.srcDir('/tmp/uxr-pages-fix-qa/fixture')
+            dsl.sourceSets.getByName('debug').manifest.srcFile('/tmp/uxr-pages-fix-qa/AndroidManifest.xml')
+        }
+    }
+}
