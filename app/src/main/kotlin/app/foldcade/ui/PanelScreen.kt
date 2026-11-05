@@ -128,6 +128,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
@@ -818,46 +819,41 @@ internal fun glideState(
 @Composable
 private fun <T> TravelFade(target: T, scale: Float, content: @Composable (T) -> Unit) {
     val motion = LocalFoldTheme.current.theme.motion
-    var front by remember { mutableStateOf(target) }
-    var back by remember { mutableStateOf<T?>(null) }
-    val incoming = remember { Animatable(1f) }
-    val outgoing = remember { Animatable(0f) }
+    val view = LocalView.current
+    val travel = remember { SurfaceTravel(target) }
     LaunchedEffect(target) {
-        if (target == front) return@LaunchedEffect
-        back = front
-        incoming.snapTo(0f)
-        outgoing.snapTo(1f)
-        front = target
-        withContext(SteadyMenu) {
-            coroutineScope {
-                launch { incoming.animateTo(1f, motion.arrive(motion.durationTravel, scale)) }
-                launch { outgoing.animateTo(0f, motion.leave(motion.durationTravel, scale)) }
+        travel.change(target, awaitDraw = { view.awaitFrameCommit() }) { frame ->
+            withContext(SteadyMenu) {
+                coroutineScope {
+                    launch { frame.incoming.animateTo(1f, motion.arrive(motion.durationTravel, scale)) }
+                    launch { frame.outgoing.animateTo(0f, motion.leave(motion.durationTravel, scale)) }
+                }
             }
         }
-        back = null
-        incoming.snapTo(1f)
     }
-    val previous = back
-    val moving by remember { derivedStateOf { back != null || incoming.value < 0.999f } }
-    if (!moving) {
-        content(front)
-        return
-    }
-    // Only while the surface is changing. Settled content has no graphics layer.
-    Box(
-        Modifier
-            .fillMaxSize()
-            .focusProperties { canFocus = false }
-            .clearAndSetSemantics { },
-    ) {
-        CompositionLocalProvider(LocalBackdropOpaque provides false) {
-            if (previous != null) {
-                Box(Modifier.graphicsLayer { alpha = outgoing.value }) { content(previous) }
+    val frame = travel.frame
+    val moving = frame.back != null
+    // Keep each surface in one keyed slot, including its settled frame. In particular the
+    // departing grid retains the hints it drew before the session handed away a screen.
+    Box(Modifier.fillMaxSize()) {
+        for (shown in listOfNotNull(frame.back, frame.front)) key(shown) {
+            val leaving = shown == frame.back
+            val layer = if (!moving) Modifier else Modifier
+                .focusProperties { canFocus = false }
+                .clearAndSetSemantics { }
+                .graphicsLayer { alpha = if (leaving) frame.outgoing.value else frame.incoming.value }
+            Box(layer) {
+                CompositionLocalProvider(
+                    LocalBackdropOpaque provides (LocalBackdropOpaque.current && !moving),
+                    LocalTravelLeaving provides (shown != target),
+                ) { content(shown) }
             }
-            Box(Modifier.graphicsLayer { alpha = incoming.value }) { content(front) }
         }
     }
 }
+
+/** The old grid keeps its keys while it waits for, then fades with, the arriving surface. */
+private val LocalTravelLeaving = compositionLocalOf { false }
 
 /**
  * Every press on a panel that has a command center, or a grid opened from one.
@@ -1297,6 +1293,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     // The art follows once it is whole, and the name card names the art on screen (review-B S5′).
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
     val named = rememberNamedSubject(subject, staged.subject)
+    val artFade = remember { HeroFade(staged.takeIf { it.subject != null }) }
     val islandOver = model.panel?.let { it.side != Side.Tile && it.screen == screen } == true && model.dialog?.screen != screen
     val islandDim = motionState(
         if (islandOver) 1f else 0f,
@@ -1369,6 +1366,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                         travelMillis = motion.heroDuration(model.motionSpeed, scale),
                         fadeOnly = fadeOnly,
                         keyOf = { it.subject?.key to it.images },
+                        fade = artFade,
                     ) { art ->
                         val layer = art.subject
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1415,16 +1413,21 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                             HeroLabel(
                                 app,
                                 named,
-                                cellFocused,
                                 cardMax,
                                 details = details,
                                 unfolds = resting && named.key == subject?.key && app.shell.summaryOpenFor == named.key,
                                 scale = scale,
                                 overArt = sceneArt,
-                                // A logo on wide art already says the name, once that art is this game's.
                                 named = !(staged.subject?.key == named.key && staged.images.logo != null),
-                                game = games[named.key],
-                            )
+                            ) {
+                                HeroFactFade(artFade, named) { shown ->
+                                    HeroFacts(
+                                        app, shown, cellFocused, cardMax,
+                                        details = rememberGameDetails(app, (shown as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null }),
+                                        game = games[shown.key],
+                                    )
+                                }
+                            }
                         }
                         finding.shown?.let { session ->
                             val found = session.subject
@@ -1492,11 +1495,18 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     }
 }
 
+/** The foreground artwork and its facts share these exact layers and opacity values. */
+private class HeroFade<T>(target: T?) {
+    val layers = mutableStateOf(HeroBlend(target, null, if (target == null) 0f else 1f, 0f))
+    val incoming = Animatable(layers.value.frontAlpha)
+    val outgoing = Animatable(0f)
+}
+
 /**
  * Crossfades the artwork onto the newest focus. A second change before this
  * finishes retargets the same two layers instead of starting another fade.
- * The name and details are not in these layers: two labels in one place
- * cannot be read. Art arrives from the way the cursor went, [travel], and the
+ * The name stays separate; the fact line shares the foreground's [fade].
+ * Art arrives from the way the cursor went, [travel], and the
  * art it replaces carries on out the other side. [depth] is the share of that
  * travel this layer moves. [grows] eases the arriving art up from just under
  * rest. [dissolves] keeps the leaving art up under the arriving art until it is
@@ -1517,22 +1527,16 @@ private fun <T> HeroCrossfade(
     grows: Boolean = true,
     dissolves: Boolean = false,
     covers: (T) -> Boolean = { false },
+    fade: HeroFade<T>? = null,
     content: @Composable (T) -> Unit,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
     val same: (T?, T?) -> Boolean = { left, right -> left?.let(keyOf) == right?.let(keyOf) }
-    var blend by remember {
-        mutableStateOf(
-            HeroBlend(
-                front = target,
-                back = null,
-                frontAlpha = if (target == null) 0f else 1f,
-                backAlpha = 0f,
-            ),
-        )
-    }
-    val incoming = remember { Animatable(blend.frontAlpha) }
-    val outgoing = remember { Animatable(blend.backAlpha) }
+    val ownFade = remember { HeroFade(target) }
+    val sharedFade = fade ?: ownFade
+    var blend by sharedFade.layers
+    val incoming = sharedFade.incoming
+    val outgoing = sharedFade.outgoing
     // Where each layer sits along the travel, in pixels before [depth].
     val inX = remember { Animatable(0f) }
     val inY = remember { Animatable(0f) }
@@ -1833,21 +1837,18 @@ private const val CHOSEN_LIFT = 0.1f
 private fun HeroLabel(
     app: FoldcadeApp,
     shown: HeroSubject,
-    cellFocused: Boolean,
     maxWidth: Dp,
     details: GameDetails?,
     unfolds: Boolean,
     scale: Float,
     overArt: Boolean = false,
     named: Boolean = true,
-    /** The game [shown] is, for its save and activity words. */
-    game: ShelfGame? = null,
+    facts: @Composable () -> Unit,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
     val motion = LocalFoldTheme.current.theme.motion
     val copy = heroCopy(shown)
-    val dateStyle = rememberDateStyle(app)
     val centred = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle, theme, display = true).copy(textAlign = TextAlign.Center)
     val item = (shown as? HeroSubject.Item)?.item
     val summary = details?.summary?.takeIf { item != null && !item.emptyShelfHint }
@@ -1890,58 +1891,7 @@ private fun HeroLabel(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (item?.emptyShelfHint == true) {
-                ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
-            } else {
-                val focusedGame = game?.takeIf { it.id == item?.key }
-                // What the library is doing with this game leads the line, in the focus colour.
-                val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
-                val activity = focusedGame?.let { app.shell.activityFor(it.id) }
-                val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
-                val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
-                val live = stopped?.let { Copy.downloadStopped } ?: activity?.let { heroActivityLine(health, it) }
-                val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
-                val rest = listOf(
-                    item?.availability.takeIf { live == null },
-                    played?.let {
-                        heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, game = item.game)
-                    },
-                )
-                val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
-                val year = details?.releaseYear
-                val genre = details?.genres?.firstOrNull()
-                // A game is measured with or without a year or genre, so its play line stays either way.
-                val facts = if (item == null) {
-                    heroFacts(copy.title, copy.detail, *rest.toTypedArray())
-                } else {
-                    // The line is measured as the card draws it, the save or activity word in front included.
-                    val measurer = rememberTextMeasurer()
-                    val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
-                    val lead = listOfNotNull(saveLine, live).joinToString(" · ")
-                    heroGameFacts(copy.title, copy.detail, year, genre, rest) { line ->
-                        val whole = listOfNotNull(lead, line.ifEmpty { null }).joinToString(" · ")
-                        measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
-                    }
-                }
-                if (facts.isNotEmpty() || live != null || saveLine != null) {
-                    BasicText(
-                        text = buildAnnotatedString {
-                            if (saveLine != null) {
-                                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
-                                if (live != null || facts.isNotEmpty()) append(" · ")
-                            }
-                            if (live != null) {
-                                withStyle(SpanStyle(color = theme.focus)) { append(live) }
-                                if (facts.isNotEmpty()) append(" · ")
-                            }
-                            append(facts)
-                        },
-                        style = metaStyle.copy(textAlign = TextAlign.Center),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            facts()
         }
         // The summary is laid out whole from the start and the card grows around it, so its lines never rewrap.
         if (summary != null) {
@@ -1950,6 +1900,99 @@ private fun HeroLabel(
                 modifier = Modifier.unfold { unfold.value }.padding(top = px(SUMMARY_GAP_PX)),
                 style = text(theme.muted, design.type.dialogBody, theme).copy(textAlign = TextAlign.Center),
                 maxLines = SUMMARY_LINES,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** One readable line for the named game, at that game's foreground-art alpha. */
+@Composable
+private fun HeroFactFade(fade: HeroFade<StagedHero>, named: HeroSubject, content: @Composable (HeroSubject) -> Unit) {
+    val blend = fade.layers.value
+    Box(Modifier.graphicsLayer {
+        alpha = heroFactAlpha(
+            named.key, blend.front?.subject?.key, blend.back?.subject?.key,
+            fade.incoming.value, fade.outgoing.value,
+        )
+    }) { content(named) }
+}
+
+/**
+ * The 400 ms name fallback must not put the previous game's facts under a new name.
+ * A line with no matching art waits invisibly at its own size; same-game upgrades
+ * keep it whole. Only one line is composed, so a dissolve never doubles the letters
+ * or holds the card open to the outgoing game's width.
+ */
+internal fun heroFactAlpha(named: String, front: String?, back: String?, incoming: Float, outgoing: Float): Float = when {
+    front == null && back == null -> 1f
+    named == front && front == back -> 1f
+    named == front -> incoming
+    named == back -> outgoing
+    else -> 0f
+}
+
+@Composable
+private fun HeroFacts(
+    app: FoldcadeApp,
+    shown: HeroSubject,
+    cellFocused: Boolean,
+    maxWidth: Dp,
+    details: GameDetails?,
+    game: ShelfGame?,
+) {
+    val theme = foldTheme()
+    val copy = heroCopy(shown)
+    val item = (shown as? HeroSubject.Item)?.item
+    val dateStyle = rememberDateStyle(app)
+    if (item?.emptyShelfHint == true) {
+        ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
+    } else {
+        val focusedGame = game?.takeIf { it.id == item?.key }
+        // What the library is doing with this game leads the line, in the focus colour.
+        val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
+        val activity = focusedGame?.let { app.shell.activityFor(it.id) }
+        val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
+        val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
+        val live = stopped?.let { Copy.downloadStopped } ?: activity?.let { heroActivityLine(health, it) }
+        val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
+        val rest = listOf(
+            item?.availability.takeIf { live == null },
+            played?.let {
+                heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, game = item.game)
+            },
+        )
+        val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
+        val year = details?.releaseYear
+        val genre = details?.genres?.firstOrNull()
+        // A game is measured with or without a year or genre, so its play line stays either way.
+        val facts = if (item == null) {
+            heroFacts(copy.title, copy.detail, *rest.toTypedArray())
+        } else {
+            // The line is measured as the card draws it, the save or activity word in front included.
+            val measurer = rememberTextMeasurer()
+            val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
+            val lead = listOfNotNull(saveLine, live).joinToString(" · ")
+            heroGameFacts(copy.title, copy.detail, year, genre, rest) { line ->
+                val whole = listOfNotNull(lead, line.ifEmpty { null }).joinToString(" · ")
+                measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
+            }
+        }
+        if (facts.isNotEmpty() || live != null || saveLine != null) {
+            BasicText(
+                text = buildAnnotatedString {
+                    if (saveLine != null) {
+                        withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
+                        if (live != null || facts.isNotEmpty()) append(" · ")
+                    }
+                    if (live != null) {
+                        withStyle(SpanStyle(color = theme.focus)) { append(live) }
+                        if (facts.isNotEmpty()) append(" · ")
+                    }
+                    append(facts)
+                },
+                style = metaStyle.copy(textAlign = TextAlign.Center),
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -3557,7 +3600,10 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
     // R3 Info, last and quiet, only for a game whose summary the hero can open.
-    val keys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfo())
+    val nextKeys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfo())
+    val lastKeys = remember { arrayOf(nextKeys) }
+    if (!LocalTravelLeaving.current) lastKeys[0] = nextKeys
+    val keys = lastKeys[0]
     // Open with on a game still open in its player says when its choice takes effect (UX-17).
     val note = panelNote(model)
     if (keys.isEmpty()) return
@@ -4827,131 +4873,135 @@ private fun Cell(
                         }
                         // Any other empty slot draws nothing, so the grid ends where its tiles do.
                     }
-                }
-                // The ring and glows above draw outside. The art itself stays inside the
-                // rounded tile, so a mark's square backing does not show at the corners.
-                .clip(RoundedCornerShape(corner))
-                .then(
-                    if (onPickUp != null && onDrag != null) {
-                        Modifier.pointerInput(title) {
-                            var walked = Offset.Zero
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    walked = Offset.Zero
-                                    onPickUp()
-                                },
-                                // Letting go puts the tile down where it is, into a group it is over.
-                                onDragEnd = { onDrop?.invoke() },
-                                onDrag = { _, amount ->
-                                    walked += amount
-                                    val step = size.toPx() * 0.45f
-                                    val meaning = when {
-                                        walked.x > step -> Meaning.MoveRight
-                                        walked.x < -step -> Meaning.MoveLeft
-                                        walked.y > step -> Meaning.MoveDown
-                                        walked.y < -step -> Meaning.MoveUp
-                                        else -> null
-                                    }
-                                    if (meaning != null) {
-                                        walked = Offset.Zero
-                                        onDrag(meaning)
-                                    }
-                                },
-                            )
-                        }
-                    } else {
-                        Modifier
-                    },
-                )
-                .hostPress(onClick)
-                // The title is on the tile, so the dump keeps it without a visible label.
-                .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
+                },
             contentAlignment = Alignment.Center,
         ) {
             if (socket) return@Box
-            if (icon != null) {
-                if (icon.fullBleed) {
-                    // An adaptive icon fills the tile edge to edge, resting back like a cover.
+            // Only the art is clipped. Status chips sit over the rim, as on the emulator shelf.
+            Box(
+                Modifier.fillMaxSize()
+                    .clip(RoundedCornerShape(corner))
+                    .then(
+                        if (onPickUp != null && onDrag != null) {
+                            Modifier.pointerInput(title) {
+                                var walked = Offset.Zero
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        walked = Offset.Zero
+                                        onPickUp()
+                                    },
+                                    // Letting go puts the tile down where it is, into a group it is over.
+                                    onDragEnd = { onDrop?.invoke() },
+                                    onDrag = { _, amount ->
+                                        walked += amount
+                                        val step = size.toPx() * 0.45f
+                                        val meaning = when {
+                                            walked.x > step -> Meaning.MoveRight
+                                            walked.x < -step -> Meaning.MoveLeft
+                                            walked.y > step -> Meaning.MoveDown
+                                            walked.y < -step -> Meaning.MoveUp
+                                            else -> null
+                                        }
+                                        if (meaning != null) {
+                                            walked = Offset.Zero
+                                            onDrag(meaning)
+                                        }
+                                    },
+                                )
+                            }
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .hostPress(onClick)
+                    // The title is on the tile, so the dump keeps it without a visible label.
+                    .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (icon != null) {
+                    if (icon.fullBleed) {
+                        // An adaptive icon fills the tile edge to edge, resting back like a cover.
+                        Image(
+                            bitmap = icon.image,
+                            contentDescription = title,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Image(
+                            bitmap = icon.image,
+                            contentDescription = title,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .scale(theme.artScale)
+                                .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
+                            contentScale = ContentScale.Fit,
+                        )
+                    }
+                } else if (art != null) {
+                    // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
                     Image(
-                        bitmap = icon.image,
+                        painter = art,
                         contentDescription = title,
                         modifier = Modifier
                             .fillMaxSize()
                             .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
                         contentScale = ContentScale.Crop,
                     )
-                } else {
-                    Image(
-                        bitmap = icon.image,
-                        contentDescription = title,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scale(theme.artScale)
-                            .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
-                        contentScale = ContentScale.Fit,
-                    )
-                }
-            } else if (art != null) {
-                // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
-                Image(
-                    painter = art,
-                    contentDescription = title,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
-                    contentScale = ContentScale.Crop,
-                )
-            } else if (!empty) {
-                val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
-                if (themedApp == null && glyph != null && CollectionLook.parse(mark) != null) {
-                    // A collection being dressed changes as the cursor moves, so each look fades in.
-                    Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            shown?.let { markGlyph(it) }?.let { MarkIcon(it, theme.artScale, glyphAlpha) }
+                } else if (!empty) {
+                    val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
+                    if (themedApp == null && glyph != null && CollectionLook.parse(mark) != null) {
+                        // A collection being dressed changes as the cursor moves, so each look fades in.
+                        Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                shown?.let { markGlyph(it) }?.let { MarkIcon(it, theme.artScale, glyphAlpha) }
+                            }
                         }
-                    }
-                } else if (glyph != null) {
-                    MarkIcon(glyph, theme.artScale, glyphAlpha)
-                } else if (control != null) {
-                    themeIconOrNull(control, CONTROL_PX)?.let { ink ->
-                        Image(
-                            painter = ink.painter,
-                            contentDescription = null,
-                            colorFilter = ink.tint(theme.onBackground),
-                            modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
+                    } else if (glyph != null) {
+                        MarkIcon(glyph, theme.artScale, glyphAlpha)
+                    } else if (control != null) {
+                        themeIconOrNull(control, CONTROL_PX)?.let { ink ->
+                            Image(
+                                painter = ink.painter,
+                                contentDescription = null,
+                                colorFilter = ink.tint(theme.onBackground),
+                                modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
+                            )
+                        }
+                    } else {
+                        BasicText(
+                            text = monogram(title),
+                            modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha() },
+                            style = text(
+                                theme.onBackground,
+                                LocalFoldTheme.current.theme.style.type.heroTitle,
+                                theme,
+                                display = true,
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
                         )
                     }
-                } else {
-                    BasicText(
-                        text = monogram(title),
-                        modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha() },
-                        style = text(
-                            theme.onBackground,
-                            LocalFoldTheme.current.theme.style.type.heroTitle,
-                            theme,
-                            display = true,
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Clip,
+                }
+                // A pinned app's dot, on its launcher icon or on the theme's object for it.
+                if (favorite && (icon != null || themedApp != null)) {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(px(8f))
+                            .size(px(tile.dotPx))
+                            .background(theme.focus, theme.style.shape.control()),
                     )
                 }
-            }
-            // A pinned app's dot, on its launcher icon or on the theme's object for it.
-            if (favorite && (icon != null || themedApp != null)) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(px(8f))
-                        .size(px(tile.dotPx))
-                        .background(theme.focus, theme.style.shape.control()),
-                )
-            }
-            val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
-            if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
-                .padding(maxOf(px(8f), corner * CORNER_SAFE))
-                .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
-                .clip(theme.style.shape.control()).background(theme.background)) {
-                CheckMark(true, focused, animatorScale)
+                val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
+                if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
+                        .padding(maxOf(px(8f), corner * CORNER_SAFE))
+                        .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
+                        .clip(theme.style.shape.control()).background(theme.background)) {
+                    CheckMark(true, focused, animatorScale)
+                }
             }
             // On the server, not on this device. A downloaded game has no badge at all.
             if (onServer || downloading || activity != null || saveHealth.needsAttention) {
@@ -4962,8 +5012,15 @@ private fun Cell(
                     activity = activity,
                     saveHealth = saveHealth,
                     animatorScale = animatorScale,
-                    // Far enough in that the tile's rounded corner never clips it.
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE)),
+                    // Transfers need a full-width bar; other chips straddle the top-right rim.
+                    modifier = if (activity is TileActivity.Downloading || activity == TileActivity.Checking) {
+                        Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE))
+                    } else {
+                        Modifier.align(Alignment.TopEnd).offset(
+                            x = px(tile.statusChipPx * tile.statusOverlap) - corner * CORNER_SAFE,
+                            y = -px(tile.statusChipPx * tile.statusOverlap) + corner * CORNER_SAFE,
+                        )
+                    },
                 )
             }
         }

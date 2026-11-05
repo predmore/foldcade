@@ -19,7 +19,7 @@ import kotlin.math.roundToInt
  * launch bloom starts from the same picture and keeps its title as it widens.
  */
 internal class TileCrop(private val uri: String) : Transformation() {
-    override val cacheKey: String = "foldcade.tileCrop.1"
+    override val cacheKey: String = "foldcade.tileCrop.2"
 
     override suspend fun transform(input: Bitmap, size: Size): Bitmap {
         val width = input.width
@@ -29,7 +29,7 @@ internal class TileCrop(private val uri: String) : Transformation() {
         // A wide image keeps its middle; only a tall box has a title to look for.
         val share = if (height > width) {
             val detail = rowDetail(input)
-            val start = richestStart(detail, DETAIL_COLUMNS)
+            val start = titleSafeStart(detail, DETAIL_COLUMNS)
             TileCrops.record(uri, TileCut(detail.size, start))
             start.toFloat() / (detail.size - DETAIL_COLUMNS).coerceAtLeast(1)
         } else 0.5f
@@ -133,4 +133,36 @@ internal fun richestStart(detail: IntArray, window: Int): Int {
         }
     }
     return best
+}
+
+/**
+ * Finish a detail band that the busiest square cuts through. In particular Metroid's
+ * brightest Samus rows outweighed the last few rows of its title, leaving half of METROID
+ * on the edge. Look only a small margin past the chosen edge for two quiet rows; without
+ * a quiet seam nearby keep the original square, rather than chase detail across the box.
+ */
+internal fun titleSafeStart(detail: IntArray, window: Int): Int {
+    val start = richestStart(detail, window)
+    val spare = detail.size - window
+    if (spare <= 0) return start
+    // Check both edges: the illustration can pull the richest square upward even
+    // when its bottom edge bisects a title (the Thor's tile-size Metroid decode).
+    fun finishBand(rows: IntArray, cut: Int): Int? {
+        val quiet = (cut until cut + window).sumOf { rows[it].toLong() } / window / 3
+        val edge = cut + window
+        if (rows[edge - 1] <= quiet) return null
+        val before = (maxOf(cut + 1, edge - window / 3) until edge - 1).lastOrNull {
+            rows[it - 1] <= quiet && rows[it] <= quiet
+        } ?: return null
+        for (end in edge + 2..minOf(rows.size, edge + window / 4)) {
+            if (rows[end - 2] <= quiet && rows[end - 1] <= quiet) {
+                // Only a short, isolated band, not a long run of illustration.
+                return (end - window).takeIf { end - (before + 1) <= window / 3 }
+            }
+        }
+        return null
+    }
+    val lower = finishBand(detail, start)
+    val upper = finishBand(detail.reversedArray(), spare - start)?.let { spare - it }
+    return listOfNotNull(lower, upper).minByOrNull { abs(it - start) } ?: start
 }

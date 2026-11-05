@@ -1950,6 +1950,7 @@
       "dotPx": 10,
       "statusChipPx": 36,
       "statusIconPx": 24,
+      "statusOverlap": 0.5,
       "statusBackingAlpha": 0.72,
       "downloadBarPx": 12,
       "downloadTrackAlpha": 0.4,
