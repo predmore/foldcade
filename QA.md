@@ -44,3 +44,18 @@ The second pass also caught a companion input gap beyond round 2: B on display 4
 - `rebased-themes-return-top.png`: the same input rule passed after rebasing and reinstalling with current main.
 
 Second-turn cleanup completed: no RomM device was registered (no credentials were entered), no save-backups directory existed, test package uninstalled, original Home holder restored from dumpsys role, original Wi-Fi state retained, stay-on false, turn released. No pending device work remains. Final small Opus re-check covers the input-forwarding addition and these fresh captures.
+
+## Final integration and long-press check
+
+Head **babcf82b77a4b2fa5056d2801683c4b9314e3332** includes all merged Library, Grid, Dialogs, Saves and Pages work through main c548ccc3. Resolved the About companion overlap by retaining its game cover and platform secondary line; wired Library-owned rommPageDetail(model) into SettingsInner.Romm.
+
+Final required suite: **2,722 tests, zero failures/errors, two skipped; 187 tasks executed**, `./gradlew testDebugUnitTest --rerun-tasks`, BUILD SUCCESSFUL. Log `/tmp/uxr-routing-tests-final.log`. Final APK manifest/hash: `build-final.json`; assembleDebug passed with isolated .uxrrouting suffix, CI music and branding.
+
+Third Thor turn (22:03–22:10 Pacific approximately):
+- Compared the previously pushed 43efc3b9 APK with the final integrated APK using display-4 `input keyevent --longpress KEYCODE_BUTTON_B` beside Themes and Licenses. Both retain the focused original Settings row. Final proof: `held-final-themes-after-top.png`, `held-final-licenses-after-top.png`. `held-final-next-back-top.png` proves the later fresh B still returns to categories.
+- Round 3's held-Back P2 is **skipped after verification**: existing Meaning.kt returns null for repeated Back before HomeActivity routing. The existing LicensesRowTest checks repeats 1..20 for standard/swapped faces, system Back and Escape, and a fresh press. The initially proposed extra guard/API/direct-Meaning test were removed as redundant. See `review3-disposition.md`.
+- Cleanup: no save-backups directory, no RomM device registration (no credentials entered), QA package uninstalled, original HOME app.foldcade restored, original Wi-Fi on retained, stay-on false, turn released. Release data/grants were untouched.
+
+Opus round 4 completed: **NO FINDINGS**, companions and guide **9/10**. It independently confirmed the held-Back objection is blocked by the existing input map and the extra guard should stay removed. It also checked native forwarding and the Library/Pages integration overlap. All scoped findings are resolved. Optional future work: Themes' ZIP document picker continues to show the plain Settings companion; the folder guide intentionally covers tree selection only.
+
+GitHub checks read once at handback: testDebugUnitTest, home music render, versionCode and generated icons passed; lintDebug and unsigned release dry-run were still running. CI/bot-review follow-through and merging belong to the orchestrator; this stream did not watch or merge.
