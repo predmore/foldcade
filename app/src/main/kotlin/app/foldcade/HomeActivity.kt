@@ -163,6 +163,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private var folderPurpose = FolderPurpose.Library
+    private var folderGuide: app.foldcade.language.FolderGuide? = null
     private var pendingLaunch: Int? = null
 
     /** A library game waiting on the save-folder ask, see [askSaveFolder]. Kept by the app, so a recreated Home still has it. */
@@ -201,6 +202,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        folderGuide = null
+        foldcade.shell.showFolderGuide(null)
         val purpose = folderPurpose
         folderPurpose = FolderPurpose.Library
         if (uri == null) {
@@ -356,6 +359,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
+        if (foldcade.shell.model.folderGuide != null) return
+        // Home underneath Themes or Licenses keeps its Settings focus, but only that activity takes keys.
+        val inputPanel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
+        if (inputPanel != null && foldcade.store.session.besideFoldcadePage(inputPanel)) return
         if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
         if (commandCenterKey(meaning)) return
         if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return
@@ -401,7 +408,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.AddFolder -> pickLibraryFolder()
             is Effect.PickFolderAgain -> {
                 folderPurpose = FolderPurpose.Library
-                folderPicker.launch(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
+                launchFolderPicker(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
             }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
             is Effect.ChoosePlayerSave -> choosePlayerSave(effect.playerId)
@@ -457,10 +464,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.PairStreamHost -> foldcade.pairMoonlightHost(effect.key, hostScreen())
             is Effect.DialogChoice -> onDialog(effect)
             Effect.RequestHome -> requestHome()
-            is Effect.OpenAndroidSetting -> openAndroidSetting(effect.setting)
+            is Effect.OpenAndroidSetting -> {
+                // Wi-Fi can be a translucent Android panel: Home pauses without stopping, so
+                // noteCovered alone cannot give its companion the command center.
+                val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
+                if (panel != null) foldcade.store.place(panel, ExternalApp(OTHER_APP_ID))
+                if (!openAndroidSetting(effect.setting) && panel != null) foldcade.store.update { it.foldcadeResumed(panel) }
+            }
             Effect.OpenAllFilesAccess -> openAllFilesAccess()
-            Effect.OpenLicenses -> startActivity(Intent(this, LicensesActivity::class.java))
-            Effect.OpenThemes -> startActivity(Intent(this, ThemesActivity::class.java))
+            Effect.OpenLicenses -> openSettingsPage(LicensesActivity::class.java)
+            Effect.OpenThemes -> openSettingsPage(ThemesActivity::class.java)
             Effect.OpenBackup -> {
                 val screen = foldcade.shell.model.backupDialogScreen(hostScreen())
                 foldcade.scope.launch {
@@ -674,7 +687,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(
             STATE_FOLDER_PICKER,
-            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId).encode(),
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId, folderGuide).encode(),
         )
         foldcade.shell.model.saveSetup?.let { outState.putString(STATE_SAVE_SETUP, it.focus.orEmpty()) }
     }
@@ -685,8 +698,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             folderPurpose = restored.purpose
             pendingLaunch = restored.pendingLaunch
             settingsPlayerId = restored.settingsPlayerId
+            folderGuide = restored.guide
         }
         foldcade.homeCreated(this)
+        folderGuide?.let(foldcade.shell::showFolderGuide)
         // The process may have died behind Android's picker or an emulator. A live one still has the page.
         savedInstanceState?.getString(STATE_SAVE_SETUP)?.let { focus ->
             foldcade.shell.restoreSaveSetup(focus.ifEmpty { null }, hostScreen())
@@ -2470,7 +2485,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun pickLibraryFolder() {
         folderPurpose = FolderPurpose.Library
         val start = foldcade.shell.model.romFolderOffer?.start ?: foldcade.shell.model.folderStart ?: "primary:"
-        folderPicker.launch(Uri.parse(storageFolderDocument(start)))
+        launchFolderPicker(Uri.parse(storageFolderDocument(start)))
     }
 
     /**
@@ -3065,16 +3080,53 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         settingsPlayerId = player.id
         if (player is RetroArchPlayer) {
             folderPurpose = FolderPurpose.Firmware
-            folderPicker.launch(Uri.parse(foldcade.store.playerFirmwareFolder("retroarch") ?: app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
+            launchFolderPicker(Uri.parse(foldcade.store.playerFirmwareFolder("retroarch") ?: app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER))
         } else {
             folderPurpose = FolderPurpose.Settings
             openSaveFolderPicker(player)
         }
     }
 
+    /**
+     * One handoff for all SAF trees: the free screen guides the choice until a result arrives.
+     * OpenDocumentTree supplies EXTRA_INITIAL_URI and returns null for cancellation:
+     * https://developer.android.com/reference/androidx/activity/result/contract/ActivityResultContracts.OpenDocumentTree
+     */
+    private fun launchFolderPicker(initialUri: Uri?) {
+        val playerId = when (folderPurpose) {
+            FolderPurpose.EdenFolder, FolderPurpose.EdenSaveOffer -> foldcade.plugins.playerIds().firstOrNull { foldcade.plugins.player(it) is EdenPlayer }
+            FolderPurpose.RetroArchCores -> foldcade.plugins.playerIds().firstOrNull { foldcade.plugins.player(it) is RetroArchPlayer }
+            FolderPurpose.Library -> null
+            else -> settingsPlayerId
+        }
+        val guide = app.foldcade.language.FolderGuide(hostScreen(), playerId, opensThere = initialUri != null)
+        folderGuide = guide
+        foldcade.shell.showFolderGuide(guide)
+        try {
+            folderPicker.launch(initialUri)
+        } catch (failure: RuntimeException) {
+            folderGuide = null
+            foldcade.shell.showFolderGuide(null)
+            throw failure
+        }
+    }
+
+    private fun openSettingsPage(page: Class<*>) {
+        foldcade.noteSettingsPage(this)
+        try {
+            startActivity(Intent(this, page))
+        } catch (failure: RuntimeException) {
+            displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+                foldcade.store.update { it.foldcadeResumed(panel) }
+            }
+            throw failure
+        }
+    }
+
     /** Opens the save-folder picker at the start the last look found. */
     private fun openSaveFolderPicker(player: Player?) {
-        folderPicker.launch(foldcade.saveFolderStart(player)?.let(Uri::parse))
+        settingsPlayerId = player?.id
+        launchFolderPicker(foldcade.saveFolderStart(player)?.let(Uri::parse))
     }
 
     /**
@@ -3192,7 +3244,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val packageName = EDEN_PACKAGES.firstOrNull(::packageInstalled) ?: return
         if (!fromOffer) clearPendingLaunch()
         folderPurpose = if (fromOffer) FolderPurpose.EdenSaveOffer else FolderPurpose.EdenFolder
-        folderPicker.launch(EdenFolders.root(packageName))
+        launchFolderPicker(EdenFolders.root(packageName))
     }
 
     /**
@@ -3336,7 +3388,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val packageName = foldcade.retroArchPlayer()?.cores?.activePackage()
         retroArchRetry = retry
         folderPurpose = FolderPurpose.RetroArchCores
-        folderPicker.launch(packageName?.let(RetroArchCoreReader::dataFolder))
+        launchFolderPicker(packageName?.let(RetroArchCoreReader::dataFolder))
     }
 
     /** The offer was answered without a folder. Launches try the system's first core from now on. */

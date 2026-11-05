@@ -281,7 +281,8 @@ class SettingsTilesTest {
         assertEquals(Row.RommConnection("romm", "RomM"), settingsFocus(onRomm))
         val (opened, effect) = reduce(onRomm, Meaning.Activate, HostScreen.Top)
         assertNull(effect)
-        assertEquals(PanelLevel.RommConnection, opened.panel?.level)
+        assertEquals(SettingsInner.Romm, opened.settings?.inner)
+        assertNull(opened.panel)
         assertEquals(onRomm.settings, reduce(opened, Meaning.Back, HostScreen.Top).first.settings)
     }
 

@@ -68,6 +68,7 @@ class LicensesActivity : PanelKeyActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as FoldcadeApp).noteSettingsPage(this)
         val foldcadeNotice = assets.open(FOLDCADE_LICENSE_ASSET).bufferedReader().use { it.readText() }
         val museScoreNotice = assets.open(MUSESCORE_LICENSE_ASSET).bufferedReader().use { it.readText() }
         val notice = "Foldcade\n\n${foldcadeNotice.trim()}\n\n$museScoreNotice"
@@ -99,11 +100,11 @@ class LicensesActivity : PanelKeyActivity() {
 
     override fun onStart() {
         super.onStart()
-        (application as FoldcadeApp).settingsPagesOpen++
+        (application as FoldcadeApp).settingsPageActivity = this
     }
 
     override fun onStop() {
-        (application as FoldcadeApp).settingsPagesOpen--
+        (application as FoldcadeApp).let { if (it.settingsPageActivity === this) it.settingsPageActivity = null }
         super.onStop()
     }
 

@@ -33,6 +33,8 @@ enum class Surface {
 data class ExternalApp(
     val id: String,
     val occupiesBothDisplays: Boolean = false,
+    /** Themes and Licenses cover Home, but remain part of its Settings page. */
+    val foldcadePage: Boolean = false,
 )
 
 /**
@@ -106,6 +108,11 @@ data class Session(
 
     /** True while Foldcade draws something on [panel]: not an app's, and not dark. */
     fun draws(panel: Panel): Boolean = surfaceOn(panel).let { it != null && it != Surface.Dark }
+
+    /** An activity-backed Foldcade page keeps its parent page here while Home is covered. */
+    fun pageAvailable(panel: Panel): Boolean = draws(panel) || externalOn(panel)?.foldcadePage == true
+
+    fun besideFoldcadePage(panel: Panel): Boolean = externalOn(panel.flip())?.foldcadePage == true
 
     private fun besideApp(panel: Panel): Surface =
         if (browsing == panel) Surface.Picker else Surface.CommandCenter

@@ -143,6 +143,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.foldcade.language.companionPageOn
+import app.foldcade.language.folderGuideOn
+import app.foldcade.language.CompanionPage
 import app.foldcade.language.actionFaces
 import app.foldcade.language.appName
 import app.foldcade.language.appShortName
@@ -342,7 +345,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     }
     val drawsHere = panel != null && session.draws(panel)
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
-    val besidePage = screen != null && pageBeside(app, model, session, screen) != null
+    val besidePage = model.folderGuide != null || (screen != null && pageBeside(app, model, session, screen) != null)
     // A menu or a page open on the other screen blurs this one. Over this screen's own grid, as with one screen, it does not.
     // Y's menu sits by its tile on the grid's screen and leaves the hero as it is, title and all.
     val menuOn = model.panel?.takeIf { it.side != Side.Tile }?.screen ?: model.settings?.screen ?: model.playActivity?.screen ?: model.gameAbout?.screen
@@ -361,7 +364,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         snap = heldBlur != null,
     )
     // Set up saves beside an emulator shows that emulator's steps, so it stays at the panel's own brightness.
-    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null
+    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null && model.folderGuide == null
     val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
     // Either panel's level can move while dimmed, and a darker one still wins.
     LaunchedEffect(dimmed, dark, app.brightness.revision) { activity.applyCommandCenterDim(dimmed, dark) }
@@ -381,7 +384,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                 .focusRequester(activity.panelFocus)
                 .background(if (dark) Color.Black else paint.theme.background)
                 .wakesCommandCenter(app, panel),
-        ) {
+        ) panelContent@ {
             val wallpaper = when (panel) {
                 Panel.Top -> paint.wallpaperTop
                 Panel.Bottom -> paint.wallpaperBottom
@@ -406,6 +409,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                     }
                 }
             }
+            if (model.folderGuide != null) return@panelContent
             // A page split over two screens puts its showcase half with the hero and its
             // controls with the grid. With no hero, the controls are all there is.
             val heroHere = panel != null && session.heroPanel() == panel
@@ -541,6 +545,10 @@ private fun PanelBody(
     val app = activity.application as FoldcadeApp
     val session = app.store.session
     val model = app.shell.model
+    if (screen != null && session.draws(screen.panel())) model.folderGuideOn(screen)?.let { guide ->
+        FolderGuideScreen(app, guide)
+        return
+    }
     val cover = remember { BackdropCover() }
     // One camera for both screens: the top's scene slides with the bottom's grid.
     val camera = app.backdropCamera
@@ -627,7 +635,9 @@ private fun PanelBody(
                 }
             }
         }
-        if (connectHere) ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus, activity::dispatchFormKeyEvent)
+        if (connectHere) Box(Modifier.fillMaxSize().background(foldTheme().background.copy(alpha = 1f))) {
+            ConnectScreen(app, screen, activity::dispatch, activity::takeKeyboardFocus, activity::dispatchFormKeyEvent)
+        }
     }
     if (session.controlsPanel() == panel) artPage.shown?.let { shown ->
         Box(Modifier.fillMaxSize().rise { artPage.progress.value }) { ArtPickerScreen(app, shown, scale) }
@@ -638,7 +648,11 @@ private fun PanelBody(
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
             CommandCenterScreen(app, subject, hints = !subject.settings) {
                 when {
-                    subject.settings -> app.shell.closeSettings()
+                    model.connectOpen -> app.shell.closeConnect()
+                    subject.settings -> {
+                        app.settingsPageActivity?.finish()
+                        app.shell.closeSettings()
+                    }
                     app.shell.model.gameAbout != null -> app.shell.closeGameAbout()
                     else -> app.shell.closePlayActivity()
                 }
@@ -646,15 +660,15 @@ private fun PanelBody(
         }
     }
     settings.shown?.let { shown ->
-        Box(Modifier.fillMaxSize().rise { settings.progress.value }) {
+        Box(Modifier.fillMaxSize().rise { settings.progress.value }.background(foldTheme().background.copy(alpha = 1f))) {
             SettingsScreen(app, screen, shown, scale, activity::dispatch)
         }
     }
     played.shown?.let { shown ->
-        Box(Modifier.fillMaxSize().rise { played.progress.value }) { PlayActivityScreen(app, shown) }
+        Box(Modifier.fillMaxSize().rise { played.progress.value }.background(foldTheme().background.copy(alpha = 1f))) { PlayActivityScreen(app, shown) }
     }
     about.shown?.let { shown ->
-        Box(Modifier.fillMaxSize().rise { about.progress.value }) { GameAboutScreen(app, shown, scale) }
+        Box(Modifier.fillMaxSize().rise { about.progress.value }.background(foldTheme().background.copy(alpha = 1f))) { GameAboutScreen(app, shown, scale) }
     }
 }
 
@@ -870,7 +884,7 @@ private sealed interface CenterSubject {
 private fun centerSubject(app: FoldcadeApp, panel: Panel): CenterSubject {
     val known = app.commandCenter.beside(panel)
     val other = known == null && app.commandCenter.besideOther(panel)
-    if (other && app.settingsPagesOpen > 0) {
+    if (app.store.session.besideFoldcadePage(panel)) {
         return CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
     }
     val minute = app.deviceStatus.status.collectAsStateWithLifecycle().value.minute
@@ -893,20 +907,20 @@ private fun pageBeside(
     screen: HostScreen,
 ): CenterSubject.Page? {
     // The dark screen stays dark beside a page too.
-    if (!session.bothScreensFree() || session.surfaceOn(screen.panel()) == Surface.Dark) return null
-    val settings = model.settings
-    val playActivity = model.playActivity
+    if ((!session.bothScreensFree() && !session.besideFoldcadePage(screen.panel())) || session.surfaceOn(screen.panel()) == Surface.Dark) return null
     val about = model.gameAbout
-    return when {
-        settings != null && settings.screen != screen ->
+    return when (model.companionPageOn(screen)) {
+        CompanionPage.Romm -> CenterSubject.Page(Copy.rommConnection, null, "cloud", settings = true)
+        CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, null, "cloud", settings = true)
+        CompanionPage.Settings ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
-        playActivity != null && playActivity.screen != screen ->
+        CompanionPage.PlayActivity ->
             // The clock L1's chip and Y › Play time wear.
             CenterSubject.Page(PlayCopy.activity, R.drawable.ic_status_playtime, null, settings = false)
-        about != null && about.screen != screen -> {
-            val game = app.shell.aboutGame(about.game)
+        CompanionPage.About -> {
+            val game = about?.let { app.shell.aboutGame(it.game) }
             CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false,
-                game = about.game, platform = game?.shortText?.takeIf { it.isNotBlank() })
+                game = about?.game, platform = game?.shortText?.takeIf { it.isNotBlank() })
         }
         else -> null
     }

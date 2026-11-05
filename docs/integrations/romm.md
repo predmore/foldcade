@@ -43,7 +43,7 @@ A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write
 
 Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 
-Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**. Sign out asks first: saves stop syncing and RomM's games leave Home.
+Select the RomM tile in **Settings › Library** to open its source page, then **Edit connection** or **Sign out**. **B** from Edit connection returns to that page; **B** again returns to the RomM tile. Sign out asks first: saves stop syncing and RomM's games leave Home.
 
 While signed in, changing to a different server address asks for that server's token. Your existing token stays on its own server until the new connection is checked. A setup restored without a sign-in can use phone pairing for a different address.
 
@@ -54,7 +54,7 @@ Pairing uses a separate connection until approval and sign-in checks finish. Bac
 After restoring a setup backup, which leaves sign-ins out, or once RomM refuses the saved token, RomM waits for a sign-in, and saves wait on the device until then. Foldcade says so everywhere RomM shows:
 
 - R1 keeps a notice, **RomM: sign in to sync saves**, that has no Dismiss. **A** opens the sign-in form.
-- The RomM tile in **Settings › Library** wears the not-syncing mark, and its menu reads **Signed out**, with **Sign in** and **Remove**.
+- The RomM tile in **Settings › Library** wears the not-syncing mark, and its page reads **Signed out**, with **Sign in** and **Remove**.
 - A restored RomM game on Home is a gap until then. Focused, the top screen reads **Waiting for RomM** and **Sign in to bring it back**; **A**, or **Sign in** in its **Y** menu, opens the form.
 
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.

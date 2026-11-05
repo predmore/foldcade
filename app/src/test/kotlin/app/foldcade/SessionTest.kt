@@ -9,6 +9,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SessionTest {
+    @Test fun settingsActivitiesArePageDestinationsWithoutASecondGrid() {
+        for (layout in ScreenLayout.entries) {
+            val page = Session(layout = layout).place(Panel.Top, ExternalApp("themes", foldcadePage = true))
+            assertNull(page.surfaceOn(Panel.Top))
+            assertTrue(page.pageAvailable(Panel.Top))
+            assertTrue(page.besideFoldcadePage(Panel.Bottom))
+            assertEquals(if (layout == ScreenLayout.TopOnly) Surface.Dark else Surface.CommandCenter, page.surfaceOn(Panel.Bottom))
+            val returned = page.foldcadeResumed(Panel.Top)
+            assertTrue(returned.bothScreensFree())
+            assertFalse(returned.besideFoldcadePage(Panel.Bottom))
+        }
+        val game = Session().place(Panel.Top, ExternalApp("game"))
+        assertFalse(game.pageAvailable(Panel.Top))
+        assertFalse(game.besideFoldcadePage(Panel.Bottom))
+    }
     private val one = ExternalApp("stand-in.one")
     private val two = ExternalApp("stand-in.two")
     private val both = ExternalApp("both-panels", occupiesBothDisplays = true)

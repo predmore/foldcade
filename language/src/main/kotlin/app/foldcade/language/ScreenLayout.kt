@@ -130,3 +130,20 @@ fun PickerModel.pageOn(screen: HostScreen): Boolean = dialog?.screen == screen |
 fun PickerModel.fullPageOn(screen: HostScreen): Boolean =
     settings?.screen == screen || (connectOpen && connectScreen == screen) ||
         playActivity?.screen == screen || gameAbout?.screen == screen
+
+/** The full page whose command center belongs on the other screen. Forms cover their parent. */
+enum class CompanionPage { Settings, PlayActivity, About, Romm, ArtKey }
+
+fun PickerModel.companionPageOn(screen: HostScreen): CompanionPage? = when {
+    connectOpen && connectScreen != null && connectScreen != screen ->
+        if (connectKind == ConnectKind.ArtKey) CompanionPage.ArtKey else CompanionPage.Romm
+    settings != null && settings.screen != screen -> CompanionPage.Settings
+    playActivity != null && playActivity.screen != screen -> CompanionPage.PlayActivity
+    gameAbout != null && gameAbout.screen != screen -> CompanionPage.About
+    else -> null
+}
+
+/** A live Android tree picker. This is transient, and restored with its Activity Result state. */
+data class FolderGuide(val screen: HostScreen, val playerId: String? = null, val opensThere: Boolean = true)
+
+fun PickerModel.folderGuideOn(screen: HostScreen): FolderGuide? = folderGuide?.takeIf { it.screen != screen }

@@ -37,8 +37,9 @@ class RommConnectionNavigationTest {
             val (opened, effect) = reduce(selected, Meaning.Activate)
             assertNull(effect)
             assertFalse(opened.connectOpen)
-            assertEquals(connections[index], opened.panel?.connection)
-            val rows = panelRows(opened.panel!!, opened)
+            assertEquals(SettingsInner.Romm, opened.settings?.inner)
+            assertNull(opened.panel)
+            val rows = settingsInnerRows(SettingsInner.Romm, opened)
             assertEquals("Edit connection", rowLabel(rows[0], opened))
             assertEquals("Sign out", rowLabel(rows[1], opened))
 
@@ -46,7 +47,8 @@ class RommConnectionNavigationTest {
             assertEquals(Effect.EditRommConnection, edit)
             assertTrue(editing.connectOpen)
             assertNull(editing.panel)
-            assertEquals(opened.panel, reduce(editing, Meaning.Back).first.panel)
+            assertEquals(opened.settings, reduce(editing, Meaning.Back).first.settings)
+            assertNull(editing.connectReturnPanel)
             assertEquals(selected.settings, reduce(opened, Meaning.Back).first.settings)
         }
     }
@@ -74,8 +76,8 @@ class RommConnectionNavigationTest {
         val selected = home.onSetting(Row.RommConnection("romm", "RomM"))
         val (opened, effect) = reduce(selected, Meaning.Activate)
         assertNull(effect)
-        assertNull(opened.settings)
-        assertEquals(PanelLevel.RommConnection, opened.panel?.level)
+        assertEquals(SettingsInner.Romm, opened.settings?.inner)
+        assertNull(opened.panel)
         val editing = reduce(opened, Meaning.Activate).first
         val actions = reduce(editing, Meaning.Back).first
         val returned = reduce(actions, Meaning.Back).first

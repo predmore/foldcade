@@ -499,7 +499,7 @@ class ShellController(
             val stable = app.foldcade.language.retainSaveSetup(current,
                 app.foldcade.language.retainSettingsShelf(current, app.foldcade.language.retainSettingsCategory(current, app.foldcade.language.retainMenuRows(current, previewed))))
                 // Off the dark screen, and off one a game holds.
-                .onShownScreens { store.session.draws(it.panel()) }
+                .onShownScreens { store.session.pageAvailable(it.panel()) }
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -890,6 +890,7 @@ class ShellController(
     }
 
     fun onMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int = 0, inputWindow: String = inputWindow(screen)): Effect? {
+        if (model.folderGuide != null) return null
         if (swallowsHomeReturnRepeat(repeatCount)) return null
         landHomeReturn()
         if (ignoreReturnRepeats && repeatCount > 0) return null
@@ -1353,7 +1354,7 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
+        model.folderGuide != null || model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
             // Settings, Play activity and a game's About opened from that grid, as beside a game on the top screen.
             model.settings != null || model.playActivity != null || model.gameAbout != null
 
@@ -2903,6 +2904,10 @@ class ShellController(
         val session = store.session
         val covered = page?.takeIf { !session.draws(it.screen.panel()) || session.surfaceOn(it.screen.panel()) == Surface.CommandCenter }
         publish(covered?.let { model.copy(gameAbout = null, focus = it.grid) } ?: model)
+    }
+
+    internal fun showFolderGuide(guide: app.foldcade.language.FolderGuide?) {
+        publish(model.copy(folderGuide = guide))
     }
 
     /** The game a page about [gameId] shows: the tile it is now, as Home shows it. Null once no library lists it. */
