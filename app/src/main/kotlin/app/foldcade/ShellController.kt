@@ -2293,9 +2293,9 @@ class ShellController(
         if (activity[tileId] == TileActivity.LoadingLibrary) activity = activity - tileId
     }
 
-    /** Both screens reuse the name resolved once at the press, with no history/cache lookups in the grid. */
+    /** A newly named waiting face takes precedence over the title resolved at the press. */
     fun displayTitle(game: ShelfGame, activity: TileActivity? = activityOf(game.id)): String =
-        if (game.waitingForRomm && activity == TileActivity.LoadingLibrary) catalogWaitTitles[game.id] ?: game.title
+        if (game.waitingForRomm && activity == TileActivity.LoadingLibrary && game.title == BackupCopy.waiting("RomM")) catalogWaitTitles[game.id] ?: game.title
         else pendingGameTitle(game.title, game.id, activity, remembered = catalogWaitTitles[game.id])
 
     /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */

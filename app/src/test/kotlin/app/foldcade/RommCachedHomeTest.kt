@@ -96,8 +96,21 @@ class RommCachedHomeTest {
         val home = HomeSession(encodeHome(HomeBoard(slots = listOf(HOME_ALL, pinned))), rememberedName = { name })
         assertEquals("Waiting for RomM", home.face(1)!!.title)
         name = "Super Metroid"
-        assertEquals(name, home.faceOf(pinned).title)
         assertEquals(name, home.face(1)!!.title)
+    }
+
+    @Test fun waitingFacesUseTheCurrentMemoryNameAndRetainItAcrossAMiss() {
+        var name: String? = "Metadata title"
+        val home = HomeSession(encodeHome(HomeBoard(slots = listOf(HOME_ALL, pinned))), rememberedName = { name })
+        val board = home.board
+        assertEquals(name, home.face(1)!!.title)
+        name = "History title"
+        assertEquals(name, home.face(1)!!.title)
+        assertSame(board, home.board)
+        val faces = home.faces()
+        assertSame(faces, home.faces()) // No new face list while its contents stay the same.
+        name = null
+        assertEquals("History title", home.face(1)!!.title)
     }
 
     @Test fun anEarlySnapshotKeepsStartupPlacementsUntilTheCompleteListingReportsMissingGames() {

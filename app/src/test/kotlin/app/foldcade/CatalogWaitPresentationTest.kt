@@ -38,15 +38,13 @@ import org.junit.Test
 class CatalogWaitPresentationTest {
     private val id = "lib:romm:23"
 
-    @Test fun bothScreensUseHistoryWithoutLookingItUpAgainWhileDrawing() {
-        var reads = 0
-        val shell = shell(remembered = { reads++; "Gain Ground" })
+    @Test fun bothScreensUseLoadedHistoryWithoutFetchingArtForAnUnknownGame() {
+        val shell = shell(remembered = { "Gain Ground" })
         shell.beginCatalogWait(id)
         repeat(10) {
             assertEquals("Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)
             assertEquals("Gain Ground", shell.displayTitle(shell.findGame(id), shell.activityAt(index(shell))))
         }
-        assertEquals(1, reads)
         assertNull("No cached metadata means no premature provider fetch", shell.artRecord(shell.findGame(id)))
         assertNull("Do not cache an artwork search before the catalog is known", shell.artQuery(shell.findGame(id)))
         assertNull(shell.focusedRecord())
@@ -63,6 +61,19 @@ class CatalogWaitPresentationTest {
         shell.ingestLibrary("romm", listOf(GridEntry("23", record.label, "", record.platformId, null, false, record)), emptyList())
         assertEquals("Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)
         assertEquals("Gain Ground", shell.displayTitle(shell.findGame(id), TileActivity.LoadingLibrary))
+    }
+
+    @Test fun aLaterHistoryNameUpdatesBothScreensDuringAndAfterTheWait() {
+        var name = "First cached title"
+        val shell = shell(remembered = { name })
+        shell.beginCatalogWait(id)
+        assertEquals(name, (shell.focusedHero() as HeroSubject.Item).item.title)
+        name = "Better history title"
+        assertEquals(name, shell.homeFace(index(shell))!!.title)
+        assertEquals(name, (shell.focusedHero() as HeroSubject.Item).item.title)
+        assertEquals(name, shell.displayTitle(shell.findGame(id)))
+        shell.endCatalogWait(id)
+        assertEquals(name, (shell.focusedHero() as HeroSubject.Item).item.title)
     }
 
     @Test fun anOfflineMetadataSnapshotNamesAndIllustratesAWaitBeforeHomeIngestsIt() = runBlocking {
@@ -87,12 +98,18 @@ class CatalogWaitPresentationTest {
             shell.endCatalogWait(id)
             // The ordinary background metadata restore fills memory; no catalog is published to Home.
             host.metadata(RommCredentials.METADATA_ID)!!.details(Game("romm", "23", "", Availability.RemoteOnly, id))
+            assertEquals("Cached Gain Ground", shell.homeFace(index(shell))!!.title)
+            assertEquals("Cached Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)
             shell.beginCatalogWait(id)
             val game = shell.findGame(id)
             assertEquals("Cached Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)
             assertEquals("Cached Gain Ground", shell.artQuery(game)!!.title)
             val covers = CoverArt(host, ArtFinder({ emptyList() }, ArtIndex(root.resolve("art-index").toFile())))
             assertEquals("https://romm.example/cover/23.png", covers.cached(shell.artRecord(game), shell.artQuery(game))!!.cover)
+            shell.endCatalogWait(id)
+            assertEquals("Cached Gain Ground", (shell.focusedHero() as HeroSubject.Item).item.title)
+            assertEquals("Cached Gain Ground", shell.homeFace(index(shell))!!.title)
+            assertNull(shell.launchRoute(id))
             // A cold Home can already name a waiting tile from metadata restored into memory.
             val cold = shell(host)
             assertEquals("Cached Gain Ground", (cold.focusedHero() as HeroSubject.Item).item.title)

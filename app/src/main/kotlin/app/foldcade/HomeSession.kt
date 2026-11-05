@@ -396,18 +396,35 @@ class HomeSession(
     private var facesCache: List<HomeFace> = emptyList()
     private val waitingNames = HashMap<String, String>()
 
-    private fun waitingName(id: String): String? = waitingNames[id] ?: rememberedName(id)?.trim()
-        ?.takeIf { it.isNotEmpty() && it != id }?.also {
-            waitingNames[id] = it
-            // A direct face lookup can learn a name before the visible faces are read again.
-            facesBoard = null
-        }
+    private fun waitingName(id: String): String? {
+        // Prefer the current memory source; the last name is only a fallback across a miss.
+        val current = rememberedName(id)?.trim()?.takeIf { it.isNotEmpty() && it != id }
+        if (current != null) waitingNames[id] = current
+        return current ?: waitingNames[id]
+    }
 
-    fun face(index: Int): HomeFace? = faces().getOrNull(index)
+    fun face(index: Int): HomeFace? = faces(index).getOrNull(index)
 
-    fun faces(): List<HomeFace> {
+    fun faces(): List<HomeFace> = faces(null)
+
+    private fun faces(only: Int?): List<HomeFace> {
         if (board.allOpen) return allFaces()
-        if (facesBoard === board && facesMerge == merges && facesIcon === iconPick && facesGaps === restoredGaps) return facesCache
+        if (facesBoard === board && facesMerge == merges && facesIcon === iconPick && facesGaps === restoredGaps) {
+            // History/metadata can gain a name without a board merge. Refresh only waiting
+            // faces being read, and keep the cached list when no displayed value changed.
+            var changed: MutableList<HomeFace>? = null
+            val indices = if (only == null) facesCache.indices else only..only
+            for (index in indices) {
+                val before = facesCache.getOrNull(index)?.takeIf { it.waitingForRomm } ?: continue
+                val after = faceFor(before.id)
+                if (after != before) {
+                    if (changed == null) changed = facesCache.toMutableList()
+                    changed[index] = after
+                }
+            }
+            if (changed != null) facesCache = changed
+            return facesCache
+        }
         return (if (board.foldersOpen) folderFaces() else slots().map(::faceFor)).also {
             facesCache = it
             facesBoard = board
