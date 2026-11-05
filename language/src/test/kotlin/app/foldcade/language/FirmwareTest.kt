@@ -19,9 +19,11 @@ class FirmwareTest {
         assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system. Then start the game again.", local)
         assertFalse(local.contains("RomM"))
         val connected = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true)
-        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system or RomM’s firmware. Then start the game again.", connected)
+        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Add it to RomM’s firmware for Sega CD, or put it in RetroArch/system. Then start the game again.", connected)
         assertTrue(connected.indexOf("Sega CD") < connected.indexOf("bios_CD_U.bin"))
-        assertTrue(connected.length < 130)
+        // RomM, the way that places the file by itself, comes before the folder.
+        assertTrue(connected.indexOf("RomM") < connected.indexOf("RetroArch/system"))
+        assertTrue(connected.length < 140)
         assertTrue(FirmwareCopy.missing("PlayStation", listOf("PlayStation BIOS (.bin)"), "DuckStation/bios").startsWith("Missing the PlayStation BIOS (.bin)."))
     }
 

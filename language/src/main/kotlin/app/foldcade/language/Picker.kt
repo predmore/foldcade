@@ -1215,6 +1215,8 @@ data class LibraryFolder(
     val media: Boolean = false,
     /** Foldcade found it by itself (`ROMs`, `Emulation/roms`). Remove keeps it away for good. */
     val found: Boolean = false,
+    /** Read through, and it brought no games, art or facts: its page offers Pick again. */
+    val empty: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1253,6 +1255,13 @@ data class PairingCode(val code: String, val url: String) {
  * server to pair with), Pair with phone for a new code, and nothing to press while a phone
  * can approve the code on screen.
  */
+/** The RomM form's title, which the page beside it wears too: editing, signing in again, or adding. */
+fun rommConnectTitle(model: PickerModel, saved: Boolean): String = when {
+    model.connectReturnPanel != null && !model.rommSignIn -> Copy.editRommConnection
+    saved -> Copy.signInRomm
+    else -> Copy.addRommServer
+}
+
 fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
     busy -> Copy.connecting
     tokenTyped -> Copy.connect

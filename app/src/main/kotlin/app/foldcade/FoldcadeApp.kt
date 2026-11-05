@@ -2254,13 +2254,19 @@ class FoldcadeApp : Application() {
         val grantOf = { uri: String -> runCatching { folderGrantUri(uri) }.getOrNull() }
         val gamesIn = gameUris.groupingBy(grantOf).eachCount()
         val mediaIn = sources.mapNotNullTo(HashSet(), grantOf)
+        val read = boundForest?.reportedTrees.orEmpty()
         val picked = store.libraryFolders().map { folder ->
             val grant = grantOf(folder.uri)
+            val games = gamesIn[grant] ?: 0
+            val media = grant in mediaIn
+            val artAndInfo = isMediaOnlyLibraryTree(folder.uri, sources, gameUris)
             folder.copy(
-                artAndInfo = isMediaOnlyLibraryTree(folder.uri, sources, gameUris),
+                artAndInfo = artAndInfo,
                 path = runCatching { folderPathLabel(folder.uri) }.getOrNull(),
-                games = gamesIn[grant] ?: 0,
-                media = grant in mediaIn,
+                games = games,
+                media = media,
+                // As useFolder's empty-folder notice decides it: scanned, read, and nothing in it.
+                empty = scan != null && folder.uri in read && games == 0 && !media && !artAndInfo,
             )
         }
         val found = foundRootIds().map { id ->
@@ -2285,7 +2291,7 @@ class FoldcadeApp : Application() {
     internal fun libraryTrees(): List<String> = store.folderTrees() + foundRootIds().map { romRootTree(libraryAuthority, it) }
 
     /** What one look for ROM folders saw, and whether the folders the library reads changed. */
-    private class RomRootLook(val seen: List<RomRoot>, val changed: Boolean)
+    private class RomRootLook(val seen: List<RomRoot>, val changed: Boolean, val pickStart: String?)
 
     private val romRootLook = Mutex()
     private val startupRootsLooked = CompletableDeferred<Unit>()
@@ -2307,12 +2313,15 @@ class FoldcadeApp : Application() {
             Log.w("Foldcade", "Storage volumes unreadable", failure)
             emptyList()
         }
-        val listed = findRomRoots(volumes)
+        val folders = findRomFolders(volumes)
+        val listed = folders.filter { it.systems.isNotEmpty() }
+        var pickStart: String? = null
         // The disk is read; picks and removals are read now, under the lock Remove and Add a folder take.
         val (seen, before, next) = synchronized(foundRootsLock) {
             val picked = pickedStorageFolders(store.folderTrees())
             val removed = store.removedRoots()
             val seen = usableRomRoots(listed, picked, removed)
+            pickStart = libraryPickStart(folders, picked, removed)
             val before = store.foundRoots()
             val next = if (!held) before else {
                 val mounted = volumes.mapTo(HashSet()) { it.id }
@@ -2323,7 +2332,7 @@ class FoldcadeApp : Application() {
             Triple(seen, before, next)
         }
         allFilesHeld = held
-        return RomRootLook(seen, next != before || held != wasHeld && next.isNotEmpty())
+        return RomRootLook(seen, next != before || held != wasHeld && next.isNotEmpty(), pickStart)
     }
 
     /** Guards the found folders' store against a look that read the disk before a Remove or a pick. */
@@ -2348,7 +2357,7 @@ class FoldcadeApp : Application() {
                 GameNativeLibrary.DISPLAY_NAME.takeIf { gameNativePackagePresent() },
                 DroidDeckLibrary.DISPLAY_NAME.takeIf { packageInstalled(DroidDeckPlayer.PACKAGE) },
             )
-            withContext(Dispatchers.Main.immediate) { offerSetupAsks(look.seen, roleHeld, apps) }
+            withContext(Dispatchers.Main.immediate) { offerSetupAsks(look.seen, look.pickStart, roleHeld, apps) }
         }
     }
 
@@ -2356,14 +2365,15 @@ class FoldcadeApp : Application() {
      * At most one ask per return Home, each once: first reading the ROM folders Foldcade saw,
      * then being Home. A restore's notice goes first.
      */
-    private fun offerSetupAsks(seen: List<RomRoot>, roleHeld: Boolean, apps: List<String>) {
+    private fun offerSetupAsks(seen: List<RomRoot>, pickStart: String?, roleHeld: Boolean, apps: List<String>) {
         shell.setHomeRoleHeld(roleHeld)
         val places = seen.map { romRootProse(it.documentId) }.distinct()
         val systems = seen.flatMap { it.systems }.distinct()
         // What was seen but can't be read yet leads Home's ways to add games, until access is allowed.
         shell.setRomFolderOffer(seen.firstOrNull()?.takeIf { !allFilesHeld }?.let { RomFolderOffer(places, systems, it.documentId) })
-        // A ROM folder seen on this device: Add a folder's picker opens there, not at the top of storage, where Android can't use the folder.
-        shell.setFolderStart(seen.firstOrNull()?.documentId)
+        // A ROM folder seen on this device, even one with no system folders yet: Add a folder's picker
+        // opens there, not at the top of storage, where Android can't use the folder.
+        shell.setFolderStart(pickStart)
         if (setupBackups.hasNotice()) return
         if (shell.maybeOfferFindGames(places, systems)) return
         // The offer is still owed: it waits for a moment without a dialog rather than queue behind Home.

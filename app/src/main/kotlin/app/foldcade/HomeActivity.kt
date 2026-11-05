@@ -165,6 +165,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private var folderPurpose = FolderPurpose.Library
     private var folderGuide: app.foldcade.language.FolderGuide? = null
+    /** The library folder Pick again stands in for: a different pick replaces it, so an empty source never lingers beside the new one. */
+    private var folderReplacing: String? = null
     private var pendingLaunch: Int? = null
 
     /** A library game waiting on the save-folder ask, see [askSaveFolder]. Kept by the app, so a recreated Home still has it. */
@@ -207,6 +209,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.showFolderGuide(null)
         val purpose = folderPurpose
         folderPurpose = FolderPurpose.Library
+        val replacing = folderReplacing
+        folderReplacing = null
         if (uri == null) {
             when (purpose) {
                 FolderPurpose.Firmware -> settingsPlayerId = null
@@ -234,6 +238,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (persistTreeGrant(write = true) { flags ->
                         contentResolver.takePersistableUriPermission(uri, flags)
                     }) {
+                        // Pick again on a source with nothing in it: the new folder takes its place.
+                        replacing?.takeIf { it != uri.toString() }?.let(foldcade::forgetFolder)
                         foldcade.useFolder(uri)
                     } else {
                         foldcade.shell.present(playerNotice(Copy.folderGrantTitle, Copy.folderGrantFailed, hostScreen()))
@@ -426,6 +432,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.AddFolder -> pickLibraryFolder()
             is Effect.PickFolderAgain -> {
                 folderPurpose = FolderPurpose.Library
+                folderReplacing = effect.uri
                 launchFolderPicker(libraryFolderStart(effect.uri)?.let(Uri::parse)) // OpenDocumentTree supplies EXTRA_INITIAL_URI.
             }
             Effect.SyncLibrary -> foldcade.libraryResync.syncNow()
@@ -704,7 +711,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(
             STATE_FOLDER_PICKER,
-            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId, folderGuide).encode(),
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId, folderGuide, folderReplacing).encode(),
         )
         foldcade.shell.model.saveSetup?.let { outState.putString(STATE_SAVE_SETUP, it.focus.orEmpty()) }
     }
@@ -716,6 +723,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             pendingLaunch = restored.pendingLaunch
             settingsPlayerId = restored.settingsPlayerId
             folderGuide = restored.guide
+            folderReplacing = restored.replacing
         }
         foldcade.homeCreated(this)
         folderGuide?.let(foldcade.shell::showFolderGuide)
@@ -2501,6 +2509,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private fun pickLibraryFolder() {
         folderPurpose = FolderPurpose.Library
+        folderReplacing = null
         val start = foldcade.shell.model.romFolderOffer?.start ?: foldcade.shell.model.folderStart ?: "primary:"
         launchFolderPicker(Uri.parse(storageFolderDocument(start)), opensThere = start != "primary:")
     }

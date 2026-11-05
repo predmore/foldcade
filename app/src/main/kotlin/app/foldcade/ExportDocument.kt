@@ -15,15 +15,16 @@ internal class ExportDocument : ActivityResultContracts.CreateDocument("applicat
             DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download"))
 }
 
-/** Name the chosen destination, including when the player leaves Downloads. */
+/** Name the saved file and where it went, including when the player leaves Downloads. */
 internal fun Context.exportResult(uri: Uri): String {
     val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
     val folder = exportFolder(uri.authority, documentId)
-    val name = if (folder == null) runCatching {
+    // The file's own name too: a second backup the same day is "(2).zip", so the folder alone can't say which (review-D 141).
+    val name = runCatching {
         contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
         }
-    }.getOrNull() else null
+    }.getOrNull()
     return PlayCopy.exported(folder, name)
 }
 

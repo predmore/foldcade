@@ -17,6 +17,19 @@ class LibrarySettingsTest {
     private fun onAddTile(model: PickerModel): PickerModel = model.onSetting(addTile)
 
     @Test
+    fun anEmptyFolderOffersPickAgainAboveRemoveAndAFullOneOnlyRemove() {
+        val read = empty.copy(empty = true)
+        assertEquals(listOf(Row.PickFolderAgain(read.uri), Row.ForgetFolder(read.uri, read.label)), settingsInnerRows(SettingsInner.Folder(read.uri), library.copy(folders = listOf(read))))
+        // Not yet read reads as a folder still on its way, not an empty one.
+        assertEquals(listOf(Row.ForgetFolder(empty.uri, empty.label)), settingsInnerRows(SettingsInner.Folder(empty.uri), library.copy(folders = listOf(empty))))
+        assertEquals(listOf(Row.ForgetFolder(roms.uri, roms.label)), settingsInnerRows(SettingsInner.Folder(roms.uri), library))
+        // Foldcade found it itself, so it never offers to swap it out.
+        val found = read.copy(found = true)
+        assertEquals(listOf(Row.ForgetFolder(found.uri, found.label)), settingsInnerRows(SettingsInner.Folder(found.uri), library.copy(folders = listOf(found))))
+        assertEquals(RowControl.Opens, rowControl(Row.PickFolderAgain(read.uri), library))
+    }
+
+    @Test
     fun withRommSavedTheAddTileOpensThePickerItself() {
         assertEquals(listOf(Row.AddFolder), settingsInnerRows(SettingsInner.Add, library))
         val page = onAddTile(library.copy(folderGrantPending = false))

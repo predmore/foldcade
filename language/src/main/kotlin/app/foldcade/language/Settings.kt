@@ -286,6 +286,13 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
     return (entries + loose).sortedBy { it.label.lowercase() }
 }
 
+/**
+ * A folder the player picked that was read and brought nothing ([LibraryFolder.empty]): its page
+ * offers Pick again above Remove, so "0 games" comes with its fix (review-D 150). A found folder
+ * is left out: Foldcade found it by itself, and replacing it would keep it away for good.
+ */
+private fun folderEmpty(folder: LibraryFolder): Boolean = folder.empty && !folder.found
+
 /** The rows [inner] lists, or none once what it was about has gone. */
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
@@ -293,7 +300,7 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
-        listOfNotNull(Row.PickFolderAgain(it.uri).takeIf { _ -> it.pickAgain }, Row.ForgetFolder(it.uri, it.label))
+        listOfNotNull(Row.PickFolderAgain(it.uri).takeIf { _ -> it.pickAgain || folderEmpty(it) }, Row.ForgetFolder(it.uri, it.label))
     }.orEmpty()
     // Moonlight names its computers, and pins their games, only for the Home app.
     is SettingsInner.Host -> model.streamHosts.filter { it.key == inner.key }.take(1)
@@ -565,7 +572,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.Folders, Row.Hidden, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
-    Row.Backup, is Row.PickFolderAgain, Row.Systems,
+    Row.Backup, is Row.PickFolderAgain, Row.Systems, is Row.EditRomm, Row.SignInRomm,
     -> RowControl.Opens
     Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true, opens = true) } ?: RowControl.Opens
     // An emulator's own rows each open something: a state, the check once it is as it should be,

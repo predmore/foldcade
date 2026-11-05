@@ -122,7 +122,6 @@ object Copy {
     /** Settings › Library › Add's rows: the page is already called Add. */
     const val addFolderRow = "Folder"
     const val addRommRow = "RomM server"
-    const val rommConnection = "RomM connection"
     const val editRommConnection = "Edit connection"
     const val addRommServer = "Add a RomM server"
     const val signOut = "Sign out"
@@ -161,7 +160,7 @@ object Copy {
 
     /** Settings › Library's last tile, and the page it opens. */
     const val add = "Add"
-    const val pairHostBody = "In Sunshine or Apollo on that computer, open PIN and type this code. Its games then appear here."
+    const val pairHostBody = "In Sunshine or Apollo on that computer, open the PIN page and type this code. Its games then appear here."
     /** The pairing card: its title names the computer, the code stands alone under it. */
     fun pairHostTitle(name: String) = "Pair with $name"
     const val pairHostWaiting = "Waiting for the computer…"
@@ -185,6 +184,10 @@ object Copy {
     const val rommPairScan = "Scan with your phone, or open"
     const val rommPairNeedsServer = "Type your server’s address to get a code."
     const val rommGettingCode = "Getting a code…"
+    /** The address can't be used, as http:// off the home network: no code is on its way. */
+    const val rommFixAddress = "Fix the address to get a code."
+    /** The address has no http(s):// yet, so nothing is asked for. */
+    const val rommAddressScheme = "Start it with https:// to get a code."
     const val rommPairAgain = "Pair with phone for a new code, or paste a token."
     const val rommCodeExpired = "That code expired."
     const val rommCodeDenied = "RomM declined that code."
@@ -211,7 +214,7 @@ object Copy {
     const val folderGrantTitle = "Choose a folder"
     const val folderGrantBody = "Pick the folder that holds your system folders, like roms, then tap Use this folder."
     fun emptyFolderTitle(name: String) = "No games in $name"
-    const val emptyFolderBody = "Pick the folder that holds your system folders, like roms. Games copied here later show up by themselves."
+    const val emptyFolderBody = "Games go in folders named for their system, like snes or psx, and show up by themselves. Or add the folder that already holds them."
     const val folderGrantFailed = "That folder couldn’t be kept. Choose it again."
     const val wifi = "Wi-Fi"
     const val cellular = "Cellular"
@@ -250,7 +253,7 @@ object Copy {
     const val close = "Close"
     fun closeRunningTitle(game: String) = "Close $game?"
     const val closePlayerTitle = "Close the other game?"
-    const val closePlayerBody = "This game uses both screens. The one already running has to close first."
+    const val closePlayerBody = "The game you picked uses both screens, so this one has to close first."
     const val closeIt = "Close it"
     const val saveFolderTitle = "Save folder"
     const val saveFolderBody = "Choose where this player keeps its saves."

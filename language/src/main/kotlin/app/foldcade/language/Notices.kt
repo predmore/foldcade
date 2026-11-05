@@ -29,7 +29,7 @@ object NoticeCopy {
     const val accessValue = "Off"
     const val accessTitle = "Show notifications in R1"
     const val accessBody =
-        "Android asks once. Turn on notification access for Foldcade, then come back. They stay on this device."
+        "Turn on Foldcade on the next screen, then press B. Notifications stay on this device."
     const val clearAll = "Clear all"
     const val dismiss = "Dismiss"
     const val open = "Open"

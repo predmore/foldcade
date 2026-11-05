@@ -39,7 +39,7 @@ object FoundFolderCopy {
             in 1..MAX_SYSTEMS -> "${and(systems)} games"
             else -> "Games for ${systems.size} systems"
         }
-        return "$what are waiting in ${and(places)}. Allow file access once and they’re on Home."
+        return "$what are waiting in ${and(places.map(::whole))}. Allow file access once and they’re on Home."
     }
 
     /** The first run's ask when no ROM folder was found and no RomM server is saved. */
@@ -56,7 +56,7 @@ object FoundFolderCopy {
 
     /** Under Add games on the top screen: the way that fits first. */
     fun addGamesLine(offer: RomFolderOffer?): String =
-        if (offer != null) "Find games in ${and(offer.places)}, or add a folder" else "Sign in to RomM, or add a folder"
+        if (offer != null) "Find games in ${and(offer.places.map(::whole))}, or add a folder" else "Sign in to RomM, or add a folder"
 
     /** On the free screen while Android's all-files page is open: its switch takes a touch. */
     const val allFilesHint = "Tap the switch, then press Back"
@@ -64,16 +64,23 @@ object FoundFolderCopy {
     /** R1 after a scan: "Found 214 games in ROMs", or "Found 230 games in 2 folders". */
     fun foundTitle(games: Int, places: List<String>): String {
         val count = folderCountLine(games)
-        return if (places.size == 1) "Found $count in ${places.single()}" else "Found $count in ${places.size} folders"
+        return if (places.size == 1) "Found $count in ${whole(places.single())}" else "Found $count in ${places.size} folders"
     }
 
     /** Under the title. Several folders are listed, since the title only counts them. */
     fun foundBody(places: List<String>): String =
-        if (places.size == 1) "Sorted by system and ready to play." else places.joinToString(", ")
+        if (places.size == 1) "Sorted by system and ready to play." else places.joinToString(", ", transform = ::whole)
 
     /** The Home ask, named for the apps that need it: "Moonlight can add games here once Foldcade is Home." */
     fun homeBody(apps: List<String>): String =
         "${and(apps)} can add games here once Foldcade is Home."
+
+    /**
+     * A path that wraps as one word: a word joiner (U+2060) after each slash, so "Emulation/"
+     * never ends a line with "roms." starting the next (review-A 04). Unicode line breaking
+     * forbids a break on either side of a word joiner (UAX #14, LB11).
+     */
+    fun whole(path: String): String = path.replace("/", "/\u2060")
 
     private fun and(items: List<String>): String = when (items.size) {
         0 -> ""

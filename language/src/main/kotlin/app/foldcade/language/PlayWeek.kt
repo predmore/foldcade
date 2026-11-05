@@ -96,6 +96,7 @@ object PlayCopy {
     const val import = "Import"
     const val exported = "Saved."
     fun exported(folder: String?, name: String?): String = when {
+        !folder.isNullOrBlank() && !name.isNullOrBlank() -> "Saved $name to $folder."
         !folder.isNullOrBlank() -> "Saved to $folder."
         !name.isNullOrBlank() -> "Saved as $name."
         else -> exported

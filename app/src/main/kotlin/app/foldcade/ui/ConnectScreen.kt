@@ -76,13 +76,16 @@ import app.foldcade.language.keyDropQr
 import app.foldcade.language.cursorBrush
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.rommConnectAction
+import app.foldcade.language.rommConnectTitle
 import app.foldcade.language.rommWaitsForPhone
+import app.foldcade.romm.normalizeSetupOrigin
 
 /**
  * Connecting RomM, or adding a SteamGridDB key, as a Settings page: the header with its Back
- * glyph over one card. RomM's card has its fields on the left and, on the right, the code a
- * phone approves, large and in fours, with a QR code of the page that approves it. The right
- * side keeps its size while the code comes and goes, so the fields never move.
+ * glyph over one card. Both cards lead with the phone on the left: for RomM, the code a phone
+ * approves, large and in fours, with a QR code of the page that approves it; for SteamGridDB,
+ * a QR code of the page that takes the key. The fields sit on the right under "Or type it".
+ * The phone's side keeps its size while the code comes and goes, so the fields never move.
  */
 @Composable
 internal fun ConnectScreen(
@@ -125,12 +128,7 @@ internal fun ConnectScreen(
         if (typingIn != null && typingIn != ringed) form.requestFocus()
     }
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
-    val title = when {
-        artKey -> Copy.steamGridDb
-        model.connectReturnPanel != null && !model.rommSignIn -> Copy.editRommConnection
-        app.store.rommOrigin() != null -> Copy.signInRomm
-        else -> Copy.addRommServer
-    }
+    val title = if (artKey) Copy.steamGridDb else rommConnectTitle(model, saved = app.store.rommOrigin() != null)
     val save = { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.Save), screen)) }
     BoxWithConstraints(
         Modifier
@@ -161,16 +159,18 @@ internal fun ConnectScreen(
                 horizontalArrangement = Arrangement.spacedBy(if (compact) 16.dp else 32.dp),
             ) {
                 val side = Modifier.width(if (compact) PANE_COMPACT else PANE).fillMaxHeight()
-                // RomM leads with the phone, the way in that needs no typing; the fields are its fallback.
-                if (!artKey) PairingSide(model, app.rommPhone.state, app.shell.connectToken.isNotBlank(), theme, compact, side)
+                // Both forms lead with the phone, the way in that needs no typing; the fields are its fallback.
+                // A SteamGridDB key is 32 characters, the worst thing to type on a gamepad (review-A 27).
+                if (artKey) KeyDropSide(app.keyDrop.state, theme, compact, side)
+                else PairingSide(model, app.rommPhone.state, app.shell.connectToken.isNotBlank(), theme, compact, side)
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicText(
+                        RommPhoneCopy.orType,
+                        modifier = Modifier.padding(start = 6.dp),
+                        style = formStyle(theme.muted, design.type.hint, theme),
+                        maxLines = 1,
+                    )
                     if (!artKey) {
-                        BasicText(
-                            RommPhoneCopy.orType,
-                            modifier = Modifier.padding(start = 6.dp),
-                            style = formStyle(theme.muted, design.type.hint, theme),
-                            maxLines = 1,
-                        )
                         model.connectFoundOrigin?.let { found ->
                             BasicText(
                                 "${RommPhoneCopy.useServer}: ${found.substringAfter("://")}",
@@ -230,13 +230,15 @@ internal fun ConnectScreen(
                         else -> rommConnectAction(
                             busy = model.connectBusy,
                             tokenTyped = app.shell.connectToken.isNotBlank(),
-                            originTyped = model.connectOrigin.isNotBlank(),
+                            // Pair with phone only for an address a code can come from.
+                            originTyped = model.connectOrigin.isNotBlank() && !rommAddressUnusable(model.connectOrigin),
                             code = model.connectCode,
                             retry = model.connectRetry,
                         )
                     }
                     // Waiting on the phone is not a press: Connect reads quieter until a token is typed or the code ends.
-                    val waiting = model.connectBusy || !artKey && rommWaitsForPhone(
+                    // An address Foldcade can't use reads quieter too: Connect can't send it.
+                    val waiting = model.connectBusy || !artKey && rommAddressUnusable(model.connectOrigin) || !artKey && rommWaitsForPhone(
                         busy = model.connectBusy,
                         tokenTyped = app.shell.connectToken.isNotBlank(),
                         originTyped = model.connectOrigin.isNotBlank(),
@@ -265,11 +267,13 @@ internal fun ConnectScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                if (artKey) KeyDropSide(app.keyDrop.state, theme, compact, side)
             }
         }
     }
 }
+
+/** Typed, but not an address the form can send or pair with ([normalizeSetupOrigin] refuses it). */
+private fun rommAddressUnusable(origin: String): Boolean = origin.isNotBlank() && normalizeSetupOrigin(origin) == null
 
 /** True for the notes that end a pairing attempt. They sit with the code they replaced. */
 private fun pairingNote(hint: String): Boolean = hint == Copy.rommCodeExpired || hint == Copy.rommCodeDenied || hint == Copy.rommCodeUnavailable
@@ -317,7 +321,10 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                         )
                         if (!model.connectRetry && !model.connectBusy && !tokenTyped) WaitingChip(Copy.waitingForPhone, theme, scale)
                     } else {
-                        val waitingForCode = model.connectOrigin.isNotBlank() && !model.connectRetry && !model.connectBusy
+                        // Only an address the code loop will try is waited on: http:// off the home network, or one
+                        // without its scheme, gets no code, so the square rests and says what to fix (review-A 210).
+                        val unusable = rommAddressUnusable(model.connectOrigin)
+                        val waitingForCode = model.connectOrigin.isNotBlank() && !unusable && !model.connectRetry && !model.connectBusy
                         val phoneUrl = (phone as? app.foldcade.language.KeyDrop.Open)?.url?.takeIf { app.foldcade.language.rommNeedsAddress(model) }
                         if (phoneUrl != null) QrSquare(phoneUrl, RommPhoneCopy.scan, theme, Modifier.size(square))
                         else EmptySquare(theme, pulse = waitingForCode, scale = scale, modifier = Modifier.size(square))
@@ -327,6 +334,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                         BasicText(
                             when {
                                 hint != null -> hint
+                                unusable -> if (model.connectWarning != null) Copy.rommFixAddress else Copy.rommAddressScheme
                                 waitingForCode -> Copy.rommGettingCode
                                 phoneUrl != null -> if ((phone as? app.foldcade.language.KeyDrop.Open)?.phoneHere == true) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
                                 phone == app.foldcade.language.KeyDrop.Offline && app.foldcade.language.rommNeedsAddress(model) -> RommPhoneCopy.offline
@@ -412,13 +420,16 @@ private fun KeyDropSide(drop: KeyDrop?, theme: Theme, compact: Boolean, modifier
                 else QrSquare(shown, Copy.steamGridDb, theme, Modifier.size(square))
             }
             SlideSwap(target = keyDropLine(drop), scale = scale, distance = 10.dp, vertical = true, direction = { _, _ -> 1 }) { line ->
+                // The page's QR leads the form, so its line is the form's instruction, as bold as RomM's.
+                val leads = drop is KeyDrop.Open
                 BasicText(
                     line,
                     modifier = Modifier.fillMaxWidth(),
-                    style = formStyle(if (drop is KeyDrop.Open && drop.phoneHere) theme.onBackground else theme.muted, design.type.hint, theme,
-                        bold = drop is KeyDrop.Open && drop.phoneHere)
+                    style = formStyle(if (leads) theme.onBackground else theme.muted, if (leads) design.type.menuRow else design.type.hint, theme, bold = leads)
                         .copy(textAlign = TextAlign.Center),
-                    maxLines = 2,
+                    maxLines = if (leads) 1 else 2,
+                    // One line, a little smaller, rather than leave a word alone under it.
+                    autoSize = if (leads) TextAutoSize.StepBased(minFontSize = design.type.hint, maxFontSize = design.type.menuRow) else null,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -426,7 +437,10 @@ private fun KeyDropSide(drop: KeyDrop?, theme: Theme, compact: Boolean, modifier
     }
 }
 
-/** A small breathing note that the form waits on the phone, where the button once said it. */
+/**
+ * A small breathing note that the form waits on the phone, where the button once said it.
+ * Plain words, no pill: a pill beside Connect read as a second button (review-A 12).
+ */
 @Composable
 private fun WaitingChip(label: String, theme: Theme, scale: Float) {
     val breath = rememberInfiniteTransition().animateFloat(theme.style.menu.labelRestAlpha, 1f, theme.motion.pulse(scale))
@@ -434,8 +448,6 @@ private fun WaitingChip(label: String, theme: Theme, scale: Float) {
         label,
         modifier = Modifier
             .graphicsLayer { alpha = breath.value }
-            .clip(theme.style.shape.control())
-            .background(theme.onBackground.copy(alpha = theme.style.menu.quickTileAlpha))
             .padding(horizontal = 14.dp, vertical = 6.dp),
         style = formStyle(theme.muted, theme.style.type.hint, theme).copy(textAlign = TextAlign.Center),
         maxLines = 1,

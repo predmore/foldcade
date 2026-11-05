@@ -17,14 +17,14 @@ import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.language.FolderGuide
 import app.foldcade.language.folderGuideInstruction
-import app.foldcade.language.SettingsCopy
+import app.foldcade.language.folderGuideTitle
 
 /** The free screen during an Android tree pick. There are no controls or stale page hints here. */
 @Composable
 internal fun FolderGuideScreen(app: FoldcadeApp, guide: FolderGuide) {
     val theme = LocalFoldTheme.current.theme
     val player = guide.playerId?.let(app.plugins::player)
-    val name = player?.displayName ?: SettingsCopy.library
+    val name = folderGuideTitle(player?.displayName)
     val packageName = app.shell.model.playerSaves.firstOrNull { it.playerId == guide.playerId }?.packages?.firstOrNull()
         ?: player?.packageNames?.firstOrNull()
     Box(

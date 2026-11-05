@@ -20,6 +20,14 @@ class FolderPickerTest {
         assertEquals(FolderPickResult.Ignore, folderPickResult(state, choseFolder = false))
     }
 
+    @Test fun pickAgainKeepsTheSourceItReplacesAcrossRecreation() {
+        val tree = "content://com.android.externalstorage.documents/tree/primary%3Aroms"
+        val state = FolderPickerState(FolderPurpose.Library, replacing = tree)
+        assertEquals(state, decodeFolderPickerState(state.encode()))
+        // State saved before Pick again replaced anything reads as a plain pick.
+        assertEquals(null, decodeFolderPickerState("Library\n\n\n\n\n").replacing)
+    }
+
     @Test
     fun aRecreatedPickerKeepsTheReasonItWasOpened() {
         val save = FolderPickerState(FolderPurpose.LaunchOffer, pendingLaunch = 4)

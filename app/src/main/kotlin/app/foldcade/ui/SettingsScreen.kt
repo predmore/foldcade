@@ -740,7 +740,8 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     Row.AddFolder -> R.drawable.symbol_folder
     Row.AddRomm -> R.drawable.symbol_cloud
     Row.Artwork -> R.drawable.symbol_art
-    Row.ArtKey -> R.drawable.ic_status_wrench
+    // SteamGridDB is where art comes from: the row wears the picture its page does (review-A 08).
+    Row.ArtKey -> R.drawable.symbol_art
     is Row.StreamHost -> R.drawable.symbol_pc
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
     Row.Theme -> R.drawable.symbol_gem

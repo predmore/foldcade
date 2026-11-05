@@ -152,8 +152,14 @@ data class FolderGuide(val screen: HostScreen, val playerId: String? = null, val
 fun PickerModel.folderGuideOn(screen: HostScreen): FolderGuide? = folderGuide?.takeIf { it.screen != screen }
 
 object FolderGuideCopy {
-    const val libraryBrowse = "Pick your games folder. Tap Use this folder, then Allow."
+    /** The library guide's title: the task, not the section (review-D 200). */
+    const val libraryTitle = "Pick your games folder"
+    /** The picker opened at the top of storage, where Android can't use the folder. */
+    const val libraryBrowse = "Open the folder with your games. Tap Use this folder, then Allow."
 }
+
+/** The guide's title: the emulator whose folder it is, or the library's task. */
+fun folderGuideTitle(playerName: String?): String = playerName ?: FolderGuideCopy.libraryTitle
 
 fun folderGuideInstruction(guide: FolderGuide, playerName: String?): String = when {
     guide.opensThere -> SaveSetupCopy.useThisFolder

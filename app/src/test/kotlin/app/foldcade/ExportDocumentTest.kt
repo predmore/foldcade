@@ -14,5 +14,6 @@ class ExportDocumentTest {
         assertNull(exportFolder("cloud", "opaque"))
         assertEquals("Saved to Downloads.", PlayCopy.exported("Downloads", null))
         assertEquals("Saved as setup.zip.", PlayCopy.exported(null, "setup.zip"))
+        assertEquals("Saved Foldcade backup 2026-11-04 (2).zip to Downloads.", PlayCopy.exported("Downloads", "Foldcade backup 2026-11-04 (2).zip"))
     }
 }
