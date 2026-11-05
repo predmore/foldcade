@@ -502,7 +502,11 @@ sealed interface RowControl {
     /** [short] is what [value] shortens to where it does not fit, such as the emulator alone for "Default · X". */
     data class Choice(val value: String, val attention: Boolean = false, val short: String? = null) : RowControl
     data object Opens : RowControl
-    data class Value(val text: String, val attention: Boolean = false) : RowControl
+    /**
+     * A state on the right. [opens] adds the way-in mark, for a row A takes somewhere, and
+     * [healthy] leads it with the check, for a row that is as it should be.
+     */
+    data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false) : RowControl
     data object None : RowControl
 }
 
@@ -529,11 +533,42 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
     Row.Backup, is Row.PickFolderAgain, Row.Systems,
     -> RowControl.Opens
-    Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true) } ?: RowControl.Opens
+    Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true, opens = true) } ?: RowControl.Opens
+    // An emulator's own rows each open something: a state, the check once it is as it should be,
+    // and the way-in mark, so the one row on the page says what A does.
+    is Row.PlayerSave, is Row.HostedSaves, is Row.SaveSync, is Row.PlayerSetup, is Row.ThorSetup,
+    Row.RetroArchCores, Row.EdenFolder, Row.EdenUser,
+    -> value?.takeIf { it.isNotEmpty() }?.let { RowControl.Value(it, attention = emulatorRowAttention(row, model, it), opens = true, healthy = emulatorRowHealthy(row, model)) }
+        ?: RowControl.Opens
     else -> value?.takeIf { it.isNotEmpty() }?.let {
         RowControl.Value(it, attention = it == Copy.notSyncing &&
             (row is Row.PlayerSave || row is Row.HostedSaves || row is Row.SaveSync || row is Row.PlayerSetup || row == Row.EdenUser || row == Row.EdenFolder))
     } ?: RowControl.None
+}
+
+/**
+ * The amber of a row whose saves can't reach RomM yet, and of RetroArch's cores while Foldcade
+ * can't see them, as their tile's not-syncing mark promises. Read from the row's own value, so
+ * it never asks [rowNeedsYou], which asks this.
+ */
+private fun emulatorRowAttention(row: Row, model: PickerModel, value: String): Boolean = when (row) {
+    Row.RetroArchCores -> model.retroArch?.cores == null
+    is Row.ThorSetup -> false
+    else -> value == Copy.notSyncing
+}
+
+/** The check: the save folder held, the hosted folder or card in use, the cores seen, Eden's files held, Azahar set for both screens. */
+private fun emulatorRowHealthy(row: Row, model: PickerModel): Boolean {
+    val setting = { id: String -> model.playerSaves.firstOrNull { it.playerId == id } }
+    return when (row) {
+        is Row.PlayerSave -> setting(row.playerId)?.chosen == true
+        is Row.HostedSaves -> setting(row.playerId)?.hostedInUse == true
+        is Row.SaveSync -> setting(row.playerId)?.saveSyncing == true
+        is Row.ThorSetup -> setting(row.playerId)?.thorSetup?.status == ThorSetupStatus.Applied
+        Row.RetroArchCores -> model.retroArch?.cores != null
+        Row.EdenFolder -> model.eden?.fromRomm == true
+        else -> false
+    }
 }
 
 /** What the tile that opens an inner page is called: a folder's own name, else the page's title. */

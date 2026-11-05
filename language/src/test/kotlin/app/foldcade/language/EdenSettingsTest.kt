@@ -28,7 +28,7 @@ class EdenSettingsTest {
         assertEquals(TileStatus.Attention, settingsTileStatus(eden, setup))
         assertEquals(Copy.edenKeys, rowText(Row.EdenFolder, setup).label)
         assertEquals(Copy.notSyncing, rowText(Row.EdenFolder, setup).value)
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.EdenFolder, setup))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.EdenFolder, setup))
 
         val granted = setup.copy(eden = EdenSetting(fromRomm = true))
         assertEquals(Copy.edenFromRomm, rowText(Row.EdenFolder, granted).value)

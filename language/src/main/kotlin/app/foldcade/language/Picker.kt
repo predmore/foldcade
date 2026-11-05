@@ -1416,7 +1416,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     Row.FindGames -> RowText(FoundFolderCopy.findGames, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     // How many emulators still wait, in the attention colour, until every one syncs.
-    Row.SaveSetup -> RowText(SaveSetupCopy.title, saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage()).takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
+    Row.SaveSetup -> RowText(SaveSetupCopy.title, savesDue(model).size.takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
     Row.PlayOn -> RowText(ScreenCopy.playOn, screenLabel(model.playOn))
     Row.OpenWith -> RowText(PlayerChoiceCopy.openWith, model.tileActions?.openWith?.value())
@@ -1496,7 +1496,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
-        model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: Copy.showCores,
+        model.retroArch?.cores?.let { if (it == 1) Copy.oneCore else "$it ${Copy.cores}" } ?: SaveSetupCopy.allow,
     )
     Row.EdenUser -> RowText(Copy.setup, Copy.notSyncing)
     Row.EdenFolder -> RowText(
@@ -1862,6 +1862,11 @@ data class PickerModel(
     val connectRetry: Boolean = false,
     val reLoginPending: Boolean = false,
     val playerSaves: List<PlayerSaveSetting> = emptyList(),
+    /**
+     * The emulators Home's RomM games play on, by their Settings › Emulators key, whether or not
+     * their saves sync. [savesDue] reads it, so R1, Settings and Set up saves count the same ones.
+     */
+    val boardEmulators: Set<String> = emptySet(),
     val systemPlayers: List<SystemPlayerChoice> = emptyList(),
     /** Null while RetroArch is not installed. */
     val retroArch: RetroArchSetting? = null,

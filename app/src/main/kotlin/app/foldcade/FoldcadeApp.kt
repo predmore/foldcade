@@ -2844,7 +2844,23 @@ class FoldcadeApp : Application() {
 
     /** Reloading also connects, which starts the plugin's sync of unsynced saves. */
     private fun reconnectRomm() {
-        syncRomm()
+        val sync = syncRomm()
+        // After RomM has reconnected: a read racing the reconnect fails as if RomM were down (seen on the Thor).
+        scope.launch(Dispatchers.Main.immediate) {
+            sync.join()
+            onNetworkBack?.invoke()
+        }
+    }
+
+    /** Home's hook for a validated network coming back, as to reload a Saves page that had none. */
+    var onNetworkBack: (() -> Unit)? = null
+
+    /** True while Android has a network it has validated, so a failed RomM read is RomM's, not the device's. */
+    internal fun hasValidatedNetwork(): Boolean = try {
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+        connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+    } catch (_: SecurityException) {
+        true
     }
 
     /**

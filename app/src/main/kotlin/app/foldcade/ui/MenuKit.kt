@@ -704,6 +704,9 @@ private fun LabelAndChoice(modifier: Modifier, content: @Composable () -> Unit) 
 /** Between a choice row's label and its value, as the row spaces its other parts. */
 private val CHOICE_LABEL_GAP = 14.dp
 
+/** The check before a healthy row's state, about the value's cap height. */
+private val VALUE_CHECK = 22.dp
+
 /** Height of one menu row, the same for every row so the highlight keeps one size. */
 private val MENU_ROW_HEIGHT = 52.dp
 
@@ -776,9 +779,17 @@ internal fun MenuRow(
                         keepEnd = PlayerChoiceCopy.notInstalledEnd.takeIf { control.attention })
                 }
             }
-            is RowControl.Value -> BasicText(control.text,
-                style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            is RowControl.Value -> {
+                // The check leads a state that is as it should be, in focus ink as the tiles wear it.
+                if (control.healthy) {
+                    val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+                    Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(VALUE_CHECK))
+                }
+                BasicText(control.text,
+                    style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (control.opens && chord == null) OpensChevron(focused, labelStyle, scale)
+            }
             RowControl.Opens -> if (chord == null) OpensChevron(focused, labelStyle, scale)
             RowControl.None -> Unit
         }

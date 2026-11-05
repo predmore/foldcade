@@ -684,7 +684,7 @@ class ContractTest {
         assertNull(closed.panel)
         assertEquals(onRow.settings, closed.settings)
         assertEquals("Save folder  Not syncing", rowLabel(Row.PlayerSave("azahar"), opened))
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSave("azahar"), opened))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), opened))
     }
 
     @Test
@@ -728,7 +728,7 @@ class ContractTest {
         val steps = "Slot 1 needs a folder card to sync."
         val asking = model.copy(playerSaves = listOf(syncing.copy(saveSyncing = false, saveSyncSteps = steps)))
         assertEquals("Memory card  Not syncing", rowLabel(Row.SaveSync("armsx2"), asking))
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.SaveSync("armsx2"), asking))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.SaveSync("armsx2"), asking))
         val (closed, effect) = reduce(asking.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
         assertEquals(Effect.ShowSaveSync("armsx2"), effect)
         assertNull(closed.settings)
@@ -749,7 +749,7 @@ class ContractTest {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
             val row = Row.PlayerSave(setting.playerId)
             assertEquals(Copy.playerSavesSet, rowText(row, model).value)
-            assertEquals(RowControl.Value(Copy.playerSavesSet), rowControl(row, model))
+            assertEquals(RowControl.Value(Copy.playerSavesSet, opens = true, healthy = true), rowControl(row, model))
             assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(row), Meaning.Activate).second)
             val fix = when (setting.playerId) {
                 "duckstation" -> Row.HostedSaves(setting.playerId)
@@ -757,7 +757,7 @@ class ContractTest {
                 else -> Row.PlayerSetup(setting.playerId)
             }
             assertEquals(Copy.notSyncing, rowText(fix, model).value)
-            assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(fix, model))
+            assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(fix, model))
         }
     }
 
@@ -767,7 +767,7 @@ class ContractTest {
             val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse, installed = true)
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
             assertEquals(Copy.choose, rowText(Row.PlayerSave(setting.playerId), model).value)
-            assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(setting.playerId), model))
+            assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(setting.playerId), model))
             assertEquals(if (inUse) Copy.hostedSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
             assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(Row.PlayerSave(setting.playerId)), Meaning.Activate).second)
         }
@@ -794,7 +794,7 @@ class ContractTest {
             settingsInnerRows(SettingsInner.Emulator("aps3e"), model),
         )
         assertEquals("Setup  Not syncing", rowLabel(Row.PlayerSetup("aps3e"), model))
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSetup("aps3e"), model))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSetup("aps3e"), model))
         val (closed, effect) = reduce(model.onSetting(Row.PlayerSetup("aps3e")), Meaning.Activate)
         assertEquals(Effect.ShowPlayerSetup("aps3e"), effect)
         assertNull(closed.settings)

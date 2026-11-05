@@ -58,9 +58,9 @@ import app.foldcade.language.actionFaces
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.saveSetupActions
 import app.foldcade.language.saveSetupFinished
-import app.foldcade.language.saveSetupLeft
 import app.foldcade.language.saveSetupPause
-import app.foldcade.language.saveSetupSkipped
+import app.foldcade.language.savesDue
+import app.foldcade.language.savesRest
 import app.foldcade.language.saveSetupTiles
 import app.foldcade.language.setupStatus
 import app.foldcade.language.SAVE_SETUP_COLUMNS
@@ -131,15 +131,15 @@ private fun AdvanceAfterCheck(app: FoldcadeApp, scale: Float) {
     }
 }
 
-/** The page's name with the Back glyph, and how many emulators still need you, then how many were skipped. */
+/** The page's name with the Back glyph, and how many emulators Home's games play on still need you, the count R1 says. */
 @Composable
 private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scale: Float, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
     val model = app.shell.model
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val tiles = saveSetupTiles(model, page)
-    val left = saveSetupLeft(tiles, page)
-    val skipped = saveSetupSkipped(tiles, page)
+    val due = savesDue(model, tiles).size
+    val rest = savesRest(model, tiles).size
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier
@@ -155,8 +155,13 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
         }
         Spacer(Modifier.weight(1f))
         if (tiles.isNotEmpty()) {
-            val look = if (left == 0 && skipped == 0) StatusLook.Syncing else StatusLook.NeedsYou
-            SlideSwap(target = SaveSetupCopy.head(left, skipped) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
+            // Emulators no game on Home plays on wear their own marks; the head stays quiet about them.
+            val look = when {
+                due > 0 -> StatusLook.NeedsYou
+                rest > 0 -> StatusLook.Quiet
+                else -> StatusLook.Syncing
+            }
+            SlideSwap(target = SaveSetupCopy.head(due, rest) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
                 Chip(word, shown, theme)
             }
         }
@@ -200,7 +205,8 @@ private fun Grid(app: FoldcadeApp, page: SaveSetupPage, scale: Float, modifier: 
                             art = art,
                             label = true,
                             scale = scale,
-                            artModifier = Modifier.selectionSlot(slots, index, depth = 2),
+                            // Art → tile → line → this column: three layouts up, so each line keeps its own height.
+                            artModifier = Modifier.selectionSlot(slots, index, depth = GRID_SLOT_DEPTH),
                             modifier = Modifier.width(column).hostPress { app.shell.touchSaveSetupTile(tile.key) },
                         )
                     }
@@ -492,9 +498,9 @@ private fun TileShowcase(
         return
     }
     Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(TOP_GAP)) {
+        // The chip under the name says how it is doing, so the art wears no badge of its own.
         Box(Modifier.fillMaxHeight(design.setup.artShare).aspectRatio(1f).then(popped), contentAlignment = Alignment.Center) {
             SetupArt(tile, 1f)
-            FlipBadge(tile, status, 0L, scale, 56.dp, Modifier.align(Alignment.TopEnd))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             name(Modifier)
@@ -686,7 +692,9 @@ private fun End(
     LaunchedEffect(Unit) {
         withContext(SteadyMenu) { launch { landed.animateTo(1f, theme.motion.playful(theme.motion.durationSelect, scale)) } }
     }
-    val skipped = saveSetupSkipped(tiles, page)
+    val model = app.shell.model
+    val due = savesDue(model, tiles).size
+    val rest = savesRest(model, tiles).size
     val mark = @Composable { modifier: Modifier ->
         Box(
             modifier
@@ -698,16 +706,16 @@ private fun End(
                 .background(theme.background.copy(alpha = design.tile.statusBackingAlpha)),
             contentAlignment = Alignment.Center,
         ) {
-            val (icon, tint) = badgeOf(if (skipped == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
+            val (icon, tint) = badgeOf(if (due == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
             val badge = themeIcon(icon)
             Image(badge.painter, contentDescription = null, colorFilter = badge.tint(tint), modifier = Modifier.fillMaxSize(BADGE_INK))
         }
     }
     val title = @Composable {
-        BasicText(SaveSetupCopy.endTitle(skipped), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
+        BasicText(SaveSetupCopy.endTitle(due, rest), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
     }
     val body = @Composable {
-        SaveSetupCopy.endBody(skipped)?.let {
+        SaveSetupCopy.endBody(due, rest)?.let {
             BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -749,6 +757,8 @@ private val TILE_ART = 92.dp
 private val TILE_GAP = 8.dp
 private val TILE_LABEL_GAP = 4.dp
 private val LINE_GAP = 14.dp
+/** How far a grid tile's art sits below the highlighted column: its tile, then its line. The strip has no line. */
+private const val GRID_SLOT_DEPTH = 3
 /** A label's line, as a share of its font size. */
 private const val LABEL_LINE = 1.4f
 

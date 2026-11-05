@@ -24,7 +24,7 @@ class SaveSurfacesTest {
             save("b", "title", at(25, 9, 5)),
             save("c", "title", at(29, 8)),
             save("d", "title", at(30, 11)),
-            save("e", "autosave", at(25, 7)),
+            save("e", "Boss rush", at(25, 7)),
             save("f", "title", at(24, 7), backup = true),
             save("g", null, at(12, 7)),
         )
@@ -34,7 +34,7 @@ class SaveSurfacesTest {
         assertEquals(SavePickerCopy.yesterday, names["c"])
         assertEquals(SavePickerCopy.today, names["d"])
         // A slot someone named keeps its name; a Backup says it is one.
-        assertEquals("autosave", names["e"])
+        assertEquals("Boss rush", names["e"])
         assertEquals(SavePickerCopy.backup, names["f"])
         assertEquals("Oct 12", names["g"])
         // A name with its time already says when; one with its day alone does not.
@@ -43,16 +43,16 @@ class SaveSurfacesTest {
     }
 
     @Test fun formatSlotsAreGenericEvenForAnotherEmulator() {
-        for (slot in listOf("sav", "SRM", "savedata", "card1", "archive")) assertTrue(slot, genericSlot(slot, emptyList()))
-        assertFalse(genericSlot("autosave", emptyList()))
+        for (slot in listOf("sav", "SRM", "savedata", "card1", "archive", "autosave")) assertTrue(slot, genericSlot(slot, emptyList()))
+        assertFalse(genericSlot("Boss rush", emptyList()))
         assertTrue(genericSlot("mine", listOf("mine")))
     }
 
     @Test fun aSlotToCopyIntoIsNamedAsItsNewestSaveOrEmpty() {
-        val saves = listOf(save("a", "title", at(25, 20)), save("b", "title", at(26, 20)), save("c", "autosave", at(25, 7)))
+        val saves = listOf(save("a", "title", at(25, 20)), save("b", "title", at(26, 20)), save("c", "Boss rush", at(25, 7)))
         val names = saveNames(saves, listOf("title"), style, now, zone)
         assertEquals("Oct 26", destinationName(SaveDestination("title", "azahar", "Azahar"), saves, names, listOf("title")))
-        assertEquals("autosave", destinationName(SaveDestination("autosave", "azahar", "Argosy"), saves, names, listOf("title")))
+        assertEquals("Boss rush", destinationName(SaveDestination("Boss rush", "azahar", "Argosy"), saves, names, listOf("title")))
         assertEquals(SavePickerCopy.emptySlot, destinationName(SaveDestination("sav", "melonds", "melonDS"), saves, names, listOf("title")))
         val copy = SavePickerChoice.Copy(saves[2], SaveDestination("title", "azahar", "Azahar"))
         assertEquals("Copy to Oct 26?", SavePickerCopy.confirmationTitle(copy, "Azahar", "Oct 26"))
@@ -134,17 +134,18 @@ class SaveSurfacesTest {
 
     @Test fun everyEmulatorRowThatMustBeActedOnReadsNotSyncing() {
         val duck = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", installed = true)
-        val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(duck))
+        val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(duck), boardEmulators = setOf("duckstation"))
         // DuckStation's own folder is for its BIOS; its memory cards are what sync.
         assertEquals(RowText(Copy.biosFolder, Copy.choose), rowText(Row.PlayerSave("duckstation"), model))
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.HostedSaves("duckstation"), model))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.HostedSaves("duckstation"), model))
+        // Once in use, the state wears the check.
+        val inUse = model.copy(playerSaves = listOf(duck.copy(hostedInUse = true)))
+        assertEquals(RowControl.Value(Copy.hostedSavesSet, opens = true, healthy = true), rowControl(Row.HostedSaves("duckstation"), inUse))
         assertEquals(RowText(Copy.saveFolder, Copy.notSyncing), rowText(Row.PlayerSave("azahar"), model.copy(playerSaves = listOf(PlayerSaveSetting("azahar", "Azahar", false, installed = true)))))
         // Set up saves says how many are left, and nothing once all sync.
-        val left = saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage())
-        assertEquals(1, left)
-        assertEquals(RowControl.Value(SaveSetupCopy.toGo(1), attention = true), rowControl(Row.SaveSetup, model))
-        val synced = model.copy(playerSaves = listOf(duck.copy(hostedInUse = true)))
-        assertEquals(RowControl.Opens, rowControl(Row.SaveSetup, synced))
+        assertEquals(1, savesDue(model).size)
+        assertEquals(RowControl.Value(SaveSetupCopy.toGo(1), attention = true, opens = true), rowControl(Row.SaveSetup, model))
+        assertEquals(RowControl.Opens, rowControl(Row.SaveSetup, inUse))
     }
 
     @Test fun aPageOrDialogOnAScreenTakesItsKeys() {

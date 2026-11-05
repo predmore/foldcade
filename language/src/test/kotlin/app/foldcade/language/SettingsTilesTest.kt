@@ -111,7 +111,7 @@ class SettingsTilesTest {
         assertEquals("ARMSX2", settingsInnerTitle(SettingsInner.Emulator("armsx2"), emulators))
         assertEquals(RowText(Copy.saveFolder, Copy.playerSavesSet), rowText(Row.PlayerSave("armsx2"), emulators))
         assertEquals(RowText(Copy.memoryCard, Copy.hostedSavesSet), rowText(Row.SaveSync("armsx2"), emulators))
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true), rowControl(Row.PlayerSave("azahar"), emulators))
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), emulators))
         assertEquals(RowText(Copy.retroArchCores, "2 ${Copy.cores}"), rowText(Row.RetroArchCores, emulators))
         val duck = PlayerSaveSetting("duckstation", "DuckStation", chosen = false, hostedTitle = "DuckStation memory cards", hostedInUse = true, installed = true)
         val hosted = emulators.copy(playerSaves = listOf(duck))
