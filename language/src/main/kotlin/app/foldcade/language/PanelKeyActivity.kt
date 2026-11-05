@@ -34,6 +34,9 @@ abstract class PanelKeyActivity : ComponentActivity() {
 
     protected open fun onMeaningRepeated(meaning: Meaning, repeatCount: Int) = onMeaning(meaning)
 
+    /** A companion Home sends page controls here after decoding its own physical input. */
+    fun dispatchPanelMeaning(meaning: Meaning, repeatCount: Int) = onMeaningRepeated(meaning, repeatCount)
+
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
     /** Moving a tile, picking an icon, typing, and All library keys. Idle everywhere else. */

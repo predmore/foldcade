@@ -361,9 +361,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
         if (foldcade.shell.model.folderGuide != null) return
-        // Home underneath Themes or Licenses keeps its Settings focus, but only that activity takes keys.
+        // The companion's keys drive Themes or Licenses, keeping the parent Settings inactive.
         val inputPanel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
-        if (inputPanel != null && foldcade.store.session.besideFoldcadePage(inputPanel)) return
+        if (inputPanel != null && foldcade.store.session.pageKeyTarget(inputPanel) != null) {
+            (foldcade.settingsPageActivity as? PanelKeyActivity)?.dispatchPanelMeaning(meaning, repeatCount)
+            return
+        }
         if (foldcade.shell.swallowsHomeReturnRepeat(repeatCount)) return
         if (commandCenterKey(meaning)) return
         if (app.foldcade.language.topMenuKeyBlocked(meaning, foldcade.shell.homeKeys(), foldcade.store.session.islandsOpen())) return

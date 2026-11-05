@@ -112,7 +112,10 @@ data class Session(
     /** An activity-backed Foldcade page keeps its parent page here while Home is covered. */
     fun pageAvailable(panel: Panel): Boolean = draws(panel) || externalOn(panel)?.foldcadePage == true
 
-    fun besideFoldcadePage(panel: Panel): Boolean = externalOn(panel.flip())?.foldcadePage == true
+    fun besideFoldcadePage(panel: Panel): Boolean = pageKeyTarget(panel) != null
+
+    /** The owned activity beside this Home takes its page keys; the parent Settings stays inactive. */
+    fun pageKeyTarget(panel: Panel): Panel? = panel.flip().takeIf { externalOn(it)?.foldcadePage == true }
 
     private fun besideApp(panel: Panel): Surface =
         if (browsing == panel) Surface.Picker else Surface.CommandCenter
