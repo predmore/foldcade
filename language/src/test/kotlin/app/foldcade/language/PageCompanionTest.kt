@@ -6,6 +6,13 @@ import org.junit.Test
 class PageCompanionTest {
     private val home = PickerModel(count = 4, rowsPerPage = 3)
 
+    @Test fun settingsActivitiesFollowTheirPageRatherThanTheScreenThatReceivesTheKey() {
+        for (page in HostScreen.entries) for (input in HostScreen.entries) {
+            assertEquals(page, home.copy(settings = SettingsPage(page)).settingsActivityScreen(input))
+        }
+        assertEquals(HostScreen.Bottom, home.settingsActivityScreen(HostScreen.Bottom))
+    }
+
     @Test fun formsGiveTheOtherScreenACompanionInEveryLayout() {
         for (layout in ScreenLayout.entries) for (kind in ConnectKind.entries) {
             val form = home.copy(layout = layout, connectOpen = true, connectKind = kind, connectScreen = HostScreen.Top)

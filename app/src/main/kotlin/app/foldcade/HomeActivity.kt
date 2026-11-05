@@ -58,6 +58,7 @@ import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.artwork.SteamGridDb
+import app.foldcade.language.settingsActivityScreen
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.AboutCopy
 import app.foldcade.language.SaveConflictAction
@@ -3112,11 +3113,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun openSettingsPage(page: Class<*>) {
-        foldcade.noteSettingsPage(this)
+        // A key received on the grid still opens this page on Settings' screen.
+        val screen = foldcade.shell.model.settingsActivityScreen(hostScreen())
+        val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
+        val displayId = if (screen == HostScreen.Top) assignment.topDisplayId else assignment.bottomDisplayId
+        val host = displayId?.let(foldcade::homeOnDisplay) ?: this
+        foldcade.noteSettingsPage(host)
         try {
-            startActivity(Intent(this, page))
+            host.startActivity(Intent(host, page))
         } catch (failure: RuntimeException) {
-            displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
+            displays.panelFor(host, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
                 foldcade.store.update { it.foldcadeResumed(panel) }
             }
             throw failure

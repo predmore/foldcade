@@ -134,6 +134,9 @@ fun PickerModel.fullPageOn(screen: HostScreen): Boolean =
 /** The full page whose command center belongs on the other screen. Forms cover their parent. */
 enum class CompanionPage { Settings, PlayActivity, About, Romm, ArtKey }
 
+/** An activity opened by a Settings row follows the page, including a key from the other screen. */
+fun PickerModel.settingsActivityScreen(from: HostScreen): HostScreen = settings?.screen ?: from
+
 fun PickerModel.companionPageOn(screen: HostScreen): CompanionPage? = when {
     connectOpen && connectScreen != null && connectScreen != screen ->
         if (connectKind == ConnectKind.ArtKey) CompanionPage.ArtKey else CompanionPage.Romm
