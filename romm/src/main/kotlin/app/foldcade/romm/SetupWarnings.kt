@@ -9,7 +9,7 @@ import app.foldcade.net.isTailnetHost
  * The warning is visible before a token is saved.
  */
 const val CLEARTEXT_CREDENTIAL_WARNING =
-    "This server is using http, not https. Credentials travel in cleartext on the network."
+    "This server uses http://, so your sign-in isn’t encrypted on the network."
 
 /**
  * Shown instead of [CLEARTEXT_CREDENTIAL_WARNING] for a tailnet address.
@@ -17,14 +17,14 @@ const val CLEARTEXT_CREDENTIAL_WARNING =
  * off a tailnet the same address is cleartext.
  */
 const val CLEARTEXT_TAILNET_NOTE =
-    "On your tailnet, Tailscale encrypts this http connection. Elsewhere, credentials travel in cleartext."
+    "On your tailnet, Tailscale encrypts this http:// connection. Elsewhere it isn’t encrypted."
 
 /**
  * Shown when an http origin is not a LAN address.
  * [RommClient.normalizeOrigin] rejects it. The setup screen does not save it.
  */
 const val CLEARTEXT_LAN_ONLY =
-    "Cleartext is only for a LAN address. Use https:// for this server."
+    "http:// only works on your home network. Use https:// for this server."
 
 /**
  * Shown when an http origin answers with a redirect onto https.

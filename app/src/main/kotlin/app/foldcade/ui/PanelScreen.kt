@@ -226,6 +226,7 @@ import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.dialogBodyParts
 import app.foldcade.language.dialogHints
+import app.foldcade.language.rommConnectTitle
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.GridKind
@@ -917,7 +918,8 @@ private fun pageBeside(
     if ((!session.bothScreensFree() && !session.besideFoldcadePage(screen.panel())) || session.surfaceOn(screen.panel()) == Surface.Dark) return null
     val about = model.gameAbout
     return when (model.companionPageOn(screen)) {
-        CompanionPage.Romm -> CenterSubject.Page(Copy.rommConnection, null, "cloud", settings = true)
+        // The form's own title, so the two screens name one place (review-A 12).
+        CompanionPage.Romm -> CenterSubject.Page(rommConnectTitle(model, saved = app.store.rommOrigin() != null), null, "cloud", settings = true)
         CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, R.drawable.symbol_art, null, settings = true)
         CompanionPage.Settings ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
@@ -1299,6 +1301,12 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         if (islandOver) 1f else 0f,
         if (islandOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
     )
+    // A dialog on this screen puts the name card away, so nothing under its scrim reads as a second message (review-B S9).
+    val dialogHere = model.dialog?.screen == screen
+    val dialogDim = motionState(
+        if (dialogHere) 1f else 0f,
+        if (dialogHere) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
+    )
     // The grid's neighbours, not Find's: the grid is what is under the ring.
     WarmNeighbours(app, place.takeIf { find == null })
     // The shown game's scene decides how the name card sits over it.
@@ -1402,7 +1410,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 if (named != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
-                        if (named != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - islandDim.value) }) {
+                        if (named != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - max(islandDim.value, dialogDim.value)) }) {
                             HeroLabel(
                                 app,
                                 named,
@@ -2912,7 +2920,7 @@ private fun Picker(
                 }
             }
             if (!gridGone) {
-                // A dialog here names its keys where this bar sits, so the bar steps aside rather than underline them.
+                // A dialog here dims this bar under its scrim; it steps aside so only the dialog reads.
                 // Y's card can reach down to the bar too, so the bar fades while it is open (review-C 84).
                 val dialogHere = model.dialog?.screen == screen
                 val barAway = motionState(if (tileMenuOn(app, screen)) 1f else 0f, motion.arrive(motion.durationIsland, scale))
@@ -3486,7 +3494,7 @@ private fun MenuHints(app: FoldcadeApp) {
 private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
-    // A dialog names its own keys above its scrim, so the grid's would only show dimmed under it.
+    // A dialog names its own keys on its card, so the grid's would only show dimmed under it.
     if (model.dialog != null) return
     val actions = hintFor(
         when {
@@ -3579,7 +3587,8 @@ internal fun HintWord(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         PromptImage(if (held) "${glyph}_filled" else glyph, 24.dp)
-        if (hint.label.isNotEmpty()) BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        // One line: a hint that can't fit moves whole to the next line, as a dialog's buttons do.
+        if (hint.label.isNotEmpty()) BasicText(text = hint.label, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()), maxLines = 1, softWrap = false)
     }
 }
 
@@ -5028,8 +5037,8 @@ private fun DialogCard(
 /**
  * The one dialog look: a scrim, then a card with a strong title, its body, and its buttons in
  * a row from the left. A body written as numbered steps shows them as a list. The keys it
- * names sit where the grid's hints do, above the scrim, so B says what it does at full ink.
- * Shell dialogs and the Saves page's confirmations both draw it.
+ * names end the button row, inside the card, so B reads as the dialog's and never lands on
+ * whatever the scrim dims (review-B S9). Shell dialogs and the Saves page's confirmations both draw it.
  */
 @Composable
 internal fun DialogFrame(
@@ -5047,13 +5056,12 @@ internal fun DialogFrame(
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
-    BoxWithConstraints(
+    Box(
         modifier
             .fillMaxSize()
             .blocksTouch()
             .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha)),
     ) {
-        val hintInset = maxWidth * design.metrics.insetFraction
         Box(Modifier.fillMaxSize().padding(px(design.metrics.dialogInsetPx)), contentAlignment = Alignment.Center) {
             Column(
                 Modifier
@@ -5075,21 +5083,63 @@ internal fun DialogFrame(
                 if (!detail.isNullOrBlank()) {
                     BasicText(text = detail, style = text(theme.muted, design.type.dialogBody, theme))
                 }
-                // Buttons that do not fit one line move whole to the next, at any font size, rather than squeeze.
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(px(8f))) {
+                DialogButtonRow(gap = px(8f), hintGap = px(16f), hasHints = hints.isNotEmpty()) {
                     buttons.forEachIndexed { index, label ->
                         DialogAction(label = label, focused = focused == index, onClick = { onButton(index) })
+                    }
+                    if (hints.isNotEmpty()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
+                            hints.forEach { HintWord(app.shell.model, it) }
+                        }
                     }
                 }
             }
         }
-        if (hints.isNotEmpty()) {
-            Row(
-                Modifier.align(Alignment.BottomCenter).padding(hintInset),
-                horizontalArrangement = Arrangement.spacedBy(px(16f)),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                hints.forEach { HintWord(app.shell.model, it) }
+    }
+}
+
+/**
+ * A dialog's buttons from the left, and its keys ([hasHints]: the last child) at the right.
+ * Buttons that do not fit a line move whole to the next, at any font size, rather than squeeze.
+ * The keys sit on the last line of buttons when they fit beside it, else on a line of their own,
+ * still at the right. Each line centres its items on one another.
+ */
+@Composable
+private fun DialogButtonRow(gap: androidx.compose.ui.unit.Dp, hintGap: androidx.compose.ui.unit.Dp, hasHints: Boolean, content: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(content, Modifier.fillMaxWidth()) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val placeables = measurables.map { it.measure(loose) }
+        val buttons = if (hasHints) placeables.dropLast(1) else placeables
+        val hint = if (hasHints) placeables.last() else null
+        val gapPx = gap.roundToPx()
+        val hintGapPx = hintGap.roundToPx()
+        // Each line: its items and where each starts.
+        val lines = mutableListOf(mutableListOf<Pair<androidx.compose.ui.layout.Placeable, Int>>())
+        var x = 0
+        for (button in buttons) {
+            val line = lines.last()
+            val start = if (line.isEmpty()) 0 else x + gapPx
+            if (line.isNotEmpty() && start + button.width > width) {
+                lines.add(mutableListOf(button to 0))
+                x = button.width
+            } else {
+                line.add(button to start)
+                x = start + button.width
+            }
+        }
+        if (hint != null) {
+            val line = lines.last()
+            val fits = line.isEmpty() || x + hintGapPx + hint.width <= width
+            if (!fits) lines.add(mutableListOf())
+            lines.last().add(hint to (width - hint.width).coerceAtLeast(0))
+        }
+        val heights = lines.map { line -> line.maxOfOrNull { it.first.height } ?: 0 }
+        layout(width, heights.sum()) {
+            var y = 0
+            lines.forEachIndexed { index, line ->
+                line.forEach { (placeable, start) -> placeable.placeRelative(start, y + (heights[index] - placeable.height) / 2) }
+                y += heights[index]
             }
         }
     }

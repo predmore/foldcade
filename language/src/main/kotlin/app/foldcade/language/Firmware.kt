@@ -4,8 +4,9 @@ object FirmwareCopy {
     fun ready(platform: String): String = "$platform BIOS ready"
     fun missing(system: String, files: List<String>, place: String, rommConnected: Boolean = false): String {
         val detail = files.joinToString(", ").removePrefix("$system BIOS ").trim('(', ')')
-        val romm = if (rommConnected) " or RomM’s firmware" else ""
-        return "Missing the $system BIOS ($detail). Put it in $place$romm. Then start the game again."
+        // A BIOS on RomM is placed by itself (#365), so RomM leads when it is there; the folder stays the other way (review-D 109).
+        val where = if (rommConnected) "Add it to RomM’s firmware for $system, or put it in $place" else "Put it in $place"
+        return "Missing the $system BIOS ($detail). $where. Then start the game again."
     }
     fun folder(player: String, place: String, files: List<String> = emptyList()): String =
         (if (files.isEmpty()) "Your BIOS belongs in $place. " else "${files.joinToString(", ")} belongs in $place. ") +

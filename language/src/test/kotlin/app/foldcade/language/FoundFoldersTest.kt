@@ -13,9 +13,11 @@ class FoundFoldersTest {
             FoundFolderCopy.offerBody(listOf("ROMs"), listOf("Nintendo DS", "Sega Genesis")),
         )
         assertEquals(
-            "Games for 4 systems are waiting in Emulation/roms and your SD card. Allow file access once and they’re on Home.",
+            // A word joiner after the slash keeps the path on one line.
+            "Games for 4 systems are waiting in Emulation/\u2060roms and your SD card. Allow file access once and they’re on Home.",
             FoundFolderCopy.offerBody(listOf("Emulation/roms", FoundFolderCopy.yourCard), listOf("Game Boy", "PSP", "Sega Genesis", "SNES")),
         )
+        assertEquals("Find games in Emulation/\u2060roms, or add a folder", FoundFolderCopy.addGamesLine(RomFolderOffer(listOf("Emulation/roms"), emptyList(), "primary:Emulation/roms")))
         val prompt = findGamesPrompt(HostScreen.Bottom, listOf("ROMs"), listOf("PSP"))
         assertEquals(DialogKind.FindGames, prompt.kind)
         assertEquals(listOf(DialogButton.Allow, DialogButton.NotNow), prompt.buttons)

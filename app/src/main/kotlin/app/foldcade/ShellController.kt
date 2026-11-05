@@ -2581,6 +2581,11 @@ class ShellController(
         if (model.rommHost != host) model = model.copy(rommHost = host)
     }
 
+    /** The tree Pick again chose: once the folder it replaces leaves, Settings focuses it ([PickerModel.folderFocus]). */
+    fun focusFolderAfterPick(uri: String) {
+        model = model.copy(folderFocus = uri)
+    }
+
     /** A ROM folder Foldcade saw that no source reads yet, where Add a folder's picker opens. */
     fun setFolderStart(start: String?) {
         if (model.folderStart != start) model = model.copy(folderStart = start)

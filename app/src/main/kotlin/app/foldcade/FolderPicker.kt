@@ -41,6 +41,8 @@ internal data class FolderPickerState(
     val pendingLaunch: Int? = null,
     val settingsPlayerId: String? = null,
     val guide: app.foldcade.language.FolderGuide? = null,
+    /** A library source Pick again replaces, by tree URI. */
+    val replacing: String? = null,
 ) {
     fun encode(): String = buildString {
         append(purpose.name)
@@ -54,6 +56,8 @@ internal data class FolderPickerState(
         append(guide?.playerId.orEmpty())
         append('\n')
         append(guide?.opensThere?.toString().orEmpty())
+        append('\n')
+        append(replacing.orEmpty())
     }
 }
 
@@ -70,6 +74,7 @@ internal fun decodeFolderPickerState(raw: String?): FolderPickerState {
         guide = lines.getOrNull(3)?.let { name -> app.foldcade.language.HostScreen.entries.firstOrNull { it.name == name } }?.let { screen ->
             app.foldcade.language.FolderGuide(screen, lines.getOrNull(4)?.takeIf { it.isNotEmpty() }, lines.getOrNull(5) != "false")
         },
+        replacing = lines.getOrNull(6)?.takeIf { it.isNotEmpty() },
     )
 }
 

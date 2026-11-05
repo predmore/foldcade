@@ -30,7 +30,15 @@ internal data class RomRoot(val volume: String, val path: String, val systems: L
  * folders, though not its files, without any storage access, so this runs before the player
  * allows all-files access too. Reads the disk: never on the main thread.
  */
-internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? = { it.listFiles()?.toList() }): List<RomRoot> {
+internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? = { it.listFiles()?.toList() }): List<RomRoot> =
+    findRomFolders(volumes, list).filter { it.systems.isNotEmpty() }
+
+/**
+ * Every `ROMs`, `roms` and `Emulation/roms` folder, as [findRomRoots] sees them, including the
+ * ones with no system folder yet. Add a folder's picker opens in one of those: it is where a
+ * frontend keeps games, even before any are in it (review-D 144).
+ */
+internal fun findRomFolders(volumes: List<VolumeDir>, list: (File) -> List<File>? = { it.listFiles()?.toList() }): List<RomRoot> {
     fun folders(dir: File) = list(dir).orEmpty().filter { it.isDirectory && !Files.isSymbolicLink(it.toPath()) }
     return volumes.flatMap { volume ->
         val top = folders(volume.dir)
@@ -38,7 +46,7 @@ internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? 
             top.filter { it.name.equals(EMULATION, ignoreCase = true) }.flatMap { emulation ->
                 folders(emulation).filter { it.name.equals(ROMS, ignoreCase = true) }
             }
-        candidates.mapNotNull { dir ->
+        candidates.map { dir ->
             val children = folders(dir)
             // GameNative has no default export path (PrefManager defaults each to "").
             // https://github.com/utkarshdalal/GameNative/blob/a2a121bb477070026fed8f6ee66f8d3e8b350971/app/src/main/java/app/gamenative/PrefManager.kt#L1626-L1658
@@ -52,7 +60,6 @@ internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? 
             val systems = (children.mapNotNull { platformFromFolderName(it.name)?.name } +
                 listOfNotNull(app.foldcade.plugins.gamenative.GameNativeLibrary.DISPLAY_NAME.takeIf { hasGameNative }))
                 .distinct().sortedBy { it.lowercase() }
-            if (systems.isEmpty()) return@mapNotNull null
             RomRoot(volume.id, dir.relativeTo(volume.dir).invariantSeparatorsPath, systems)
         }
     }.distinctBy { it.documentId.lowercase() }
@@ -65,6 +72,15 @@ internal fun findRomRoots(volumes: List<VolumeDir>, list: (File) -> List<File>? 
  * games would otherwise come back through the folder around it.
  * [picked] and [removed] are document ids, `<volume>:<path>`.
  */
+/**
+ * Where Add a folder's picker opens: the first root the library could still read, else the
+ * first ROM folder with nothing in it yet that no source covers, else null (the top of storage).
+ */
+internal fun libraryPickStart(folders: List<RomRoot>, picked: List<String>, removed: Set<String>): String? {
+    val open = folders.filter { romRootUsable(it.documentId, picked, removed) }
+    return (open.firstOrNull { it.systems.isNotEmpty() } ?: open.firstOrNull())?.documentId
+}
+
 internal fun usableRomRoots(roots: List<RomRoot>, picked: List<String>, removed: Set<String>): List<RomRoot> =
     roots.filter { romRootUsable(it.documentId, picked, removed) }
 

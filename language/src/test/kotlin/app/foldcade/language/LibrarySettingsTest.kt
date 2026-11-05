@@ -17,6 +17,62 @@ class LibrarySettingsTest {
     private fun onAddTile(model: PickerModel): PickerModel = model.onSetting(addTile)
 
     @Test
+    fun anEmptyFolderOffersPickAgainAboveRemoveAndAFullOneOnlyRemove() {
+        val read = empty.copy(empty = true)
+        assertEquals(listOf(Row.PickFolderAgain(read.uri), Row.ForgetFolder(read.uri, read.label)), settingsInnerRows(SettingsInner.Folder(read.uri), library.copy(folders = listOf(read))))
+        // Not yet read reads as a folder still on its way, not an empty one.
+        assertEquals(listOf(Row.ForgetFolder(empty.uri, empty.label)), settingsInnerRows(SettingsInner.Folder(empty.uri), library.copy(folders = listOf(empty))))
+        assertEquals(listOf(Row.ForgetFolder(roms.uri, roms.label)), settingsInnerRows(SettingsInner.Folder(roms.uri), library))
+        // Foldcade found it itself, so it never offers to swap it out.
+        val found = read.copy(found = true)
+        assertEquals(listOf(Row.ForgetFolder(found.uri, found.label)), settingsInnerRows(SettingsInner.Folder(found.uri), library.copy(folders = listOf(found))))
+        assertEquals(RowControl.Opens, rowControl(Row.PickFolderAgain(read.uri), library))
+        // Pick again keeps the folder's page: Android's picker comes back to it.
+        val page = library.copy(folders = listOf(read)).onSetting(Row.PickFolderAgain(read.uri))
+        val (next, effect) = reduce(page, Meaning.Activate, HostScreen.Top)
+        assertEquals(Effect.PickFolderAgain(read.uri), effect)
+        assertEquals(SettingsInner.Folder(read.uri), next.settings?.inner)
+    }
+
+    @Test
+    fun aFolderThatReplacedThePageItWasPickedFromTakesTheFocusOnTheShelf() {
+        val read = empty.copy(empty = true)
+        val page = library.copy(folders = listOf(roms, read)).onSetting(Row.PickFolderAgain(read.uri))
+        val replacement = LibraryFolder("content://games", "games", games = 3)
+        val next = page.withFolders(listOf(roms, replacement))
+        assertNull(next.settings?.inner)
+        assertEquals(Row.SettingsTile(SettingsInner.Folder(replacement.uri)), settingsFocus(next))
+        // A folder the library already read takes the focus too, once Pick again named it.
+        val chosen = page.copy(folders = listOf(roms, read), folderFocus = roms.uri)
+        val kept = chosen.withFolders(listOf(roms))
+        assertNull(kept.settings?.inner)
+        assertEquals(Row.SettingsTile(SettingsInner.Folder(roms.uri)), settingsFocus(kept))
+        assertNull(kept.folderFocus)
+        // Picking the same folder again keeps its page.
+        assertEquals(SettingsInner.Folder(read.uri), page.withFolders(listOf(roms, read.copy(empty = false, games = 2))).settings?.inner)
+    }
+
+    @Test
+    fun aTypedRommAddressSaysWhatToFix() {
+        assertEquals(Copy.rommFixAddress, rommAddressFix("http://192.0.2.1"))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("romm.local"))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("ftp://romm.local"))
+        assertEquals(Copy.rommAddressCredentials, rommAddressFix("https://user:secret@romm.example"))
+        // A LAN http:// address with a password warns about encryption too, but the password is what stops the code.
+        assertEquals(Copy.rommAddressCredentials, rommAddressFix("http://user:pw@192.168.1.2"))
+        assertEquals(Copy.rommFixAddress, rommAddressFix("https:///api"))
+    }
+
+    @Test
+    fun rommsPageRowsThatOpenTheFormWearTheOpensMark() {
+        assertEquals(RowControl.Opens, rowControl(Row.EditRomm("romm"), library))
+        assertEquals(RowControl.Opens, rowControl(Row.SignInRomm, library))
+        // The form and the page beside it share one title.
+        assertEquals(Copy.addRommServer, rommConnectTitle(library, saved = false))
+        assertEquals(Copy.signInRomm, rommConnectTitle(library, saved = true))
+    }
+
+    @Test
     fun withRommSavedTheAddTileOpensThePickerItself() {
         assertEquals(listOf(Row.AddFolder), settingsInnerRows(SettingsInner.Add, library))
         val page = onAddTile(library.copy(folderGrantPending = false))

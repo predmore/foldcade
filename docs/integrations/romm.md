@@ -35,6 +35,8 @@ Foldcade stores a token, not your RomM password.
 
 If the phone cannot continue to the approval page, scan the approval QR on the Thor instead. An approval link to a different server address is not opened by the phone page.
 
+An address typed on the Thor gets its code once Foldcade can use it. Until then the code's side says what to fix: an `http://` address outside your home network needs `https://`, and an address without `https://` needs it added.
+
 If the code expires or is declined, choose **Pair with phone** for a new one. To use a token instead, paste it into **Token (optional)**; the button then reads **Connect**. See [RomM's token guide](https://docs.romm.app/latest/developers/client-api-tokens/).
 
 A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write`, `devices.read`, `devices.write`, and `firmware.read`.

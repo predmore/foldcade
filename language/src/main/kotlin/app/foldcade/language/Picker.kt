@@ -1215,6 +1215,8 @@ data class LibraryFolder(
     val media: Boolean = false,
     /** Foldcade found it by itself (`ROMs`, `Emulation/roms`). Remove keeps it away for good. */
     val found: Boolean = false,
+    /** Read through, and it brought no games, art or facts: its page offers Pick again. */
+    val empty: Boolean = false,
 )
 
 enum class ConnectField {
@@ -1253,6 +1255,29 @@ data class PairingCode(val code: String, val url: String) {
  * server to pair with), Pair with phone for a new code, and nothing to press while a phone
  * can approve the code on screen.
  */
+/**
+ * What to fix in a typed RomM address Foldcade can't use, under the phone's square: no http(s)://
+ * at all, a username or password in it, or else the address itself, as http:// off the home
+ * network, whose warning sits under the field.
+ */
+fun rommAddressFix(origin: String): String {
+    val text = origin.trim()
+    val scheme = text.substringBefore("://", "").lowercase()
+    return when {
+        scheme != "http" && scheme != "https" -> Copy.rommAddressScheme
+        // Before the http warning: a LAN http:// address with a password still warns about encryption.
+        '@' in text.substringAfter("://").substringBefore('/') -> Copy.rommAddressCredentials
+        else -> Copy.rommFixAddress
+    }
+}
+
+/** The RomM form's title, which the page beside it wears too: editing, signing in again, or adding. */
+fun rommConnectTitle(model: PickerModel, saved: Boolean): String = when {
+    model.connectReturnPanel != null && !model.rommSignIn -> Copy.editRommConnection
+    saved -> Copy.signInRomm
+    else -> Copy.addRommServer
+}
+
 fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
     busy -> Copy.connecting
     tokenTyped -> Copy.connect
@@ -2085,6 +2110,11 @@ data class PickerModel(
      * Add a folder opens Android's picker there.
      */
     val folderStart: String? = null,
+    /**
+     * The tree Pick again chose for the folder whose page asked. Once that folder leaves, the shelf
+     * focuses this one, even when the library already read it ([withFolders]).
+     */
+    val folderFocus: String? = null,
     /** Alphabetical labels in display order. Empty when triggers jump screens instead. */
     val gridLabels: List<String> = emptyList(),
     /** Home can retain empty slots after its last actual tile. */
@@ -2919,7 +2949,8 @@ private fun activateRow(
             else model.copy(panel = null, focus = panel.grid) to Effect.ForgetCredentials(row.pluginId)
         Row.SignInRomm -> model.openRommSignIn(panel.grid)
         is Row.ForgetFolder -> model.copy(panel = null, focus = panel.grid) to Effect.ForgetFolder(row.uri)
-        is Row.PickFolderAgain -> model.copy(panel = null, focus = panel.grid) to Effect.PickFolderAgain(row.uri)
+        // Android's folder picker returns to the folder's page it was opened from, as PlayerSave's does.
+        is Row.PickFolderAgain -> model.copy(panel = panel) to Effect.PickFolderAgain(row.uri)
         is Row.Notice -> openNotice(model, panel, row.id)
         Row.NoticeAccess -> model.copy(panel = panel, dialog = noticeAccessPrompt(screen)) to null
         Row.ClearNotices -> model.copy(

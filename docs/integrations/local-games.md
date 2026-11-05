@@ -40,8 +40,8 @@ Use this for a folder Foldcade doesn't find, or to keep all-files access off.
    ```
 
 3. In Foldcade, choose **Add a folder** on Home's **Add games** tile, or the **Add** tile in **L1 › Settings › Library**. With a RomM server already added, **Add** opens the picker straight away; otherwise choose **Folder**.
-4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When Foldcade has seen a ROMs folder, the picker opens there, so **Use this folder** and **Allow** are all it takes. Otherwise it opens at the top of internal storage.
-5. Wait for the scan, then open the system's folder on Home or find the game in **All**. A folder with no games says so right away, with **Add a folder** to pick another. Its page in **Settings › Library** shows where it is and how many games it holds. Hold **A** on **Remove** to stop reading it.
+4. Select `ROMs`, or an individual system folder, in Android's folder picker and grant access. When there is a `ROMs`, `roms` or `Emulation/roms` folder that no source reads yet, even an empty one, the picker opens there, so **Use this folder** and **Allow** are all it takes. Otherwise it opens at the top of internal storage.
+5. Wait for the scan, then open the system's folder on Home or find the game in **All**. A folder with no games says so right away, with **Add a folder** to pick another. Its page in **Settings › Library** shows where it is and how many games it holds. While it holds none, the page also offers **Pick again**: the folder you pick there takes its place. Hold **A** on **Remove** to stop reading it.
 
 Foldcade scans subfolders too. It needs access only to the tree you choose.
 
