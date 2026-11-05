@@ -5,12 +5,12 @@ object FirmwareCopy {
     fun missing(system: String, files: List<String>, place: String, rommConnected: Boolean = false): String {
         val detail = files.joinToString(", ").removePrefix("$system BIOS ").trim('(', ')')
         val romm = if (rommConnected) " or RomM’s firmware" else ""
-        return "Missing the $system BIOS ($detail). Put it in $place$romm, then retry."
+        return "Missing the $system BIOS ($detail). Put it in $place$romm. Then start the game again."
     }
     fun folder(player: String, place: String, files: List<String> = emptyList()): String =
         (if (files.isEmpty()) "Your BIOS belongs in $place. " else "${files.joinToString(", ")} belongs in $place. ") +
             "Choose the $player folder once to let Foldcade check and place your BIOS."
-    fun unreachable(player: String): String = "Could not check $player’s BIOS folder. Choose its folder again in Settings › Emulators, then retry."
+    fun unreachable(player: String): String = "Could not check $player’s BIOS folder. Choose its folder again in Settings › Emulators. Then start the game again."
     const val title = "BIOS needed"
     fun folderNoticeTitle(player: String): String = "$player BIOS folder"
     const val wrongFolder = "Choose RetroArch or its system folder. That one pick covers your BIOS."

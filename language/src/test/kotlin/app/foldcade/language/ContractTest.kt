@@ -550,12 +550,14 @@ class ContractTest {
         assertEquals(DialogButton.ContinueGrant, folder.buttons[folder.index])
         assertEquals(DialogButton.NotNow, folder.buttons[folder.safeIndex])
         val again = signInAgainPrompt()
-        assertEquals(DialogButton.Ok, again.buttons[again.index])
+        assertEquals(DialogButton.SignInRomm, again.buttons[again.index])
+        assertEquals(DialogButton.NotNow, again.buttons[again.safeIndex])
         val shown = previewDialogState("home", 1, HostScreen.Top)
         assertEquals(HostScreen.Top, shown?.screen)
         assertEquals(DialogButton.NotNow, shown?.let { it.buttons[it.index] })
         val missing = previewDialogState("missing-player", 0, HostScreen.Bottom)
-        assertEquals(DialogButton.Ok, missing?.let { it.buttons[it.index] })
+        assertEquals(DialogButton.GetPlayer, missing?.let { it.buttons[it.index] })
+        assertEquals("Get Azahar", missing?.let { dialogButtonLabel(it.buttons[it.index], it.subject) })
         val saves = previewDialogState("save-folder", 0, HostScreen.Top)
         assertEquals(DialogButton.ChooseSaveFolder, saves?.let { it.buttons[it.index] })
         assertNull(previewDialogState("missing", 0, HostScreen.Bottom))
@@ -635,11 +637,14 @@ class ContractTest {
     @Test
     fun azaharDialogsKeepTheRunningGameOnBack() {
         val missing = missingPlayerDialog("Azahar", HostScreen.Bottom)
-        assertEquals("Azahar is not installed", missing.title)
+        assertEquals("Azahar isn’t installed", missing.title)
         assertEquals(Copy.missingPlayerBody, missing.body)
         assertEquals(DialogKind.MissingPlayer, missing.kind)
 
-        val close = closeBothPanelDialog(HostScreen.Bottom)
+        // Closing loses the running game's unsaved progress, so it opens on Not now and names that game.
+        val close = closeBothPanelDialog(HostScreen.Bottom, "Bravely Second")
+        assertEquals("Close Bravely Second?", close.title)
+        assertEquals(DialogButton.NotNow, close.buttons[close.index])
         assertEquals(DialogButton.NotNow, close.buttons[close.safeIndex])
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = close)
         val (kept, choice) = reduce(model, Meaning.Back)
@@ -650,7 +655,8 @@ class ContractTest {
         assertEquals(DialogKind.SaveFolder, saves.kind)
         assertEquals(HostScreen.Top, saves.screen)
         assertEquals(DialogButton.ChooseSaveFolder, saves.buttons[saves.index])
-        assertEquals(DialogButton.PlayWithoutSyncing, saves.buttons[saves.safeIndex])
+        assertEquals(DialogButton.PlayWithoutSyncing, saves.buttons[1])
+        assertEquals(BACK_CLOSES, saves.safeIndex)
         assertFalse(saves.body.contains("sdmc"))
         val (started, saveChoice) = reduce(
             PickerModel(count = 1, rowsPerPage = 1, dialog = saves),
@@ -662,7 +668,7 @@ class ContractTest {
         // A player that cannot start without its folder: Continue is the default, and Not now promises no game.
         val needed = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", opensThere = true, needed = true)
         assertEquals(DialogButton.ChooseSaveFolder, needed.buttons[needed.index])
-        assertEquals(DialogButton.NotNow, needed.buttons[needed.safeIndex])
+        assertEquals(DialogButton.NotNow, needed.buttons[1])
         assertTrue(needed.body.startsWith(Copy.saveFolderNeededBody))
         assertFalse(needed.body.contains("starts the game"))
     }
@@ -781,7 +787,8 @@ class ContractTest {
         assertEquals(wrongSaveFolderBody("aPS3e", setOf("config", "logs")), dialog.body)
         assertEquals(listOf(DialogButton.ChooseSaveFolder, DialogButton.NotNow), dialog.buttons)
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = dialog)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
+        // Back cancels the launch it held, which Not now does too for a player that needs its folder.
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
     }
 
     @Test

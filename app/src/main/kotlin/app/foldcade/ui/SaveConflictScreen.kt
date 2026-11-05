@@ -44,6 +44,7 @@ import app.foldcade.language.formatSaveSize
 import app.foldcade.language.formatSaveWhen
 import app.foldcade.language.previewSaveConflict
 import app.foldcade.language.saveConflictFit
+import app.foldcade.language.newerSide
 
 /**
  * The top screen names the game. The choice itself is on the bottom screen.
@@ -52,7 +53,12 @@ import app.foldcade.language.saveConflictFit
 internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
     val theme = LocalFoldTheme.current.theme
     Column(
-        Modifier.fillMaxSize().padding(48.dp),
+        Modifier
+            .fillMaxSize()
+            .blocksTouch()
+            // Opaque, so the focused tile's hero and name never show through the choice.
+            .background(theme.background)
+            .padding(48.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -63,7 +69,7 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
 }
 
 /**
- * Both saves, side by side at one width, with Keep this one under each and Keep both focused first.
+ * Both saves, side by side at one width, with Play this one under each and Leave as is focused first.
  * The ring is the same green-to-blue stroke as every other chip, drawn heavier so a
  * controller focus reads across the bottom screen. Decide later is B, or a touch.
  * A short panel tightens the spacing. Anything that still does not fit scrolls, and the
@@ -107,10 +113,11 @@ internal fun SaveConflictBottom(
                 horizontalArrangement = Arrangement.spacedBy(gap),
                 verticalAlignment = Alignment.Top,
             ) {
-                SaveColumn(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, Modifier.weight(1f)) {
+                val newer = newerSide(prompt)
+                SaveColumn(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, Modifier.weight(1f)) {
                     onFocus(SaveConflictFocus.Local)
                 }
-                SaveColumn(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, Modifier.weight(1f)) {
+                SaveColumn(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, newer == SaveConflictFocus.Remote, Modifier.weight(1f)) {
                     onFocus(SaveConflictFocus.Remote)
                 }
             }
@@ -137,6 +144,7 @@ private fun SaveColumn(
     dateStyle: DateStyle,
     focused: Boolean,
     compact: Boolean,
+    newer: Boolean,
     modifier: Modifier,
     onKeep: () -> Unit,
 ) {
@@ -154,7 +162,9 @@ private fun SaveColumn(
         ) {
             BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
             BasicLine(formatSaveWhen(side.updatedAtMillis, dateStyle), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
-            BasicLine(formatSaveSize(side.sizeBytes), theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+            // The newer copy says so in the focus colour, so the two times need no comparing.
+            val size = formatSaveSize(side.sizeBytes)
+            BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
         }
         ConflictChip(
             label = Copy.keepThisOne,

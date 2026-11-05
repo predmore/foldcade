@@ -57,8 +57,8 @@ object PlayerChoiceCopy {
     fun core(label: String): String = "$label (RetroArch)"
     fun opened(label: String): String = "Opened with $label"
     fun unavailable(choice: PlayerChoice): String = if (choice.core == null) {
-        "${choice.label} isn't installed."
+        "${choice.label} isn’t installed."
     } else {
-        "RetroArch's ${choice.label.removeSuffix(" (RetroArch)")} core isn't installed."
+        "RetroArch’s ${choice.label.removeSuffix(" (RetroArch)")} core isn’t installed."
     }
 }

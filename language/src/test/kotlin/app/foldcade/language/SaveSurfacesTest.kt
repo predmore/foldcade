@@ -168,6 +168,6 @@ class SaveSurfacesTest {
         assertFalse(DialogButton.NotNow in dialog.buttons)
         val (closed, effect) = reduce(PickerModel(count = 0, rowsPerPage = 1, dialog = dialog), Meaning.Back, HostScreen.Bottom)
         assertNull(closed.dialog)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Backup, null), effect)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.Backup, null), effect)
     }
 }

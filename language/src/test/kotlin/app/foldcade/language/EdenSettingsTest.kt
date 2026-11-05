@@ -82,9 +82,10 @@ class EdenSettingsTest {
         assertEquals(Copy.edenRestartTitle, dialog.title)
         assertEquals(Copy.edenRestartBody, dialog.body)
         assertEquals("Restart Eden once", dialog.title)
+        // A lead line, then the three steps a dialog shows as a list.
         assertEquals(
-            "Foldcade added Switch files to Eden. Eden reads them only when it starts. On the next screen, choose Force stop, then OK. Press B to come back and start the game again.",
-            dialog.body,
+            DialogBody("Eden reads new Switch files only when it starts.", listOf("Tap Force stop, then OK.", "Press B to come back.", "Start the game again.")),
+            dialogBodyParts(dialog.body),
         )
         assertEquals(listOf(DialogButton.ContinueGrant, DialogButton.NotNow), dialog.buttons)
         assertEquals(DialogButton.ContinueGrant, dialog.buttons.first())
@@ -106,22 +107,25 @@ class EdenSettingsTest {
         assertEquals(Copy.edenWrongFolderTitle, dialog.title)
         assertEquals("That isn’t Eden’s folder", dialog.title)
         assertEquals(Copy.edenWrongFolderBody, dialog.body)
-        assertEquals(
-            "Choose Use this folder where the picker opens, without opening a folder inside it.",
-            dialog.body,
-        )
-        assertEquals(listOf(DialogButton.TryAgain, DialogButton.NotNow), dialog.buttons)
+        assertEquals("Tap Use this folder as soon as the picker opens.", dialog.body)
+        // The capture holds a launch: its way on is Play without syncing, and Back cancels.
+        assertEquals(listOf(DialogButton.TryAgain, DialogButton.PlayWithoutSyncing), dialog.buttons)
         assertEquals(DialogButton.TryAgain, dialog.buttons.first())
         assertEquals(0, dialog.index)
         assertEquals("Try again", dialogButtonLabel(dialog.buttons[dialog.index]))
         assertEquals(Copy.tryAgain, dialogButtonLabel(DialogButton.TryAgain))
-        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
-        assertEquals(1, dialog.safeIndex)
+        assertEquals(BACK_CLOSES, dialog.safeIndex)
         val (after, effect) = reduce(
             PickerModel(count = 1, rowsPerPage = 1, dialog = dialog),
             Meaning.Back,
         )
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.EdenWrongFolder), effect)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.EdenWrongFolder), effect)
         assertNull(after.dialog)
+        // From Settings, nothing waits: Not now only closes, and Back presses it.
+        val settings = edenWrongFolderDialog(HostScreen.Bottom)
+        assertEquals(listOf(DialogButton.TryAgain, DialogButton.NotNow), settings.buttons)
+        assertEquals(DialogButton.NotNow, settings.buttons[settings.safeIndex])
+        // A launch that cannot start without the folder has no Play without syncing.
+        assertEquals(listOf(DialogButton.TryAgain, DialogButton.NotNow), edenWrongFolderDialog(HostScreen.Bottom, launchHeld = true, needed = true).buttons)
     }
 }

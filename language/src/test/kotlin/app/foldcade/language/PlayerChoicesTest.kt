@@ -108,6 +108,6 @@ class PlayerChoicesTest {
         assertEquals(RowControl.Choice("Auto · Pizza Boy GBA", short = "Pizza Boy GBA"), rowControl(Row.SystemPlayer("a"), next))
         val missingGame = model.copy(tileActions = TileActions(game = "g", openWith = choice.copy(selected = gone, selectedUsable = false)))
         assertEquals(RowControl.Choice("My Boy! · not installed", attention = true), rowControl(Row.OpenWith, missingGame))
-        assertEquals("RetroArch's mGBA core isn't installed.", PlayerChoiceCopy.unavailable(second))
+        assertEquals("RetroArch’s mGBA core isn’t installed.", PlayerChoiceCopy.unavailable(second))
     }
 }

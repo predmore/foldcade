@@ -200,7 +200,7 @@ fun resolveThemeResources(zip: ThemeZip, inherit: ThemeResources? = null): Theme
 
 /** What a pack's description of itself names that its archive does not have. */
 private fun themeAboutDiagnostics(file: ThemeFile, names: Set<String>): List<ThemeDiagnostic> = buildList {
-    if ("extends" in file.root && file.extends == null) add(ThemeDiagnostic("theme.json", "extends must name another pack's id"))
+    if ("extends" in file.root && file.extends == null) add(ThemeDiagnostic("theme.json", "extends must name another pack’s id"))
     if ("preview" in file.root && (file.about.preview == null || file.about.preview !in names)) add(ThemeDiagnostic("theme.json", "Missing preview image"))
     (file.root["fonts"] as? JsonObject)?.keys?.forEach { face ->
         val path = file.fonts[face]

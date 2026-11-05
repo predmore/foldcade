@@ -232,7 +232,7 @@ class SetupReviewRegressionTest {
         assertTrue(restarted.failed.isFile)
         assertEquals(SetupRestoreResult.Failed, SetupBackups(root, prefs).resume(emptySet(), broken))
         assertEquals(2, calls)
-        assertEquals("The restore didn't finish. Your setup is as it was.", BackupCopy.restoreUnfinished)
+        assertEquals("The restore didn’t finish. Your setup is as it was.", BackupCopy.restoreUnfinished)
     }
 
     @Test fun corruptStagesAndCommitFailuresAlsoStopAfterTwoAttempts() {

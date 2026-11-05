@@ -104,7 +104,7 @@ class BackupTest {
         assertEquals(BACK_CLOSES, simple.safeIndex)
         val (closed, back) = reduce(PickerModel(count = 0, rowsPerPage = 1, dialog = simple), Meaning.Back, HostScreen.Top)
         assertNull(closed.dialog)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.Backup, null), back)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.Backup, null), back)
         assertFalse(DialogButton.UndoRestore in simple.buttons)
         assertTrue(DialogButton.UndoRestore in backupDialog(HostScreen.Top, true).buttons)
         val confirm = restoreDialog("Nov 1, 2026", "Home: 4 games", HostScreen.Top)

@@ -44,7 +44,7 @@ data class SaveConflictPrompt(
 )
 
 /**
- * Left and right move between the two copies, and down returns to Keep both.
+ * Left and right move between the two copies, and down returns to Leave as is.
  * A activates the focused action. B decides later.
  * The prompt stays until an action is chosen, and choosing does not drop either copy from it.
  */
@@ -90,10 +90,17 @@ fun applySaveConflict(
     }
 }
 
+/** The copy saved later, so its card can say Newer. Null when both were saved at the same moment. */
+fun newerSide(prompt: SaveConflictPrompt): SaveConflictFocus? = when {
+    prompt.local.updatedAtMillis > prompt.remote.updatedAtMillis -> SaveConflictFocus.Local
+    prompt.remote.updatedAtMillis > prompt.local.updatedAtMillis -> SaveConflictFocus.Remote
+    else -> null
+}
+
 /**
  * Spacing for the bottom-screen choice, in dp. The two cards always share one [cardWidth].
  * A short panel, such as Thor's 1240 × 1080 bottom display at about 412 dp, is [compact],
- * so both cards, Keep both and Decide later fit without scrolling.
+ * so both cards, Leave as is and Decide later fit without scrolling.
  */
 data class SaveConflictFit(val edge: Float, val gap: Float, val cardWidth: Float, val compact: Boolean)
 

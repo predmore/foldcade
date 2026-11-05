@@ -119,7 +119,8 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
             SaveHealth.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
         } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
-            is SaveHealth.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 1) to null
+            // Set up loses nothing and is the only way on, so it is the one focused.
+            is SaveHealth.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
             SaveHealth.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
             else -> state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
         }
@@ -158,10 +159,10 @@ object SavePickerCopy {
     const val restartOpen = "The open game restarts. Anything not saved is lost."
     const val unavailable = "Connect to RomM first. Your save on this device stays as it is."
     const val failed = "The choice could not finish. Both saves are kept. Try again."
-    const val unreadable = "Your save on this device couldn't be read. Check the save folder and try again."
+    const val unreadable = "Your save on this device couldn’t be read. Check the save folder and try again."
     const val returnHome = "Return to Home before choosing a save."
     const val installFirst = "Install an emulator to play this save."
-    const val unsupported = "This emulator can't load saves through Foldcade."
+    const val unsupported = "This emulator can’t load saves through Foldcade."
     const val incompatible = "This save doesn’t match this game. Check the file name or choose another save."
     private fun fallbackSource(save: SavePickerSave): String =
         named(save.source, save) ?: named(save.emulator, save) ?: unknown
@@ -229,10 +230,10 @@ object SavePickerCopy {
         SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
     }
     fun explanation(health: SaveHealth): String = when (health) {
-        SaveHealth.Fine -> "Foldcade keeps this game's saves on RomM."
+        SaveHealth.Fine -> "Foldcade keeps this game’s saves on RomM."
         is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot)
             "Check the save folder, game file type and emulator’s save layout."
-            else "Set up the emulator to keep this game's saves on RomM."
+            else "Set up the emulator to keep this game’s saves on RomM."
         SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
         SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
     }
@@ -245,7 +246,7 @@ object SavePickerCopy {
         is SavePickerChoice.Play -> "From ${sourceDetail(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
             (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${named(choice.save.emulator, choice.save)}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
-        is SavePickerChoice.Copy -> "The save there now stays on RomM." +
+        is SavePickerChoice.Copy -> "This becomes the save there. The one there now is kept on RomM." +
             (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
     }

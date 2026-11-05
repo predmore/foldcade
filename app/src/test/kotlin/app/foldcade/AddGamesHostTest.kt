@@ -35,7 +35,7 @@ class AddGamesHostTest {
         // A held A does not press its first button too.
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom, repeatCount = 1))
         assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.AddGames, null), shell.onMeaning(Meaning.Back, HostScreen.Bottom))
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.AddGames, null), shell.onMeaning(Meaning.Back, HostScreen.Bottom))
         assertNull(shell.model.dialog)
         // X does the same, and with folders waiting for access Find games leads.
         shell.setRomFolderOffer(offer)

@@ -214,6 +214,8 @@ import app.foldcade.language.homeGridLabel
 import app.foldcade.language.dialogButtonLabel
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
+import app.foldcade.language.dialogBodyParts
+import app.foldcade.language.dialogHints
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.GridKind
@@ -439,7 +441,11 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                 DialogLayer(app, model.dialog, screen, scale, activity::dispatch)
             }
             val conflict = model.saveConflict
-            if (conflict != null && heroHere) SaveConflictTop(conflict)
+            // The top half rises over the hero as Saves does, on its own scrim, so the focused tile's name never shows through it.
+            val conflictTop = presence(conflict?.takeIf { heroHere }, motion.durationIsland, scale)
+            conflictTop.shown?.let { shown ->
+                Box(Modifier.fillMaxSize().rise { conflictTop.progress.value }) { SaveConflictTop(shown) }
+            }
             if (conflict != null && controlsHere) {
                 SaveConflictBottom(
                     conflict,
@@ -2709,7 +2715,8 @@ private fun Picker(
                 }
             }
             if (!gridGone) {
-                Box(Modifier.sinking(covered)) {
+                // A dialog here names its keys where this bar sits, so the bar steps aside rather than underline them.
+                Box(Modifier.sinking(covered).alpha(if (model.dialog?.screen == screen) 0f else 1f)) {
                     StripBar(count = model.count, first = shownFirstColumn(model), shown = model.columnsShown, scale = scale)
                 }
             }
@@ -3211,6 +3218,8 @@ private fun MenuHints(app: FoldcadeApp) {
 private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
+    // A dialog names its own keys above its scrim, so the grid's would only show dimmed under it.
+    if (model.dialog != null) return
     val actions = hintFor(
         when {
             model.connectOpen -> HintPlace.Connect
@@ -4725,43 +4734,104 @@ private fun DialogCard(
     dialog: DialogState,
     onEffect: (Effect?) -> Unit,
 ) {
+    DialogFrame(
+        app = app,
+        title = dialog.title,
+        body = dialog.body,
+        detail = dialog.detail,
+        buttons = dialog.buttons.map { dialogButtonLabel(it, dialog.subject) },
+        focused = dialog.index,
+        hints = dialogHints(dialog, app.shell.model.faceMap),
+        onButton = { index -> onEffect(app.shell.touchDialog(index, dialog.screen)) },
+    )
+}
+
+/**
+ * The one dialog look: a scrim, then a card with a strong title, its body, and its buttons in
+ * a row from the left. A body written as numbered steps shows them as a list. The keys it
+ * names sit where the grid's hints do, above the scrim, so B says what it does at full ink.
+ * Shell dialogs and the Saves page's confirmations both draw it.
+ */
+@Composable
+internal fun DialogFrame(
+    app: FoldcadeApp,
+    title: String,
+    body: String,
+    detail: String? = null,
+    buttons: List<String>,
+    focused: Int,
+    hints: List<HintKey>,
+    modifier: Modifier = Modifier,
+    onButton: (Int) -> Unit,
+) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
-    Box(
-        Modifier
+    BoxWithConstraints(
+        modifier
             .fillMaxSize()
             .blocksTouch()
-            .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha))
-            .padding(px(design.metrics.dialogInsetPx)),
-        contentAlignment = Alignment.Center,
+            .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha)),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
-                .background(theme.surface)
-                .border(px(design.metrics.dialogBorderPx), theme.onBackground.copy(alpha = design.dialog.borderAlpha), RoundedCornerShape(design.metrics.cardCornerDp.dp))
-                .padding(px(design.metrics.dialogInsetPx)),
-            verticalArrangement = Arrangement.spacedBy(px(12f)),
-        ) {
-            BasicText(text = dialog.title, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogTitle, theme, display = true))
-            BasicText(text = dialog.body, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
-            val detail = dialog.detail
-            if (!detail.isNullOrBlank()) {
-                BasicText(text = detail, style = text(theme.muted, LocalFoldTheme.current.theme.style.type.dialogBody, theme))
-            }
-            // Buttons that do not fit one line move whole to the next, at any font size, rather than squeeze.
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(px(8f)),
+        val hintInset = maxWidth * design.metrics.insetFraction
+        Box(Modifier.fillMaxSize().padding(px(design.metrics.dialogInsetPx)), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                    .background(theme.surface)
+                    .border(px(design.metrics.dialogBorderPx), theme.onBackground.copy(alpha = design.dialog.borderAlpha), RoundedCornerShape(design.metrics.cardCornerDp.dp))
+                    .padding(px(design.metrics.dialogInsetPx)),
+                verticalArrangement = Arrangement.spacedBy(px(12f)),
             ) {
-                dialog.buttons.forEachIndexed { index, button ->
-                    val label = dialogButtonLabel(button, dialog.subject)
-                    DialogAction(
-                        label = label,
-                        focused = dialog.index == index,
-                        onClick = { onEffect(app.shell.touchDialog(index, dialog.screen)) },
+                BasicText(
+                    text = title,
+                    style = text(theme.onBackground, design.type.dialogTitle, theme, display = true).copy(fontWeight = design.type.strongWeight),
+                )
+                val parts = dialogBodyParts(body)
+                parts.intro?.let { BasicText(text = it, style = text(theme.onBackground, design.type.dialogBody, theme)) }
+                if (parts.steps.isNotEmpty()) DialogSteps(parts.steps)
+                if (!detail.isNullOrBlank()) {
+                    BasicText(text = detail, style = text(theme.muted, design.type.dialogBody, theme))
+                }
+                // Buttons that do not fit one line move whole to the next, at any font size, rather than squeeze.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(px(8f))) {
+                    buttons.forEachIndexed { index, label ->
+                        DialogAction(label = label, focused = focused == index, onClick = { onButton(index) })
+                    }
+                }
+            }
+        }
+        if (hints.isNotEmpty()) {
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(hintInset),
+                horizontalArrangement = Arrangement.spacedBy(px(16f)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                hints.forEach { HintWord(app.shell.model, it) }
+            }
+        }
+    }
+}
+
+/** A dialog's numbered steps: the number on a small disc, the words beside it, one step a line. */
+@Composable
+private fun DialogSteps(steps: List<String>) {
+    val theme = foldTheme()
+    val design = theme.style
+    Column(verticalArrangement = Arrangement.spacedBy(px(10f))) {
+        steps.forEachIndexed { index, step ->
+            Row(horizontalArrangement = Arrangement.spacedBy(px(14f)), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(px(40f)).clip(design.shape.control()).background(theme.onBackground.copy(alpha = design.dialog.chipFocusAlpha)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BasicText(
+                        "${index + 1}",
+                        style = text(theme.onBackground, design.type.hint, theme).copy(fontWeight = design.type.strongWeight, textAlign = TextAlign.Center),
+                        maxLines = 1,
                     )
                 }
+                BasicText(step, style = text(theme.onBackground, design.type.dialogBody, theme))
             }
         }
     }
@@ -4923,8 +4993,9 @@ internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) 
             .padding(horizontal = px(16f), vertical = px(18f))
             .chip(focused)
             .padding(horizontal = px(22f), vertical = px(12f)),
+        // Every button reads at full ink. The ring alone says which one A presses, so none looks disabled.
         style = text(
-            if (focused) theme.onBackground else theme.muted,
+            theme.onBackground,
             LocalFoldTheme.current.theme.style.type.dialogBody,
             theme,
         ).copy(textAlign = TextAlign.Center),

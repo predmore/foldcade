@@ -90,7 +90,7 @@ object PlayCopy {
 
     /** Settings › System. Its dialog offers both ways. */
     const val history = "Play history"
-    const val historyBody = "Export your play time to a file, or import one. Importing only adds to what's here."
+    const val historyBody = "Export your play time to a file, or import one. Importing only adds to what’s here."
     const val export = "Export"
     const val import = "Import"
     const val exported = "Saved."
@@ -99,14 +99,14 @@ object PlayCopy {
         !name.isNullOrBlank() -> "Saved as $name."
         else -> exported
     }
-    const val notSaved = "The file couldn't be saved."
+    const val notSaved = "The file couldn’t be saved."
     const val updated = "Updated"
 
     /** A game's Play time row when it has none, but a gone game of its name has: its time, waiting. */
     fun found(millis: Long): String = "Found ${playDuration(millis)}"
     const val nothingNew = "Nothing new to add"
-    const val notHistory = "That file isn't a Foldcade play history."
-    const val unreadable = "That file couldn't be read."
+    const val notHistory = "That file isn’t a Foldcade play history."
+    const val unreadable = "That file couldn’t be read."
 
     fun imported(sessions: Int): String = if (sessions == 1) "Added 1 session" else "Added $sessions sessions"
 

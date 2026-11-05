@@ -9,11 +9,11 @@ class FoundFoldersTest {
     @Test
     fun theOfferNamesWhatWasSeen() {
         assertEquals(
-            "ROMs has Nintendo DS and Sega Genesis games. Allow file access once and they’re on Home.",
+            "Nintendo DS and Sega Genesis games are waiting in ROMs. Allow file access once and they’re on Home.",
             FoundFolderCopy.offerBody(listOf("ROMs"), listOf("Nintendo DS", "Sega Genesis")),
         )
         assertEquals(
-            "Emulation/roms and your SD card have games for 4 systems. Allow file access once and they’re on Home.",
+            "Games for 4 systems are waiting in Emulation/roms and your SD card. Allow file access once and they’re on Home.",
             FoundFolderCopy.offerBody(listOf("Emulation/roms", FoundFolderCopy.yourCard), listOf("Game Boy", "PSP", "Sega Genesis", "SNES")),
         )
         val prompt = findGamesPrompt(HostScreen.Bottom, listOf("ROMs"), listOf("PSP"))
@@ -101,14 +101,15 @@ class FoundFoldersTest {
         // From the tile, Back only closes.
         val (closed, effect) = reduce(PickerModel(count = 1, rowsPerPage = 1, dialog = seen), Meaning.Back)
         assertNull(closed.dialog)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.AddGames, null), effect)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.AddGames, null), effect)
         // Nothing seen: RomM is a phone code away, then a folder. The first run's ask has Not now.
         val asked = addGamesDialog(HostScreen.Bottom, null, ask = true)
         assertEquals(listOf(DialogButton.SignInRomm, DialogButton.AddFolder, DialogButton.NotNow), asked.buttons)
         assertEquals(FoundFolderCopy.noRomsTitle, asked.title)
         assertEquals(2, asked.safeIndex)
         assertEquals(FoundFolderCopy.signInRomm, dialogButtonLabel(DialogButton.SignInRomm))
-        assertEquals(FoundFolderCopy.findGames, dialogButtonLabel(DialogButton.FindGames))
+        // The body says what it allows, so the button is Allow, as on the one-time offer.
+        assertEquals(Copy.allowUsage, dialogButtonLabel(DialogButton.FindGames))
         assertEquals("Find games in ROMs, or add a folder", FoundFolderCopy.addGamesLine(offer))
         assertEquals("Sign in to RomM, or add a folder", FoundFolderCopy.addGamesLine(null))
     }
@@ -119,7 +120,7 @@ class FoundFoldersTest {
         assertEquals(DialogKind.RetroArchCores, dialog.kind)
         assertEquals(listOf(DialogButton.ContinueGrant, DialogButton.NotNow), dialog.buttons)
         assertEquals(
-            "RetroArch plays your Sega Genesis games. Let Foldcade see its cores and it gets any that are missing. Next, tap Use this folder, then Allow.",
+            "RetroArch plays your Sega Genesis games. Foldcade gets any missing cores. Next, tap Use this folder, then Allow.",
             dialog.body,
         )
         assertEquals(true, FoundFolderCopy.retroArchCoresBody(listOf("A", "B", "C")).startsWith("RetroArch plays your games."))
