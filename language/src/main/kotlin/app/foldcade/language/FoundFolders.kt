@@ -25,26 +25,30 @@ object FoundFolderCopy {
     const val offerTitle = "Found your games"
 
     /**
-     * The one-time offer, naming what Foldcade saw without any access: the folders and the
-     * systems their folders are named for. "ROMs has Nintendo DS and Sega Genesis games.",
-     * or "… has games for 4 systems." past two, which would run to a third line.
+     * The one-time offer, naming what Foldcade saw without any access: the systems their folders
+     * are named for, then the folders, so a path never starts the sentence.
+     * "Nintendo DS and Sega Genesis games are waiting in ROMs.", or "Games for 4 systems …" past
+     * two, which would run to a third line.
      */
     fun offerBody(places: List<String>, systems: List<String>): String {
-        val verb = if (places.size == 1) "has" else "have"
-        val what = if (systems.size <= MAX_SYSTEMS) "${and(systems)} games" else "games for ${systems.size} systems"
-        return "${and(places)} $verb $what. Allow file access once and they’re on Home."
+        val what = when (systems.size) {
+            0 -> "Games"
+            in 1..MAX_SYSTEMS -> "${and(systems)} games"
+            else -> "Games for ${systems.size} systems"
+        }
+        return "$what are waiting in ${and(places)}. Allow file access once and they’re on Home."
     }
 
     /** The first run's ask when no ROM folder was found and no RomM server is saved. */
     const val noRomsTitle = "Where are your games?"
-    const val noRomsBody = "Sign in to your RomM server with your phone, or choose the folder that holds your games."
+    /** RomM's form leads with its phone code, so the phone comes first here too. */
+    const val noRomsBody = "Scan a code with your phone to sign in to RomM, or pick the folder that holds your games."
     const val signInRomm = "Sign in to RomM"
 
     /** RetroArch's cores ask before the first launch: "RetroArch plays your Sega Genesis games." */
     fun retroArchCoresBody(systems: List<String>): String {
         val what = if (systems.size in 1..MAX_SYSTEMS) "your ${and(systems)} games" else "your games"
-        return "RetroArch plays $what. Let Foldcade see its cores and it gets any that are missing. " +
-            "Next, tap Use this folder, then Allow."
+        return "RetroArch plays $what. Foldcade gets any missing cores. Next, tap Use this folder, then Allow."
     }
 
     /** Under Add games on the top screen: the way that fits first. */

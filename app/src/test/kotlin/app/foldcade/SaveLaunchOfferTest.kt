@@ -16,7 +16,9 @@ class SaveLaunchOfferTest {
         assertEquals(DialogButton.ChooseSaveFolder, prompt.buttons[prompt.index])
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt)
         assertEquals(Effect.DialogChoice(DialogButton.ChooseSaveFolder, DialogKind.SaveFolder), reduce(model, Meaning.Activate).second)
-        assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
+        // Back cancels the launch: only the button plays without syncing.
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
+        assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.SaveFolder), reduce(reduce(model, Meaning.MoveRight).first, Meaning.Activate).second)
         // Both Play without syncing and Android's picker cancel retry with this same, transient player id.
         for (answer in listOf(SaveFolderAnswer.PlayWithoutSyncing, SaveFolderAnswer.PickerCancelled)) {
             val continuation = saveLaunchContinuation(player.id, answer, needsFolderToStart = false) as SaveLaunchContinuation.Launch
@@ -61,7 +63,8 @@ class SaveLaunchOfferTest {
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt)
         assertEquals(DialogButton.SetUpSaves, prompt.buttons[prompt.index])
         assertEquals(Effect.DialogChoice(DialogButton.SetUpSaves, DialogKind.HostedSaves, subject = player.displayName), reduce(model, Meaning.Activate).second)
-        assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.HostedSaves, subject = player.displayName), reduce(model, Meaning.Back).second)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.HostedSaves, subject = player.displayName), reduce(model, Meaning.Back).second)
+        assertEquals(Effect.DialogChoice(DialogButton.PlayWithoutSyncing, DialogKind.HostedSaves, subject = player.displayName), reduce(reduce(model, Meaning.MoveRight).first, Meaning.Activate).second)
         assertNull(saveLaunchOffer(player, true, declinedFor = player.id))
         assertTrue(saveLaunchOffer(player, true) is SaveLaunchOffer.Setup)
         player.bindHostedFolder("content://hosted", true)
@@ -168,9 +171,9 @@ class SaveLaunchOfferTest {
 
     @Test fun aPlayerThatRequiresItsFolderStillCannotStartUntilOneIsChosen() {
         val prompt = saveFolderDialog(HostScreen.Top, playerName = "aPS3e", needed = true)
-        assertEquals(DialogButton.NotNow, prompt.buttons[prompt.safeIndex])
+        assertEquals(DialogButton.NotNow, prompt.buttons[1])
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = prompt)
-        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
+        assertEquals(Effect.DialogChoice(DialogButton.Dismiss, DialogKind.SaveFolder), reduce(model, Meaning.Back).second)
         assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.SaveFolder), reduce(model, Meaning.MoveRight).first.let {
             reduce(it, Meaning.Activate).second
         })

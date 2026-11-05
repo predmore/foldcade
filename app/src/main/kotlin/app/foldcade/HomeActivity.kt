@@ -85,6 +85,7 @@ import app.foldcade.language.missingPlayerDialog
 import app.foldcade.language.noFileDialog
 import app.foldcade.language.noSharedPathDialog
 import app.foldcade.language.playerNotice
+import app.foldcade.language.PlayerPages
 import app.foldcade.language.AndroidSetting
 import app.foldcade.language.edenRestartDialog
 import app.foldcade.language.edenWrongFolderDialog
@@ -100,7 +101,6 @@ import app.foldcade.language.restartGameDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
-import app.foldcade.language.alsoRunsLine
 import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
@@ -920,7 +920,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun applyDialogPreview(intent: Intent) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
         val kind = intent.getStringExtra(EXTRA_DIALOG) ?: return
-        val index = intent.getIntExtra(EXTRA_DIALOG_INDEX, 0)
+        // Without an index the dialog opens where it would for real.
+        val index = intent.getIntExtra(EXTRA_DIALOG_INDEX, -1)
         val screen = if (intent.getStringExtra(EXTRA_DIALOG_SCREEN) == "top") {
             HostScreen.Top
         } else {
@@ -1284,7 +1285,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         pendingLaunch = index
         when (decision) {
             is PlayerLaunch.Blocked -> if (launchCurrent(generation)) when (decision.block) {
-                LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen()))
+                LaunchBlock.CloseFirst -> foldcade.shell.present(closeBothPanelDialog(hostScreen(), runningBothPanelTitle()))
                 LaunchBlock.MissingPlayer -> presentMissing(game.platformId?.let { foldcade.playerResolution(game.id, it).skipped.firstOrNull()?.label } ?: decision.playerName, generation)
                 LaunchBlock.NoLocalFile -> foldcade.shell.present(noFileDialog(hostScreen()))
                 LaunchBlock.SaveFolder -> foldcade.shell.present(
@@ -2239,16 +2240,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun showMissing(playerName: String, alsoRuns: List<String>) {
         foldcade.shell.showDialog(
-            DialogState(
-                kind = DialogKind.Ok,
-                title = "$playerName is not installed",
-                body = Copy.missingPlayerBody,
-                buttons = listOf(DialogButton.Ok),
-                index = 0,
-                safeIndex = 0,
-                screen = hostScreen(),
-                detail = alsoRunsLine(alsoRuns),
-            ),
+            missingPlayerDialog(playerName, hostScreen(), canGet = PlayerPages.of(playerName) != null, alsoRuns = alsoRuns),
         )
     }
 
@@ -2586,7 +2578,24 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun presentMissing(name: String, generation: Int) {
         if (!launchCurrent(generation)) return
-        foldcade.shell.present(missingPlayerDialog(name, hostScreen()))
+        foldcade.shell.present(missingPlayerDialog(name, hostScreen(), canGet = PlayerPages.of(name) != null))
+    }
+
+    /** The game already on both screens, by name, for the dialog that asks to close it. */
+    private fun runningBothPanelTitle(): String? {
+        val session = foldcade.store.session
+        val app = listOfNotNull(session.topApp, session.bottomApp).firstOrNull { it.occupiesBothDisplays } ?: return null
+        return foldcade.runningOn(app.id)?.title?.takeIf { it.isNotBlank() }
+    }
+
+    /** A missing player's own download page, in the browser. */
+    private fun openPlayerPage(playerName: String?) {
+        val page = playerName?.let(PlayerPages::of) ?: return
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: android.content.ActivityNotFoundException) {
+            foldcade.shell.present(playerNotice(Copy.missingPlayerTitle(playerName), page, hostScreen()))
+        }
     }
 
     private fun onDialog(effect: Effect.DialogChoice) {
@@ -2654,11 +2663,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 pickLibraryFolder()
             }
             DialogKind.Ok -> cancelLaunches()
-            DialogKind.ReLogin -> {
+            DialogKind.ReLogin -> if (effect.button == DialogButton.SignInRomm) {
                 foldcade.shell.openRommRecovery()
                 beginRommDeviceCode()
             }
-            DialogKind.MissingPlayer -> cancelLaunches()
+            DialogKind.MissingPlayer -> {
+                cancelLaunches()
+                if (effect.button == DialogButton.GetPlayer) openPlayerPage(effect.subject)
+            }
             DialogKind.ClosePlayer -> if (effect.button == DialogButton.CloseIt) {
                 closeConfirmed = true
                 pendingLaunch?.let { launchGame(it) }
@@ -2669,10 +2681,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // Its only button is Not now, which stops waiting for the code.
             DialogKind.PairHost -> foldcade.cancelMoonlightPairing()
             DialogKind.ForgetHost -> if (effect.button == DialogButton.ForgetHost) effect.subject?.let(foldcade::forgetMoonlightHost)
-            DialogKind.RetroArchCores -> if (effect.button == DialogButton.ContinueGrant) {
-                showRetroArchCores(retroArchRetry)
-            } else {
-                settleRetroArchCores()
+            DialogKind.RetroArchCores -> when (effect.button) {
+                DialogButton.ContinueGrant -> showRetroArchCores(retroArchRetry)
+                // Back stops the launch it held. The offer stays, so the next start asks again.
+                DialogButton.Dismiss -> cancelLaunches()
+                // Play anyway, or the first run's Not now: launches try the system's first core from now on.
+                else -> settleRetroArchCores()
             }
             DialogKind.EdenRestart -> if (effect.button == DialogButton.ContinueGrant) {
                 val pkg = edenRestartPackage ?: EDEN_PACKAGES.firstOrNull(::packageInstalled)
@@ -2682,10 +2696,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // Not now only closes. The pending restart stays until Eden is force-stopped or the device restarts.
                 edenRestartPackage = null
             }
-            DialogKind.EdenWrongFolder -> if (effect.button == DialogButton.TryAgain) {
-                openEdenFolder(fromOffer = pendingBackend != null || pendingLaunch != null)
-            } else {
-                declineEdenFolder()
+            DialogKind.EdenWrongFolder -> when (effect.button) {
+                DialogButton.TryAgain -> openEdenFolder(fromOffer = pendingBackend != null || pendingLaunch != null)
+                // Back never starts a held launch.
+                DialogButton.Dismiss -> cancelLaunches()
+                else -> declineEdenFolder()
             }
             DialogKind.RetroArchSetup -> {
                 if (effect.button == DialogButton.AllowFiles) openRetroArchPermissions() else {
@@ -2752,6 +2767,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         cancelLaunches()
                         playerId?.let(::openPlayerApp)
                     }
+                    // Back stops the launch. Only Play without syncing starts it.
+                    effect.button == DialogButton.Dismiss -> cancelLaunches()
                     pending != null -> {
                         launchScreen = pending.screen
                         launchBackendGame(pending.title, pending.platformId, pending.route, pending.fresh, saveSyncDeclinedFor = pending.playerId)
@@ -2773,7 +2790,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     foldcade.plugins.player(effect.subject ?: return)?.let(::openFirmwareFolder)
                 }
             }
-            DialogKind.SaveFolder -> if (pendingBackend != null) {
+            // Back stops the launch the ask held. Only its own button plays without syncing.
+            DialogKind.SaveFolder -> if (effect.button == DialogButton.Dismiss) {
+                cancelLaunches()
+            } else if (pendingBackend != null) {
                 val pending = pendingBackend ?: return
                 if (effect.button == DialogButton.ChooseSaveFolder) {
                     if (foldcade.plugins.player(pending.playerId) is EdenPlayer) {
@@ -3201,10 +3221,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             folderGrantUri(permission.uri.toString()) == grant.toString() && permission.isReadPermission && permission.isWritePermission
         }
         if (!held || packageName != expected) {
-            // The held launch stays. Try again opens the picker; Not now starts it.
+            // The held launch stays. Try again opens the picker; Play without syncing starts it, and Back cancels it.
             if (took) releaseUnlessUsed(uri.toString(), flags)
             foldcade.refreshEdenSetting()
-            foldcade.shell.present(edenWrongFolderDialog(hostScreen()))
+            val held = pendingBackend != null || pendingLaunch != null
+            foldcade.shell.present(edenWrongFolderDialog(hostScreen(), launchHeld = held, needed = held && needsItsFolder(pendingBackend?.playerId?.let(foldcade.plugins::player) ?: playerForPendingLaunch())))
             return false
         }
         val previous = foldcade.store.edenFolder(packageName)

@@ -117,7 +117,7 @@ class DroidDeckPlayer : Player {
         /** The [LaunchTarget.AppRef] key for the game id. */
         const val GAME_ID: String = "game_id"
         const val NEEDS_GAME: String =
-            "Choose Add to home screen on the game in DroidDeck. Foldcade does not read DroidDeck's library."
+            "Choose Add to home screen on the game in DroidDeck. Foldcade does not read DroidDeck’s library."
         val PACKAGES: List<String> = listOf(PACKAGE)
     }
 }

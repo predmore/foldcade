@@ -17,12 +17,12 @@ object ThemesCopy {
     const val adding = "Adding"
     const val added = "Added. Restart to use it."
     const val removed = "Removed. Restart to finish."
-    const val notRemoved = "That theme couldn't be removed."
+    const val notRemoved = "That theme couldn’t be removed."
     const val restarting = "Restarting"
 
     /** What a refused install says. One short line each. */
     fun refused(reason: ThemeInstallRefusal): String = when (reason) {
-        ThemeInstallRefusal.NotATheme -> "That file isn't a Foldcade theme."
+        ThemeInstallRefusal.NotATheme -> "That file isn’t a Foldcade theme."
         ThemeInstallRefusal.NoId -> "That theme is too old to install. It needs an id and version 2."
         ThemeInstallRefusal.Bundled -> "That theme comes with Foldcade already."
         ThemeInstallRefusal.NoRelease -> "That theme has no release number."
@@ -30,7 +30,7 @@ object ThemesCopy {
         ThemeInstallRefusal.OtherSource -> "A theme with that id came from somewhere else."
         ThemeInstallRefusal.NotNewer -> "That release is already installed, or a newer one is."
         ThemeInstallRefusal.WentBack -> "That release stopped Foldcade before, so it stays out."
-        ThemeInstallRefusal.Broken -> "That theme is missing files, or a shader didn't compile."
+        ThemeInstallRefusal.Broken -> "That theme is missing files, or a shader didn’t compile."
         ThemeInstallRefusal.TooLarge -> "That theme is too large."
     }
 }

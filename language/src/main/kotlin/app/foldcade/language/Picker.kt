@@ -73,13 +73,14 @@ data class SidePanel(
     val parentTileColumn: Int? = null,
 )
 
+/** RomM's saved sign-in could not be read. Sign in opens its form, with the phone code; Not now only closes. */
 fun signInAgainPrompt(screen: HostScreen = HostScreen.Top): DialogState = DialogState(
     kind = DialogKind.ReLogin,
     title = Copy.signInAgainTitle,
     body = Copy.signInAgainBody,
-    buttons = listOf(DialogButton.Ok),
+    buttons = listOf(DialogButton.SignInRomm, DialogButton.NotNow),
     index = 0,
-    safeIndex = 0,
+    safeIndex = 1,
     screen = screen,
 )
 
@@ -112,13 +113,16 @@ enum class DialogKind {
     /** Settings › SteamGridDB with a key saved. Only Forget key forgets it. */
     ForgetArtKey,
 
-    /** Offers to show Foldcade RetroArch's installed cores, once. Not now still starts the game. */
+    /**
+     * Offers to show Foldcade RetroArch's installed cores, once. Before a launch, Play anyway
+     * starts the game and Back cancels it; before any launch, Not now settles the offer.
+     */
     RetroArchCores,
 
     /** Eden was given files. Continue opens its App info. Not now only closes. */
     EdenRestart,
 
-    /** The picker was not left on Eden's root. Try again opens it again. Not now starts a held launch. */
+    /** The picker was not left on Eden's root. Try again opens it again. Play without syncing starts a held launch; Back cancels it. */
     EdenWrongFolder,
 
     /** Something RetroArch needs before the game can start, such as a core. */
@@ -201,6 +205,18 @@ enum class DialogButton {
 
     /** RomM's sign-in form, with its phone code. */
     SignInRomm,
+
+    /** Before a launch, the game starts without what the dialog offered, such as RetroArch's cores. */
+    PlayAnyway,
+
+    /** The missing player's own download page, which [DialogState.subject] names. */
+    GetPlayer,
+
+    /**
+     * Not a button: Back on a dialog whose [DialogState.safeIndex] is [BACK_CLOSES]. It only
+     * closes, and a held launch is cancelled, never started.
+     */
+    Dismiss,
 }
 
 /** The words a dialog button shows. [subject] is [DialogState.subject], which names the player to open. */
@@ -235,10 +251,45 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.RedoRestore -> BackupCopy.redo
     DialogButton.Library -> SettingsCopy.library
     DialogButton.SignOut -> if (subject == ROMM_REMOVE) Copy.remove else Copy.signOut
-    DialogButton.FindGames -> FoundFolderCopy.findGames
+    // The body says what it allows, as the one-time offer's Allow does.
+    DialogButton.FindGames -> Copy.allowUsage
     DialogButton.AddFolder -> Copy.addFolder
     DialogButton.SignInRomm -> FoundFolderCopy.signInRomm
+    DialogButton.PlayAnyway -> Copy.playAnyway
+    DialogButton.GetPlayer -> listOfNotNull(Copy.getPlayer, subject).joinToString(" ")
+    DialogButton.Dismiss -> Copy.back
 }
+
+/**
+ * What Back does on [dialog], named under it: the button it presses, or, when that is no button
+ * or only OK, Cancel while it stops a held launch and Close otherwise.
+ */
+fun dialogBackLabel(dialog: DialogState): String {
+    val button = dialog.buttons.getOrNull(dialog.safeIndex)
+    return when {
+        button == null || button == DialogButton.Ok -> if (dialog.holdsLaunch) Copy.cancelLaunch else Copy.close
+        else -> dialogButtonLabel(button, dialog.subject)
+    }
+}
+
+/** A dialog's body as a lead line and the numbered steps after it, either of which may be missing. */
+data class DialogBody(val intro: String?, val steps: List<String>)
+
+/**
+ * Splits a body written one "1. …" a line, after any plain lines, into its steps, without their
+ * numbers. A body with fewer than two steps stays one paragraph, as it is written.
+ */
+fun dialogBodyParts(body: String): DialogBody {
+    val lines = body.lines().map { it.trim() }.filter { it.isNotEmpty() }
+    val first = lines.indexOfFirst { it.startsWith("1.") }
+    val steps = if (first < 0) null else numberedSteps(lines.drop(first).joinToString("\n"))
+    if (steps == null) return DialogBody(body.takeIf { it.isNotBlank() }, emptyList())
+    return DialogBody(lines.take(first).joinToString(" ").takeIf { it.isNotEmpty() }, steps)
+}
+
+/** The keys a dialog names under its card. A on a lit button needs no word, so only Back is named. */
+fun dialogHints(dialog: DialogState, faceMap: FaceMap): List<HintKey> =
+    listOf(HintKey(promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB, dialogBackLabel(dialog)))
 
 data class DialogState(
     val kind: DialogKind,
@@ -255,9 +306,17 @@ data class DialogState(
     val subject: String? = null,
     /** Where its opener put it, retained while an occupied screen displaces it. */
     val preferredScreen: HostScreen = screen,
+    /**
+     * A launch waits on this answer. Back must never start it: [safeIndex] is then [BACK_CLOSES]
+     * or a button that stops it, and the explicit way to play is a button of its own.
+     */
+    val holdsLaunch: Boolean = false,
 )
 
-/** A [DialogState.safeIndex] for a dialog without a Not now: Back closes it, as Not now would. */
+/**
+ * A [DialogState.safeIndex] for a dialog whose Back is no button on it: Back sends
+ * [DialogButton.Dismiss], which closes it and cancels any launch it held.
+ */
 const val BACK_CLOSES = -1
 
 /** One of Moonlight's computers, for its Settings › Library switch. [key] is its lower-case UUID. */
@@ -413,24 +472,32 @@ fun alsoRunsLine(names: List<String>): String? = when (names.size) {
     else -> "${names.dropLast(1).joinToString(", ")} and ${names.last()} also run these games."
 }
 
-fun missingPlayerDialog(playerName: String, screen: HostScreen): DialogState = DialogState(
+/**
+ * No installed player runs this game. With [canGet], Get opens [playerName]'s own download
+ * page and is focused; OK only closes. [alsoRuns] names the other players that would run it.
+ */
+fun missingPlayerDialog(playerName: String, screen: HostScreen, canGet: Boolean = false, alsoRuns: List<String> = emptyList()): DialogState = DialogState(
     kind = DialogKind.MissingPlayer,
-    title = "$playerName is not installed",
-    body = Copy.missingPlayerBody,
-    buttons = listOf(DialogButton.Ok),
+    title = Copy.missingPlayerTitle(playerName),
+    body = if (canGet) Copy.missingPlayerGetBody else Copy.missingPlayerBody,
+    buttons = if (canGet) listOf(DialogButton.GetPlayer, DialogButton.NotNow) else listOf(DialogButton.Ok),
     index = 0,
-    safeIndex = 0,
+    safeIndex = if (canGet) 1 else 0,
     screen = screen,
+    detail = alsoRunsLine(alsoRuns),
+    subject = playerName,
 )
 
-fun closeBothPanelDialog(screen: HostScreen): DialogState = DialogState(
+/** Closing the running game loses what it did not save, so this opens on Not now, as [closeGameDialog] does. */
+fun closeBothPanelDialog(screen: HostScreen, running: String? = null): DialogState = DialogState(
     kind = DialogKind.ClosePlayer,
-    title = Copy.closePlayerTitle,
+    title = running?.let(Copy::closeRunningTitle) ?: Copy.closePlayerTitle,
     body = Copy.closePlayerBody,
     buttons = listOf(DialogButton.CloseIt, DialogButton.NotNow),
-    index = 0,
+    index = 1,
     safeIndex = 1,
     screen = screen,
+    holdsLaunch = true,
 )
 
 /** Closing loses what was not saved, so it opens on Not now, and Back keeps the game too. */
@@ -493,8 +560,10 @@ fun saveFolderDialog(
         ).joinToString(" "),
     buttons = listOf(DialogButton.ChooseSaveFolder, if (needed) DialogButton.NotNow else DialogButton.PlayWithoutSyncing),
     index = 0,
-    safeIndex = 1,
+    // Back cancels the launch. Playing without syncing is its own button, never a reflex press.
+    safeIndex = BACK_CLOSES,
     screen = screen,
+    holdsLaunch = true,
 )
 
 /**
@@ -510,9 +579,11 @@ fun hostedSavesDialog(playerName: String, steps: String, beforeLaunch: Boolean, 
         buttons = if (beforeLaunch) listOf(DialogButton.SetUpSaves, DialogButton.PlayWithoutSyncing)
             else listOf(DialogButton.OpenPlayer, DialogButton.NotNow),
         index = 0,
-        safeIndex = 1,
+        // Before a launch, Back cancels it rather than playing without syncing.
+        safeIndex = if (beforeLaunch) BACK_CLOSES else 1,
         screen = screen,
         subject = playerName,
+        holdsLaunch = beforeLaunch,
     )
 
 /**
@@ -535,23 +606,32 @@ fun playerSetupDialog(playerName: String, steps: String, screen: HostScreen): Di
     subject = playerName,
 )
 
-/** Opens on Continue: the picker is the only way Foldcade learns which cores RetroArch has. */
+/**
+ * Opens on Continue: the picker is the only way Foldcade learns which cores RetroArch has.
+ * A launch waits on it. Play anyway settles the offer and starts it; Back cancels it.
+ */
 fun retroArchCoresDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.RetroArchCores,
     title = Copy.retroArchCoresTitle,
     body = Copy.retroArchCoresBody,
-    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.PlayAnyway),
     index = 0,
-    safeIndex = 1,
+    safeIndex = BACK_CLOSES,
     screen = screen,
+    holdsLaunch = true,
 )
 
 /**
  * The same offer before any launch, once the library has games RetroArch plays ([systems]),
- * so the first game starts without a stop. Continue opens the picker; Not now settles it.
+ * so the first game starts without a stop. Continue opens the picker; Not now, and Back, settle it.
  */
 fun retroArchCoresFirstDialog(screen: HostScreen, systems: List<String>): DialogState =
-    retroArchCoresDialog(screen).copy(body = FoundFolderCopy.retroArchCoresBody(systems))
+    retroArchCoresDialog(screen).copy(
+        body = FoundFolderCopy.retroArchCoresBody(systems),
+        buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
+        safeIndex = 1,
+        holdsLaunch = false,
+    )
 
 /** An unplaced save stops the launch; unresolved save destinations offer an explicit per-launch opt-out. */
 fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean = false, needsEdenUser: Boolean = false, incompatible: Boolean = false): DialogState = DialogState(
@@ -571,6 +651,7 @@ fun saveNotPlacedDialog(title: String, screen: HostScreen, playAnyway: Boolean =
     index = if (playAnyway && incompatible) 1 else 0,
     safeIndex = if (playAnyway && incompatible) 1 else if (playAnyway) 2 else 0,
     screen = screen,
+    holdsLaunch = playAnyway,
 )
 
 /**
@@ -587,22 +668,20 @@ fun edenRestartDialog(screen: HostScreen): DialogState = DialogState(
     screen = screen,
 )
 
-/** Opens on Try again, which returns to Eden's root. Not now starts a held launch. */
-fun edenWrongFolderDialog(screen: HostScreen): DialogState = DialogState(
+/**
+ * Opens on Try again, which returns to Eden's root. With a launch held ([launchHeld]), Back
+ * cancels it and Play without syncing starts it, unless Eden needs the folder to start at
+ * all ([needed]), when Not now cancels too. From Settings, Not now and Back only close.
+ */
+fun edenWrongFolderDialog(screen: HostScreen, launchHeld: Boolean = false, needed: Boolean = false): DialogState = DialogState(
     kind = DialogKind.EdenWrongFolder,
     title = Copy.edenWrongFolderTitle,
     body = Copy.edenWrongFolderBody,
-    buttons = listOf(DialogButton.TryAgain, DialogButton.NotNow),
+    buttons = listOf(DialogButton.TryAgain, if (launchHeld && !needed) DialogButton.PlayWithoutSyncing else DialogButton.NotNow),
     index = 0,
-    safeIndex = 1,
+    safeIndex = if (launchHeld) BACK_CLOSES else 1,
     screen = screen,
-)
-
-/** No core for [platformName] is installed. [coreName] is the one to install first. */
-fun missingCoreDialog(platformName: String, coreName: String, screen: HostScreen): DialogState = retroArchSetupDialog(
-    title = "${Copy.missingCoreTitle} $platformName",
-    body = "${Copy.missingCoreBodyStart} $coreName${Copy.missingCoreBodyEnd}",
-    screen = screen,
+    holdsLaunch = launchHeld,
 )
 
 fun coreDownloadFailedDialog(coreName: String, screen: HostScreen): DialogState = DialogState(
@@ -613,6 +692,7 @@ fun coreDownloadFailedDialog(coreName: String, screen: HostScreen): DialogState 
     index = 0,
     safeIndex = 2,
     screen = screen,
+    holdsLaunch = true,
 )
 
 /** RetroArch has not been allowed to read the device's storage. */
@@ -633,6 +713,7 @@ private fun retroArchSetupDialog(title: String, body: String, screen: HostScreen
     index = 0,
     safeIndex = 1,
     screen = screen,
+    holdsLaunch = true,
 )
 
 /** A player that opens games by path, and this game's file has no path it can read. */
@@ -720,7 +801,7 @@ fun findGamesPrompt(screen: HostScreen, places: List<String>, systems: List<Stri
     screen = screen,
 )
 
-/** Debug captures. Back still uses [DialogState.safeIndex]. Unknown names are ignored. */
+/** Debug captures. A negative [index] keeps the dialog's own focus. Back still uses [DialogState.safeIndex]. Unknown names are ignored. */
 fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogState? {
     val dialog = when (kind) {
         "home" -> homePrompt(screen)
@@ -732,13 +813,14 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "retroarch-cores-first" -> retroArchCoresFirstDialog(screen, listOf("Sega Genesis", "Game Boy Advance"))
         "relogin" -> signInAgainPrompt(screen)
         "save-folder" -> saveFolderDialog(screen)
-        "close-player" -> closeBothPanelDialog(screen)
-        "missing-player" -> missingPlayerDialog("Azahar", screen)
+        "save-folder-azahar" -> saveFolderDialog(screen, syncs = true, playerName = "Azahar", opensThere = true)
+        "close-player" -> closeBothPanelDialog(screen, "Bravely Second")
+        "missing-player" -> missingPlayerDialog("Azahar", screen, canGet = true)
         "forget-art-key" -> forgetArtKeyPrompt(screen)
         "retroarch-cores" -> retroArchCoresDialog(screen)
         "eden-restart" -> edenRestartDialog(screen)
-        "eden-wrong-folder" -> edenWrongFolderDialog(screen)
-        "missing-core" -> missingCoreDialog("Game Boy Advance", "mGBA", screen)
+        "eden-wrong-folder" -> edenWrongFolderDialog(screen, launchHeld = true)
+        "core-download-failed" -> coreDownloadFailedDialog("mGBA", screen)
         "retroarch-storage" -> retroArchStorageDialog(screen)
         "missing-bios-romm" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true), screen)
         "missing-bios" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system"), screen)
@@ -746,7 +828,7 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         else -> return null
     }
     val last = dialog.buttons.lastIndex.coerceAtLeast(0)
-    return dialog.copy(index = index.coerceIn(0, last))
+    return if (index < 0) dialog else dialog.copy(index = index.coerceIn(0, last))
 }
 
 data class Hold(
@@ -2954,7 +3036,7 @@ private fun applyDialog(dialog: DialogState, meaning: Meaning): Pair<DialogState
         Meaning.LeftPanel, Meaning.RightPanel,
         -> dialog.copy(index = index) to null
         Meaning.Activate -> dialog to dialog.buttons[index]
-        Meaning.Back -> dialog to if (dialog.safeIndex == BACK_CLOSES) DialogButton.NotNow else dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
+        Meaning.Back -> dialog to if (dialog.safeIndex == BACK_CLOSES) DialogButton.Dismiss else dialog.buttons[dialog.safeIndex.coerceIn(0, last)]
         else -> dialog.copy(index = index) to null
     }
 }

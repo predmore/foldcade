@@ -19,10 +19,10 @@ object BackupCopy {
     }
     const val notSaved = PlayCopy.notSaved
     const val unreadable = PlayCopy.unreadable
-    const val foreign = "That file isn't a Foldcade backup."
+    const val foreign = "That file isn’t a Foldcade backup."
     const val newer = "That backup is from a newer Foldcade."
-    const val restoreFailed = "The backup couldn't be restored."
-    const val restoreUnfinished = "The restore didn't finish. Your setup is as it was."
+    const val restoreFailed = "The backup couldn’t be restored."
+    const val restoreUnfinished = "The restore didn’t finish. Your setup is as it was."
     const val confirm = "Restore this backup?"
     const val restored = "Restored"
     const val restoredDone = "All set."
@@ -61,8 +61,8 @@ object BackupCopy {
     private fun count(number: Int, noun: String): String = "$number $noun${if (number == 1) "" else "s"}"
     const val signIn = "Sign in to RomM again."
     const val pair = "Pair your computers again."
-    const val cores = "Pick RetroArch's cores folder again."
-    const val eden = "Pick Eden's folder again."
+    const val cores = "Pick RetroArch’s cores folder again."
+    const val eden = "Pick Eden’s folder again."
     fun folders(names: String): String = "Pick these folders again in Settings › Library: $names."
     fun saves(names: String): String = "Pick save folders again: $names."
     fun switchedRomm(host: String): String = "RomM changes to $host. Sign in after the restore."

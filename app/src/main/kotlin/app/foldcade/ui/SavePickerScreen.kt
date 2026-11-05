@@ -49,6 +49,7 @@ import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
 import app.foldcade.language.MARK_CONSOLE
 import app.foldcade.language.Meaning
+import app.foldcade.language.HintKey
 import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveDestination
 import app.foldcade.language.SaveHealth
@@ -600,49 +601,30 @@ private fun healthBadge(health: SaveHealth, theme: Theme): Pair<Int, Color> = wh
     SaveHealth.DeviceOnly -> R.drawable.ic_badge_cloud to theme.muted
 }
 
-/** Play or copy, asked once with Cancel focused, in the dialog card every other question uses. */
+/**
+ * Play, copy or set up, asked once in the dialog every other question uses. Play and copy open
+ * on Cancel; Set up, which loses nothing, opens on itself. B is Cancel and says so.
+ */
 @Composable
 private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SavePickerChoice, dates: DateStyle, modifier: Modifier, onButton: (Int) -> Unit) {
-    val theme = LocalFoldTheme.current.theme
-    val design = theme.style
-    val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
-    Box(
-        modifier
-            .fillMaxSize()
-            .blocksTouch()
-            .background(design.colors.scrim.copy(alpha = design.dialog.scrimAlpha))
-            .padding(design.saves.edgeDp.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(card)
-                .background(theme.surface)
-                .border(design.settings.borderDp.dp, theme.onBackground.copy(alpha = design.dialog.borderAlpha), card)
-                .padding(CARD_PAD),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val destination = (choice as? SavePickerChoice.Copy)?.destination?.let {
-                destinationName(it, state.saves, saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis()), state.ownSlots)
-            }.orEmpty()
-            BasicText(SavePickerCopy.confirmationTitle(choice, state.playerName, destination), style = saveStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true))
-            BasicText(
-                SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots),
-                style = saveStyle(theme.onBackground, design.type.dialogBody, theme),
-            )
-            val action = when (choice) {
-                is SavePickerChoice.Play -> SavePickerCopy.play
-                is SavePickerChoice.Copy -> SavePickerCopy.copy
-                SavePickerChoice.Setup -> Copy.setUp
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                listOf(action, SavePickerCopy.cancel).forEachIndexed { index, label ->
-                    DialogAction(label, focused = state.confirmIndex == index) { onButton(index) }
-                }
-            }
-        }
+    val destination = (choice as? SavePickerChoice.Copy)?.destination?.let {
+        destinationName(it, state.saves, saveNames(state.saves, state.ownSlots, dates, System.currentTimeMillis()), state.ownSlots)
+    }.orEmpty()
+    val action = when (choice) {
+        is SavePickerChoice.Play -> SavePickerCopy.play
+        is SavePickerChoice.Copy -> SavePickerCopy.copy
+        SavePickerChoice.Setup -> Copy.setUp
     }
+    DialogFrame(
+        app = app,
+        title = SavePickerCopy.confirmationTitle(choice, state.playerName, destination),
+        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots),
+        buttons = listOf(action, SavePickerCopy.cancel),
+        focused = state.confirmIndex,
+        hints = listOf(HintKey(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB, SavePickerCopy.cancel)),
+        modifier = modifier,
+        onButton = onButton,
+    )
 }
 
 /** A small word in its own colour on a soft pill of it: Playing, or Backup. */

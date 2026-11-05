@@ -161,7 +161,7 @@ class ThemeContractTest {
         assertEquals(null, file.extends)
         val pack = resolveThemeResources(ThemeZip(file, mapOf("fonts/a.ttf" to byteArrayOf(1))), afterglow)
         assertEquals(
-            setOf("extends must name another pack's id", "Missing preview image", "Missing font for 'bold'", "Unknown font face"),
+            setOf("extends must name another pack’s id", "Missing preview image", "Missing font for 'bold'", "Unknown font face"),
             pack.diagnostics.map { it.message }.toSet(),
         )
     }

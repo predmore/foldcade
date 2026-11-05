@@ -87,7 +87,7 @@ object Copy {
     /** The command center's button: the grid on that screen, to open a second app there. */
     const val openAnApp = "Open an app"
     const val progressInGameNative = "Progress lives in GameNative."
-    const val addShortcutInGameNative = "Add a game's shortcut in GameNative."
+    const val addShortcutInGameNative = "Add a game’s shortcut in GameNative."
     const val progressInDroidDeck = "Progress lives in DroidDeck."
     const val steamInDroidDeck = "Steam on this device"
     const val addToHomeInDroidDeck = "Choose Add to home screen on a game in DroidDeck."
@@ -149,7 +149,7 @@ object Copy {
     const val add = "Add"
     const val pairHostBody = "In Sunshine or Apollo on that computer, open PIN and type this code. Its games then appear here."
     const val forgetHost = "Forget"
-    const val forgetHostBody = "Its games leave Home, except ones you pinned in Moonlight. Remove Foldcade from the computer's client list too."
+    const val forgetHostBody = "Its games leave Home, except ones you pinned in Moonlight. Remove Foldcade from the computer’s client list too."
     const val pairWrongPinTitle = "That code didn’t match"
     const val pairWrongPinBody = "Turn the switch on again for a new code."
     const val pairUnreachableBody = "Check that it’s on and on this network, then try again."
@@ -173,7 +173,7 @@ object Copy {
     const val rommCodeDenied = "RomM declined that code."
     const val rommCodeUnavailable = "Couldn’t get a code from RomM."
     const val signInAgainTitle = "Sign in again"
-    const val signInAgainBody = "Saved credentials could not be read."
+    const val signInAgainBody = "Foldcade couldn’t read your RomM sign-in."
     const val useAsHome = "Use as Home"
     const val notNow = "Not now"
     const val allowUsage = "Allow"
@@ -219,7 +219,17 @@ object Copy {
     const val buttonCalibrationHelp = "Press the face button you want for Confirm. Start cancels."
     const val confirm = "Confirm"
     const val back = "Back"
+    fun missingPlayerTitle(player: String) = "$player isn’t installed"
     const val missingPlayerBody = "Foldcade can’t start this game without it."
+    /** With its download page known: Get opens it. */
+    const val missingPlayerGetBody = "Get it, then start the game again."
+    /** "Get Azahar": the missing player's own download page. */
+    const val getPlayer = "Get"
+    /** Before a launch, start it without what the dialog offered. */
+    const val playAnyway = "Play anyway"
+    /** What Back does on a dialog that only closes. */
+    const val close = "Close"
+    fun closeRunningTitle(game: String) = "Close $game?"
     const val closePlayerTitle = "Close the other game?"
     const val closePlayerBody = "This game uses both screens. The one already running has to close first."
     const val closeIt = "Close it"
@@ -255,13 +265,10 @@ object Copy {
     const val noSharedPathTitle = "can’t open this file"
     const val noSharedPathBody = "It opens games from this device’s storage. Add the game from a folder there, or download it again."
     const val retroArchCoresTitle = "Show RetroArch’s cores"
-    const val retroArchCoresBody = "Foldcade gets missing cores for you. On the next screen, choose Use this folder so it can see what you have. Not now tries the game anyway."
+    const val retroArchCoresBody = "Foldcade gets missing cores for you. Next, tap Use this folder, then Allow."
     fun gettingCore(name: String) = "Getting $name…"
     fun coreDownloadFailed(name: String) = "Couldn’t get $name"
     const val coreDownloadFailedBody = "Try again, or install it in RetroArch’s Online Updater › Core Downloader."
-    const val missingCoreTitle = "RetroArch has no core for"
-    const val missingCoreBodyStart = "In RetroArch, open Online Updater › Core Downloader and install"
-    const val missingCoreBodyEnd = ". Then start the game again."
     const val retroArchStorageTitle = "RetroArch can’t read games yet"
     const val retroArchStorageBody = "Allow RetroArch to read files in Android’s app settings. Come back here and your game carries on."
     const val allowFiles = "Allow file access"
@@ -283,9 +290,15 @@ object Copy {
     /** On RetroArch's page. */
     const val retroArchCores = "Cores"
     const val edenWrongFolderTitle = "That isn’t Eden’s folder"
-    const val edenWrongFolderBody = "Choose Use this folder where the picker opens, without opening a folder inside it."
+    const val edenWrongFolderBody = "Tap Use this folder as soon as the picker opens."
     const val edenRestartTitle = "Restart Eden once"
-    const val edenRestartBody = "Foldcade added Switch files to Eden. Eden reads them only when it starts. On the next screen, choose Force stop, then OK. Press B to come back and start the game again."
+    /** A line, then one numbered step a line, which a dialog shows as a list. */
+    val edenRestartBody = listOf(
+        "Eden reads new Switch files only when it starts.",
+        "1. Tap Force stop, then OK.",
+        "2. Press B to come back.",
+        "3. Start the game again.",
+    ).joinToString("\n")
     /** On Eden's page. */
     const val edenKeys = "Saves, keys & firmware"
     /** The tiles of RetroArch and Eden when no player with a save folder names them. */
@@ -300,8 +313,12 @@ object Copy {
     const val saveConflictTitle = "Two saves"
     const val saveConflictBody = "Both copies are kept. Choose which one this game plays."
     const val saveConflictTop = "Choose which save to play on the bottom screen."
-    const val keepThisOne = "Keep this one"
-    const val keepBoth = "Keep both"
+    /** Under each copy: the game plays it from now on. The other copy is still kept. */
+    const val keepThisOne = "Play this one"
+    /** Neither copy moves, and Foldcade asks again only once a save changes. */
+    const val keepBoth = "Leave as is"
+    /** On the copy saved later. */
+    const val newerSave = "Newer"
     const val decideLater = "Decide later"
     const val savesKeptMore = "More than one game did this."
     const val offlineSaveTitle = "Played the save on this device"
@@ -319,8 +336,8 @@ object Copy {
     const val findingChip = "Finding"
     const val preparingChip = "Preparing"
     const val retryingChip = "Retrying"
-    const val gameUnavailable = "Can't reach this game"
-    const val gameUnavailableBody = "RomM couldn't load this game. Check the server connection and that the game is still in its library."
+    const val gameUnavailable = "Can’t reach this game"
+    const val gameUnavailableBody = "RomM couldn’t load this game. Check the server connection and that the game is still in its library."
     const val gettingFirmware = "Getting firmware"
     const val checkingDownload = "Checking"
     const val syncingSaves = "Syncing saves"
@@ -369,8 +386,8 @@ object Copy {
     const val recentlyPlayed = "Recently played"
     /** An open collection with nothing in it, and the way to fill it. */
     const val noGamesYet = "No games yet"
-    const val addGamesHowBefore = "Add games opens All. Press"
-    const val addGamesHowAfter = "on a game, then Add to."
+    const val addGamesHowBefore = "Press"
+    const val addGamesHowAfter = "on any game, then Add to."
     const val addGames = "Add games"
     const val undo = "Undo"
     const val hidden = "Hidden"

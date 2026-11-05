@@ -155,7 +155,7 @@ class SavePickerTest {
                 val page = state.copy(restartsOpenGame = open, ownSlots = listOf("sav"))
                 val choice = SavePickerChoice.Copy(save, SaveDestination(slot, "melonds", "Device"))
                 val body = SavePickerCopy.confirmationBody(choice, page.target.playerId, page.playerName, DateStyle(), page.restartsOpenGame, page.ownSlots)
-                assertTrue(body.startsWith("The save there now stays on RomM."))
+                assertTrue(body.startsWith("This becomes the save there. The one there now is kept on RomM."))
                 assertEquals("open=$open slot=$slot", open && slot in page.ownSlots, body.contains(SavePickerCopy.restartOpen))
             }
         }
