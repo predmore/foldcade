@@ -62,6 +62,9 @@ class PlaySessions private constructor(
     /** Package usage belongs only to a tile that represents the whole app, never one of its ROMs. */
     var packageOf: (String) -> String? = { null }
 
+    /** Game tiles whose Android usage counts in Play activity. Non-game apps keep their launch history. */
+    var usageGames: () -> List<String> = { emptyList() }
+
     /**
      * Every id a tile's play is kept under. A game several libraries have is one tile, and
      * each copy kept its own history before it folded. That history stays under its id.
@@ -77,7 +80,9 @@ class PlaySessions private constructor(
     private var usageGranted = false
     private var usageByPackage = emptyMap<String, PackagePlay>()
     private var usageSeen = emptyList<UsageSpan>()
+    private var usageCounted = emptyList<UsageSpan>()
     private var usageNow = 0L
+    private var usageFrom = 0L
 
     /** Opens a session. [name] is the game's name as the launch showed it. */
     fun start(gameId: String, name: String? = null): String {
@@ -102,6 +107,13 @@ class PlaySessions private constructor(
     fun shown(gameId: String): ShownPlay {
         val lifecycle = totals(gameId)
         val usage = packageOf(gameId)?.let { usageByPackage[it] }
+        if (usageGranted && usage != null) {
+            // Android retains only a short event window. Older launch history must stay visible.
+            val ids = historyIds(gameId)
+            val older = beforeUsage(playSpans(log.counted()).filter { it.gameId in ids })
+            return ShownPlay(usage.activeMillis + older.sumOf { it.endMillis - it.startMillis },
+                listOfNotNull(usage.lastPlayedMillis, lifecycle.lastPlayedMillis?.takeIf { it < usageFrom }).maxOrNull(), false)
+        }
         return shownPlay(lifecycle.activeMillis, lifecycle.lastPlayedMillis, usage, usageGranted)
     }
 
@@ -110,10 +122,12 @@ class PlaySessions private constructor(
     fun hasTrackedSession(): Boolean = !log.isEmpty()
 
     /** Replaces the usage overlay. Lifecycle sessions stay in place for when access is off. */
-    fun applyUsage(granted: Boolean, samples: List<UsageSample>, nowMillis: Long) {
+    fun applyUsage(granted: Boolean, samples: List<UsageSample>, nowMillis: Long,
+        fromMillis: Long = nowMillis - UsageAccess.LOOKBACK_MS) {
         usageGranted = granted
         usageSeen = if (granted) usageSpans(samples) else emptyList()
         usageNow = nowMillis
+        usageFrom = fromMillis
         countUsage()
         changed()
     }
@@ -134,6 +148,7 @@ class PlaySessions private constructor(
     private fun countUsage() {
         if (!usageGranted) {
             usageByPackage = emptyMap()
+            usageCounted = emptyList()
             return
         }
         val cuts = HashMap<String, MutableList<LongRange>>()
@@ -141,7 +156,8 @@ class PlaySessions private constructor(
             val pkg = packageOf(gameId) ?: continue
             cuts.getOrPut(pkg) { mutableListOf() } += stretch
         }
-        usageByPackage = packagePlay(withoutStretches(usageSeen, cuts, usageNow), usageNow)
+        usageCounted = withoutStretches(usageSeen, cuts, usageNow)
+        usageByPackage = packagePlay(usageCounted, usageNow)
     }
 
     /** The name [gameId] had when it was last played or seen in a catalog. */
@@ -159,8 +175,41 @@ class PlaySessions private constructor(
      */
     fun keptCover(tileId: String): File? = art.file(tileId) ?: historyIds(tileId).firstNotNullOfOrNull(art::file)
 
-    /** Every stretch a game was in front, for the Play activity page, under the tile it counts for now. */
-    fun spans(): List<PlaySpan> = playSpans(log.counted()).map { it.copy(gameId = tileOf(it.gameId)) }
+    /**
+     * For game tiles, the same source as [shown]: usage replaces lifecycle time, never a ROM’s.
+     * A package appears once even if both its Android tile and an emulator stand-in name it.
+     * Usage outside a Foldcade launch has no removable session id; Android owns that history.
+     * Android events are package/activity observations, not Foldcade launches:
+     * https://developer.android.com/reference/android/app/usage/UsageEvents.Event#ACTIVITY_RESUMED
+     */
+    fun spans(): List<PlaySpan> {
+        val lifecycle = playSpans(log.counted()).map { it.copy(gameId = tileOf(it.gameId)) }
+        if (!usageGranted) return lifecycle
+        val games = usageGames().distinct()
+        val byPackage = games.mapNotNull { id -> packageOf(id)?.let { it to tileOf(id) } }
+            .distinctBy { it.first }.toMap()
+        val overlaid = usageCounted.flatMap { span ->
+            val game = byPackage[span.packageName] ?: return@flatMap emptyList()
+            // Share the clock-jump cap and future clamping used by the hero's package totals.
+            val duration = packagePlay(listOf(span), usageNow)[span.packageName]?.activeMillis ?: 0L
+            val end = (span.pausedAt ?: usageNow).coerceAtMost(usageNow)
+            val start = end - duration
+            if (end <= start) return@flatMap emptyList()
+            val launches = lifecycle.filter { packageOf(it.gameId) == span.packageName && it.endMillis > start && it.startMillis < end }
+            val edges = (listOf(start, end) + launches.flatMap { listOf(it.startMillis.coerceIn(start, end), it.endMillis.coerceIn(start, end)) }).distinct().sorted()
+            edges.zipWithNext { from, to ->
+                val launch = launches.firstOrNull { it.startMillis <= from && it.endMillis >= to }
+                PlaySpan(game, from, to, launch?.sessionId.orEmpty())
+            }
+        }
+        return lifecycle.flatMap {
+            if (packageOf(it.gameId) in byPackage && packageOf(it.gameId) in usageByPackage) beforeUsage(listOf(it)) else listOf(it)
+        } + overlaid
+    }
+
+    private fun beforeUsage(spans: List<PlaySpan>): List<PlaySpan> = spans.mapNotNull {
+        if (it.startMillis < usageFrom) it.copy(endMillis = minOf(it.endMillis, usageFrom)) else null
+    }
 
     /**
      * Every tile with play that still counts, its time and last play: each copy's and each

@@ -63,6 +63,19 @@ class ArtPickerFocusTest {
         assertNull(shell.artPicker)
     }
 
+    @Test fun choosingCurrentLocalArtPreservesAutomaticWithoutSavingAnOverride() {
+        val applied = mutableListOf<String?>()
+        val shell = shell { _, _, url -> applied += url }
+        shell.openHomeAll()
+        val state = openArt(shell)
+        shell.artCurrent(state.gameId, mapOf(ArtKind.Tile to "content://media/cover.png"))
+        shell.artCandidates(shell.artPicker!!.copy(index = 0), loadingResult = false)
+        shell.artInput(Meaning.Activate)
+        assertTrue(applied.isEmpty())
+        shell.artInput(Meaning.ActivateBottom)
+        assertEquals(listOf<String?>(null), applied)
+    }
+
     private fun shell(onApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> }): ShellController =
         ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
             onArtApply = onApply).also {

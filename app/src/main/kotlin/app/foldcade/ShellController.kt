@@ -304,8 +304,13 @@ class ShellController(
         closeArtAfterFocusChange()
         val current = artPicker ?: return
         if (current.gameId == state.gameId && current.kind == state.kind && current.match?.id == state.match?.id) {
-            artPicker = if (loadingResult) state.copy(preview = current.preview) else state
+            artPicker = if (loadingResult) state.copy(preview = current.preview, currentArt = current.currentArt) else state
         }
+    }
+
+    fun artCurrent(gameId: String, art: Map<ArtKind, String>) {
+        val state = artPicker?.takeIf { it.gameId == gameId } ?: return
+        artPicker = state.withCurrent(art)
     }
 
     fun artMatches(gameId: String, matches: List<ArtMatch>, error: Boolean = false) {
@@ -322,6 +327,7 @@ class ShellController(
         when (meaning) {
             Meaning.Back, Meaning.CancelHold -> artPicker = null
             Meaning.Activate -> state.focused?.let {
+                if (it.url == state.currentArt[state.kind]) return
                 state.match?.takeIf { it != savedArtMatch(state.gameId) }?.let { onArtMatch(state.gameId, it) }
                 onArtApply(state.gameId, state.kind, it.url)
             }
@@ -1914,6 +1920,9 @@ class ShellController(
 
     /** The catalog as last merged: a new list whenever a library scan, sign-out, or install changes it. */
     fun catalogNow(): List<Any> = home.catalog()
+
+    /** Usage outside Foldcade counts as play only for games, including apps the player filed as games. */
+    fun usageGameIds(): List<String> = installed.filter { appKind(it) == HomeKind.AndroidGame }.map { androidHomeId(it.packageName) }
 
     /**
      * [gameId]'s title in a catalog that has it now, or null for a game that is gone: its file

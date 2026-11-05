@@ -937,6 +937,7 @@ class FoldcadeApp : Application() {
         // A game several libraries have is one tile, and its copies' play counts on it.
         plays.historyIds = shell::historyIds
         plays.tileOf = shell::tileOf
+        plays.usageGames = shell::usageGameIds
         // A game's cover is kept when it is played, so its history keeps showing it after it leaves.
         plays.onStarted = { tile -> keepPlayArt(tile, again = true) }
         shell.playSources = ::playSources

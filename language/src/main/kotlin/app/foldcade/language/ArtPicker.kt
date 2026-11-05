@@ -91,8 +91,19 @@ data class ArtPickerState(
     val preview: Boolean = true,
     val loading: Boolean = true,
     val error: Boolean = false,
+    /** Effective art, including local/provider art. This never becomes a saved override just by choosing it. */
+    val currentArt: Map<ArtKind, String> = emptyMap(),
 ) {
-    val focused: ArtCandidate? get() = candidates.getOrNull(index)
+    val options: List<ArtCandidate> get() = currentArt[kind]?.let { url ->
+        listOf(ArtCandidate("current", url, url)) + candidates.filter { it.url != url }
+    } ?: candidates
+    val focused: ArtCandidate? get() = options.getOrNull(index)
+
+    fun withCurrent(art: Map<ArtKind, String>): ArtPickerState {
+        val focusedUrl = focused?.url
+        val next = copy(currentArt = art)
+        return next.copy(index = if (currentArt[kind] == null) 0 else next.options.indexOfFirst { it.url == focusedUrl }.coerceAtLeast(0))
+    }
 
     fun withoutQuery(): ArtPickerState = copy(findingMatches = false, loading = false, error = true,
         candidates = emptyList(), index = 0, preview = false)
@@ -123,7 +134,7 @@ data class ArtPickerState(
             Meaning.MoveRight -> index + 3
             else -> return this
         }
-        return copy(preview = true, index = target.coerceIn(0, (candidates.size - 1).coerceAtLeast(0)))
+        return copy(preview = true, index = target.coerceIn(0, (options.size - 1).coerceAtLeast(0)))
     }
 }
 
@@ -131,18 +142,17 @@ object ArtCopy {
     const val art = "Art"
     fun matched(name: String): String = "SteamGridDB · $name"
     val tabs = listOf("Tile", "Hero", "Logo")
-    const val empty = "No art found"
+    const val empty = "No alternatives on SteamGridDB"
     const val error = "Couldn’t load art"
     const val kind = "Kind"
     const val match = "Match"
     const val apply = "Apply"
     const val automatic = "Automatic"
     const val current = "✓"
+    const val anotherMatch = "Another match"
 }
 
 fun artPickerHintGroups(faces: FaceMap): List<List<HintKey>> = listOf(
-    listOf(HintKey(PromptKey.L1, ""), HintKey(PromptKey.R1, ArtCopy.kind)),
-    listOf(HintKey(PromptKey.L2, ""), HintKey(PromptKey.R2, ArtCopy.match)),
     listOf(HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply)),
     listOf(HintKey(actionFaces(faces).bottomGlyph, ArtCopy.automatic)),
     listOf(HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back)),
