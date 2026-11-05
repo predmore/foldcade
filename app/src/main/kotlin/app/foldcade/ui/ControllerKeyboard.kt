@@ -101,6 +101,7 @@ internal fun ControllerKeyboard(
     chipRow: Boolean = true,
     done: String = KeyboardCopy.done,
     shiftButton: PromptKey? = PromptKey.L2,
+    doneEnabled: Boolean = true,
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
@@ -234,6 +235,7 @@ internal fun ControllerKeyboard(
                             scale = scale,
                             done = done,
                             shiftButton = shiftButton,
+                            doneEnabled = doneEnabled,
                             modifier = Modifier
                                 .offset { IntOffset(rect.left.roundToInt(), rect.top.roundToInt()) }
                                 .size(with(density) { rect.width.toDp() }, with(density) { rect.height.toDp() })
@@ -543,6 +545,7 @@ private fun Key(
     scale: Float,
     done: String,
     shiftButton: PromptKey?,
+    doneEnabled: Boolean,
     modifier: Modifier,
 ) {
     val theme = LocalFoldTheme.current.theme
@@ -554,6 +557,8 @@ private fun Key(
     val shiftOn = cap == KeyCap.Shift && typing.shift != ShiftState.Off
     val shiftLit by eased(if (shiftOn) 1f else 0f, theme.motion.durationFocus, scale)
     val lamp by eased(if (cap == KeyCap.Shift && typing.shift == ShiftState.Locked) 1f else 0f, theme.motion.durationFocus, scale)
+    // Done with nowhere to go loses its lit glass and reads as the other modifier keys.
+    val doneLit by eased(if (cap != KeyCap.Done || doneEnabled) 1f else 0f, theme.motion.durationFocus, scale)
     val focusScale = theme.motion.scaleFocus
     val density = LocalDensity.current
     val labelSize = with(density) { (unit * KEY_LABEL).toSp() }
@@ -587,7 +592,7 @@ private fun Key(
                     drawRoundRect(
                         brush = Brush.linearGradient(listOf(ring.start, ring.end), Offset.Zero, Offset(size.width, size.height)),
                         cornerRadius = radius,
-                        alpha = if (cap == KeyCap.Done) keyboard.doneAlpha else keyboard.shiftAlpha * shiftLit,
+                        alpha = if (cap == KeyCap.Done) keyboard.doneAlpha * doneLit else keyboard.shiftAlpha * shiftLit,
                     )
                 }
                 val pressed = if (flashed) flash() else 0f
@@ -657,7 +662,7 @@ private fun Key(
             ) {
                 BasicText(
                     done,
-                    style = TextStyle(color = ink, fontSize = wordSize, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
+                    style = TextStyle(color = androidx.compose.ui.graphics.lerp(theme.muted, ink, doneLit), fontSize = wordSize, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
                 )
                 ButtonGlyph(PromptKey.Start, held, glyphSize)
             }

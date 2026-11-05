@@ -346,6 +346,14 @@ def disc(c):
     return [shadow(32, 60.5, 22, 2.4), body(ci(32, 32, 26) + hole, c, gloss=0.2), paint(L(ci(32, 32, 26) + hole, fill=_shine(10, 10, 54, 54))),
             recess(ci(32, 32, 10.5) + hole, c), control(ci(32, 32, 7.8) + hole, tone(c, 0.3))]
 
+def hidden(c):
+    """Hidden: an eye shut, its lid down and its lashes under it, for the games kept off Home."""
+    lid = "M4,28 Q32,2 60,28 Q32,50 4,28 Z"
+    crease = "M9,30.5 Q32,47 55,30.5 Q32,42 9,30.5 Z"
+    lashes = ((9.6, 32, 4.5, 40.5), (23.6, 38, 21.2, 48.5), (40.4, 38, 42.8, 48.5), (54.4, 32, 59.5, 40.5))
+    return [shadow(32, 58, 23, 2.8), body(lid, c, gloss=0.3), recess(crease, c)] + [
+        body(capsule(x0, y0, x1, y1, 5.4), tone(c, -0.12), gloss=0.12) for x0, y0, x1, y1 in lashes]
+
 # name -> (drawing, accent, what it stands for)
 MARKS = {
     "console": (console, AMBER, "A game controller, for any game"),
@@ -354,6 +362,7 @@ MARKS = {
     "android_apps": (android_apps, DROID, "A grid of apps"),
     "android_games": (android_games, DROID, "A phone held in a controller"),
     "folder": (folder, AMBER, "A folder"),
+    "hidden": (hidden, GRAPE, "A shut eye, for Hidden"),
     "cloud": (cloud, CLOUD, "A cloud with a download arrow, for RomM"),
     "moonlight": (moonlight, MOON, "A crescent moon and a star"),
     "pc": (pc, BLUE, "A monitor showing a controller"),

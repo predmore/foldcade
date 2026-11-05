@@ -22,12 +22,20 @@ data class HeroItem(
  * Null means the count is unknown. [mark] is the platform's theme mark. [apps] counts apps,
  * not games, as [HomeFolder.holdsApps] does. This is not the folder grid.
  */
+/** Hidden's own mark, a shut eye, for its hero when nothing is hidden. */
+const val MARK_HIDDEN: String = "hidden"
+
+/** The hero key of Hidden with nothing in it. */
+const val HIDDEN_HERO_KEY: String = "home.hidden"
+
 data class HeroFolder(
     val key: String,
     val name: String,
     val count: Int?,
     val mark: String? = null,
     val apps: Boolean = false,
+    /** The line under the name when there is no [count] to show, as Hidden's "Nothing hidden". */
+    val note: String? = null,
 )
 
 sealed interface HeroSubject {
@@ -136,7 +144,7 @@ fun heroCopy(subject: HeroSubject): HeroCopy = when (subject) {
     )
     is HeroSubject.Folder -> HeroCopy(
         title = subject.folder.name,
-        detail = subject.folder.count?.let { folderCountLine(it, apps = subject.folder.apps) }.orEmpty(),
+        detail = subject.folder.count?.let { folderCountLine(it, apps = subject.folder.apps) } ?: subject.folder.note.orEmpty(),
         showsArt = subject.folder.mark != null,
     )
 }

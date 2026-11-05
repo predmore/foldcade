@@ -478,7 +478,7 @@ Find. The magnifier is `control.search` and the hidden mark is `badge.hidden`.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
-| `find.ringRestAlpha` | 0.38 | The ring on the best result before the D-pad reaches it |
+| `find.ringRestAlpha` | 0 | The ring on the best result while the keys have the D-pad. Afterglow lights none, so only the key under the cursor is lit |
 | `find.filterAlpha` | 0.07 | A filter pill |
 | `find.chosenAlpha` | 0.3 | The chosen filter's fill |
 | `find.chosenRimDp` | 1.5 | Its rim |

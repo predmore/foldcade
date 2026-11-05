@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import app.foldcade.R
 import app.foldcade.language.HOME_ANDROID_APPS
+import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.PlayerChoiceCopy
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
@@ -382,13 +383,29 @@ internal fun PromptImage(name: String, size: Dp, modifier: Modifier = Modifier) 
     )
 }
 
-/** The key that runs a row, on its right. It lights while it is held. */
+/**
+ * The key that runs a row, on its right. It lights while it is held. Its round cap sits on a
+ * faint plate as wide as a round tile's rim, so on a card it reads as a button to press, not as
+ * a box to tick where a row's check would be (review-D 117).
+ */
 @Composable
 internal fun ChordHint(key: PromptKey?, held: Set<PromptKey>, modifier: Modifier = Modifier) {
     if (key == null) return
+    val theme = LocalFoldTheme.current.theme
     val glyph = promptGlyph(key)
-    PromptImage(if (key in held) "${glyph}_filled" else glyph, 26.dp, modifier)
+    val size = 26.dp * theme.style.metrics.glyphScale
+    Box(
+        modifier
+            .size(size + CHORD_PLATE_DP.dp * 2)
+            .drawBehind { drawCircle(theme.onBackground.copy(alpha = theme.style.menu.quickTileLitAlpha)) },
+        contentAlignment = Alignment.Center,
+    ) {
+        PromptImage(if (key in held) "${glyph}_filled" else glyph, 26.dp)
+    }
 }
+
+/** How far a row's key cap's plate reaches past the cap. */
+private const val CHORD_PLATE_DP = 2.5f
 
 /** An on/off switch. The knob springs across with a little overshoot, and the track lights. */
 @Composable
@@ -639,6 +656,8 @@ internal fun <T> SlideSwap(
  */
 internal fun rowIcon(row: Row, moveTo: String? = null): Int? = when (row) {
     Row.Home -> R.drawable.symbol_home
+    // Add to's Home row; each collection's row wears that collection's own glyph ([placeSymbol]).
+    is Row.Collection -> if (row.folderId == HOME_ROOT) R.drawable.symbol_home else R.drawable.symbol_folder
     Row.AllLibrary -> R.drawable.symbol_library
     Row.Apps -> R.drawable.symbol_android_apps
     Row.EditHome -> R.drawable.ic_status_tools
@@ -729,6 +748,8 @@ internal fun MenuRow(
     modifier: Modifier = Modifier,
     labelStyle: TextStyle,
     height: Dp = MENU_ROW_HEIGHT,
+    /** A place's own symbol, as a collection's glyph in its colour, in place of [icon]. */
+    place: PlaceSymbol? = null,
 ) {
     val theme = LocalFoldTheme.current.theme
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
@@ -738,9 +759,11 @@ internal fun MenuRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (icon != null || iconSlot) {
+        if (icon != null || iconSlot || place != null) {
             Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                if (icon != null) {
+                if (place != null) {
+                    PlaceSymbolIcon(place, theme.onBackground, Modifier.lifted(lit, lift, grow = theme.style.menu.artGrow, rest = theme.style.menu.artRestAlpha))
+                } else if (icon != null) {
                     // A symbol is one ink, so it follows the theme's text colour.
                     val art = themeIcon(icon)
                     Image(

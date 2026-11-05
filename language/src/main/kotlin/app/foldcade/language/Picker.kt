@@ -1380,9 +1380,12 @@ fun panelHints(model: PickerModel): List<HintKey>? {
     val panel = model.panel ?: return null
     if (model.dialog != null) return null
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
-    return when (val row = panelRows(panel, model).getOrNull(panel.index)) {
+    val row = panelRows(panel, model).getOrNull(panel.index) ?: return null
+    val verb = listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, menuVerb(row, model)), back)
+    return when (row) {
         Row.RemoveDownload, Row.DeleteShortcut -> listOf(HintKey(model.deleteHold?.key ?: promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, ""), back)
-        Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back) else null
+        Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
+            else listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, BrightnessCopy.allow), back)
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
@@ -1398,7 +1401,21 @@ fun panelHints(model: PickerModel): List<HintKey>? {
                 add(back)
             }
         }
-        else -> null
+        else -> verb
+    }
+}
+
+/**
+ * What A does to a menu row, for the hint row: a switch turns on or off, a check adds or takes
+ * out, a row that leads somewhere or a place opens, and any other row is chosen.
+ */
+fun menuVerb(row: Row, model: PickerModel): String = when (val control = rowControl(row, model)) {
+    is RowControl.Toggle -> if (control.on) Copy.hintTurnOff else Copy.hintTurnOn
+    is RowControl.Check -> if (control.on) Copy.hintTakeOut else Copy.hintAdd
+    RowControl.Opens -> Copy.hintOpen
+    else -> when (row) {
+        Row.PlayActivity, Row.Home, Row.AllLibrary, Row.Apps, Row.Settings, is Row.QuickTile -> Copy.hintOpen
+        else -> Copy.hintChoose
     }
 }
 

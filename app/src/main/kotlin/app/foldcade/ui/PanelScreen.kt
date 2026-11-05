@@ -239,6 +239,7 @@ import app.foldcade.language.Side
 import app.foldcade.language.panelNote
 import app.foldcade.language.withInfoHint
 import app.foldcade.language.tileLabelLines
+import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.GlowFalloff
 import app.foldcade.language.builtInTheme
 import app.foldcade.language.connectFields
@@ -1226,7 +1227,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
     // An empty collection has no tile to focus, so the top screen shows the collection.
-    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero()
+    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyHiddenHero()
     // Find shows its best result, or the focused one, and travels along its strip.
     val find = app.shell.find
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
@@ -1360,7 +1361,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 line = FoundLine(
                                     key = found?.id,
                                     title = found?.title,
-                                    facts = found?.let(app.shell::findFacts)?.joinToString(" · ").orEmpty(),
+                                    // With nothing found, the line says what to try next.
+                                    facts = found?.let(app.shell::findFacts)?.joinToString(" · ") ?: session.noMatchStep,
                                     order = if (session.onResults) session.index else 0,
                                 ),
                                 fieldStyle = text(theme.onBackground, design.type.heroTitle, theme, display = true),
@@ -1391,12 +1393,16 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
         // Y's menu beside the tile has no header, so the count stays up here while it acts on them.
         val selected = presence(checks?.checked?.size?.takeIf { model.panel?.let { it.side == Side.Tile } ?: true }, motion.durationFocus, scale)
         selected.shown?.let { count ->
-            BasicText(SelectionCopy.count(count),
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = px(32f))
+            // On the islands' row, as tall as their pills, between L1 and R1 (review-C 165).
+            Box(
+                Modifier.align(Alignment.TopCenter).padding(top = maxWidth * design.metrics.insetFraction).height(ISLAND_PILL_DP.dp)
                     .graphicsLayer { alpha = selected.progress.value }
                     .clip(design.shape.control()).background(theme.surface.copy(alpha = design.hero.pillAlpha))
-                    .padding(horizontal = px(24f), vertical = px(12f)),
-                style = text(theme.onBackground, design.type.hint, theme))
+                    .padding(horizontal = px(24f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(SelectionCopy.count(count), style = text(theme.onBackground, design.type.hint, theme))
+            }
         }
         IconEditorLayer(app, editor, screen, scale)
         // L1's or R1's island open over the hero on this screen dims it, so the name card under the
@@ -1610,7 +1616,10 @@ private fun FolderIconPicker(app: FoldcadeApp, pick: IconPick, name: String, top
     }
 }
 
-/** The colour row over the glyph grid, with one gliding ring and the focused choice's name. */
+/**
+ * The colour row over the glyph grid, with one gliding ring. The symbols and colours speak for
+ * themselves, so no name floats under the grid (review-C 94); the focused choice's name is read out.
+ */
 @Composable
 private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
     val design = LocalFoldTheme.current.theme.style
@@ -1620,7 +1629,7 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
     val columns = IconPick.COLUMNS
     val glyphRows = (FOLDER_ICONS.size + columns - 1) / columns
     val reach = ringReach()
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+    Column(modifier.semantics { contentDescription = pick.focusedName }, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val gap = px(12f)
             // The colours stand a little apart from the glyphs.
@@ -1645,7 +1654,7 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                 ringSize = swatch
                 ringCorner = swatch / 2
             } else {
-                ringLeft = (cell + gap) * (pick.glyph % columns)
+                ringLeft = (cell + gap) * IconPick.glyphColumn(pick.glyph)
                 ringTop = glyphTop(pick.glyph / columns)
                 ringSize = cell
                 ringCorner = corner
@@ -1708,7 +1717,7 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                     val lit by motionState(if (chosen) 1f else 0f, motion.arrive(motion.durationFocus, scale))
                     Box(
                         Modifier
-                            .offset(x = (cell + gap) * (index % columns), y = glyphTop(index / columns))
+                            .offset(x = (cell + gap) * IconPick.glyphColumn(index), y = glyphTop(index / columns))
                             .size(cell)
                             .drawBehind {
                                 val cornerPx = corner.toPx()
@@ -1723,14 +1732,6 @@ private fun IconChoices(pick: IconPick, scale: Float, modifier: Modifier) {
                     }
                 }
             }
-        }
-        Crossfade(pick.focusedName, animationSpec = motion.arrive(motion.durationFocus, scale)) { label ->
-            BasicText(
-                text = label,
-                modifier = Modifier.fillMaxWidth(),
-                style = text(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
-                maxLines = 1,
-            )
         }
     }
 }
@@ -2548,7 +2549,10 @@ private fun Picker(
     val gridGone by remember { derivedStateOf { covered() >= 1f } }
     // An island's menu open over this same grid, as with one screen: the tiles quiet under it,
     // as the other screen's grid does under its blur. Its hints stay bright.
-    val menuOver = model.panel?.screen == screen && model.dialog?.screen != screen
+    // The collection icon editor on the other screen takes the keys, so this grid quiets under it too,
+    // its collection's tile left lit (review-C 94).
+    val picking = !editorHere && shell.folderIconPick() != null
+    val menuOver = (model.panel?.screen == screen && model.dialog?.screen != screen) || picking
     val quiet = motionState(
         if (menuOver) 1f else 0f,
         if (menuOver) motion.arrive(motion.durationIsland, scale) else motion.leave(motion.durationIsland, scale),
@@ -2562,7 +2566,7 @@ private fun Picker(
     val ringPx = with(LocalDensity.current) { ringReach().toPx() }
     // Which menu the dim is for, kept as it fades out, so the tile stays lit while Y's card shrinks back into it.
     val dimForTile = remember { booleanArrayOf(false) }
-    if (menuOver) dimForTile[0] = tileMenuOn(app, screen)
+    if (menuOver) dimForTile[0] = tileMenuOn(app, screen) || picking
     val tileHole = remember(anchor, screen, ringPx) {
         {
             // Read so the dim draws again each frame the grid slides, and its hole follows the tile.
@@ -2607,6 +2611,8 @@ private fun Picker(
                 }
             }
             GridHeader(shell)
+            // Inside a folder or collection, its name in the band above the grid (review-C S3).
+            if (!islandsHere) PlacePill(shell, scale, covered, inset)
             shell.libraryBar()?.let { view ->
                 // It sinks with the grid under Find and the keys, and gives them its room as it goes.
                 LibraryBar(
@@ -2716,7 +2722,10 @@ private fun Picker(
             }
             if (!gridGone) {
                 // A dialog here names its keys where this bar sits, so the bar steps aside rather than underline them.
-                Box(Modifier.sinking(covered).alpha(if (model.dialog?.screen == screen) 0f else 1f)) {
+                // Y's card can reach down to the bar too, so the bar fades while it is open (review-C 84).
+                val dialogHere = model.dialog?.screen == screen
+                val barAway = motionState(if (tileMenuOn(app, screen)) 1f else 0f, motion.arrive(motion.durationIsland, scale))
+                Box(Modifier.sinking(covered).graphicsLayer { alpha = if (dialogHere) 0f else 1f - barAway.value }) {
                     StripBar(count = model.count, first = shownFirstColumn(model), shown = model.columnsShown, scale = scale)
                 }
             }
@@ -2922,6 +2931,8 @@ private fun PanelRows(
                 else -> MenuRow(
                     label = parts.label,
                     icon = rowIcon(row, moveTo),
+                    place = (row as? Row.Collection)?.takeIf { it.folderId != HOME_ROOT }
+                        ?.let { app.shell.homeFolder(it.folderId) }?.let { placeSymbol(it) },
                     iconSlot = iconSlot,
                     focused = focused,
                     control = rowControl(row, model, parts.value),
@@ -3084,8 +3095,9 @@ private fun QuickTiles(
                     }
                     if (words != null) {
                         val quickRest = LocalFoldTheme.current.theme.style.menu.quickLabelRestAlpha
-                        // "New collection" takes two short lines under its tile rather than reading as a bare "New".
-                        val lines = tileLabelLines(row)
+                        // "New collection" takes two short lines under its tile on a full line, rather than reading
+                        // as a bare "New", and one where the line leaves it room (review-C 142).
+                        val lines = tileLabelLines(row, chunk.size)
                         BasicText(
                             text = words,
                             maxLines = lines,
@@ -3139,6 +3151,62 @@ private fun GridHeader(shell: app.foldcade.ShellController) {
     val shelf = homeGridLabel(shell.model.homeGrid) ?: Copy.folders.takeIf { shell.homeFoldersOpen() } ?: return
     BasicText(text = shelf, style = text(theme.onBackground, LocalFoldTheme.current.theme.style.type.sideRow, theme))
 }
+
+/**
+ * Inside a folder or collection, a small pill in the band over the grid with its symbol and
+ * name, so a lone tile never reads as a broken Home. It takes no room of its own: the grid keeps
+ * the size it has at Home's top level, and the pill sits in the screen's top [inset]. It fades in
+ * as the place opens, and sinks with the grid under Find and the keys.
+ */
+@Composable
+private fun PlacePill(shell: app.foldcade.ShellController, scale: Float, covered: () -> Float, inset: Dp) {
+    val theme = LocalFoldTheme.current.theme
+    val motion = theme.motion
+    // Derived, so a move inside the folder, which changes the model, does not recompose the pill.
+    val place by remember(shell) { derivedStateOf { shell.openPlace() } }
+    var shown by remember { mutableStateOf(place) }
+    if (place != null) shown = place
+    val alpha = motionState(if (place != null) 1f else 0f, motion.arrive(motion.durationIsland, scale))
+    val folder = shown ?: return
+    val style = text(theme.onBackground, theme.style.type.hint, theme)
+    val line = with(LocalDensity.current) { style.fontSize.toDp() } * PLACE_SYMBOL_SHARE
+    val top = px(PLACE_PILL_TOP)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            // No height of its own: it is drawn up in the inset, over the grid's band.
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = androidx.compose.ui.unit.Constraints.Infinity))
+                layout(constraints.maxWidth, 0) { placeable.place(0, (top - inset).roundToPx()) }
+            }
+            .sinking(covered)
+            .graphicsLayer { this.alpha = alpha.value },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Row(
+            Modifier
+                .clip(theme.style.shape.control())
+                .drawBehind {
+                    drawRoundRect(theme.onBackground.copy(alpha = theme.style.find.filterAlpha), cornerRadius = CornerRadius(size.height * theme.style.shape.round))
+                }
+                .padding(start = 10.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            placeSymbol(folder)?.let { PlaceSymbolIcon(it, theme.onBackground, Modifier.size(line)) }
+            BasicText(folder.name, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** The islands' closed pills' height, which the selection count's pill matches on their row. */
+private const val ISLAND_PILL_DP = 44f
+
+/** The place pill's top, in the panel's px, from the screen's edge. */
+private const val PLACE_PILL_TOP = 10f
+
+/** The place pill's symbol, as a share of its text's size. */
+private const val PLACE_SYMBOL_SHARE = 1.25f
 
 /**
  * Under the grid, where the screen sits along the strip, empty columns past the
@@ -3285,7 +3353,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selecting) BasicText(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        // The hero's pill counts the selection; with no hero, the count leads the keys instead.
+        if (selecting && app.store.session.heroPanel() == null) BasicText(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (destructive) BasicText(text = Copy.hold, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
         if (note != null) BasicText(text = "$note ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
@@ -3679,12 +3748,16 @@ private fun StripColumn(
                         corner = radius,
                         icon = null,
                         favorite = false,
-                        offHome = true,
+                        // It rests lit like any tile, so a fresh Home's first step never reads as an empty slot (review-A 02).
+                        offHome = false,
                         onClick = { tap() },
                     )
                 } else if (past) {
-                    // A tap rests the cursor here, as on any empty slot.
-                    Box(Modifier.size(cell).hostPress { tap() })
+                    // A tap rests the cursor here, as on any empty slot. Resting there, it is where Y's
+                    // card grows from, as a tile is (review-C 142).
+                    val focused = shell.model.dialog == null && !shell.model.connectOpen &&
+                        focus.chrome == null && focus.cellIndex == index && carry == null
+                    Box(Modifier.size(cell).then(if (focused) Modifier.tileAnchor(radiusPx * motion.scaleFocus) else Modifier).hostPress { tap() })
                 } else {
                     val source = if (showingHome) index else displaySource(shell.model, index)
                     val face = if (showingHome) shell.homeFace(index) else null

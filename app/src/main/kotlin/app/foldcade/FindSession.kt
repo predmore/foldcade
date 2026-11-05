@@ -64,6 +64,10 @@ class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> I
     var menuId: String? = null
         private set
 
+    /** With no results under another filter, how many the All filter has. Zero on All, or with results. */
+    var inAll: Int by mutableIntStateOf(0)
+        private set
+
     /** Counts searches that changed the results, so the strip can pop them in again. */
     var searched: Int by mutableIntStateOf(0)
         private set
@@ -73,6 +77,9 @@ class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> I
     }
 
     val query: String get() = typing.text
+
+    /** What "No matches" offers next: see [noMatchStep]. */
+    val noMatchStep: String get() = app.foldcade.language.noMatchStep(query, inAll)
 
     /**
      * What the top screen and the menu's header show: the result a menu is open on, even one
@@ -205,6 +212,8 @@ class FindSession(entries: List<FindEntry>, startFilter: (List<FindFilter>) -> I
         val next = findResults(library, query, filters.getOrElse(filter) { filters.first() })
         if (next.map { it.id } != results.map { it.id }) searched++
         results = next
+        // All is first; an empty search under another filter says how many All would show.
+        inAll = if (next.isEmpty() && filter > 0) findResults(library, query, filters.first()).size else 0
         val kept = focusedId?.takeIf { !fresh }?.let { id -> next.indexOfFirst { it.id == id } }?.takeIf { it >= 0 }
         focus(kept ?: if (fresh) 0 else index)
         if (next.isEmpty()) onResults = false

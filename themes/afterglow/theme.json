@@ -1143,6 +1143,11 @@
       "tint": false,
       "accent": "#FFBA48"
     },
+    "mark.hidden": {
+      "file": "icons/mark_hidden.xml",
+      "tint": false,
+      "accent": "#C77DFF"
+    },
     "mark.home": {
       "file": "icons/mark_home.xml",
       "tint": false,
@@ -1564,6 +1569,10 @@
     },
     "symbol.heart": {
       "file": "icons/symbol_heart.xml",
+      "tint": true
+    },
+    "symbol.hidden": {
+      "file": "icons/symbol_hidden.xml",
       "tint": true
     },
     "symbol.hide": {
@@ -2053,7 +2062,7 @@
       "tileOffAlpha": 0.45
     },
     "find": {
-      "ringRestAlpha": 0.38,
+      "ringRestAlpha": 0.0,
       "filterAlpha": 0.07,
       "chosenAlpha": 0.3,
       "chosenRimDp": 1.5,

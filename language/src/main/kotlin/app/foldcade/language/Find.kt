@@ -383,21 +383,30 @@ fun findFacts(board: HomeBoard, entry: FindEntry): List<String> {
 }
 
 /**
- * Find's keys while its keyboard has them: A types the key under the ring, and B clears what
- * was typed, then closes Find once nothing is. The results' keys show only once they have the D-pad.
+ * Find's keys while its keyboard has them: L2 and R2 step the filters, and B clears what was
+ * typed, then closes Find once nothing is. A types the key under the ring, and Erase, Space and
+ * Results wear their buttons on their keys, so the row leaves them out. The results' keys show
+ * only once they have the D-pad.
  */
 fun findKeyboardHints(faceMap: FaceMap, typed: Boolean): List<HintKey> {
-    val confirm = promptKeyOf(faceMap.confirmKey) ?: PromptKey.FaceA
     val back = promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB
     return listOf(
-        HintKey(confirm, FindCopy.type),
-        HintKey(typingFaces(faceMap).eraseGlyph, KeyboardCopy.erase),
-        HintKey(typingFaces(faceMap).spaceGlyph, KeyboardCopy.space),
         HintKey(PromptKey.L2, ""),
         HintKey(PromptKey.R2, FindCopy.filter),
-        HintKey(PromptKey.Start, FindCopy.results),
         HintKey(back, if (typed) FindCopy.clear else FindCopy.close),
     )
+}
+
+/**
+ * The next step under "No matches", so an empty search is never a dead end. Matches the other
+ * filters would show come first, with how many All has ([inAll]), since L2 or R2 reach them.
+ * Otherwise the query is the thing to change: fewer letters, or another filter for an empty one.
+ */
+fun noMatchStep(query: String, inAll: Int): String = when {
+    inAll > 0 -> FindCopy.inAll(inAll)
+    query.isBlank() -> FindCopy.tryFilter
+    query.trim().length > 1 -> FindCopy.fewerLetters
+    else -> FindCopy.otherLetter
 }
 
 /** Find's keys on its results: open on either screen, the game's menu, the filters, and back to the keys. */
@@ -448,16 +457,21 @@ object FindCopy {
     const val hidden = "Hidden"
     const val recent = "Recent"
     const val filter = "Filter"
-    const val type = "Type"
     const val results = "Results"
     const val clear = "Clear"
     const val close = "Close"
     const val open = "Open"
     const val noMatches = "No matches"
+    const val tryFilter = "Try another filter"
+    const val fewerLetters = "Try fewer letters"
+    const val otherLetter = "Try another letter"
     const val showOnHome = "Show on Home"
     const val pinned = "Pinned"
     const val notOnHome = "Not on Home"
 
     /** Where a result lives on Home, for the line under its name: "In Nintendo 3DS". */
     fun inPlace(name: String): String = "In $name"
+
+    /** Under No matches, when the All filter has some: "3 in All". */
+    fun inAll(count: Int): String = "$count in $all"
 }

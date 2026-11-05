@@ -97,7 +97,9 @@ class TileMenuTest {
         assertEquals(listOf(Row.MoveTile, Row.NewCollection), all)
         assertEquals(0..1, tileBlock(all))
         assertEquals("New collection", tileLabel(Row.NewCollection))
-        assertEquals(2, tileLabelLines(Row.NewCollection))
+        // Beside Move alone it has room for one line; on a full line of four it wraps.
+        assertEquals(1, tileLabelLines(Row.NewCollection, lineSize = all.size))
+        assertEquals(2, tileLabelLines(Row.NewCollection, lineSize = quickTileColumns))
     }
 
     @Test

@@ -67,6 +67,30 @@ internal fun appGlyph(packageName: String?, pixels: Int = 256): MarkGlyph? {
     return MarkGlyph(icon, icon.resolved?.asset?.accent ?: LocalFoldTheme.current.theme.focus)
 }
 
+/** A place's flat symbol for chrome and menu rows: its [mark], in [tint] when it wears its own colour. */
+internal data class PlaceSymbol(val mark: String, val tint: Color?)
+
+/**
+ * The symbol [folder] wears in chrome: a collection's glyph in its colour, so collections tell
+ * apart at a glance, and a folder's platform or library symbol in the text's ink. Null for a
+ * folder with no mark.
+ */
+@Composable
+internal fun placeSymbol(folder: app.foldcade.language.HomeFolder): PlaceSymbol? {
+    val look = app.foldcade.language.collectionLook(folder)
+    if (look != null) return PlaceSymbol(look.glyph, LocalFoldTheme.current.theme.style.collections.color(look.tint))
+    return folder.mark?.let { PlaceSymbol(it, null) }
+}
+
+/** [symbol] filling its box, in its own tint or else [ink]. A mark with no symbol wears the folder's. */
+@Composable
+internal fun PlaceSymbolIcon(symbol: PlaceSymbol, ink: Color, modifier: Modifier = Modifier) {
+    val icon = symbolIcon(symbol.mark) ?: symbolIcon("folder") ?: return
+    val tint = symbol.tint ?: ink
+    val filter = remember(icon, tint) { icon.tint(tint) }
+    Canvas(modifier.fillMaxSize()) { with(icon.painter) { draw(size, colorFilter = filter) } }
+}
+
 /** The flat symbol for a place, a platform, or a collection glyph. It is one ink, so it takes a tint. */
 @Composable
 internal fun symbolIcon(mark: String, pixels: Int = 256): ThemeIconPainter? = themeIconOrNull("symbol.$mark", pixels)

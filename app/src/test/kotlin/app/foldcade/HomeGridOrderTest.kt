@@ -835,6 +835,14 @@ class HomeGridOrderTest {
         assertEquals("Nintendo 3DS", shell.typing()?.typing?.chips?.first())
         shell.typing()?.setText("Quests")
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        // Saving the name brings Add to back, on the new collection, ticked (review-C 71). B closes it.
+        assertEquals(PanelLevel.Collections, shell.model.panel?.level)
+        val made = panelRows(shell.model.panel!!, shell.model)[shell.model.panel!!.index]
+        assertTrue(made is Row.Collection && made.label == "Quests")
+        assertTrue(shell.model.tileActions!!.collections!!.first { it.name == "Quests" }.member)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.model.panel)
         assertEquals(inside, titles(shell))
         assertEquals("Drift", shell.focusedGame()?.title)
 
@@ -1109,6 +1117,8 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         shell.typing()?.setText("Racers")
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        // Add to comes back on the new collection: B twice closes it, then B leaves the folder.
+        repeat(2) { shell.onMeaning(Meaning.Back, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Racers"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
@@ -1264,7 +1274,8 @@ class HomeGridOrderTest {
         pickRow(shell) { it == Row.NewCollection }
         shell.typing()?.setText("Racers")
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
-        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        // Add to comes back on the new collection: B twice closes it, then B leaves the folder.
+        repeat(2) { shell.onMeaning(Meaning.Back, HostScreen.Bottom) }
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Racers"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)

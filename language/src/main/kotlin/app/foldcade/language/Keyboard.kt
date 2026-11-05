@@ -416,10 +416,7 @@ fun quickNames(context: List<String>, taken: Collection<String> = emptyList(), l
 
 /** The keyboard's words. */
 object KeyboardCopy {
-    const val erase = "Erase"
-    const val space = "Space"
     const val caret = "Cursor"
-    const val shift = "Shift"
     const val done = "Done"
 
     /** Quick names, one or two words each. */

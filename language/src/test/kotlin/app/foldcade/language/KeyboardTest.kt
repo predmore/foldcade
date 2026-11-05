@@ -363,10 +363,10 @@ class KeyboardTest {
         // Confirm on Y, back on X: the same, the other way round.
         val onY = faceMapWithConfirm(FaceMap.standard(), PromptKey.FaceY)
         assertEquals(TypingFaces(KeyEvent.KEYCODE_BUTTON_Y, KeyEvent.KEYCODE_BUTTON_X, KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B), typingFaces(onY))
-        // The hint bar names the buttons that really erase and type a space.
+        // The keys wear the buttons that really erase and type a space, so the hint bar leaves them
+        // out and names only the caret and the button that really cancels.
         val hints = gridHints(null, typing, onX).map { it.key }
-        assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceB), hints.take(2))
-        assertEquals(PromptKey.FaceY, hints.last())
+        assertEquals(listOf(PromptKey.L1, PromptKey.R1, PromptKey.FaceY), hints)
     }
 
     @Test

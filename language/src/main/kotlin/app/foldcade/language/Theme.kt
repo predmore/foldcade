@@ -366,7 +366,8 @@ object Copy {
     const val pin = "Pin"
     const val unpin = "Unpin"
     const val moveToGames = "Move to Android Games"
-    const val moveToApps = "Move to Apps"
+    /** The folder's own name, as its tile says it, beside Move to Android Games (review-C 86). */
+    const val moveToApps = "Move to Android Apps"
     const val hideApp = "Hide"
     const val showApp = "Show"
     const val addNewGames = "New games on Home"
@@ -426,6 +427,8 @@ object Copy {
     const val hintTakeOut = "Take out"
     const val hintCancel = "Cancel"
     const val hintChoose = "Choose"
+    const val hintTurnOn = "Turn on"
+    const val hintTurnOff = "Turn off"
     const val hintColor = "Color"
     const val hintOptions = "Options"
     /** R3's word under the grid: it opens the focused game's summary on the hero. */
@@ -536,14 +539,11 @@ fun gridHints(
             HintKey(PromptKey.R1, Copy.hintColor),
             HintKey(back, Copy.hintCancel),
         )
-        // A types the key under the ring, which needs no word.
+        // A types the key under the ring, which needs no word. Erase, Space, Shift and Done
+        // wear their buttons on their keys, so only the caret and Cancel are named here.
         HomeKeys.Typing -> listOf(
-            HintKey(typingFaces(faceMap).eraseGlyph, KeyboardCopy.erase),
-            HintKey(typingFaces(faceMap).spaceGlyph, KeyboardCopy.space),
             HintKey(PromptKey.L1, ""),
             HintKey(PromptKey.R1, KeyboardCopy.caret),
-            HintKey(PromptKey.L2, KeyboardCopy.shift),
-            HintKey(PromptKey.Start, KeyboardCopy.done),
             HintKey(back, Copy.hintCancel),
         )
         // The shell names Find's own keys, which depend on what has been typed.
