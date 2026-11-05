@@ -64,6 +64,18 @@ class NewCollectionCancelTest {
         assertTrue("c" in home.board.slots || home.board.folders.values.any { "c" in it.slots })
     }
 
+    @Test fun aGameTheScanTookAwayWhileNamingDoesNotComeBackOnCancel() {
+        val home = home()
+        home.startSelection("a")
+        home.handle(Meaning.Activate, 2)
+        home.bulk(BulkAction.NewCollection, home.selectedIds(), null, 1)
+        home.remerge(emptyList(), emptyList(), listOf(b), emptyList())
+        home.handle(Meaning.Back, 1)
+        assertTrue(home.board.folders.values.none { it.collection })
+        assertFalse("a" in home.board.slots)
+        assertTrue("b" in home.board.slots)
+    }
+
     @Test fun savingTheNameStillKeepsTheCollection() {
         val home = home()
         home.newCollection(1)

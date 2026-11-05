@@ -22,6 +22,7 @@ import app.foldcade.language.Copy
 import app.foldcade.language.HomeKind
 import app.foldcade.language.hideGame
 import app.foldcade.language.HomeUndo
+import app.foldcade.language.removeFolder
 import app.foldcade.language.showHidden
 import app.foldcade.language.hiddenItems
 import app.foldcade.language.deleteShortcut
@@ -756,6 +757,18 @@ class HomeSession(
         return focus
     }
 
+    /**
+     * The board with collection [id]'s making reversed after a scan changed it: copies the scan
+     * folded are named as the board names them now, a pin it put back is one the catalog still
+     * lists or the board still holds, and the collection goes even if the scan touched it.
+     */
+    private fun unmake(id: String, unmade: Unmade): HomeBoard {
+        val restored = HomeUndo(unmade.before, verb = "", started = 0L, after = unmade.after).adopt(sameGames).restore(board)
+        val known = catalog().mapTo(HashSet()) { it.id } + restored.folders.keys + HOME_ALL + board.slots.filterNotNull()
+        val kept = restored.copy(slots = restored.slots.map { slot -> slot?.takeIf { it in known } })
+        return if (id in kept.folders) removeFolder(kept, id) else kept
+    }
+
     /** The board [before] a collection was made, the board just [after], and the cell focus was on. */
     private class Unmade(val before: HomeBoard, val after: HomeBoard, val cell: Int)
 
@@ -812,9 +825,7 @@ class HomeSession(
                 // the board goes back as it was, or, if a scan landed since, has just the making
                 // reversed, as Undo reverses a removal and keeps the arrivals.
                 if (unmade != null) {
-                    board = if (board == unmade.after) unmade.before
-                    // Copies the scan folded into one tile are named as the board names them now.
-                    else HomeUndo(unmade.before, verb = "", started = 0L, after = unmade.after).adopt(sameGames).restore(board)
+                    board = if (board == unmade.after) unmade.before else unmake(id, unmade)
                     renameCell = unmade.cell
                 }
                 closeTyping()
