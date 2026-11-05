@@ -1,7 +1,7 @@
 {
-  "head": "18d9341f9585f574abbfb99d4a0334db159b44fc",
-  "apkSha256": "7e01b73aea910b64e323092db6c621849f1093b39ee53d5630ae0663c4e42e29",
-  "tests": 2733,
+  "head": "6d565f42701e4c3558b22ea66c70c2f6b3fa737b",
+  "apkSha256": "5175271129699ea20108f17339f5db643332c453c36a2e4ee6bf330cd7ffdbe7",
+  "tests": 2734,
   "failures": 0,
   "errors": 0,
   "skips": 2

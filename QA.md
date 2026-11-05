@@ -31,3 +31,15 @@ Curated, visually inspected evidence:
 Exploratory files are not evidence: the early `before-wifi-return` used Android Back, which did not dismiss this firmware's non-cancelable Wi-Fi panel. The definitive return uses Done. The early `after-covered-page-*` stopped at a browsing grid and opened All games; the final covered-page sequence above explicitly reached and activated Open an app. Early `after-licenses-*` were interrupted by the empty-library ask; final-licenses-* is the valid native-page pass. No game was launched.
 
 Cleanup: baseline and fixed QA packages uninstalled. No sign-in or game launch, no save backups or RomM device registered. Restored original HOME app.foldcade, retained original Wi-Fi on, set stay-on false, released Thor. No release data/grants or emulator settings changed.
+
+## Review fix and final second turn
+
+The requested single Opus review found one real duplicate-page path; see review-opus.md and review-disposition.md. Fixed at **6d565f42701e4c3558b22ea66c70c2f6b3fa737b** by finishing the prior native page before opening another and anchoring parent Settings to that native screen until close.
+
+Final full suite rerun: **2734 tests, zero failures/errors, two skips, 187 tasks executed**, BUILD SUCCESSFUL. Log /tmp/uxr-routing-fix-tests-final.log. Final APK manifest/hash: build-final.json.
+
+Second turn, approximately 23:32–23:35 Pacific: opened Themes on top, opened its ZIP picker, pressed A on Theme in moved bottom Settings. Exactly one active Themes record remained (replacement-active-pages.txt); the old record was removed. Cancelling the picker gave the top a bright companion (replacement-picker-cancel-top.png) while Themes remained on bottom. Top-screen Down moved bottom Themes to Add (replacement-companion-controls-bottom.png); top-screen B closed it, returning full Settings to top with Theme selected (replacement-settings-return-top.png). No duplicate native page, no lost owner, no second live Settings menu.
+
+Cleanup repeated: no save backups or RomM device; QA package uninstalled; original Home holder restored, Wi-Fi retained, stay-on false; turn released. No additional Opus review was started, as the user requested one.
+
+Separate page-content observation for Library owner: Themes' existing full page is cramped on the narrower bottom display (header wraps Themes across two lines, row text ellipsized). This also affects the pre-existing beside-a-game native-page fallback; routing and controls work. Evidence replacement-before-cancel-bottom.png. Recommend a compact native-page layout in that stream; no page contents changed here.
