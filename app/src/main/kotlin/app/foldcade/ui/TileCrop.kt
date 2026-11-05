@@ -63,18 +63,19 @@ internal class TileCut(val rows: Int, val start: Int) {
      * (checked against the 37 RomM covers on the Thor; the busiest band inside a narrow crop
      * found the art, not the title, on Mario Kart DS, Metroid and Gain Ground).
      */
-    fun band(window: Int): Pair<Float, Float> {
-        val square = minOf(DETAIL_COLUMNS, rows - start)
-        val shown = window.coerceIn(1, square)
+    fun band(window: Float): Pair<Float, Float> {
+        // In fractional rows, so the kept edge moves smoothly as the frame grows.
+        val square = minOf(DETAIL_COLUMNS, rows - start).toFloat()
+        val shown = window.coerceIn(1f, square)
         val low = start * 2 > rows - DETAIL_COLUMNS
-        val inner = if (low) square - shown else 0
-        val box = (rows - shown).let { spare -> if (spare <= 0) 0.5f else (start + inner).toFloat() / spare }
-        val own = (square - shown).let { spare -> if (spare <= 0) 0.5f else inner.toFloat() / spare }
+        val inner = if (low) square - shown else 0f
+        val box = (rows - shown).let { spare -> if (spare <= 0f) 0.5f else (start + inner) / spare }
+        val own = (square - shown).let { spare -> if (spare <= 0f) 0.5f else inner / spare }
         return box to own
     }
 
     /** Rows of a box this wide that a crop [aspect] (height over width) shows. */
-    fun rowsFor(aspect: Float): Int = (DETAIL_COLUMNS * aspect).roundToInt()
+    fun rowsFor(aspect: Float): Float = DETAIL_COLUMNS * aspect
 }
 
 /** How many columns the box is read at. Enough for letters to show as edges, cheap on a 384 px tile. */

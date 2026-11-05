@@ -52,10 +52,10 @@ class HeroNameFollowsArtTest {
     @Test fun aBloomFromATileKeepsTheTitleItsTileShowedAsItWidens() {
         // A 2:3 box read 48 wide is 72 rows; a 16:9 frame shows 27 of them.
         val wide = TileCut(72, 0).rowsFor(9f / 16f)
-        assertEquals(27, wide)
+        assertEquals(27f, wide, 0f)
         fun shown(cut: TileCut): IntRange {
             val top = (cut.band(wide).first * (72 - wide)).roundToInt()
-            return top until top + wide
+            return top until top + wide.roundToInt()
         }
         // Mario Kart DS: the tile is centred (rows 12-60) and the logo is at its top, rows 12-20.
         val kart = TileCut(72, 12)
@@ -65,7 +65,13 @@ class HeroNameFollowsArtTest {
         assertTrue((55..64).all { it in shown(bravely) })
         // The tile's own square shows the same rows of itself.
         val (box, own) = bravely.band(wide)
-        assertEquals((box * (72 - wide)).roundToInt() - 17, (own * (48 - wide)).roundToInt())
+        assertEquals(box * (72 - wide) - 17, own * (48 - wide), 0.001f)
+        // The kept edge stays put as the frame widens, so the title never judders.
+        for (step in 0..40) {
+            val rows = 48f - step * 0.5f
+            assertEquals(12f, kart.band(rows).first * (72 - rows), 0.001f)
+            assertEquals(65f, bravely.band(rows).first * (72 - rows) + rows, 0.001f)
+        }
         // At the tile's own shape the crop is the tile exactly.
         assertEquals(12f / 24f, bloomCropBias(false, true, kart, standIn = false, aspect = 1f, grow = 0f), 0.0001f)
         // No tile cut, or a hero's whole cover: centred first, then up toward the title most boxes carry.
