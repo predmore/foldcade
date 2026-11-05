@@ -103,7 +103,8 @@ data class ArtPickerState(
     fun withCurrent(art: Map<ArtKind, String>): ArtPickerState {
         val focusedUrl = focused?.url
         val next = copy(currentArt = art)
-        return next.copy(index = if (currentArt[kind] == null) 0 else next.options.indexOfFirst { it.url == focusedUrl }.coerceAtLeast(0))
+        val gainedCurrent = currentArt[kind] == null && art[kind] != null
+        return next.copy(index = if (gainedCurrent) 0 else next.options.indexOfFirst { it.url == focusedUrl }.coerceAtLeast(0))
     }
 
     fun withoutQuery(): ArtPickerState = copy(findingMatches = false, loading = false, error = true,

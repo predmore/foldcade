@@ -76,6 +76,22 @@ class ArtPickerFocusTest {
         assertEquals(listOf<String?>(null), applied)
     }
 
+    @Test fun applyKeepsTheBrowsedHeroAfterOtherKindsFinishLoading() {
+        val applied = mutableListOf<String?>()
+        val shell = shell { _, _, url -> applied += url }
+        shell.openHomeAll()
+        openArt(shell)
+        shell.artInput(Meaning.RightPanel)
+        val alternatives = (0..7).map { ArtCandidate("$it", "https://cdn/hero/$it", "https://cdn/thumb/$it") }
+        shell.artCandidates(shell.artPicker!!.copy(candidates = alternatives, index = 5, loading = false), loadingResult = false)
+        val game = shell.artPicker!!.gameId
+        shell.artCurrent(game, mapOf(ArtKind.Tile to "content://media/tile.png"))
+        shell.artCurrent(game, mapOf(ArtKind.Tile to "content://media/tile.png", ArtKind.Logo to "content://media/logo.png"))
+        assertEquals(alternatives[5], shell.artPicker!!.focused)
+        shell.artInput(Meaning.Activate)
+        assertEquals(listOf(alternatives[5].url), applied)
+    }
+
     private fun shell(onApply: (String, ArtKind, String?) -> Unit = { _, _, _ -> }): ShellController =
         ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),
             onArtApply = onApply).also {

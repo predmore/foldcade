@@ -124,6 +124,26 @@ class ArtPickerTest {
         assertEquals(current, state.copy(kind = ArtKind.Hero).navigate(Meaning.LeftPanel).focused?.url)
     }
 
+    @Test fun lateArtForOtherKindsKeepsTheBrowsedAlternativeSelected() {
+        val state = ArtPickerState("game", kind = ArtKind.Hero, candidates = candidates, index = 5, loading = false)
+        val tileLoaded = state.withCurrent(mapOf(ArtKind.Tile to "content://media/tile.png"))
+        val logoLoaded = tileLoaded.withCurrent(tileLoaded.currentArt + (ArtKind.Logo to "content://media/logo.png"))
+        for (updated in listOf(state.withCurrent(emptyMap()), tileLoaded, logoLoaded)) {
+            assertEquals(5, updated.index)
+            assertEquals(candidates[5], updated.focused)
+        }
+    }
+
+    @Test fun gainingCurrentArtResetsOnlyItsOwnKindToTheCurrentImage() {
+        val state = ArtPickerState("game", kind = ArtKind.Hero, candidates = candidates, index = 5, loading = false)
+        val current = "https://cdn/current-hero"
+        val heroLoaded = state.withCurrent(mapOf(ArtKind.Hero to current))
+        assertEquals(0, heroLoaded.index)
+        assertEquals(current, heroLoaded.focused?.url)
+        val browsed = heroLoaded.copy(index = 4)
+        assertEquals(browsed.focused, browsed.withCurrent(browsed.currentArt + (ArtKind.Tile to "content://media/tile.png")).focused)
+    }
+
     @Test fun changingKindsAfterAnEmptyOrFailedMatchSearchKeepsItsSettledState() {
         for (failed in listOf(false, true)) {
             for (direction in listOf(Meaning.LeftPanel, Meaning.RightPanel)) {

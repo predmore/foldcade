@@ -71,6 +71,13 @@ class PlayUsageTest {
         assertEquals(120_000L, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertEquals(plays.shown(game).activeMillis, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertTrue(plays.spans().all { it.sessionId.isEmpty() })
+        val sessions = app.foldcade.language.playDaySessions(plays.spans(), now, java.time.ZoneOffset.UTC, 0,
+            app.foldcade.language.PLAY_WEEK_DAYS - 1)
+        assertTrue("Outside-only play has no removable day rows", sessions.isEmpty())
+        val model = app.foldcade.language.PickerModel(count = 1, rowsPerPage = 1).copy(playActivity =
+            app.foldcade.language.PlayActivityPage(app.foldcade.language.HostScreen.Top))
+        val hints = app.foldcade.language.playActivityHints(model, hasSessions = sessions.isNotEmpty())
+        assertFalse(hints.any { it.label == app.foldcade.language.PlayCopy.sessions })
         assertFalse(plays.hasTrackedSession())
         assertTrue("Y › Play time must be available for usage-only games", plays.hasPlay())
     }
