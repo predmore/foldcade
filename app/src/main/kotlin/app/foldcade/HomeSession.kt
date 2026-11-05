@@ -21,7 +21,7 @@ import app.foldcade.language.steppedTab
 import app.foldcade.language.Copy
 import app.foldcade.language.HomeKind
 import app.foldcade.language.hideGame
-import app.foldcade.language.removeFolder
+import app.foldcade.language.HomeUndo
 import app.foldcade.language.showHidden
 import app.foldcade.language.hiddenItems
 import app.foldcade.language.deleteShortcut
@@ -809,9 +809,11 @@ class HomeSession(
             onCancel = {
                 made = null
                 // B Cancel on a collection made a moment ago means nothing happened (review-C 70):
-                // the board goes back as it was, or loses just that collection if a scan landed since.
+                // the board goes back as it was, or, if a scan landed since, has just the making
+                // reversed, as Undo reverses a removal and keeps the arrivals.
                 if (unmade != null) {
-                    board = if (board == unmade.after) unmade.before else removeFolder(board, id)
+                    board = if (board == unmade.after) unmade.before
+                    else HomeUndo(unmade.before, verb = "", started = 0L, after = unmade.after).restore(board)
                     renameCell = unmade.cell
                 }
                 closeTyping()

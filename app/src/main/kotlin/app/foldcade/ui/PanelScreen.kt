@@ -2603,12 +2603,13 @@ private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
  */
 @Composable
 private fun rememberNamedSubject(focus: HeroSubject?, shown: HeroSubject?): HeroSubject? {
-    var waitedFor by remember { mutableStateOf<String?>(null) }
+    // A fresh wait for each focus, even one the cursor comes back to.
+    var waited by remember(focus?.key) { mutableStateOf(false) }
     LaunchedEffect(focus?.key) {
         delay(NAME_WAIT_MS)
-        waitedFor = focus?.key
+        waited = true
     }
-    return namedSubject(focus, shown, waited = focus != null && waitedFor == focus.key)
+    return namedSubject(focus, shown, waited = focus != null && waited)
 }
 
 internal fun namedSubject(focus: HeroSubject?, shown: HeroSubject?, waited: Boolean): HeroSubject? = when {
