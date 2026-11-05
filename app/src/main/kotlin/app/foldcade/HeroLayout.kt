@@ -32,6 +32,10 @@ internal suspend fun <T> loadHeroLayouts(
     }
 }
 
+/** Only a new subject waits for the outgoing scene; the staged subject's art can upgrade now. */
+internal fun heroStageDelay(subjectChanged: Boolean, stagedAt: Long, now: Long, dwell: Int): Long =
+    if (subjectChanged) (stagedAt + dwell - now).coerceAtLeast(0L) else 0L
+
 internal enum class HeroImageRole { Backdrop, Ambient, Cover, Logo, Screen }
 
 /** Decode each complete candidate together; a failed part falls back to the best usable layout. */

@@ -74,6 +74,7 @@ import app.foldcade.HeroLayout
 import app.foldcade.HeroImageRole
 import app.foldcade.loadHeroLayout
 import app.foldcade.loadHeroLayouts
+import app.foldcade.heroStageDelay
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.ui.Alignment
@@ -1535,9 +1536,11 @@ private fun <T> HeroCrossfade(
         }
         val going = way
         if (!sameFront) {
-            // The art that was arriving leaves from wherever it had got to.
-            outX.snapTo(inX.value)
-            outY.snapTo(inY.value)
+            // A retained outgoing layer keeps its position through a fast art upgrade.
+            if (!same(next.back, blend.back)) {
+                outX.snapTo(inX.value)
+                outY.snapTo(inY.value)
+            }
             inX.snapTo(going?.let(motion::heroEntryX) ?: 0f)
             inY.snapTo(going?.let(motion::heroEntryY) ?: 0f)
         }
@@ -2549,7 +2552,7 @@ private fun rememberStagedHero(
             },
         ) { images ->
             if (images != null || subject?.key != staged.subject?.key) {
-                delay(stagedAt + dwell - SystemClock.uptimeMillis())
+                delay(heroStageDelay(subject?.key != staged.subject?.key, stagedAt, SystemClock.uptimeMillis(), dwell))
                 commit(images ?: HeroImages())
                 retainCurrentImages()
             }

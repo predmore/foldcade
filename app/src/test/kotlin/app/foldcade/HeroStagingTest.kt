@@ -9,6 +9,30 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HeroStagingTest {
+    @Test fun aFastSceneUpgradeDoesNotWaitForTheCoverToDwellAgain() = runBlocking {
+        val cover = HeroLayout("ambient", cover = "box")
+        val wide = HeroLayout("wide", wide = true, logo = "logo")
+        var stagedSubject = "old"
+        var stagedAt = 1_000L
+        var now = 1_100L
+        val arrivals = mutableListOf<Pair<HeroLayout<String>?, Long>>()
+        loadHeroLayouts(
+            initial = { cover },
+            refresh = { now += 20L; wide },
+        ) { images ->
+            now += heroStageDelay(stagedSubject != "next", stagedAt, now, dwell = 180)
+            arrivals += images to now
+            stagedSubject = "next"
+            stagedAt = now
+        }
+        // The first layout still waits 80 ms for the old scene; the upgrade uses only its 20 ms decode.
+        assertEquals(listOf(cover to 1_180L, wide to 1_200L), arrivals)
+    }
+
+    @Test fun aNewSubjectThatDecodedPastTheDwellNeedsNoFurtherWait() {
+        assertEquals(0L, heroStageDelay(subjectChanged = true, stagedAt = 1_000L, now = 1_300L, dwell = 180))
+    }
+
     @Test fun slowDecodeKeepsThePreviousStagePastTheOldDeadline() = runBlocking {
         val decoded = CompletableDeferred<HeroLayout<String>>()
         val old = HeroLayout("old", cover = "old box")
