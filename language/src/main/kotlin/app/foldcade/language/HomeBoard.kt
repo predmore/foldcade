@@ -1130,7 +1130,8 @@ fun decodeHome(raw: String?, nowMillis: Long = 0L): HomeBoard {
                 val bucket = bits[4].takeIf { it.isNotEmpty() }?.let { runCatching { HomeKind.valueOf(it) }.getOrNull() }
                 val folder = HomeFolder(
                     id = bits[1],
-                    name = bits[2],
+                    // L1 and Find call the place Apps; a board saved with the old name, never renamed, follows (review-C S7).
+                    name = bits[2].takeUnless { bits[1] == HOME_ANDROID_APPS && bits[6] != "1" && it == OLD_ANDROID_APPS_NAME } ?: ANDROID_APPS_NAME,
                     platformId = bits[3].takeIf { it.isNotEmpty() },
                     bucket = bucket,
                     userMade = bits[5] == "1",
@@ -1389,11 +1390,15 @@ private fun dropEmptySystemFolders(board: HomeBoard, waiting: Boolean): HomeBoar
 /** The library folder Home files a game of [kind] in, as it is first made, or null for a ROM or a loose tile. */
 internal fun libraryFolderOf(kind: HomeKind): HomeFolder? = bucketFolderId(kind)?.let(LIBRARY_FOLDERS::get)
 
+/** The Android apps folder's name, the same word as L1's Apps place. Only the name changes: slots keep their order. */
+private const val ANDROID_APPS_NAME = "Apps"
+private const val OLD_ANDROID_APPS_NAME = "Android Apps"
+
 private val LIBRARY_FOLDERS: Map<String, HomeFolder> by lazy { specialFolders().associateBy { it.id } }
 
 private fun specialFolders(): List<HomeFolder> = listOf(
     HomeFolder(HOME_ANDROID_GAMES, "Android Games", bucket = HomeKind.AndroidGame, mark = bucketMark(HomeKind.AndroidGame)),
-    HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp, mark = bucketMark(HomeKind.AndroidApp)),
+    HomeFolder(HOME_ANDROID_APPS, ANDROID_APPS_NAME, bucket = HomeKind.AndroidApp, mark = bucketMark(HomeKind.AndroidApp)),
     HomeFolder(HOME_GAMENATIVE, "GameNative", bucket = HomeKind.GameNative, mark = bucketMark(HomeKind.GameNative)),
     HomeFolder(HOME_MOONLIGHT, "Moonlight", bucket = HomeKind.Moonlight, mark = bucketMark(HomeKind.Moonlight)),
     HomeFolder(HOME_DROIDDECK, "DroidDeck", bucket = HomeKind.DroidDeck, mark = bucketMark(HomeKind.DroidDeck)),

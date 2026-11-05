@@ -7,6 +7,7 @@ import app.foldcade.language.HomeFolder
 import app.foldcade.language.HomeItem
 import app.foldcade.language.HomeKind
 import app.foldcade.language.HomeUndo
+import app.foldcade.language.Meaning
 import app.foldcade.language.HOME_ROOT
 import app.foldcade.language.encodeHome
 import app.foldcade.language.tidy
@@ -68,5 +69,19 @@ class SameGameSessionTest {
         val folded = app.foldcade.language.adoptSameGames(tidied, aliases)
         val restored = undo.adopt(aliases).restore(folded)
         assertEquals(listOf(HOME_ALL, null, tile.id, other.id), restored.slots)
+    }
+
+    @Test
+    fun cancellingANewCollectionAfterACopyFoldedPutsItsTileBackInItsSlot() {
+        val home = home()
+        home.startSelection(local.id)
+        home.handle(Meaning.Activate, 2)
+        home.bulk(BulkAction.NewCollection, home.selectedIds(), null, 1)
+        // RomM lists its copy while the name is typed, and it folds into one tile.
+        home.remerge(emptyList(), emptyList(), listOf(tile, other), emptyList(), sameGames = aliases)
+        home.handle(Meaning.Back, 1)
+        assertTrue(home.board.folders.values.none { it.collection })
+        assertEquals(listOf(HOME_ALL, tile.id, other.id), home.board.slots.take(3))
+        assertFalse(local.id in home.board.slots)
     }
 }

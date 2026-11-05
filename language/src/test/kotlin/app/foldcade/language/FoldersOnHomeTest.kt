@@ -31,7 +31,7 @@ class FoldersOnHomeTest {
         board = removeFolder(board, ps2)
         val listed = foldcadeFolders(board, catalog, platforms)
         // Collections and Recently played are not Foldcade's folders: they are not listed.
-        assertEquals(listOf("Android Apps", "Nintendo 3DS", "Nintendo Switch", "PlayStation 2"), listed.map { it.folder.name })
+        assertEquals(listOf("Apps", "Nintendo 3DS", "Nintendo Switch", "PlayStation 2"), listed.map { it.folder.name })
         assertEquals(listOf(1, 2, 1, 1), listed.map { it.count })
         assertEquals(listOf(true, true, true, false), listed.map { it.onHome })
         assertEquals(listOf("1 app", "2 games"), listed.take(2).map { folderCountLine(it.count, apps = it.folder.holdsApps) })

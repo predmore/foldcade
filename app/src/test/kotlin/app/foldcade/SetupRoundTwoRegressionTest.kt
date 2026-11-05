@@ -61,8 +61,8 @@ class SetupRoundTwoRegressionTest {
             walkPanelTo(shell, panelRows(shell.model.panel!!, shell.model).indexOf(row), HostScreen.Bottom)
             shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         }
-        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
-        assertEquals("Android Games", shell.homeFace(1)?.title)
+        // Folders is A to Z: Android Games, then Apps. Focus starts on the first.
+        assertEquals("Android Games", shell.homeFace(0)?.title)
         shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
         assertEquals(listOf(quest), shell.homeSlots())
         assertTrue(SessionStore(prefs).restoreHolds().awaiting(local))

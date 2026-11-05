@@ -185,8 +185,11 @@ class FindFlowTest {
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.AddToCollection)
         choose(shell, Row.NewCollection)
-        // Back keeps the name it was given, Collection 1, and closes the keyboard.
-        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        // Done keeps the name it was given, Collection 1. Back closes Add to, which came back ticked, then the folder.
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
+        assertNotNull(shell.model.panel)
+        repeat(3) { if (shell.model.panel != null) shell.onMeaning(Meaning.Back, HostScreen.Bottom) }
+        assertNull(shell.model.panel)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         val name = "${Copy.collection} 1"
         val onHome = shell.homeFace(titles(shell).indexOf(name))!!.mark

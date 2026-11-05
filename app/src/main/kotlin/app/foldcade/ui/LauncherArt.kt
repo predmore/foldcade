@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.util.DisplayMetrics
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -61,15 +64,36 @@ internal fun launcherIcon(packageName: String?): LauncherArt? {
             val info = runCatching { pm.getPackageInfo(packageName, 0) }.getOrNull() ?: return@withContext null
             val key = LauncherIconKey(packageName, info.longVersionCode, info.lastUpdateTime, TILE_PX)
             LauncherIcons.cache.getOrLoad(key) {
-                runCatching { launcherArt(pm.getApplicationIcon(packageName)) }.getOrNull()
+                runCatching { launcherArt(largestIcon(pm, info.applicationInfo) ?: pm.getApplicationIcon(packageName)) }.getOrNull()
             }
         }
     }
     return art
 }
 
+/**
+ * The app's icon from its densest bucket. [PackageManager.getApplicationIcon] picks the screen's
+ * bucket and scales it to 48dp, about 110 px on the Thor, which a hero then showed as a stamp
+ * (review-C 90). Asking for xxxhdpi gets the 192 px original when the app ships one
+ * (Resources.getDrawableForDensity, Android API 15+).
+ */
+private fun largestIcon(pm: PackageManager, info: ApplicationInfo?): Drawable? {
+    if (info == null || info.icon == 0) return null
+    return runCatching {
+        pm.getResourcesForApplication(info).getDrawableForDensity(info.icon, DisplayMetrics.DENSITY_XXXHIGH, null)
+    }.getOrNull()
+}
+
 private fun launcherArt(drawable: Drawable): LauncherArt {
-    if (drawable !is AdaptiveIconDrawable) return LauncherArt(drawable.toBitmap().asImageBitmap(), fullBleed = false)
+    // A legacy icon is drawn at a tile's size from its largest pixels, so a hero can show it big and
+    // sharp; one only a vector or a small bitmap backs is scaled once, here, rather than by every view.
+    if (drawable !is AdaptiveIconDrawable) {
+        val (w, h) = drawable.intrinsicWidth to drawable.intrinsicHeight
+        val long = maxOf(w, h).takeIf { w > 0 && h > 0 }
+        val bitmap = if (long == null) drawable.toBitmap(TILE_PX, TILE_PX)
+        else drawable.toBitmap((TILE_PX * w / long).coerceAtLeast(1), (TILE_PX * h / long).coerceAtLeast(1))
+        return LauncherArt(bitmap.asImageBitmap(), fullBleed = false)
+    }
     // As big as a tile's cover, so it stays sharp filling the tile.
     val bitmap = Bitmap.createBitmap(TILE_PX, TILE_PX, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
@@ -94,7 +118,7 @@ internal fun bleedBounds(px: Int): Pair<Int, Int> {
 
 /**
  * An app's icon away from the grid. A full-bleed icon takes the largest square that
- * fits and the tile's corner, so it never shows as a raw square; a legacy icon keeps its native pixels. Only a hero asks for a surrounding frame.
+ * fits and the tile's corner, so it never shows as a raw square; a legacy icon, already at a tile's size, is never drawn bigger. Only a hero asks for a surrounding frame.
  */
 @Composable
 internal fun LauncherImage(art: LauncherArt, contentDescription: String?, modifier: Modifier = Modifier, framed: Boolean = false) {

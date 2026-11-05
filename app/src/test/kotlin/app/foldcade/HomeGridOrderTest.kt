@@ -77,7 +77,7 @@ class HomeGridOrderTest {
             emptySet(),
         )
         shell.ingestLibrary("local-folder", listOf(entry("puzzle", "Puzzle", "nintendo-3ds")), emptyList())
-        assertEquals(listOf(LibraryCopy.title, "Android Games", "Android Apps", "Nintendo 3DS"), titles(shell))
+        assertEquals(listOf(LibraryCopy.title, "Android Games", "Apps", "Nintendo 3DS"), titles(shell))
         assertTrue((1..3).all { shell.homeFace(it)?.folder == true })
         // All counts its games as every folder does; Notes is an app, so it is not one of them.
         assertEquals("2 games", shell.homeFace(0)?.shortText)
@@ -376,7 +376,7 @@ class HomeGridOrderTest {
         assertFalse(shell.focusedLaunchesOnOneScreen())
 
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
-        focus(shell, titles(shell).indexOf("Android Apps"))
+        focus(shell, titles(shell).indexOf("Apps"))
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         focus(shell, titles(shell).indexOf("Notes"))
         assertFalse(shell.focusedGame()!!.occupiesBothDisplays)
@@ -458,15 +458,14 @@ class HomeGridOrderTest {
     @Test
     fun yMakesANamedCollectionThatWearsTheIconYouPick() {
         val shell = shell()
-        // On the All tile there is no game to hold, so the collection takes the first free slot.
+        // On the All tile there is no game to hold, so the collection will take the first free slot.
         choose(shell, Row.NewCollection)
-        // A new collection is a gold folder card showing the stack of games.
         val plain = CollectionLook(MARK_LIBRARY, CollectionTint.Gold).mark
-        val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == plain }
-        assertTrue(folder >= 0)
-        // The new collection takes the focus and opens its name field.
-        assertEquals(folder, shell.model.focus.cellIndex)
+        // The name field opens first; nothing is on the grid until the name is saved, and the top
+        // screen names the collection being made.
         assertEquals(HomeKeys.Typing, shell.homeKeys())
+        assertTrue(List(shell.model.count) { shell.homeFace(it) }.none { it?.folder == true && it.mark == plain })
+        assertEquals("${Copy.collection} 1", (shell.typingHero() as HeroSubject.Folder).folder.name)
         // A grid opened from a command center stays while a name is typed.
         assertTrue(shell.holdsCommandCenter())
         assertEquals("${Copy.collection} 1", shell.renameDraft())
@@ -478,6 +477,9 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertNull(shell.renameDraft())
         assertEquals(HomeKeys.Idle, shell.homeKeys())
+        // Saved, it is a gold folder card showing the stack of games, and it takes the focus.
+        val folder = List(shell.model.count) { shell.homeFace(it) }.indexOfFirst { it?.folder == true && it.mark == plain }
+        assertTrue(folder >= 0)
         assertFalse(shell.holdsCommandCenter())
         assertEquals("Handhelds", shell.homeFace(folder)?.title)
         assertEquals(folder, shell.model.focus.cellIndex)

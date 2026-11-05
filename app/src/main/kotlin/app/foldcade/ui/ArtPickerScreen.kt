@@ -30,6 +30,8 @@ import coil3.request.ImageRequest
 import app.foldcade.CoverImage
 import app.foldcade.language.artPickerHintGroups
 import androidx.compose.ui.layout.ContentScale
+import coil3.request.transformations
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
@@ -149,9 +151,11 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
                             repeat(rows) { row ->
                                 val index = column * rows + row
                                 val candidate = options.getOrNull(index)
-                                Box(Modifier.width(cellWidth).height((cellHeight - reach * 2 / rows).coerceAtLeast(1.dp)).padding(6.dp)) {
+                                Box(Modifier.width(cellWidth).height((cellHeight - reach * 2 / rows).coerceAtLeast(1.dp)).padding(6.dp), contentAlignment = Alignment.Center) {
                                     if (candidate != null || shown.loading) {
-                                        ArtCandidateTile(app, candidate, candidate != null && candidate.url == shown.currentArt[kind], Modifier.fillMaxSize()
+                                        // Tile art is shown as the grid will show it: the largest square, cut as a tile is.
+                                        val shape = if (kind == ArtKind.Tile) Modifier.aspectRatio(1f) else Modifier.fillMaxSize()
+                                        ArtCandidateTile(app, candidate, candidate != null && candidate.url == shown.currentArt[kind], kind == ArtKind.Tile, shape
                                             .onGloballyPositioned { coordinates ->
                                                 val topLeft = coordinates.positionInRoot() - origin
                                                 val rect = Rect(topLeft, coordinates.size.toSize())
@@ -171,7 +175,8 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
                 Box(Modifier.fillMaxSize().selectionHighlight(gridSlots, shown.index.takeIf { shown.options.isNotEmpty() }, true, scale))
             }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+        // Centred like every other footer, so no hole opens where A Apply goes (review-C 68).
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally)) {
             artPickerHintGroups(app.shell.model.faceMap, state.canApply).forEach { group ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     group.forEach { HintWord(app.shell.model, it) }
@@ -182,17 +187,19 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
 }
 
 @Composable
-private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current: Boolean, modifier: Modifier, scale: Float) {
+private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current: Boolean, square: Boolean, modifier: Modifier, scale: Float) {
     val theme = LocalFoldTheme.current.theme
     val context = LocalContext.current
-    val request = remember(candidate?.thumbnail, current) {
-        ImageRequest.Builder(context).data(candidate?.thumbnail?.let(::CoverImage)).size(if (current) 1024 else 384).build()
+    val request = remember(candidate?.thumbnail, current, square) {
+        ImageRequest.Builder(context).data(candidate?.thumbnail?.let(::CoverImage)).size(if (current) 1024 else 384)
+            .apply { candidate?.thumbnail?.takeIf { square }?.let { transformations(TileCrop(it)) } }
+            .build()
     }
     val painter = rememberAsyncImagePainter(request, app.images)
     val status by painter.state.collectAsState()
     Box(modifier.clip(RoundedCornerShape(theme.style.shape.thumbCornerDp.dp)).background(theme.surface)) {
         Crossfade(status is AsyncImagePainter.State.Success, animationSpec = theme.motion.arrive(theme.motion.durationFocus, scale)) { loaded ->
-            if (loaded) Image(painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            if (loaded) Image(painter, null, Modifier.fillMaxSize(), contentScale = if (square) ContentScale.Crop else ContentScale.Fit)
             else if (candidate != null && status is AsyncImagePainter.State.Error) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     BasicText(ArtCopy.error, style = TextStyle(color = theme.muted, fontSize = theme.style.type.hint, fontFamily = theme.font), maxLines = 1)
@@ -214,7 +221,8 @@ private fun ArtCandidateTile(app: FoldcadeApp, candidate: ArtCandidate?, current
                 check.painter,
                 contentDescription = ArtCopy.current,
                 colorFilter = check.tint(theme.focus),
-                modifier = Modifier.align(Alignment.TopEnd).background(theme.surface).padding(6.dp).size(side),
+                // A round chip inset from the corner, as a tile's badge sits, now that the art fills the slot.
+                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).clip(theme.style.shape.control()).background(theme.surface).padding(4.dp).size(side),
             )
         }
     }

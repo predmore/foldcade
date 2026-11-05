@@ -19,6 +19,19 @@ class HomePersistenceTest {
     }
 
     @Test
+    fun theAndroidAppsFolderIsCalledAppsLikeL1UnlessTheUserNamedIt() {
+        val apps = HomeFolder(HOME_ANDROID_APPS, "Android Apps", bucket = HomeKind.AndroidApp, slots = listOf("android:a"))
+        val board = HomeBoard(slots = listOf(HOME_ALL, HOME_ANDROID_APPS), folders = mapOf(apps.id to apps))
+        val restored = decodeHome(encodeHome(board))
+        assertEquals("Apps", restored.folders[HOME_ANDROID_APPS]?.name)
+        // Only the name changes: the board keeps its slots.
+        assertEquals(board.slots, restored.slots)
+        assertEquals(apps.slots, restored.folders[HOME_ANDROID_APPS]?.slots)
+        val named = board.copy(folders = mapOf(apps.id to apps.copy(namedByUser = true)))
+        assertEquals("Android Apps", decodeHome(encodeHome(named)).folders[HOME_ANDROID_APPS]?.name)
+    }
+
+    @Test
     fun gamesTakenOffHomeAndTheRecentStartRoundTrip() {
         val board = HomeBoard(offHome = setOf("lib:a\tb", "lib:c"), recentAfter = 1234L)
         val restored = decodeHome(encodeHome(board), nowMillis = 9999L)

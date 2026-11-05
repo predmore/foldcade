@@ -112,6 +112,9 @@ class HomeSelectionHostTest {
         choose(shell, Row.NewCollection)
         assertNull(shell.homeSelection())
         assertEquals(HomeKeys.Typing, shell.homeKeys())
+        // Nothing is made until the name is saved.
+        assertTrue(board().folders.values.none { it.collection && it.id != group.id })
+        shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         val made = board().folders.values.single { it.collection && it.id != group.id }
         assertEquals(listOf(a, b), made.slots)
         assertEquals(made.id, board().slots[1])

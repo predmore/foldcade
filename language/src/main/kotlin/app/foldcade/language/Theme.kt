@@ -386,7 +386,7 @@ object Copy {
     const val unpin = "Unpin"
     const val moveToGames = "Move to Android Games"
     /** The folder's own name, as its tile says it, beside Move to Android Games (review-C 86). */
-    const val moveToApps = "Move to Android Apps"
+    const val moveToApps = "Move to Apps"
     const val hideApp = "Hide"
     const val showApp = "Show"
     const val addNewGames = "New games on Home"

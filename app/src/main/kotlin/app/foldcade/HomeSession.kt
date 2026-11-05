@@ -86,6 +86,7 @@ import app.foldcade.language.pickUp
 import app.foldcade.language.removeFromHome
 import app.foldcade.language.removeVerb
 import app.foldcade.language.renameFolder
+import app.foldcade.language.MARK_FOLDER
 import app.foldcade.language.setFolderIcon
 import app.foldcade.language.setAddNewToHome
 import app.foldcade.language.toggleCollection
@@ -196,17 +197,19 @@ class HomeSession(
         finishSelection()
         // The report that waited on the selection may have folded a checked copy into its tile.
         val ids = selected.map(::tileOf).distinct()
+        // A new collection is only named here; Done makes it ([make]).
+        if (action == BulkAction.NewCollection) {
+            openNaming(previewCollection(ids), index, PendingCollection(ids, at = null, bulk = true))
+            return index
+        }
         bulkBefore = board
-        val name = "${Copy.collection} ${board.folders.values.count { it.collection } + 1}"
-        val made = nextUserFolderId(board)
         val items = catalog().associateBy { it.id }
         board = when (action) {
             BulkAction.Collection -> collectionId?.let { bulkCollection(board, it, ids, items::get, platforms) } ?: board
-            BulkAction.NewCollection -> bulkNewCollection(board, made, name, ids)
+            BulkAction.NewCollection -> board
             BulkAction.Hide -> bulkHide(board, ids)
         }
         bulkAfter = board
-        if (action == BulkAction.NewCollection && made in board.folders) openNaming(made, index, fresh = true)
         return index
     }
 
@@ -766,25 +769,66 @@ class HomeSession(
     }
 
     /**
-     * A new collection, then its name field. On a game it holds that game, which stays where it
-     * is, and so does the focus. On an empty root slot the collection takes that slot, and on the
-     * All tile the first free one; the focus goes to it. Returns where focus goes.
+     * The name field for a new collection. It is made only on Done ([make]): on a game it holds
+     * that game, which stays where it is, and so does the focus; on an empty root slot it takes
+     * that slot, and on the All tile the first free one, and the focus goes to it then. B leaves
+     * Home exactly as it was, whatever a scan did meanwhile (review-C 70, bot on #388). Returns
+     * where focus goes now.
      */
     fun newCollection(index: Int, gameId: String? = null): Int {
-        val collectionId = nextUserFolderId(board)
-        val count = board.folders.values.count { it.collection } + 1
-        val name = "${Copy.collection} $count"
         val game = gameAt(index, gameId)
         if (game == null && !board.atRoot) return index
-        board = newCollection(board, collectionId, name, at = index.takeIf { game == null }, member = game)
-        if (collectionId !in board.folders) return index
-        val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
-        openNaming(collectionId, focus, fresh = true)
-        made = if (game != null) MadeCollection(collectionId, game) else null
-        return focus
+        val members = listOfNotNull(game)
+        openNaming(previewCollection(members), index, PendingCollection(members, at = index.takeIf { game == null }, bulk = false))
+        return index
     }
 
-    /** A collection just made to hold a game, while its name is typed. See [takeMade]. */
+    /** A collection named but not made yet: its games, the root slot it asks for, and whether a selection made it. */
+    private class PendingCollection(val members: List<String>, val at: Int?, val bulk: Boolean)
+
+    /** The new collection the keyboard is naming, as the top screen shows it until Done makes it. */
+    var namingPreview: HomeFolder? = null
+        private set
+
+    private fun newCollectionName(): String = "${Copy.collection} ${board.folders.values.count { it.collection } + 1}"
+
+    private fun previewCollection(members: List<String>): HomeFolder =
+        HomeFolder(nextUserFolderId(board), newCollectionName(), userMade = true, mark = MARK_FOLDER, slots = members)
+
+    /**
+     * Makes the [pending] collection named [name], as the board is now: a game a scan folded into
+     * another tile goes in as that tile, and one a scan took away stays out.
+     */
+    private fun make(pending: PendingCollection, name: String) {
+        val id = nextUserFolderId(board)
+        val placed = HashSet<String>().apply {
+            board.slots.filterNotNullTo(this)
+            board.folders.values.forEach { folder -> folder.slots.filterNotNullTo(this) }
+        }
+        val live = pending.members.map(::tileOf).distinct().filter { it in catalogById || it in placed }
+        if (pending.members.isNotEmpty() && live.isEmpty()) return
+        if (pending.bulk) {
+            bulkBefore = board
+            board = bulkNewCollection(board, id, newCollectionName(), live)
+            bulkAfter = board
+        } else {
+            board = newCollection(board, id, newCollectionName(), at = pending.at, member = live.firstOrNull())
+        }
+        if (id !in board.folders) return
+        board = renameFolder(board, id, name)
+        if (!pending.bulk) made = live.firstOrNull()?.let { MadeCollection(id, it, named = true) }
+        created = true
+        // A collection made for a slot or the All tile takes the focus to its own slot.
+        if (pending.members.isEmpty()) board.slots.indexOf(id).takeIf { it >= 0 }?.let { renameCell = it }
+    }
+
+    /** A collection was just made on Done, so the shell files what it admitted, as after any Y action. */
+    private var created = false
+
+    /** True once after Done made a collection. See [created]. */
+    fun takeCreated(): Boolean = created.also { created = false }
+
+    /** A collection just made and named to hold a game. See [takeMade]. */
     private var made: MadeCollection? = null
 
     /**
@@ -801,17 +845,18 @@ class HomeSession(
     fun startRename(index: Int) {
         made = null
         val id = slots().getOrNull(index) ?: return
-        if (id !in board.folders) return
-        openNaming(id, index, fresh = false)
+        val folder = board.folders[id] ?: return
+        openNaming(folder, index, pending = null)
     }
 
     /**
-     * The keyboard over [id]'s name; focus goes back to [cell] when it closes. Quick names
+     * The keyboard over [folder]'s name; focus goes back to [cell] when it closes. Quick names
      * offer the platform its games share, then ideas for a collection, leaving out names
-     * the user already gave another collection. A [fresh] one starts the cursor on them.
+     * the user already gave another collection. A [pending] one, made only on Done, starts the
+     * cursor on them.
      */
-    private fun openNaming(id: String, cell: Int, fresh: Boolean) {
-        val folder = board.folders[id] ?: return
+    private fun openNaming(folder: HomeFolder, cell: Int, pending: PendingCollection?) {
+        val id = folder.id
         val shared = folder.slots.filterNotNull()
             .map { slot -> platformName(catalog().firstOrNull { it.id == slot }?.platformId ?: games[slot]?.platformId) }
             .distinct()
@@ -820,20 +865,19 @@ class HomeSession(
         val taken = board.folders.values.filter { it.collection && it.id != id }.map { it.name }
         renamingId = id
         renameCell = cell
+        namingPreview = folder.takeIf { pending != null }
+        made = null
         typing = TypingSession(
             text = folder.name,
             chips = quickNames(listOfNotNull(shared), taken),
-            startOnChips = fresh,
+            startOnChips = pending != null,
             onDone = { name ->
-                board = renameFolder(board, id, name)
-                // Saved: Add to comes back with the new collection ticked ([takeMade]).
-                made = made?.takeIf { it.collectionId == id }?.copy(named = true)
+                // Saved: a new collection is made now, and Add to comes back with it ticked ([takeMade]).
+                if (pending != null) make(pending, name) else board = renameFolder(board, id, name)
                 closeTyping()
             },
-            onCancel = {
-                made = null
-                closeTyping()
-            },
+            // Nothing was made, so B has nothing to put back.
+            onCancel = { closeTyping() },
         )
     }
 
@@ -845,6 +889,7 @@ class HomeSession(
 
     private fun closeTyping() {
         renamingId = null
+        namingPreview = null
         typing = null
     }
 

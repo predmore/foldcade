@@ -33,9 +33,9 @@ class FoldersHostTest {
 
         openFolders(shell)
         assertTrue(shell.homeFoldersOpen())
-        assertEquals(listOf("Android Apps", "Android Games"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
-        assertEquals(listOf(true, false), (0 until shell.model.count).map { shell.homeFace(it)?.onGrid })
-        focus(shell, 1)
+        assertEquals(listOf("Android Games", "Apps"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
+        assertEquals(listOf(false, true), (0 until shell.model.count).map { shell.homeFace(it)?.onGrid })
+        focus(shell, 0)
         val hero = shell.focusedHero() as HeroSubject.Item
         assertEquals("Android Games", hero.item.title)
         assertEquals(FindCopy.notOnHome, hero.item.availability)
@@ -47,7 +47,7 @@ class FoldersHostTest {
         assertEquals(games, board().slots.indexOf(HOME_ANDROID_GAMES))
         assertNotNull(shell.model.panel)
         assertEquals(RowControl.Toggle(true), rowControl(Row.FolderOnHome, shell.model))
-        assertEquals(true, shell.homeFace(1)?.onGrid)
+        assertEquals(true, shell.homeFace(0)?.onGrid)
         choose(shell, Row.FolderOnHome)
         assertFalse(HOME_ANDROID_GAMES in board().slots)
         assertEquals(RowControl.Toggle(false), rowControl(Row.FolderOnHome, shell.model))
@@ -65,7 +65,8 @@ class FoldersHostTest {
         val rest = shell.model.focus.cellIndex
         openFolders(shell)
         assertEquals(0, shell.model.focus.cellIndex)
-        assertEquals("Android Apps", shell.homeFace(0)?.title)
+        assertEquals("Apps", shell.homeFace(1)?.title)
+        focus(shell, 1)
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertFalse(shell.homeFoldersOpen())
         assertEquals(listOf(notes), shell.homeSlots())
@@ -73,7 +74,7 @@ class FoldersHostTest {
         assertFalse(HOME_ANDROID_APPS in board().slots)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue(shell.homeFoldersOpen())
-        assertEquals(0, shell.model.focus.cellIndex)
+        assertEquals(1, shell.model.focus.cellIndex)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse(shell.homeFoldersOpen())
         assertTrue(shell.atRest())
@@ -84,7 +85,7 @@ class FoldersHostTest {
     @Test fun foldersIsNotSavedAndARestartKeepsTheSwitches() {
         val shell = shell()
         openFolders(shell)
-        focus(shell, 1)
+        focus(shell, 0)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.FolderOnHome)
         assertFalse(HOME_ANDROID_GAMES in board().slots)
@@ -92,13 +93,13 @@ class FoldersHostTest {
         val again = shell()
         assertTrue(again.atRest())
         openFolders(again)
-        assertEquals(listOf(true, false), (0 until again.model.count).map { again.homeFace(it)?.onGrid })
+        assertEquals(listOf(false, true), (0 until again.model.count).map { again.homeFace(it)?.onGrid })
     }
 
     @Test fun xOpensAFolderInFoldersAsAdoes() {
         val shell = shell()
         openFolders(shell)
-        focus(shell, 1)
+        focus(shell, 0)
         shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom)
         assertEquals(listOf(quest), shell.homeSlots())
         assertTrue(HOME_ANDROID_GAMES in board().slots)
@@ -122,23 +123,23 @@ class FoldersHostTest {
     }
 
     @Test fun anOpenMenuKeepsItsFolderWhenAReportMovesFoldersUnderIt() {
-        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also { it.setInstalledApps(apps.take(1), emptySet()) }
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also { it.setInstalledApps(apps.drop(1), emptySet()) }
         openFolders(shell)
-        assertEquals(listOf("Android Games"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
+        assertEquals(listOf("Apps"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
-        // Android Apps arrives and sorts first, onto the slot the menu was opened on.
+        // Android Games arrives and sorts first, onto the slot the menu was opened on.
         shell.setInstalledApps(apps, emptySet())
-        assertEquals("Android Apps", shell.homeFace(0)?.title)
-        assertEquals(HOME_ANDROID_GAMES, shell.model.tileActions?.folderOnHome?.folderId)
+        assertEquals("Android Games", shell.homeFace(0)?.title)
+        assertEquals(HOME_ANDROID_APPS, shell.model.tileActions?.folderOnHome?.folderId)
         choose(shell, Row.FolderOnHome)
-        assertFalse(HOME_ANDROID_GAMES in board().slots)
-        assertTrue(HOME_ANDROID_APPS in board().slots)
+        assertFalse(HOME_ANDROID_APPS in board().slots)
+        assertTrue(HOME_ANDROID_GAMES in board().slots)
     }
 
     @Test fun findsSwitchGivesWayToShowOnHomeOnceTheFolderIsOnHome() {
         val shell = shell()
         openFolders(shell)
-        focus(shell, 1)
+        focus(shell, 0)
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
         choose(shell, Row.FolderOnHome)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)

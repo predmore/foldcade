@@ -1039,6 +1039,7 @@ class ShellController(
             val step = home.handle(meaning, model.focus.cellIndex, repeatCount)
             if (step != null && step.handled) {
                 commitHome(catalog = wasSelecting && meaning == Meaning.Back)
+                fileMadeCollection()
                 showBoard(step.focus ?: model.focus, keepDialog = true)
                 home.takeMade()?.let(::showMadeCollection)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
@@ -1367,6 +1368,8 @@ class ShellController(
     fun typingHero(): HeroSubject? {
         if (!showingHome()) return null
         val id = home.renamingId ?: return null
+        // A new collection is not on the board until Done; its preview stands for it.
+        home.namingPreview?.takeIf { it.id == id }?.let { return folderHero(it, count = it.slots.count { slot -> slot != null }) }
         return home.board.folders[id]?.let(::folderHero)
     }
 
@@ -1419,10 +1422,10 @@ class ShellController(
             HeroSubject.Folder(HeroFolder(key = HIDDEN_HERO_KEY, name = Copy.hiddenApps, count = null, mark = MARK_HIDDEN, note = Copy.noHiddenApps))
         } else null
 
-    private fun folderHero(folder: HomeFolder): HeroSubject {
+    private fun folderHero(folder: HomeFolder, count: Int = folderCount(home.board, folder.id)): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
         return HeroSubject.Folder(
-            HeroFolder(key = folder.id, name = folder.name, count = folderCount(home.board, folder.id), mark = mark, apps = folder.holdsApps),
+            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark, apps = folder.holdsApps),
         )
     }
 
@@ -1440,11 +1443,22 @@ class ShellController(
     /** The text being typed for a folder's name. Null when no keyboard is open. */
     fun renameDraft(): String? = typing()?.text
 
+    /**
+     * A new collection is made on the keyboard's Done, not by a Y action, so it is filed the way
+     * [changeHome] files one: a game it admitted joins its platform folder at once, not at the next scan.
+     */
+    private fun fileMadeCollection() {
+        if (!home.takeCreated()) return
+        syncHome()
+        commitHome()
+    }
+
     /** A tap on the open keyboard: the cursor goes to that key or chip and presses it. */
     fun tapTyping(at: KeyFocus) {
         if (!homeActive()) return
         val step = home.tapTyping(at) ?: return
         commitHome()
+        fileMadeCollection()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
         home.takeMade()?.let(::showMadeCollection)
@@ -1456,6 +1470,7 @@ class ShellController(
         if (!homeActive()) return null
         val step = home.typeText(text) ?: return null
         commitHome()
+        fileMadeCollection()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
         return null

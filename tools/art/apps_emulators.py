@@ -268,6 +268,13 @@ def aps3e(c):
     return [shadow(32, 61, 24, 3), *sides, body(t3, "#F4F6FF", gloss=0.2),
             body(xf(plate, dx=1, dy=1.8), tone(c, -0.4), gloss=0, sym=None), body(plate, tone(c, 0.15), sym=1)]
 
+def play(c):
+    """Play!: its icon's "!" as a thing, a white tapered bar and dot with thick sides in the accent.
+    The icon's blue square is left out: the tile's light behind the object already plays that part."""
+    bar, dot = "M23.5,13.5 A8.5,8.5 0 0 1 40.5,13.5 L37,38 A5,5 0 0 1 27,38 Z", ci(32, 52.5, 6.4)
+    sides = [body(xf(d, dx=0.5 * k, dy=0.9 * k), tone(c, -0.15 - 0.08 * k), gloss=0, sym=None) for k in (4, 3, 2, 1) for d in (bar, dot)]
+    return [shadow(32, 61, 18, 3), *sides, body(bar, "#F4F6FF", gloss=0.2), body(dot, "#F4F6FF", gloss=0.2)]
+
 def ppsspp(c):
     """PPSSPP: four chamfered arrow keys in a cross, like a handheld's d-pad."""
     arm = rpoly([(25, 6), (39, 6), (39, 21), (32, 28), (25, 21)], [3, 3, 1.5, 1.5, 1.5])
@@ -340,6 +347,7 @@ APPS = {
     "emucorex": (emucorex, "#4D9EFF", "EmuCoreX: four blades in an X around a gem", ["com.sbro.emucorex"]),
     "aps3e": (aps3e, "#3F5CF0", "aPS3e: a raised white 3 with blue sides", ["aenu.aps3e"]),
     "aps3e_premium": (aps3e, "#E6B23A", "aPS3e Premium: a raised white 3 with gold sides", ["aenu.aps3e.premium"]),
+    "play": (play, "#6464FF", "Play!: a raised white exclamation mark with blue sides", ["com.virtualapplications.play"]),
     "ppsspp": (ppsspp, "#5D9BE0", "PPSSPP: four arrow keys in a cross", ["org.ppsspp.ppsspp"]),
     "ppsspp_gold": (ppsspp, "#F2B51E", "PPSSPP Gold: four gold arrow keys in a cross", ["org.ppsspp.ppssppgold"]),
     "yaba_sanshiro": (yaba_sanshiro, "#7F94C6", "Yaba Sanshiro: a Saturn-style pad with six buttons", ["org.devmiyax.yabasanshioro2", "org.devmiyax.yabasanshioro2.pro"]),

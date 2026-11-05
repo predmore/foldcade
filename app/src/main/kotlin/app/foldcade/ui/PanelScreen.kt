@@ -205,6 +205,7 @@ import coil3.memory.MemoryCache
 import coil3.request.SuccessResult
 import java.util.concurrent.ConcurrentHashMap
 import coil3.request.ImageRequest
+import coil3.request.transformations
 import coil3.request.crossfade
 import coil3.request.crossfadeMillis
 import coil3.decode.DataSource
@@ -1283,12 +1284,16 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     val queries = remember { mutableMapOf<String, ArtQuery>() }
     app.shell.focusedRecord()?.let { record -> if (subject != null && naming == null) records[subject.key] = record }
     app.shell.focusedGame()?.let(app.shell::artQuery)?.let { query -> if (subject != null && naming == null) queries[subject.key] = query }
+    // The game behind each subject, so a name card still naming the art on screen reads that game's saves.
+    val games = remember { mutableMapOf<String, ShelfGame>() }
+    app.shell.focusedGame()?.let { game -> if (subject != null && naming == null) games[subject.key] = game }
     val place = subject?.let {
         if (find != null) HeroPlace("find/${find.filter}", (if (find.onResults) find.index else 0) * Metrics.rows)
         else HeroPlace(gridToken(app), model.focus.cellIndex)
     }
-    // The label follows focus at once. The art follows once it is whole.
+    // The art follows once it is whole, and the name card names the art on screen (review-B S5′).
     val staged = rememberStagedHero(app, subject, place, records, queries, scale)
+    val named = rememberNamedSubject(subject, staged.subject)
     val islandOver = model.panel?.let { it.side != Side.Tile && it.screen == screen } == true && model.dialog?.screen != screen
     val islandDim = motionState(
         if (islandOver) 1f else 0f,
@@ -1380,35 +1385,36 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 // A name being typed, or Find, takes the name card's place, under the art.
                 val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
                 val finding = presence(find, motion.durationIsland, scale)
-                // The facts and summary of the game the name card names, which is the focus, not the art still arriving.
-                val details = rememberGameDetails(app, (subject as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
+                // The facts and summary of the game the name card names: the one whose art is on screen.
+                val details = rememberGameDetails(app, (named as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
                 // The card opens to the summary only when R3 asked for this game, while the cursor rests on
                 // the grid with nothing over the card.
                 val resting = cellFocused && find == null && naming == null && typing.shown == null && finding.shown == null &&
                     editor.shown == null && app.shell.artPicker == null &&
                     app.shell.homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary }
                 // The grid's hint row offers R3 Info for a game whose summary this card could open.
-                val summaryKey = subject?.key?.takeIf {
-                    subject is HeroSubject.Item && !subject.item.emptyShelfHint && details?.summary != null
+                val summaryKey = named?.key?.takeIf {
+                    named is HeroSubject.Item && it == subject?.key && !named.item.emptyShelfHint && details?.summary != null
                 }
                 val offerer = remember { Any() }
                 androidx.compose.runtime.SideEffect { app.shell.offerSummary(offerer, summaryKey) }
                 androidx.compose.runtime.DisposableEffect(offerer) { onDispose { app.shell.withdrawSummary(offerer) } }
-                if (subject != null || finding.shown != null) {
+                if (named != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
-                        if (subject != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - islandDim.value) }) {
+                        if (named != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - islandDim.value) }) {
                             HeroLabel(
                                 app,
-                                subject,
+                                named,
                                 cellFocused,
                                 cardMax,
                                 details = details,
-                                unfolds = resting && app.shell.summaryOpenFor == subject.key,
+                                unfolds = resting && named.key == subject?.key && app.shell.summaryOpenFor == named.key,
                                 scale = scale,
                                 overArt = sceneArt,
-                                // A logo on wide art already says the name, once that art is the focused game's.
-                                named = !(staged.subject?.key == subject.key && staged.images.logo != null),
+                                // A logo on wide art already says the name, once that art is this game's.
+                                named = !(staged.subject?.key == named.key && staged.images.logo != null),
+                                game = games[named.key],
                             )
                         }
                         finding.shown?.let { session ->
@@ -1825,6 +1831,8 @@ private fun HeroLabel(
     scale: Float,
     overArt: Boolean = false,
     named: Boolean = true,
+    /** The game [shown] is, for its save and activity words. */
+    game: ShelfGame? = null,
 ) {
     val design = LocalFoldTheme.current.theme.style
     val theme = foldTheme()
@@ -1837,7 +1845,8 @@ private fun HeroLabel(
     // Each game starts closed, so moving on closes the card at once and never shows the last game's words.
     val unfold = remember(shown.key) { Animatable(0f) }
     val still = motion.heroFadeOnly(app.shell.model.motionSpeed, scale)
-    val titleShown = remember(shown.key) { Animatable(1f) }
+    // A game whose logo is already up never shows its title, so the card does not shrink around it.
+    val titleShown = remember(shown.key) { Animatable(if (named) 1f else 0f) }
     LaunchedEffect(shown.key, named, scale) {
         titleShown.animateTo(if (named) 1f else 0f,
             motion.dissolve(motion.heroDuration(app.shell.model.motionSpeed, scale), 1f))
@@ -1875,7 +1884,7 @@ private fun HeroLabel(
             if (item?.emptyShelfHint == true) {
                 ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
             } else {
-                val focusedGame = app.shell.focusedGame()?.takeIf { it.id == item?.key }
+                val focusedGame = game?.takeIf { it.id == item?.key }
                 // What the library is doing with this game leads the line, in the focus colour.
                 val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
                 val activity = focusedGame?.let { app.shell.activityFor(it.id) }
@@ -1941,11 +1950,21 @@ private fun HeroLabel(
 /** The title makes room for its decoded logo over the same fade, without moving the art in one frame. */
 private fun Modifier.collapsingHeroTitle(progress: () -> Float): Modifier = clipToBounds().layout { measurable, constraints ->
     val placeable = measurable.measure(constraints)
-    val shown = progress().coerceIn(0f, 1f)
-    val height = (placeable.height * shown).roundToInt()
+    val (room, alpha) = titleCollapse(progress())
+    val height = (placeable.height * room).roundToInt()
     layout(placeable.width, height) {
-        placeable.placeWithLayer(0, (height - placeable.height) / 2) { alpha = shown }
+        placeable.placeWithLayer(0, (height - placeable.height) / 2) { this.alpha = alpha }
     }
+}
+
+/**
+ * How much of its line a collapsing title keeps, and how opaque it is, at [shown] (1 whole, 0 gone).
+ * The words fade out first at full height, then the line closes, so no letter is cut while it
+ * can be read (review-B S5′, review bot on #388).
+ */
+internal fun titleCollapse(shown: Float): Pair<Float, Float> {
+    val t = shown.coerceIn(0f, 1f)
+    return (t * 2f).coerceAtMost(1f) to ((t - 0.5f) * 2f).coerceIn(0f, 1f)
 }
 
 /** Lines of a game's summary the name card opens to, and the space above them. */
@@ -2385,7 +2404,7 @@ private fun lightness(image: coil3.Image): Float? {
  */
 private val decodedCovers = ConcurrentHashMap<String, MemoryCache.Key>()
 
-private fun coverId(uri: String, px: Int): String = "$px\u0000$uri"
+private fun coverId(uri: String, px: Int, square: Boolean = px == TILE_PX): String = "$px${if (square) "" else "w"}\u0000$uri"
 
 /**
  * The one request for [uri] at [px]. Art warmed ahead with it is the art the painter finds.
@@ -2393,13 +2412,15 @@ private fun coverId(uri: String, px: Int): String = "$px\u0000$uri"
  * at different sizes, and with one entry each evicted the other, so the top screen's
  * cover reloaded and faded in late.
  */
-private fun coverRequest(context: Context, uri: String, px: Int): ImageRequest =
+private fun coverRequest(context: Context, uri: String, px: Int, square: Boolean = px == TILE_PX): ImageRequest =
     ImageRequest.Builder(context)
         .data(CoverImage(uri))
         .size(px)
         .memoryCacheKeyExtra(COVER_SIZE_KEY, px.toString())
         // Columns already move and fade at the edges; a new cover arrives whole.
         .crossfade(px != TILE_PX)
+        // A tile's copy is its square already, cut where the box keeps its title.
+        .apply { if (square) transformations(TileCrop(uri)) }
         .build()
 
 private const val COVER_SIZE_KEY = "foldcade.px"
@@ -2585,6 +2606,30 @@ private fun WarmNeighbours(app: FoldcadeApp, place: HeroPlace?) {
 }
 
 /**
+ * The subject the name card names: what the art shows ([shown]) while it catches up with
+ * [focus], so a step never labels the old art with the new game. Art slower than
+ * [NAME_WAIT_MS] lets the name go ahead, so a slow cover never hides where the cursor is.
+ */
+@Composable
+private fun rememberNamedSubject(focus: HeroSubject?, shown: HeroSubject?): HeroSubject? {
+    // A fresh wait for each focus, even one the cursor comes back to.
+    var waited by remember(focus?.key) { mutableStateOf(false) }
+    LaunchedEffect(focus?.key) {
+        delay(NAME_WAIT_MS)
+        waited = true
+    }
+    return namedSubject(focus, shown, waited = focus != null && waited)
+}
+
+internal fun namedSubject(focus: HeroSubject?, shown: HeroSubject?, waited: Boolean): HeroSubject? = when {
+    focus == null -> null
+    shown == null || shown.key == focus.key || waited -> focus
+    else -> shown
+}
+
+private const val NAME_WAIT_MS = 400L
+
+/**
  * Once the cursor rests, warms the tile art a screen of columns either side of
  * [first], so a column slides in with its art drawn rather than filling in behind it.
  */
@@ -2622,22 +2667,24 @@ internal fun rememberCoverPainter(
     uri: String,
     px: Int,
     filterQuality: FilterQuality = FilterQuality.Low,
+    /** Cut to the tile's square ([TileCrop]). Every tile-size copy is, unless it asks for the whole picture. */
+    square: Boolean = px == TILE_PX,
 ): LoadedCover? {
     val context = LocalContext.current
-    val request = remember(uri, px) { coverRequest(context, uri, px) }
+    val request = remember(uri, px, square) { coverRequest(context, uri, px, square) }
     val painter = rememberAsyncImagePainter(request, app.images, filterQuality = filterQuality)
     val state by painter.state.collectAsState()
     val result = (state as? AsyncImagePainter.State.Success)?.result
     if (result != null) {
-        result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
+        result.memoryCacheKey?.let { decodedCovers[coverId(uri, px, square)] = it }
         val image = result.image
         if (image.width <= 0 || image.height <= 0) return null
         val fade = if (result.dataSource == DataSource.MEMORY_CACHE) 0 else result.request.crossfadeMillis
         return LoadedCover(painter, image.width.toFloat() / image.height, image, fade)
     }
     // Until the painter has it, the same cover already in memory draws at once.
-    val held = remember(uri, px) {
-        decodedCovers[coverId(uri, px)]?.let { app.images.memoryCache?.get(it)?.image }
+    val held = remember(uri, px, square) {
+        decodedCovers[coverId(uri, px, square)]?.let { app.images.memoryCache?.get(it)?.image }
             ?.takeIf { it.width > 0 && it.height > 0 }
             ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height, it) }
     }
