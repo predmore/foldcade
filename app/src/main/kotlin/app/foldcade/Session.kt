@@ -117,6 +117,10 @@ data class Session(
     /** The owned activity beside this Home takes its page keys; the parent Settings stays inactive. */
     fun pageKeyTarget(panel: Panel): Panel? = panel.flip().takeIf { externalOn(it)?.foldcadePage == true }
 
+    /** Android covers an owned page. Home has not resumed, so this panel is still taken. */
+    fun settingsPageCovered(panel: Panel): Session =
+        if (externalOn(panel)?.foldcadePage == true) place(panel, ExternalApp(OTHER_APP_ID)) else this
+
     private fun besideApp(panel: Panel): Surface =
         if (browsing == panel) Surface.Picker else Surface.CommandCenter
 

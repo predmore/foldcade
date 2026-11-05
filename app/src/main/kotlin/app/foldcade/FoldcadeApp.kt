@@ -251,15 +251,24 @@ class FoldcadeApp : Application() {
         private set
 
     /**
-     * The visible Settings activity, so Open an app on its companion can return Home.
-     * Themes and Licenses keep the parent Settings page on their own screen.
+     * The Settings activity until it is destroyed, so Open an app can finish it even
+     * while Android covers it. Only a resumed activity takes companion keys.
      */
-    internal var settingsPageActivity: android.app.Activity? = null
+    internal var settingsPageActivity: app.foldcade.language.PanelKeyActivity? = null
 
     /** Mark the page before Home stops, so its Settings parent never moves to the other screen. */
     internal fun noteSettingsPage(activity: android.app.Activity) {
         val panel = Displays(this).panelFor(activity, store.session.defaultDisplayIsTop) ?: return
         store.place(panel, ExternalApp("foldcade:settings-page", foldcadePage = true))
+    }
+
+    internal fun settingsPageCovered(activity: android.app.Activity) {
+        // onStop means another activity may cover the page without Home resuming:
+        // https://developer.android.com/guide/components/activities/activity-lifecycle#onstop
+        if (settingsPageActivity !== activity) return
+        Displays(this).panelFor(activity, store.session.defaultDisplayIsTop)?.let { panel ->
+            store.update { it.settingsPageCovered(panel) }
+        }
     }
 
     /** The other app in front of a screen, for the command center beside it. */
@@ -967,7 +976,10 @@ class FoldcadeApp : Application() {
                 awaitPlugins()
                 plugins.metadataIds().firstNotNullOfOrNull { id -> plugins.fetchAchievements(id, record) }
             },
-            showHome = shell::goHome,
+            showHome = {
+                settingsPageActivity?.finish()
+                shell.goHome()
+            },
             busy = shell::holdsCommandCenter,
         )
         // A page that moved onto a command center, as when an app took the top while Settings was open, makes
