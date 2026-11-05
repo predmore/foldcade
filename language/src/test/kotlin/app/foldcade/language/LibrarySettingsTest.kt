@@ -35,6 +35,27 @@ class LibrarySettingsTest {
     }
 
     @Test
+    fun aFolderThatReplacedThePageItWasPickedFromTakesTheFocusOnTheShelf() {
+        val read = empty.copy(empty = true)
+        val page = library.copy(folders = listOf(roms, read)).onSetting(Row.PickFolderAgain(read.uri))
+        val replacement = LibraryFolder("content://games", "games", games = 3)
+        val next = page.withFolders(listOf(roms, replacement))
+        assertNull(next.settings?.inner)
+        assertEquals(Row.SettingsTile(SettingsInner.Folder(replacement.uri)), settingsFocus(next))
+        // Picking the same folder again keeps its page.
+        assertEquals(SettingsInner.Folder(read.uri), page.withFolders(listOf(roms, read.copy(empty = false, games = 2))).settings?.inner)
+    }
+
+    @Test
+    fun aTypedRommAddressSaysWhatToFix() {
+        assertEquals(Copy.rommFixAddress, rommAddressFix("http://192.0.2.1", warned = true))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("romm.local", warned = false))
+        assertEquals(Copy.rommAddressScheme, rommAddressFix("ftp://romm.local", warned = false))
+        assertEquals(Copy.rommAddressCredentials, rommAddressFix("https://user:secret@romm.example", warned = false))
+        assertEquals(Copy.rommFixAddress, rommAddressFix("https:///api", warned = false))
+    }
+
+    @Test
     fun rommsPageRowsThatOpenTheFormWearTheOpensMark() {
         assertEquals(RowControl.Opens, rowControl(Row.EditRomm("romm"), library))
         assertEquals(RowControl.Opens, rowControl(Row.SignInRomm, library))

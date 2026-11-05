@@ -188,6 +188,8 @@ object Copy {
     const val rommFixAddress = "Fix the address to get a code."
     /** The address has no http(s):// yet, so nothing is asked for. */
     const val rommAddressScheme = "Start it with https:// to get a code."
+    /** A name or password typed into the address: Foldcade never sends one there. */
+    const val rommAddressCredentials = "Take the name and password out of the address to get a code."
     const val rommPairAgain = "Pair with phone for a new code, or paste a token."
     const val rommCodeExpired = "That code expired."
     const val rommCodeDenied = "RomM declined that code."

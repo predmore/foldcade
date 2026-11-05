@@ -2321,7 +2321,6 @@ class FoldcadeApp : Application() {
             val picked = pickedStorageFolders(store.folderTrees())
             val removed = store.removedRoots()
             val seen = usableRomRoots(listed, picked, removed)
-            pickStart = libraryPickStart(folders, picked, removed)
             val before = store.foundRoots()
             val next = if (!held) before else {
                 val mounted = volumes.mapTo(HashSet()) { it.id }
@@ -2329,6 +2328,8 @@ class FoldcadeApp : Application() {
                 (seen.map { it.documentId } + away).distinct()
             }
             if (next != before) store.setFoundRoots(next)
+            // Found folders the library reads already (all-files access) are no place to pick again.
+            pickStart = libraryPickStart(folders, picked + if (held) next else emptyList(), removed)
             Triple(seen, before, next)
         }
         allFilesHeld = held

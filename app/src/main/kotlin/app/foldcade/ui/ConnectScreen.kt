@@ -77,6 +77,7 @@ import app.foldcade.language.cursorBrush
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.rommConnectAction
 import app.foldcade.language.rommConnectTitle
+import app.foldcade.language.rommAddressFix
 import app.foldcade.language.rommWaitsForPhone
 import app.foldcade.romm.normalizeSetupOrigin
 
@@ -334,7 +335,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                         BasicText(
                             when {
                                 hint != null -> hint
-                                unusable -> if (model.connectWarning != null) Copy.rommFixAddress else Copy.rommAddressScheme
+                                unusable -> rommAddressFix(model.connectOrigin, warned = model.connectWarning != null)
                                 waitingForCode -> Copy.rommGettingCode
                                 phoneUrl != null -> if ((phone as? app.foldcade.language.KeyDrop.Open)?.phoneHere == true) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
                                 phone == app.foldcade.language.KeyDrop.Offline && app.foldcade.language.rommNeedsAddress(model) -> RommPhoneCopy.offline

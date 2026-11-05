@@ -20,6 +20,23 @@ class RomRootsTest {
     }
 
     @Test
+    fun addAFolderStartsInAnUnreadRomFolderEvenAnEmptyOne() {
+        val primary = volume("primary", "ROMs/moonlight")
+        val folders = findRomFolders(listOf(primary))
+        assertEquals(emptyList<RomRoot>(), findRomRoots(listOf(primary)))
+        // Only Moonlight's shortcuts in it, so not a found root, but still where games go.
+        assertEquals("primary:ROMs", libraryPickStart(folders, picked = emptyList(), removed = emptySet()))
+        assertEquals(null, libraryPickStart(folders, picked = listOf("primary:ROMs"), removed = emptySet()))
+        assertEquals(null, libraryPickStart(folders, picked = emptyList(), removed = setOf("primary:ROMs")))
+        // A root the library already reads gives way to the empty one on the card.
+        val card = volume("BB42-D432", "roms")
+        val full = volume("primary2", "ROMs/nds")
+        val both = findRomFolders(listOf(VolumeDir("primary", full.dir), card))
+        assertEquals("primary:ROMs", libraryPickStart(both, picked = emptyList(), removed = emptySet()))
+        assertEquals("BB42-D432:roms", libraryPickStart(both, picked = listOf("primary:ROMs"), removed = emptySet()))
+    }
+
+    @Test
     fun aRootCountsWhenItHoldsASystemFolder() {
         val primary = volume("primary", "ROMs/genesis", "ROMs/nds", "ROMs/moonlight", "Emulation/roms/Nintendo - Game Boy Advance", "Download/gba")
         val card = volume("BB42-D432", "roms/psx", "roms/wswan")

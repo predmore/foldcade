@@ -342,14 +342,18 @@ fun settingsShown(page: SettingsPage, model: PickerModel): Pair<SettingsPage, Li
     return page.copy(inner = null) to settingsRows(category, model)
 }
 
-/** A folder just added from Add shows itself: the card returns to the shelf with the new folder's tile focused. */
+/**
+ * A folder just added from Add shows itself: the card returns to the shelf with the new folder's
+ * tile focused. So does one that replaced the folder whose page asked for it (Pick again).
+ */
 fun PickerModel.withFolders(folders: List<LibraryFolder>): PickerModel {
     val next = copy(folders = folders)
     // From Add, or from the Add tile, which opens the picker itself while a folder is its one way in.
     val page = settings ?: return next
     val category = settingsCategories(next).getOrNull(page.category) ?: return next
     val onAddTile = page.inner == null && page.onRows && settingsRows(category, this).getOrNull(page.row) == Row.SettingsTile(SettingsInner.Add)
-    if (page.inner != SettingsInner.Add && !onAddTile) return next
+    val replaced = (page.inner as? SettingsInner.Folder)?.let { open -> folders.none { it.uri == open.uri } } == true
+    if (page.inner != SettingsInner.Add && !onAddTile && !replaced) return next
     val added = folders.firstOrNull { new -> this.folders.none { it.uri == new.uri } } ?: return next
     val index = settingsTileIndex(category, SettingsInner.Folder(added.uri), next).takeIf { it >= 0 } ?: return next
     return next.copy(settings = page.copy(inner = null, row = index))

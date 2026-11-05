@@ -1255,6 +1255,21 @@ data class PairingCode(val code: String, val url: String) {
  * server to pair with), Pair with phone for a new code, and nothing to press while a phone
  * can approve the code on screen.
  */
+/**
+ * What to fix in a typed RomM address Foldcade can't use, under the phone's square: http:// off
+ * the home network ([warned]), a username or password in it, or no http(s):// at all.
+ */
+fun rommAddressFix(origin: String, warned: Boolean): String {
+    val text = origin.trim()
+    val scheme = text.substringBefore("://", "").lowercase()
+    return when {
+        warned -> Copy.rommFixAddress
+        scheme != "http" && scheme != "https" -> Copy.rommAddressScheme
+        '@' in text.substringAfter("://").substringBefore('/') -> Copy.rommAddressCredentials
+        else -> Copy.rommFixAddress
+    }
+}
+
 /** The RomM form's title, which the page beside it wears too: editing, signing in again, or adding. */
 fun rommConnectTitle(model: PickerModel, saved: Boolean): String = when {
     model.connectReturnPanel != null && !model.rommSignIn -> Copy.editRommConnection
