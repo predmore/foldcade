@@ -273,8 +273,11 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                         CardMode.Loading -> CardNote("cloud", SavePickerCopy.loading, pulse = true, scale = scale)
                         CardMode.Busy -> CardNote("cloud", SavePickerCopy.working, pulse = true, scale = scale)
                         // Can't reach RomM wears the not-syncing cloud; no saves yet wears the saves symbol. Neither is a download.
+                        // Its way on is a button in the card, as Set up saves is (review-D S-C).
                         CardMode.Error -> CardNote(null, if (state.offline) SavePickerCopy.offline else SavePickerCopy.error, pulse = false, scale = scale,
-                            badge = R.drawable.ic_badge_unsynced, modifier = Modifier.hostPress { press(Meaning.Activate) })
+                            badge = R.drawable.ic_badge_unsynced, modifier = Modifier.hostPress { press(Meaning.Activate) }) {
+                            CardButton(app, if (state.offline) SavePickerCopy.wifi else SavePickerCopy.retry, scale) { press(Meaning.Activate) }
+                        }
                         CardMode.Empty -> CardNote("saves", SavePickerCopy.empty, pulse = false, scale = scale)
                         CardMode.SetUp -> SetUpInCard(app, scale) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
                         CardMode.Saves -> SaveList(app, state, art, dates, scale, dispatch)
@@ -330,12 +333,7 @@ private enum class CardMode(val depth: Int) { Loading(0), Busy(0), Error(0), Emp
  */
 @Composable
 private fun SetUpInCard(app: FoldcadeApp, scale: Float, onClick: () -> Unit) {
-    val theme = LocalFoldTheme.current.theme
-    val design = theme.style
-    val model = app.shell.model
-    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
-    val pop = bouncy(1f, scale)
-    val focusRing = remember(theme) { FocusRing(theme) }
+    val design = LocalFoldTheme.current.theme.style
     Column(
         Modifier.fillMaxSize().padding(CARD_PAD),
         verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
@@ -343,26 +341,38 @@ private fun SetUpInCard(app: FoldcadeApp, scale: Float, onClick: () -> Unit) {
     ) {
         val cloud = themeIcon("badge.unsynced", R.drawable.ic_badge_unsynced)
         Image(cloud.painter, contentDescription = null, colorFilter = cloud.tint(design.colors.attention), modifier = Modifier.size(NOTE_ART))
-        Row(
-            Modifier
-                .graphicsLayer {
-                    val grow = 1f + design.menu.artGrow / 3f * pop.value
-                    scaleX = grow
-                    scaleY = grow
-                }
-                .drawBehind {
-                    val corner = size.height / 2f * design.shape.round
-                    drawRoundRect(color = theme.surface, cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
-                    with(focusRing) { drawFocusRing(corner, alpha = 1f) }
-                }
-                .hostPress(onClick)
-                .padding(start = 14.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            PromptImage(if (confirm in model.held) "${promptGlyph(confirm)}_filled" else promptGlyph(confirm), 32.dp)
-            BasicText(SaveSetupCopy.title, style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true), maxLines = 1)
-        }
+        CardButton(app, SaveSetupCopy.title, scale, onClick)
+    }
+}
+
+/** The card's one lit button, which A presses: its glyph, then its word, in the focus ring. */
+@Composable
+private fun CardButton(app: FoldcadeApp, label: String, scale: Float, onClick: () -> Unit) {
+    val theme = LocalFoldTheme.current.theme
+    val design = theme.style
+    val model = app.shell.model
+    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+    val pop = bouncy(1f, scale)
+    val focusRing = remember(theme) { FocusRing(theme) }
+    Row(
+        Modifier
+            .graphicsLayer {
+                val grow = 1f + design.menu.artGrow / 3f * pop.value
+                scaleX = grow
+                scaleY = grow
+            }
+            .drawBehind {
+                val corner = size.height / 2f * design.shape.round
+                drawRoundRect(color = theme.surface, cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
+                with(focusRing) { drawFocusRing(corner, alpha = 1f) }
+            }
+            .hostPress(onClick)
+            .padding(start = 14.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        PromptImage(if (confirm in model.held) "${promptGlyph(confirm)}_filled" else promptGlyph(confirm), 32.dp)
+        BasicText(label, style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true), maxLines = 1)
     }
 }
 
@@ -517,7 +527,15 @@ private fun Thumb(app: FoldcadeApp?, screenshot: String?, symbol: String?, lit: 
 
 /** The card's one line when there is no list: a symbol over a few words, the symbol breathing while it waits. */
 @Composable
-private fun CardNote(symbol: String?, text: String, pulse: Boolean, scale: Float, modifier: Modifier = Modifier, badge: Int? = null) {
+private fun CardNote(
+    symbol: String?,
+    text: String,
+    pulse: Boolean,
+    scale: Float,
+    modifier: Modifier = Modifier,
+    badge: Int? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
     val theme = LocalFoldTheme.current.theme
     val breath = if (pulse) {
         val transition = rememberInfiniteTransition()
@@ -535,6 +553,7 @@ private fun CardNote(symbol: String?, text: String, pulse: Boolean, scale: Float
             } else if (symbol != null) SymbolIcon(symbol, 1f, theme.onBackground)
         }
         BasicText(text, style = saveStyle(theme.onBackground, theme.style.type.menuRow, theme).copy(textAlign = TextAlign.Center))
+        action?.invoke()
     }
 }
 
@@ -636,7 +655,9 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
         body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current),
         buttons = listOf(action, SavePickerCopy.cancel),
         focused = state.confirmIndex,
-        hints = listOf(HintKey(promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB, SavePickerCopy.cancel)),
+        // B is Cancel, which wears Back's key.
+        hints = emptyList(),
+        backButton = 1,
         modifier = modifier,
         onButton = onButton,
     )

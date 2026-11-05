@@ -1017,6 +1017,10 @@ class ShellController(
             cue(model.themeIndex, "open")
             return null
         }
+        // An empty collection's one thing is Add games: Y has nothing there, unless it undoes, and
+        // must not send the focus up to R1, where A would then open R1 instead (review-D 116).
+        if (meaning == Meaning.Options && model.dialog == null && model.panel == null && model.focus.chrome == null &&
+            emptyCollection() != null && !undoOffered()) return null
         if (meaning == Meaning.ActivateBottom && model.dialog == null && model.panel == null &&
             model.settings == null && model.playActivity == null && model.gameAbout == null && model.saveConflict == null && !model.connectOpen &&
             homeKeys().let { it == HomeKeys.Idle || it == HomeKeys.AllLibrary || it == HomeKeys.FindResults } &&
@@ -1419,6 +1423,9 @@ class ShellController(
      * Hidden with nothing in it: the place itself, its shut eye and "Nothing hidden", so the top
      * screen names where the player is, as every other place does (review-B 135).
      */
+    /** A library with nothing in it shows its focused button on the top screen. */
+    fun noLibraryHero(): HeroSubject? = app.foldcade.language.noLibraryHero(model)
+
     fun emptyHiddenHero(): HeroSubject? =
         if (!model.libraryGrid && model.homeGrid == HomeGrid.Hidden && model.count == 0 && find == null) {
             HeroSubject.Folder(HeroFolder(key = HIDDEN_HERO_KEY, name = Copy.hiddenApps, count = null, mark = MARK_HIDDEN, note = Copy.noHiddenApps))
@@ -1427,7 +1434,7 @@ class ShellController(
     private fun folderHero(folder: HomeFolder, count: Int = folderCount(home.board, folder.id)): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
         return HeroSubject.Folder(
-            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark, apps = folder.holdsApps),
+            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark, apps = app.foldcade.language.countsApps(folder) { home.item(it)?.kind }),
         )
     }
 
@@ -1564,7 +1571,7 @@ class ShellController(
 
     /** The line under a Find result's name: its platform or count, where it lives, and whether it is hidden. */
     fun findFacts(entry: FindEntry): List<String> =
-        app.foldcade.language.findFacts(home.board, entry) + listOfNotNull(entry.id.takeIf { entry.kind != FindKind.Group }?.let(::downloadLine))
+        app.foldcade.language.findFacts(home.board, entry) { home.item(it)?.kind } + listOfNotNull(entry.id.takeIf { entry.kind != FindKind.Group }?.let(::downloadLine))
 
     /** A Find result as a game, for its tile's art and icon. */
     fun findGame(id: String): ShelfGame = homeShelf(home.faceOf(id))
@@ -3675,7 +3682,7 @@ class ShellController(
         if (entry.kind == FindKind.Group) {
             // A folder off Home that the board has not made yet counts the games it would hold.
             val listed = home.folderRows().firstOrNull { it.folder.id == entry.id }
-            val apps = (listed?.folder ?: home.board.folders[entry.id])?.holdsApps == true
+            val apps = (listed?.folder ?: home.board.folders[entry.id])?.let { app.foldcade.language.countsApps(it) { id -> home.item(id)?.kind } } == true
             val count = listed?.count ?: folderCount(home.board, entry.id)
             return HeroSubject.Folder(HeroFolder(key = entry.id, name = entry.title, count = count, mark = entry.mark, apps = apps))
         }

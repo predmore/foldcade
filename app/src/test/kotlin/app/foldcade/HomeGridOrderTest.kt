@@ -910,9 +910,10 @@ class HomeGridOrderTest {
         shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
         assertNull(shell.model.panel)
         assertEquals(Copy.hidden, shell.model.undoVerb)
-        // The focus rests on the empty slot it left, and Y there is the slot's own menu.
+        // The focus rests on the empty slot it left. The collection holds nothing now, so Y there
+        // offers only Undo: no lone Move (review-D 116).
         assertEquals(0, shell.model.focus.cellIndex)
-        assertEquals(listOf(Row.MoveTile), optionRows(shell))
+        assertEquals(emptyList<Row>(), optionRows(shell))
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse("Drift" in titles(shell))
         focus(shell, titles(shell).indexOf("Nintendo 3DS"))

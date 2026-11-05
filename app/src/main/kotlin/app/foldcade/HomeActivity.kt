@@ -1516,15 +1516,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     launchScreen = screen
                     launchBackendGame(game.title.takeUnless { it == tileId } ?: route.play.label, route.play.platformId, route)
                 } else {
-                    foldcade.shell.present(DialogState(
-                        kind = DialogKind.Ok,
-                        title = Copy.gameUnavailable,
-                        body = Copy.gameUnavailableBody,
-                        buttons = listOf(DialogButton.Ok),
-                        index = 0,
-                        safeIndex = 0,
-                        screen = hostScreen(),
-                    ))
+                    foldcade.shell.present(catalogGameUnavailableDialog(offline = !foldcade.hasValidatedNetwork(), screen = hostScreen()))
                 }
             } finally {
                 withContext(NonCancellable + Dispatchers.Main.immediate) {
@@ -2708,7 +2700,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.shell.noteFolderExplained()
                 pickLibraryFolder()
             }
-            DialogKind.Ok -> cancelLaunches()
+            DialogKind.Ok -> {
+                cancelLaunches()
+                if (effect.button == DialogButton.Wifi) dispatch(Effect.OpenAndroidSetting(AndroidSetting.Wifi))
+            }
             DialogKind.ReLogin -> if (effect.button == DialogButton.SignInRomm) {
                 foldcade.shell.openRommRecovery()
                 beginRommDeviceCode()

@@ -26,10 +26,11 @@ class SavePickerTest {
 
     @Test fun offlineSendsAToWifiAndOnlineTriesAgain() {
         val offline = state.copy(error = true, offline = true, saves = emptyList(), index = 0)
-        assertEquals(listOf(HintKey(PromptKey.FaceA, SavePickerCopy.wifi)), savePickerHints(offline, FaceMap.standard()))
+        // The card's own Wi-Fi button carries A, so nothing below names it again (review-D S-C).
+        assertTrue(savePickerHints(offline, FaceMap.standard()).isEmpty())
         assertEquals(offline to Effect.OpenAndroidSetting(AndroidSetting.Wifi), applySavePicker(offline, Meaning.Activate))
         val unreachable = offline.copy(offline = false)
-        assertEquals(listOf(HintKey(PromptKey.FaceA, SavePickerCopy.retry)), savePickerHints(unreachable, FaceMap.standard()))
+        assertTrue(savePickerHints(unreachable, FaceMap.standard()).isEmpty())
         val (retrying, effect) = applySavePicker(unreachable, Meaning.Activate)
         assertEquals(Effect.LoadSavePicker(target), effect)
         assertTrue(retrying!!.loading)
@@ -267,7 +268,8 @@ class SavePickerTest {
         assertEquals(emptyList<HintKey>(), savePickerHints(state.copy(index = 0), faces))
         assertEquals(listOf(HintKey(a, "Set up")), savePickerHints(state.copy(index = 0, health = SaveHealth.NotSyncing(SaveIssue.NeedsSetup)), faces))
         assertEquals(listOf(HintKey(a, "Sync now")), savePickerHints(state.copy(index = 0, health = SaveHealth.Waiting), faces))
-        assertEquals(listOf(HintKey(a, "Try again")), savePickerHints(state.copy(error = true), faces))
+        // The card's own Try again button carries A.
+        assertEquals(emptyList<HintKey>(), savePickerHints(state.copy(error = true), faces))
         for (quiet in listOf(state.copy(loading = true), state.copy(busy = true), state.copy(confirmation = SavePickerChoice.Play(save)))) {
             assertEquals(emptyList<HintKey>(), savePickerHints(quiet, faces))
         }

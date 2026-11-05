@@ -59,11 +59,17 @@ class LaunchGateDialogsTest {
 
     @Test fun theHintUnderALaunchGateSaysWhatBackDoes() {
         for (dialog in gates) {
-            val hint = dialogHints(dialog, FaceMap.standard()).single()
+            val hints = dialogHints(dialog, FaceMap.standard())
+            val back = dialogBackButton(dialog)
+            if (back != null) {
+                // The button Back presses wears its key, so nothing names it twice (review-B S11).
+                assertTrue("${dialog.title}: $hints", hints.isEmpty())
+                assertEquals(Copy.notNow, dialogButtonLabel(dialog.buttons[back], dialog.subject))
+                continue
+            }
+            val hint = hints.single()
             assertEquals(PromptKey.FaceB, hint.key)
-            val label = hint.label
-            assertFalse("${dialog.title}: $label", label == Copy.back)
-            assertTrue("${dialog.title}: $label", label == Copy.cancelLaunch || label == Copy.notNow)
+            assertEquals("${dialog.title}: ${hint.label}", Copy.cancelLaunch, hint.label)
         }
         assertEquals(Copy.cancelLaunch, dialogBackLabel(saveFolderDialog(screen)))
         assertEquals(Copy.notNow, dialogBackLabel(closeBothPanelDialog(screen)))
@@ -71,6 +77,11 @@ class LaunchGateDialogsTest {
         assertEquals(Copy.close, dialogBackLabel(noFileDialog(screen)))
         assertEquals(Copy.notNow, dialogBackLabel(homePrompt(screen)))
         assertEquals(Copy.close, dialogBackLabel(backupDialog(screen, undo = false)))
+        // Back's own key sits on Not now; Close and OK dialogs keep the hint at the right.
+        assertEquals(homePrompt(screen).buttons.indexOf(DialogButton.NotNow), dialogBackButton(homePrompt(screen)))
+        assertNull(dialogBackButton(noFileDialog(screen)))
+        assertNull(dialogBackButton(backupDialog(screen, undo = false)))
+        assertEquals(Copy.close, dialogHints(noFileDialog(screen), FaceMap.standard()).single().label)
     }
 
     @Test fun theSaveFolderAskOpensOnChooseAndPlaysOnlyFromItsOwnButton() {

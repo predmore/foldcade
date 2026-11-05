@@ -225,6 +225,7 @@ import app.foldcade.language.dialogButtonLabel
 import app.foldcade.language.Effect
 import app.foldcade.language.DialogState
 import app.foldcade.language.dialogBodyParts
+import app.foldcade.language.dialogBackButton
 import app.foldcade.language.dialogHints
 import app.foldcade.language.rommConnectTitle
 import app.foldcade.language.EmptyGrid
@@ -1278,7 +1279,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
     // An empty collection has no tile to focus, so the top screen shows the collection.
-    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyHiddenHero()
+    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyHiddenHero() ?: app.shell.noLibraryHero()
     // Find shows its best result, or the focused one, and travels along its strip.
     val find = app.shell.find
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
@@ -2949,7 +2950,7 @@ private fun FocusedName(app: FoldcadeApp, scale: Float, modifier: Modifier) {
     val design = LocalFoldTheme.current.theme.style
     val motion = LocalFoldTheme.current.theme.motion
     val model = app.shell.model
-    val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero())
+    val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.noLibraryHero())
         ?.let { heroCopy(it).title }.orEmpty()
     // With no hero and no band above the grid, the open folder or collection leads the name, muted,
     // so this layout names the place too (review-C S3).
@@ -5031,6 +5032,7 @@ private fun DialogCard(
         buttons = dialog.buttons.map { dialogButtonLabel(it, dialog.subject) },
         focused = dialog.index,
         hints = dialogHints(dialog, app.shell.model.faceMap),
+        backButton = dialogBackButton(dialog),
         onButton = { index -> onEffect(app.shell.touchDialog(index, dialog.screen)) },
     )
 }
@@ -5052,6 +5054,8 @@ internal fun DialogFrame(
     buttons: List<String>,
     focused: Int,
     hints: List<HintKey>,
+    /** The button Back presses, which wears Back's key in place of a separate hint. */
+    backButton: Int? = null,
     modifier: Modifier = Modifier,
     onButton: (Int) -> Unit,
 ) {
@@ -5086,7 +5090,12 @@ internal fun DialogFrame(
                 }
                 DialogButtonRow(gap = px(8f), hintGap = px(16f), hasHints = hints.isNotEmpty()) {
                     buttons.forEachIndexed { index, label ->
-                        DialogAction(label = label, focused = focused == index, onClick = { onButton(index) })
+                        DialogAction(
+                            label = label,
+                            focused = focused == index,
+                            key = if (index == backButton) promptKeyOf(app.shell.model.faceMap.backKey) ?: PromptKey.FaceB else null,
+                            onClick = { onButton(index) },
+                        )
                     }
                     if (hints.isNotEmpty()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(px(16f)), verticalAlignment = Alignment.CenterVertically) {
@@ -5330,7 +5339,7 @@ private fun EmptyCollection(
 }
 
 @Composable
-internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) {
+internal fun DialogAction(label: String, focused: Boolean, key: PromptKey? = null, onClick: () -> Unit) {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
@@ -5342,9 +5351,8 @@ internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) 
             motion.leave(motion.durationFocus, animatorScale)
         },
     )
-    BasicText(
-        text = label,
-        modifier = Modifier
+    Row(
+        Modifier
             .graphicsLayer {
                 clip = false
                 scaleX = drawn
@@ -5356,16 +5364,24 @@ internal fun DialogAction(label: String, focused: Boolean, onClick: () -> Unit) 
             .padding(horizontal = px(16f), vertical = px(18f))
             .chip(focused)
             .padding(horizontal = px(22f), vertical = px(12f)),
-        // Every button reads at full ink. The ring alone says which one A presses, so none looks disabled.
-        style = text(
-            theme.onBackground,
-            LocalFoldTheme.current.theme.style.type.dialogBody,
-            theme,
-        ).copy(textAlign = TextAlign.Center),
-        // A button's words stay on one line: two words never break into a letter a line.
-        maxLines = 1,
-        softWrap = false,
-    )
+        horizontalArrangement = Arrangement.spacedBy(px(10f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The button Back presses wears Back's key, so the card needs no second "B Not now".
+        key?.let { PromptImage(promptGlyph(it), 24.dp) }
+        BasicText(
+            text = label,
+            // Every button reads at full ink. The ring alone says which one A presses, so none looks disabled.
+            style = text(
+                theme.onBackground,
+                LocalFoldTheme.current.theme.style.type.dialogBody,
+                theme,
+            ).copy(textAlign = TextAlign.Center),
+            // A button's words stay on one line: two words never break into a letter a line.
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 @Composable

@@ -3,6 +3,8 @@ package app.foldcade.language
 object RommPhoneCopy {
     /** The form's lead: the phone is the way in, and typing is the fallback under [orType]. */
     const val scan = "Scan with your phone to sign in"
+    /** Under "Couldn't get a code from RomM." while the address QR shows. */
+    const val checkAddress = "Check the address, or scan to send it from your phone."
     const val orType = "Or type it"
     const val phoneHere = "Paste your RomM address on your phone"
     const val opening = "Getting your phone ready…"

@@ -397,9 +397,8 @@ fun relativeSaveWhen(millis: Long, now: Long, style: DateStyle, zone: ZoneId = Z
 fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
     if (state.loading || state.busy || state.confirmation != null) return emptyList()
     val confirm = promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA
-    if (state.error) return listOf(HintKey(confirm, if (state.offline) SavePickerCopy.wifi else SavePickerCopy.retry))
-    // The card's own button carries A.
-    if (state.setupInCard) return emptyList()
+    // The card's own button carries A: Wi-Fi or Try again, or Set up saves.
+    if (state.error || state.setupInCard) return emptyList()
     if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
     if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
     return when (state.health) {

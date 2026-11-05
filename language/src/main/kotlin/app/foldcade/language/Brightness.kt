@@ -15,7 +15,7 @@ object BrightnessCopy {
     const val row = "Brightness"
     const val promptTitle = "Change brightness from Foldcade"
     const val promptBody =
-        "Android asks once. Turn on “Modify system settings” for Foldcade, then come back."
+        "Turn on “Modify system settings” for Foldcade, then come back."
     const val allow = "Allow"
     const val adjust = "Brightness"
 
