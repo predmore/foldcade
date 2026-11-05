@@ -1,0 +1,49 @@
+diff --git a/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt b/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
+index 293186f0..ea454bee 100644
+--- a/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
++++ b/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
+@@ -2458,7 +2458,7 @@ private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: Hero
+             // A fixed painter draws on its first frame. The hero owns the single crossfade.
+             return LoadedCover(image.asPainter(context, filter), image.width.toFloat() / image.height, image)
+         }
+-        loadHeroLayout(sources.cover, sources.scene) { uri, role ->
++        val ready = loadHeroLayout(sources.cover, sources.scene) { uri, role ->
+             val px = when (role) {
+                 HeroImageRole.Backdrop -> BACKDROP_PX
+                 HeroImageRole.Ambient -> AMBIENT_PX
+@@ -2469,6 +2469,8 @@ private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: Hero
+             decoded[uri to role] ?: decode(uri, px, if (role == HeroImageRole.Screen) FilterQuality.None else FilterQuality.Low)
+                 ?.also { decoded[uri to role] = it }
+         }
++        if (java.io.File(context.filesDir, "hero-upgrade-qa").exists()) android.util.Log.i("HeroUpgradeQA", "decode wide=${ready?.wide} at=${SystemClock.uptimeMillis()}")
++        ready
+     }
+ 
+ private fun gridToken(app: FoldcadeApp): String {
+@@ -2526,7 +2528,7 @@ private fun rememberStagedHero(
+             if (record == null && query == null) return@withContext HeroSources(null, null)
+             app.art.restore()
+             val cover = app.covers.cached(record, query) ?: app.covers.fetch(record, query)
+-            chosen(cover?.cover, app.covers.cachedScene(record, query))
++            chosen(cover?.cover, if (java.io.File(context.filesDir, "hero-upgrade-qa").exists() && query?.title?.startsWith("3D Sonic", ignoreCase = true) == true) null else app.covers.cachedScene(record, query))
+         }
+         fun retainCurrentImages() {
+             val images = staged.images
+@@ -2541,12 +2543,16 @@ private fun rememberStagedHero(
+             staged = StagedHero(subject, if (sameGame) HeroTravel.None else travelOf(stagedPlace, place), images)
+             stagedPlace = place
+             stagedAt = SystemClock.uptimeMillis()
++            if (java.io.File(context.filesDir, "hero-upgrade-qa").exists()) android.util.Log.i("HeroUpgradeQA", "commit wide=${images.wide} at=$stagedAt dwell=$dwell")
+         }
+         loadHeroLayouts(
+             initial = { decodeHero(app, context, found, decoded) },
+             refresh = {
+                 if ((record != null || query != null) && found.scene?.complete != true) {
+-                    val refreshed = withContext(Dispatchers.Default) { chosen(found.cover, app.covers.fetchScene(record, query)) }
++                    val refreshed = withContext(Dispatchers.Default) {
++                        if (java.io.File(context.filesDir, "hero-upgrade-qa").exists() && query?.title?.startsWith("3D Sonic", ignoreCase = true) == true) HeroSources(found.cover, ArtScene(background = "https://cdn2.steamgriddb.com/hero/0948cbfdd2d2c78002695296a716a797.png", logo = "https://cdn2.steamgriddb.com/logo/16cecc456561392175ca54e0ed5ad558.png"))
++                        else chosen(found.cover, app.covers.fetchScene(record, query))
++                    }
+                     if (refreshed != found) decodeHero(app, context, refreshed, decoded) else null
+                 } else null
+             },

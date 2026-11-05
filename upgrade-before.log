@@ -1,0 +1,29 @@
+--------- beginning of main
+584218.073 15447 15558 I HeroUpgradeQA: decode wide=false at=584218073
+584218.073 15447 15447 I HeroUpgradeQA: commit wide=false at=584218073 dwell=180
+584218.374 15447 15501 I HeroUpgradeQA: decode wide=true at=584218374
+584218.375 15447 15447 I HeroUpgradeQA: commit wide=true at=584218374 dwell=180
+584238.542 15447 15515 I HeroUpgradeQA: decode wide=false at=584238542
+584238.542 15447 15447 I HeroUpgradeQA: commit wide=false at=584238542 dwell=180
+584240.284 15447 15502 I HeroUpgradeQA: decode wide=false at=584240284
+584240.290 15447 15447 I HeroUpgradeQA: commit wide=false at=584240290 dwell=180
+584240.291 15447 15472 I HeroUpgradeQA: decode wide=true at=584240291
+584240.471 15447 15447 I HeroUpgradeQA: commit wide=true at=584240471 dwell=180
+584245.164 15447 15502 I HeroUpgradeQA: decode wide=false at=584245164
+584245.169 15447 15447 I HeroUpgradeQA: commit wide=false at=584245169 dwell=180
+584246.856 15447 15472 I HeroUpgradeQA: decode wide=false at=584246856
+584246.858 15447 15447 I HeroUpgradeQA: commit wide=false at=584246858 dwell=180
+584246.859 15447 15472 I HeroUpgradeQA: decode wide=true at=584246859
+584247.038 15447 15447 I HeroUpgradeQA: commit wide=true at=584247038 dwell=180
+584248.531 15447 15515 I HeroUpgradeQA: decode wide=false at=584248531
+584248.531 15447 15447 I HeroUpgradeQA: commit wide=false at=584248531 dwell=180
+584250.053 15447 15502 I HeroUpgradeQA: decode wide=false at=584250053
+584250.061 15447 15447 I HeroUpgradeQA: commit wide=false at=584250061 dwell=180
+584250.062 15447 15515 I HeroUpgradeQA: decode wide=true at=584250062
+584250.242 15447 15447 I HeroUpgradeQA: commit wide=true at=584250242 dwell=180
+584251.751 15447 15473 I HeroUpgradeQA: decode wide=false at=584251751
+584251.758 15447 15447 I HeroUpgradeQA: commit wide=false at=584251758 dwell=180
+584254.491 15447 15472 I HeroUpgradeQA: decode wide=false at=584254491
+584254.493 15447 15447 I HeroUpgradeQA: commit wide=false at=584254493 dwell=180
+584254.493 15447 15473 I HeroUpgradeQA: decode wide=true at=584254493
+584254.674 15447 15447 I HeroUpgradeQA: commit wide=true at=584254674 dwell=180

@@ -1,0 +1,121 @@
+{
+  "before": {
+    "cached_trials": [
+      {
+        "decode_ready_ms": 584240291,
+        "commit_ms": 584240471,
+        "lag_ms": 180
+      },
+      {
+        "decode_ready_ms": 584246859,
+        "commit_ms": 584247038,
+        "lag_ms": 179
+      },
+      {
+        "decode_ready_ms": 584250062,
+        "commit_ms": 584250242,
+        "lag_ms": 180
+      },
+      {
+        "decode_ready_ms": 584254493,
+        "commit_ms": 584254674,
+        "lag_ms": 181
+      }
+    ],
+    "all_trials": [
+      {
+        "decode_ready_ms": 584218374,
+        "commit_ms": 584218374,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 584240291,
+        "commit_ms": 584240471,
+        "lag_ms": 180
+      },
+      {
+        "decode_ready_ms": 584246859,
+        "commit_ms": 584247038,
+        "lag_ms": 179
+      },
+      {
+        "decode_ready_ms": 584250062,
+        "commit_ms": 584250242,
+        "lag_ms": 180
+      },
+      {
+        "decode_ready_ms": 584254493,
+        "commit_ms": 584254674,
+        "lag_ms": 181
+      }
+    ],
+    "frame_diff": {
+      "frames": 193,
+      "max_yavg": 9.83158,
+      "above20": 0
+    }
+  },
+  "after": {
+    "cached_trials": [
+      {
+        "decode_ready_ms": 585361211,
+        "commit_ms": 585361211,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 585367810,
+        "commit_ms": 585367810,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 585371047,
+        "commit_ms": 585371049,
+        "lag_ms": 2
+      },
+      {
+        "decode_ready_ms": 585375210,
+        "commit_ms": 585375211,
+        "lag_ms": 1
+      }
+    ],
+    "all_trials": [
+      {
+        "decode_ready_ms": 585355888,
+        "commit_ms": 585355888,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 585361211,
+        "commit_ms": 585361211,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 585367810,
+        "commit_ms": 585367810,
+        "lag_ms": 0
+      },
+      {
+        "decode_ready_ms": 585371047,
+        "commit_ms": 585371049,
+        "lag_ms": 2
+      },
+      {
+        "decode_ready_ms": 585375210,
+        "commit_ms": 585375211,
+        "lag_ms": 1
+      }
+    ],
+    "frame_diff": {
+      "frames": 171,
+      "max_yavg": 11.0542,
+      "above20": 0
+    }
+  },
+  "production": {
+    "frame_diff": {
+      "frames": 50,
+      "max_yavg": 7.58331,
+      "above20": 0
+    }
+  }
+}
