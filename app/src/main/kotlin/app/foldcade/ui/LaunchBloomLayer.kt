@@ -94,13 +94,15 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
         BloomFrom.Cover -> art?.cover to BLOOM_COVER_PX
         BloomFrom.Scene, null -> (scene?.background ?: art?.cover) to (if (scene?.background != null) BLOOM_WIDE_PX else BLOOM_COVER_PX)
     }
-    // The tile's own size is in memory already. The sharper one replaces it once decoded.
-    val small = if (anchor?.from == BloomFrom.Tile) uri?.let { rememberCoverPainter(app, it, TILE_PX) } else null
+    val fromTile = anchor?.from == BloomFrom.Tile
+    // A tall box's tile was cut by [TileCrop], and that square, in memory already, stands in until
+    // the sharp cover decodes. Any other art stands in whole, as the sharp cover draws it, so the
+    // two never show different parts of the picture (review bot on #388).
+    val tileCut = if (fromTile) TileCrops.cut(uri) else null
+    val small = if (fromTile) uri?.let { rememberCoverPainter(app, it, TILE_PX, square = tileCut != null) } else null
     val sharp = uri?.let { rememberCoverPainter(app, it, px) }
     val painter = sharp?.painter ?: small?.painter
     val wide = uri != null && uri == scene?.background
-    val tileCut = TileCrops.cut(uri)
-    // The tile's own square stands in until the sharp cover decodes.
     val standIn = sharp == null && small != null
     var elapsed by remember { mutableLongStateOf(bloom.elapsed()) }
     // How far the growth has gone, counted in frames shown: the start keeps the main thread busy
@@ -153,7 +155,7 @@ private fun BloomArt(app: FoldcadeApp, bloom: ActiveBloom, panel: Panel) {
             // Art this screen did not show grows out of its middle as it fades in.
             null -> Frame(lerp(middle(full, painter.intrinsicSize), full, grow), 0f, timing.arrive(grown), 1f)
         }
-        val bias = bloomCropBias(wide, anchor?.from == BloomFrom.Tile, tileCut, standIn, rect.height / rect.width, grow)
+        val bias = bloomCropBias(wide, fromTile, tileCut, standIn, rect.height / rect.width, grow)
         val push = scale * timing.pushScale(grown)
         withTransform({ scale(push, push, full.center) }) {
             drawCropped(painter, rect, corner, alpha * presence, path, bias)
@@ -165,11 +167,12 @@ private data class Frame(val rect: Rect, val corner: Float, val alpha: Float, va
 
 /**
  * Where a growing box's crop sits, from its top, for [drawCropped], while the frame is [aspect]
- * (height over width). A box whose tile was cut by [TileCrop] shows the busiest rows inside the
- * tile's square as the frame widens, its title, in the sharp cover and in the tile's own copy
- * ([standIn]) alike, so neither loses the title and the swap between them does not jump (review
- * bot on #388). Any other box starts centred, as it was drawn, and rises to [BLOOM_COVER_BIAS],
- * where most titles are. Wide art stays centred.
+ * (height over width). A tall box whose tile was cut by [TileCrop] keeps the end of the tile's
+ * square its title is at as the frame widens, in the sharp cover and in the tile's own square
+ * ([standIn]) alike, so the first frame is the tile and the swap between them does not jump.
+ * Any other art stands in whole, so one bias fits both pictures: it starts centred, as its tile
+ * was cut, and rises to [BLOOM_COVER_BIAS], where most titles are. Wide art stays centred.
+ * (Review bot on #388, three rounds.)
  */
 internal fun bloomCropBias(wide: Boolean, fromTile: Boolean, cut: TileCut?, standIn: Boolean, aspect: Float, grow: Float): Float = when {
     wide -> 0.5f

@@ -80,4 +80,20 @@ class HeroNameFollowsArtTest {
         assertTrue(bloomCropBias(false, false, kart, standIn = false, aspect = 0.5f, grow = 1f) < 0.5f)
         assertEquals(0.5f, bloomCropBias(true, true, kart, standIn = false, aspect = 0.5f, grow = 1f), 0f)
     }
+
+    @Test fun artWithNoTileCutGrowsWithOneBiasForTheStandInAndTheSharpCover() {
+        // A landscape cover's tile is its centre square and records no cut: its stand-in is the whole
+        // picture, as the sharp cover is, so both take the same bias at every frame.
+        for (step in 0..10) {
+            val grow = step / 10f
+            val aspect = 1f - grow * (1f - 9f / 16f)
+            assertEquals(
+                bloomCropBias(false, true, null, standIn = true, aspect = aspect, grow = grow),
+                bloomCropBias(false, true, null, standIn = false, aspect = aspect, grow = grow),
+                0f,
+            )
+        }
+        // The first frame is the tile's centre square.
+        assertEquals(0.5f, bloomCropBias(false, true, null, standIn = true, aspect = 1f, grow = 0f), 0f)
+    }
 }

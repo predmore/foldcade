@@ -2404,7 +2404,7 @@ private fun lightness(image: coil3.Image): Float? {
  */
 private val decodedCovers = ConcurrentHashMap<String, MemoryCache.Key>()
 
-private fun coverId(uri: String, px: Int): String = "$px\u0000$uri"
+private fun coverId(uri: String, px: Int, square: Boolean = px == TILE_PX): String = "$px${if (square) "" else "w"}\u0000$uri"
 
 /**
  * The one request for [uri] at [px]. Art warmed ahead with it is the art the painter finds.
@@ -2412,7 +2412,7 @@ private fun coverId(uri: String, px: Int): String = "$px\u0000$uri"
  * at different sizes, and with one entry each evicted the other, so the top screen's
  * cover reloaded and faded in late.
  */
-private fun coverRequest(context: Context, uri: String, px: Int): ImageRequest =
+private fun coverRequest(context: Context, uri: String, px: Int, square: Boolean = px == TILE_PX): ImageRequest =
     ImageRequest.Builder(context)
         .data(CoverImage(uri))
         .size(px)
@@ -2420,7 +2420,7 @@ private fun coverRequest(context: Context, uri: String, px: Int): ImageRequest =
         // Columns already move and fade at the edges; a new cover arrives whole.
         .crossfade(px != TILE_PX)
         // A tile's copy is its square already, cut where the box keeps its title.
-        .apply { if (px == TILE_PX) transformations(TileCrop(uri)) }
+        .apply { if (square) transformations(TileCrop(uri)) }
         .build()
 
 private const val COVER_SIZE_KEY = "foldcade.px"
@@ -2667,22 +2667,24 @@ internal fun rememberCoverPainter(
     uri: String,
     px: Int,
     filterQuality: FilterQuality = FilterQuality.Low,
+    /** Cut to the tile's square ([TileCrop]). Every tile-size copy is, unless it asks for the whole picture. */
+    square: Boolean = px == TILE_PX,
 ): LoadedCover? {
     val context = LocalContext.current
-    val request = remember(uri, px) { coverRequest(context, uri, px) }
+    val request = remember(uri, px, square) { coverRequest(context, uri, px, square) }
     val painter = rememberAsyncImagePainter(request, app.images, filterQuality = filterQuality)
     val state by painter.state.collectAsState()
     val result = (state as? AsyncImagePainter.State.Success)?.result
     if (result != null) {
-        result.memoryCacheKey?.let { decodedCovers[coverId(uri, px)] = it }
+        result.memoryCacheKey?.let { decodedCovers[coverId(uri, px, square)] = it }
         val image = result.image
         if (image.width <= 0 || image.height <= 0) return null
         val fade = if (result.dataSource == DataSource.MEMORY_CACHE) 0 else result.request.crossfadeMillis
         return LoadedCover(painter, image.width.toFloat() / image.height, image, fade)
     }
     // Until the painter has it, the same cover already in memory draws at once.
-    val held = remember(uri, px) {
-        decodedCovers[coverId(uri, px)]?.let { app.images.memoryCache?.get(it)?.image }
+    val held = remember(uri, px, square) {
+        decodedCovers[coverId(uri, px, square)]?.let { app.images.memoryCache?.get(it)?.image }
             ?.takeIf { it.width > 0 && it.height > 0 }
             ?.let { LoadedCover(it.asPainter(context, filterQuality), it.width.toFloat() / it.height, it) }
     }
