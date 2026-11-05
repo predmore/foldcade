@@ -24,3 +24,23 @@ The first activity check exposed an existing cross-screen side-effect bug: a Set
 ## Cleanup
 
 No files/save-backups directory existed. Deleted this test install's registered RomM device (HTTP 204), uninstalled app.foldcade.uxrrouting, restored HOME to app.foldcade (confirmed dumpsys role; preceding pages session's role dump supplied the original because this firmware does not support get-role-holders), Wi-Fi remains its original on state, stay-on restored false. Released the turn; uxr-saves acquired it next. No release preferences, grants, saves or emulator settings were changed.
+
+## Final review fixes and second Thor pass
+
+Final head: 43efc3b99b11df256c62f332a85e9376aecea4ff, rebased onto main including #377 and #381. Required full suite rerun on that base passed: **2692 tests, zero failures/errors, two skipped; 187 tasks executed**. Log: `/tmp/uxr-routing-tests-rebased.log`. The previous independent branch run had 2677 passing tests; the added base contains the remaining tests.
+
+Opus round 1's four findings were all verified and fixed: one-tap form exit to Home; accurate root-folder guidance; animated guide overlay preserving the mounted body; neutral art symbol beside SteamGridDB. Opus round 2 returned NO FINDINGS and rated both surfaces 9/10 pending fresh Thor evidence. That fresh pass confirmed:
+
+- `second-art-form-bottom.png` and `second-art-open-app-bottom.png`: neutral art symbol, then one tap to the Home grid.
+- `second-romm-form-bottom.png` and `second-romm-open-app-bottom.png`: one tap from the RomM form to Home, bypassing the return Settings page.
+- `rebased-library-guide-{top,bottom}.png`: Android is at its disabled storage root; the free screen accurately says “Pick your games folder. Tap Use this folder, then Allow.” The text fits at the Thor's native size.
+- `guide-transition-bottom.mp4` / `guide-motion-sheet.png`: entry from the Home grid through Settings, then the guide rising over the existing companion, then fading back to the companion on cancellation. No hard cut or page reset. The top page returns to its original Add row (`rebased-library-cancel-top.png`).
+
+The second pass also caught a companion input gap beyond round 2: B on display 4 was ignored while Themes occupied the top. `PanelKeyActivity.dispatchPanelMeaning` now forwards decoded meanings to the active owned activity and keeps the parent Settings inactive. Session target assertions cover both physical directions and every layout. Verified on the Thor:
+
+- `final-themes-before-bottom-back-top.png` → `final-themes-after-bottom-back-top.png`: B on display 4 returns Themes to its original Theme row.
+- `final-licenses-bottom-scroll-top.png`: D-pad down on display 4 scrolls the top license text.
+- `final-licenses-after-bottom-back-top.png`: B on display 4 returns Licenses to its original row.
+- `rebased-themes-return-top.png`: the same input rule passed after rebasing and reinstalling with current main.
+
+Second-turn cleanup completed: no RomM device was registered (no credentials were entered), no save-backups directory existed, test package uninstalled, original Home holder restored from dumpsys role, original Wi-Fi state retained, stay-on false, turn released. No pending device work remains. Final small Opus re-check covers the input-forwarding addition and these fresh captures.
