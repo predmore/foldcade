@@ -1,0 +1,11 @@
+PR 375 — Opus round 1 resolutions
+
+1. Confirmed in code: an incoming empty HeroImages still held the outgoing backdrop at alpha 1. HeroCrossfade now receives a coverage predicate from the hero call site. Art-to-art retains the outgoing backdrop; art-to-no-art fades it out.
+2. Confirmed shared LauncherImage call sites include small notification and shelf slots. Legacy icons use ContentScale.Inside without padding by default. Only HeroArt requests a frame; its inset comes from the theme's heroInsetPx token.
+3. Confirmed in reviewer’s recording. Removed the delayed Boolean title removal. Height and alpha now collapse together on Motion’s dissolve curve alongside the decoded logo’s arrival.
+4. Confirmed loadHeroLayout rejected a layout when any requested image failed. It now selects a usable complete layout: missing logo -> wide + cover/title; missing wide -> ambient + cover + screenshot; missing screenshot -> cover; missing cover -> screenshot. Main candidates decode concurrently and commit only after all parts of the selected candidate resolve. Tests cover each failure and simultaneous decoding.
+5. Confirmed (null, null) composition sources could resolve to empty immediately. Source restore/fetch now runs inside the same timed readiness coroutine before decoding. Cached partial layouts can still upgrade after fetchScene. The old layout remains through the bounded wait.
+
+Optional: renamed About's Download fact to Size and put size/screens after normal metadata. Kept Play!'s original icon in a hero-only frame as allowed by the original task. Kept TravelFade's immutable surface+layout target: a layout change on the same surface uses the existing fade, consistent with animated transitions; no concrete failure was reported.
+
+Revised Thor QA completed under /tmp/uxr-hero-qa/: r2-landing-y-top.mp4, r2-grid-scroll-top.mp4 and r2-art-to-folder-top.mp4. About was activated (28-r2-about-top.png). The small-slot fixture posted a Shell notification (32-r2-small-notice-top.png); its legacy Android icon is visible at 48 px. Four logo cache files were held aside with Wi-Fi disabled; 33-r2-logo-offline-top.png shows the wide + box + text-title fallback. Cache, Wi-Fi and notification-listener access restored, synthetic notification dismissed, own QA RomM device deleted and own package uninstalled.

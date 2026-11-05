@@ -1,0 +1,756 @@
+[
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-grid-scroll-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-grid-scroll-bottom.png",
+    "frames": 394,
+    "max_yavg": 44.1467,
+    "above20": 12,
+    "top_frames": [
+      [
+        200,
+        44.1467
+      ],
+      [
+        238,
+        42.4905
+      ],
+      [
+        168,
+        41.5228
+      ],
+      [
+        132,
+        40.1116
+      ],
+      [
+        239,
+        39.0592
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-grid-scroll-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-grid-scroll-top.png",
+    "frames": 532,
+    "max_yavg": 18.4393,
+    "above20": 0,
+    "top_frames": [
+      [
+        247,
+        18.4393
+      ],
+      [
+        152,
+        17.4687
+      ],
+      [
+        319,
+        15.3475
+      ],
+      [
+        102,
+        13.218
+      ],
+      [
+        248,
+        13.1761
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-island-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-island-bottom.png",
+    "frames": 54,
+    "max_yavg": 7.91935,
+    "above20": 0,
+    "top_frames": [
+      [
+        24,
+        7.91935
+      ],
+      [
+        25,
+        4.3607
+      ],
+      [
+        27,
+        1.31869
+      ],
+      [
+        26,
+        0.998265
+      ],
+      [
+        22,
+        0.745583
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-island-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-island-top.png",
+    "frames": 200,
+    "max_yavg": 3.81421,
+    "above20": 0,
+    "top_frames": [
+      [
+        26,
+        3.81421
+      ],
+      [
+        28,
+        3.19706
+      ],
+      [
+        25,
+        2.229
+      ],
+      [
+        27,
+        1.50965
+      ],
+      [
+        29,
+        1.02244
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-landing-y-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-landing-y-bottom.png",
+    "frames": 447,
+    "max_yavg": 25.4643,
+    "above20": 3,
+    "top_frames": [
+      [
+        23,
+        25.4643
+      ],
+      [
+        22,
+        25.1872
+      ],
+      [
+        24,
+        21.9354
+      ],
+      [
+        46,
+        15.8054
+      ],
+      [
+        25,
+        7.01608
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-landing-y-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-landing-y-top.png",
+    "frames": 240,
+    "max_yavg": 14.4966,
+    "above20": 0,
+    "top_frames": [
+      [
+        28,
+        14.4966
+      ],
+      [
+        77,
+        14.4304
+      ],
+      [
+        27,
+        8.39952
+      ],
+      [
+        113,
+        5.70552
+      ],
+      [
+        22,
+        3.84179
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-launch-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-launch-bottom.png",
+    "frames": 37,
+    "max_yavg": 32.4525,
+    "above20": 1,
+    "top_frames": [
+      [
+        22,
+        32.4525
+      ],
+      [
+        21,
+        3.60873
+      ],
+      [
+        23,
+        1.78201
+      ],
+      [
+        20,
+        0.930213
+      ],
+      [
+        6,
+        0.488272
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/after-launch-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/after-launch-top.png",
+    "frames": 146,
+    "max_yavg": 25.2983,
+    "above20": 1,
+    "top_frames": [
+      [
+        54,
+        25.2983
+      ],
+      [
+        53,
+        19.9931
+      ],
+      [
+        55,
+        18.4934
+      ],
+      [
+        52,
+        18.1892
+      ],
+      [
+        51,
+        15.3955
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-grid-scroll-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-grid-scroll-bottom.png",
+    "frames": 406,
+    "max_yavg": 44.1792,
+    "above20": 13,
+    "top_frames": [
+      [
+        201,
+        44.1792
+      ],
+      [
+        237,
+        42.9544
+      ],
+      [
+        165,
+        41.7336
+      ],
+      [
+        133,
+        39.9169
+      ],
+      [
+        202,
+        39.2191
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-grid-scroll-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-grid-scroll-top.png",
+    "frames": 509,
+    "max_yavg": 50.3846,
+    "above20": 5,
+    "top_frames": [
+      [
+        339,
+        50.3846
+      ],
+      [
+        337,
+        37.0811
+      ],
+      [
+        118,
+        35.4988
+      ],
+      [
+        269,
+        22.6146
+      ],
+      [
+        227,
+        21.6482
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-island-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-island-bottom.png",
+    "frames": 55,
+    "max_yavg": 7.89481,
+    "above20": 0,
+    "top_frames": [
+      [
+        26,
+        7.89481
+      ],
+      [
+        27,
+        5.28014
+      ],
+      [
+        24,
+        0.745385
+      ],
+      [
+        32,
+        0.669757
+      ],
+      [
+        29,
+        0.637876
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-island-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-island-top.png",
+    "frames": 203,
+    "max_yavg": 8.53071,
+    "above20": 0,
+    "top_frames": [
+      [
+        27,
+        8.53071
+      ],
+      [
+        26,
+        5.20713
+      ],
+      [
+        29,
+        2.1592
+      ],
+      [
+        28,
+        1.96338
+      ],
+      [
+        32,
+        1.59227
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-landing-y-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-landing-y-bottom.png",
+    "frames": 385,
+    "max_yavg": 25.2213,
+    "above20": 1,
+    "top_frames": [
+      [
+        47,
+        25.2213
+      ],
+      [
+        48,
+        16.8948
+      ],
+      [
+        49,
+        15.4147
+      ],
+      [
+        80,
+        7.85451
+      ],
+      [
+        62,
+        6.74224
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-landing-y-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-landing-y-top.png",
+    "frames": 278,
+    "max_yavg": 33.4218,
+    "above20": 1,
+    "top_frames": [
+      [
+        109,
+        33.4218
+      ],
+      [
+        103,
+        15.6928
+      ],
+      [
+        65,
+        12.6559
+      ],
+      [
+        105,
+        12.4138
+      ],
+      [
+        63,
+        8.04413
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-launch-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-launch-bottom.png",
+    "frames": 41,
+    "max_yavg": 26.2722,
+    "above20": 2,
+    "top_frames": [
+      [
+        26,
+        26.2722
+      ],
+      [
+        23,
+        20.8272
+      ],
+      [
+        24,
+        3.36414
+      ],
+      [
+        27,
+        1.22713
+      ],
+      [
+        28,
+        0.91917
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/before-launch-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/before-launch-top.png",
+    "frames": 136,
+    "max_yavg": 23.8825,
+    "above20": 2,
+    "top_frames": [
+      [
+        36,
+        23.8825
+      ],
+      [
+        37,
+        20.3773
+      ],
+      [
+        35,
+        19.8964
+      ],
+      [
+        34,
+        18.0274
+      ],
+      [
+        33,
+        16.3399
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/final-grid-scroll-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/final-grid-scroll-bottom.png",
+    "frames": 494,
+    "max_yavg": 44.1645,
+    "above20": 13,
+    "top_frames": [
+      [
+        292,
+        44.1645
+      ],
+      [
+        333,
+        42.7974
+      ],
+      [
+        243,
+        41.5779
+      ],
+      [
+        193,
+        39.6968
+      ],
+      [
+        293,
+        39.3198
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/final-grid-scroll-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/final-grid-scroll-top.png",
+    "frames": 521,
+    "max_yavg": 20.7265,
+    "above20": 1,
+    "top_frames": [
+      [
+        151,
+        20.7265
+      ],
+      [
+        247,
+        18.7552
+      ],
+      [
+        102,
+        14.8402
+      ],
+      [
+        248,
+        13.0017
+      ],
+      [
+        152,
+        11.7352
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/final-landing-y-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/final-landing-y-bottom.png",
+    "frames": 311,
+    "max_yavg": 27.4246,
+    "above20": 2,
+    "top_frames": [
+      [
+        26,
+        27.4246
+      ],
+      [
+        24,
+        25.2134
+      ],
+      [
+        25,
+        18.2258
+      ],
+      [
+        46,
+        15.9405
+      ],
+      [
+        27,
+        3.92842
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/final-landing-y-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/final-landing-y-top.png",
+    "frames": 268,
+    "max_yavg": 11.1186,
+    "above20": 0,
+    "top_frames": [
+      [
+        104,
+        11.1186
+      ],
+      [
+        54,
+        10.582
+      ],
+      [
+        53,
+        8.20171
+      ],
+      [
+        55,
+        7.78016
+      ],
+      [
+        103,
+        5.89188
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-art-to-folder-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-art-to-folder-bottom.png",
+    "frames": 216,
+    "max_yavg": 43.4354,
+    "above20": 3,
+    "top_frames": [
+      [
+        43,
+        43.4354
+      ],
+      [
+        46,
+        24.5029
+      ],
+      [
+        48,
+        24.4668
+      ],
+      [
+        47,
+        19.1918
+      ],
+      [
+        45,
+        16.9011
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-art-to-folder-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-art-to-folder-top.png",
+    "frames": 189,
+    "max_yavg": 9.76269,
+    "above20": 0,
+    "top_frames": [
+      [
+        0,
+        9.76269
+      ],
+      [
+        41,
+        7.92869
+      ],
+      [
+        42,
+        7.51186
+      ],
+      [
+        40,
+        7.15543
+      ],
+      [
+        39,
+        6.18455
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-grid-scroll-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-grid-scroll-bottom.png",
+    "frames": 540,
+    "max_yavg": 43.8904,
+    "above20": 13,
+    "top_frames": [
+      [
+        205,
+        43.8904
+      ],
+      [
+        255,
+        42.4713
+      ],
+      [
+        169,
+        41.382
+      ],
+      [
+        135,
+        39.8977
+      ],
+      [
+        206,
+        38.9658
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-grid-scroll-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-grid-scroll-top.png",
+    "frames": 512,
+    "max_yavg": 18.5929,
+    "above20": 0,
+    "top_frames": [
+      [
+        249,
+        18.5929
+      ],
+      [
+        152,
+        17.4254
+      ],
+      [
+        297,
+        14.9975
+      ],
+      [
+        103,
+        13.179
+      ],
+      [
+        153,
+        13.115
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-landing-y-bottom.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-landing-y-bottom.png",
+    "frames": 272,
+    "max_yavg": 25.2653,
+    "above20": 1,
+    "top_frames": [
+      [
+        23,
+        25.2653
+      ],
+      [
+        24,
+        16.9105
+      ],
+      [
+        58,
+        15.8151
+      ],
+      [
+        25,
+        15.7659
+      ],
+      [
+        31,
+        4.22927
+      ]
+    ]
+  },
+  {
+    "video": "/tmp/uxr-hero-qa/motion/r2-landing-y-top.mp4",
+    "sheet": "/tmp/uxr-hero-qa/motion/r2-landing-y-top.png",
+    "frames": 248,
+    "max_yavg": 13.3529,
+    "above20": 0,
+    "top_frames": [
+      [
+        85,
+        13.3529
+      ],
+      [
+        35,
+        10.5008
+      ],
+      [
+        84,
+        9.26859
+      ],
+      [
+        34,
+        8.25167
+      ],
+      [
+        36,
+        4.37883
+      ]
+    ]
+  }
+]
