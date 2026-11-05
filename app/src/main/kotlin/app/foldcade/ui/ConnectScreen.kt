@@ -162,7 +162,7 @@ internal fun ConnectScreen(
             ) {
                 val side = Modifier.width(if (compact) PANE_COMPACT else PANE).fillMaxHeight()
                 // RomM leads with the phone, the way in that needs no typing; the fields are its fallback.
-                if (!artKey) PairingSide(model, app.rommPhone.state, theme, compact, side)
+                if (!artKey) PairingSide(model, app.rommPhone.state, app.shell.connectToken.isNotBlank(), theme, compact, side)
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!artKey) {
                         BasicText(
@@ -279,13 +279,14 @@ private fun pairingNote(hint: String): Boolean = hint == Copy.rommCodeExpired ||
  * a code, the same square kept empty with one line about why.
  */
 @Composable
-private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop?, theme: Theme, compact: Boolean, modifier: Modifier) {
+private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop?, tokenTyped: Boolean, theme: Theme, compact: Boolean, modifier: Modifier) {
     val design = theme.style
     val code = model.connectCode
     val scale = theme.motion.animatorScale(LocalContext.current.contentResolver)
     BoxWithConstraints(modifier) {
         // The square takes what the words under it leave, and never more than the side's width.
-        val square = minOf(maxWidth, maxHeight * if (compact) 0.52f else 0.56f)
+        // A code adds its digits and its address under the square, so the square gives them room.
+        val square = minOf(maxWidth, maxHeight * if (code != null) SQUARE_WITH_CODE else if (compact) 0.52f else 0.56f)
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)) {
             SlideSwap(target = code, scale = scale, distance = 16.dp, vertical = true, direction = { _, _ -> 1 }, key = { it?.code }) { shown ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -314,7 +315,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                             maxLines = 1,
                             autoSize = TextAutoSize.StepBased(minFontSize = design.type.hint * URL_SHRINK, maxFontSize = design.type.hint),
                         )
-                        if (!model.connectRetry && !model.connectBusy) WaitingChip(Copy.waitingForPhone, theme, scale)
+                        if (!model.connectRetry && !model.connectBusy && !tokenTyped) WaitingChip(Copy.waitingForPhone, theme, scale)
                     } else {
                         val waitingForCode = model.connectOrigin.isNotBlank() && !model.connectRetry && !model.connectBusy
                         val phoneUrl = (phone as? app.foldcade.language.KeyDrop.Open)?.url?.takeIf { app.foldcade.language.rommNeedsAddress(model) }
@@ -336,11 +337,13 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                             modifier = Modifier.fillMaxWidth(),
                             style = formStyle(if (hint != null || leads) theme.onBackground else theme.muted, if (leads) design.type.menuRow else design.type.hint, theme, bold = hint != null || leads)
                                 .copy(textAlign = TextAlign.Center),
-                            maxLines = 3,
+                            maxLines = if (leads) 1 else 3,
+                            // The lead line stays one line, a little smaller, rather than leave a word alone under it.
+                            autoSize = if (leads) TextAutoSize.StepBased(minFontSize = design.type.hint, maxFontSize = design.type.menuRow) else null,
                             overflow = TextOverflow.Ellipsis,
                         )
                         // Under the phone's QR: that Foldcade waits for it, or looks for a RomM nearby meanwhile.
-                        if (leads) WaitingChip(if (model.connectSearching) RommPhoneCopy.searching else Copy.waitingForPhone, theme, scale)
+                        if (leads && !tokenTyped) WaitingChip(if (model.connectSearching) RommPhoneCopy.searching else Copy.waitingForPhone, theme, scale)
                         else if (model.connectOrigin.isBlank() && model.connectFoundOrigin == null) BasicText(
                             if (model.connectSearching) RommPhoneCopy.searching else RommPhoneCopy.notFound,
                             style = formStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
@@ -528,6 +531,9 @@ private val COMPACT_BELOW = 640.dp
  * bottom (~538dp) 190dp leaves them ~270dp. The square is about 190 or 150dp tall.
  */
 private val PANE = 240.dp
+
+/** The square's share of the side's height while a code, its address and the waiting note sit under it. */
+private const val SQUARE_WITH_CODE = 0.46f
 private val PANE_COMPACT = 190.dp
 private val HEADER_MAX = 560.dp
 
