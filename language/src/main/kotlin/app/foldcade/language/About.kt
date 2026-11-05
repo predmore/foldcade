@@ -19,6 +19,8 @@ object GameAboutCopy {
     const val developer = "Developer"
     const val publisher = "Publisher"
     const val players = "Players"
+    const val size = "Size"
+    const val screens = "Screens"
 
     /** The page's one line when nothing about the game is known yet. */
     const val noInfo = "No info for this game yet. It comes from RomM, or an ES-DE, Batocera or Skraper media folder."
@@ -43,6 +45,8 @@ fun aboutFacts(
     developer: String?,
     publisher: String?,
     players: String?,
+    sizeBytes: Long? = null,
+    bothScreens: Boolean = false,
 ): List<AboutFact> = buildList {
     year?.let { add(AboutFact(GameAboutCopy.released, it.toString())) }
     val named = genres.mapNotNull { it.trim().ifEmpty { null } }
@@ -52,6 +56,8 @@ fun aboutFacts(
     madeBy?.let { add(AboutFact(GameAboutCopy.developer, it)) }
     sentBy?.takeUnless { madeBy != null && it.equals(madeBy, ignoreCase = true) }?.let { add(AboutFact(GameAboutCopy.publisher, it)) }
     players?.trim()?.ifEmpty { null }?.let { add(AboutFact(GameAboutCopy.players, it)) }
+    sizeBytes?.takeIf { it > 0 }?.let { add(AboutFact(GameAboutCopy.size, formatDownloadSize(it))) }
+    if (bothScreens) add(AboutFact(GameAboutCopy.screens, Copy.usesBothScreens))
 }
 
 /**

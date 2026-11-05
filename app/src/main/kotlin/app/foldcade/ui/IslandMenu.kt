@@ -539,7 +539,7 @@ private fun PlayToday(app: FoldcadeApp) {
         playToday(app.plays.spans(), System.currentTimeMillis(), ZoneId.systemDefault())
     }
     Glyph(R.drawable.ic_status_playtime, null)
-    BasicText(
+    if (today > 0L) BasicText(
         text = playDuration(today),
         style = TextStyle(color = theme.onBackground, fontSize = LocalFoldTheme.current.theme.style.type.hint, fontFamily = theme.font),
     )

@@ -50,6 +50,12 @@ class GameAboutTest {
     }
 
     @Test
+    fun downloadSizeAndScreensHaveAHomeInAbout() {
+        assertEquals(listOf(AboutFact(GameAboutCopy.size, "1.5 GB"), AboutFact(GameAboutCopy.screens, Copy.usesBothScreens)),
+            aboutFacts(null, emptyList(), null, null, null, 1536L * 1024 * 1024, true))
+    }
+
+    @Test
     fun theFactsListWhatIsKnownInOrderAndNameAMakerOnce() {
         assertEquals(
             listOf(

@@ -75,6 +75,8 @@ class PlayTimeCopyTest {
         val us = DateStyle()
         assertNull(heroPlayLine(0L, null, now, zone, us))
         assertEquals("Played 1m · Today", heroPlayLine(61_000L, now, now, zone, us))
+        assertEquals("Used 1m · Today", heroPlayLine(61_000L, now, now, zone, us, game = false))
+        assertNull(heroPlayLine(0L, null, now, zone, us, game = false))
         assertEquals("Played 2h 5m · Yesterday", heroPlayLine(125 * 60_000L, now - 86_400_000L, now, zone, us))
         // 1_760_000_000_000 is 9 Oct 2025; a week before reads in the device's order.
         assertEquals("Played 1m · Oct 2", heroPlayLine(61_000L, now - 7 * 86_400_000L, now, zone, us))

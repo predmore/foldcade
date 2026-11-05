@@ -3585,6 +3585,21 @@ class ShellController(
         ))
     }
 
+    private fun nonGameApp(game: ShelfGame): Boolean =
+        home.item(game.id)?.kind?.isApp ?: game.androidPackage?.let { name ->
+            installed.firstOrNull { it.packageName == name }?.let { appKind(it).isApp }
+        } ?: false
+
+    /** Only the hero observes a brief cancelled-download result. */
+    var stoppedDownload by mutableStateOf<Pair<String, Long>?>(null)
+        private set
+
+    fun noteDownloadStopped(id: String): Pair<String, Long> = (id to nowMillis()).also { stoppedDownload = it }
+
+    fun clearDownloadStopped(notice: Pair<String, Long>) {
+        if (stoppedDownload == notice) stoppedDownload = null
+    }
+
     private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
         HeroItem(
             key = game.id,
@@ -3593,6 +3608,7 @@ class ShellController(
             mark = game.mark,
             packageName = game.androidPackage,
             emptyShelfHint = game.emptyShelfHint,
+            game = !nonGameApp(game),
             availability = game.availabilityLabel ?: folderLine(game.id) ?: streamLine(game) ?: downloadLine(game.id),
         ),
     )
@@ -3609,7 +3625,7 @@ class ShellController(
     private fun downloadLine(id: String): String? {
         if (id.isEmpty() || !onServer(id) || isDownloading(id)) return null
         val copy = home.copies(id).firstOrNull() ?: return null
-        return downloadFacts(plugins.library(copy.backendId)?.displayName, copy.sizeBytes)
+        return downloadFacts(plugins.library(copy.backendId)?.displayName)
     }
 
     /** Find's subject as the top screen shows it. A group shows as its folder does. */
@@ -3631,6 +3647,7 @@ class ShellController(
                 detail = game.shortText,
                 mark = game.mark,
                 packageName = game.androidPackage,
+                game = !nonGameApp(game),
                 availability = game.availabilityLabel ?: streamLine(game) ?: downloadLine(game.id),
             ),
         )

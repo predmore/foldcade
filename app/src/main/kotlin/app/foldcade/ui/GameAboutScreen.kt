@@ -102,7 +102,8 @@ internal fun GameAboutScreen(app: FoldcadeApp, page: GameAboutPage, scale: Float
                 val coverMax = maxWidth * COVER_SHARE
                 Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(GAP)) {
                     AboutCover(app, record, query, game?.mark, Modifier.fillMaxHeight().widthIn(max = coverMax))
-                    val facts = details?.let { aboutFacts(it.releaseYear, it.genres, it.developer, it.publisher, it.players) }.orEmpty()
+                    val facts = aboutFacts(details?.releaseYear, details?.genres.orEmpty(), details?.developer, details?.publisher, details?.players,
+                        sizeBytes = record?.sizeBytes, bothScreens = game?.occupiesBothDisplays == true)
                     AboutCard(app, record, query, facts, details?.summary, theme, Modifier.weight(1f))
                 }
             }

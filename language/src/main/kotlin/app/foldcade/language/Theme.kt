@@ -83,6 +83,7 @@ object Metrics {
 object Copy {
     const val dolphinFiles = "Dolphin files"
     const val dolphinFolderCard = "Slot A needs a GCI Folder to sync. In Dolphin, open Settings › Config › GameCube and set GameCube Slot A Device to GCI Folder. Your old card keeps its saves, but games won’t see them in GCI Folder mode."
+    const val downloadStopped = "Download stopped"
     const val usesBothScreens = "Both screens"
     /** The command center's button: the grid on that screen, to open a second app there. */
     const val openAnApp = "Open an app"

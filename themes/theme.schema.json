@@ -1199,14 +1199,14 @@
                         "downloadBarPx": {
                             "type": "number",
                             "minimum": 0.0,
-                            "default": 6.0,
+                            "default": 12.0,
                             "description": "px; follows base.strokeScale"
                         },
                         "downloadTrackAlpha": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
-                            "default": 0.22,
+                            "default": 0.4,
                             "description": "follows base.fillScale"
                         },
                         "stripPx": {

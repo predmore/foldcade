@@ -322,8 +322,8 @@ A home grid tile, beyond its corner (`iconRadius`) and glow.
 | `tile.statusChipPx` | 36 | The status chip's height |
 | `tile.statusIconPx` | 24 | Its badge |
 | `tile.statusBackingAlpha` | 0.72 | Its backing over cover art |
-| `tile.downloadBarPx` | 6 | The download bar's thickness |
-| `tile.downloadTrackAlpha` | 0.22 | Its empty track |
+| `tile.downloadBarPx` | 12 | The download bar's thickness |
+| `tile.downloadTrackAlpha` | 0.4 | Its empty track |
 | `tile.stripPx` | 6 | The bar under a wide grid that shows where the screen is |
 | `tile.stripAlpha` | 0.45 | Its track, over `muted` |
 | `tile.homeTargetStrokePx` | 3 | The Home pill's outline above a group's grid while a game is held |

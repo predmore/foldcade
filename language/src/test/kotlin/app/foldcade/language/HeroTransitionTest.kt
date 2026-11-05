@@ -174,16 +174,12 @@ class HeroTransitionTest {
     }
 
     @Test
-    fun aGameOnlyOnAServerSaysWhereAndHowMuchItDownloads() {
-        assertEquals("On RomM · 512 MB", downloadFacts("RomM", 512L * 1024 * 1024))
-        // The size is left out when the library does not know it; the server's name when it has none.
-        assertEquals("On RomM", downloadFacts("RomM", null))
-        assertEquals("On RomM", downloadFacts(" RomM ", 0L))
-        assertEquals("${Copy.notOnDevice} · 1.5 GB", downloadFacts(" ", 1536L * 1024 * 1024))
-        assertEquals(
-            "Nintendo 3DS · On RomM · 512 MB · Both screens",
-            heroFacts("Sonic 3D 2", "Nintendo 3DS", downloadFacts("RomM", 512L * 1024 * 1024), Copy.usesBothScreens),
-        )
+    fun aGameOnlyOnAServerSaysWhereWithoutDownloadDetails() {
+        assertEquals("On RomM", downloadFacts("RomM"))
+        assertEquals("On RomM", downloadFacts(" RomM "))
+        assertEquals(Copy.notOnDevice, downloadFacts(" "))
+        assertEquals(Copy.notOnDevice, downloadFacts(null))
+        assertEquals("Nintendo 3DS · On RomM", heroFacts("Sonic 3D 2", "Nintendo 3DS", downloadFacts("RomM")))
     }
 
     @Test
