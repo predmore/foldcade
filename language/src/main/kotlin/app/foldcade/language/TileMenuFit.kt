@@ -58,7 +58,7 @@ fun tileMenuFit(rows: List<Row>, screenHeightDp: Float, insetDp: Float, fontScal
     val tiles = rows.slice(block)
     val lines = tiles.chunked(quickTileColumns)
     val tilesDp = if (lines.isEmpty()) 0f else lines.sumOf { line ->
-        val words = line.maxOf { tileLabelLines(it) }
+        val words = line.maxOf { tileLabelLines(it, line.size) }
         (size.tileDp + size.tileLabelGapDp + size.tileLabelLineDp * fontScale * words).toDouble()
     }.toFloat() + size.tileLineGapDp * (lines.size - 1) + size.tileBlockPadDp * 2
     val rowCount = rows.size - tiles.size
@@ -69,5 +69,10 @@ fun tileMenuFit(rows: List<Row>, screenHeightDp: Float, insetDp: Float, fontScal
     return TileMenuFit(needed, room)
 }
 
-/** Lines a tile's word takes: New collection takes two, every other word one. */
-fun tileLabelLines(row: Row): Int = if (row == Row.NewCollection) 2 else 1
+/**
+ * Lines a tile's word takes on a line of [lineSize] tiles: New collection takes two on a full
+ * line, where its neighbours leave it one tile's width, and one where the line has room to spare.
+ * Every other word takes one.
+ */
+fun tileLabelLines(row: Row, lineSize: Int = quickTileColumns): Int =
+    if (row == Row.NewCollection && lineSize >= quickTileColumns) 2 else 1

@@ -40,7 +40,7 @@ class BrightnessTest {
     @Test
     fun withoutAccessEveryKeyOnTheRowAsksFirst() {
         val opened = reduce(PickerModel(count = 2, rowsPerPage = 2), Meaning.RightPanel).first
-        assertNull(panelHints(opened))
+        assertEquals(listOf(HintKey(PromptKey.FaceA, BrightnessCopy.allow), HintKey(PromptKey.FaceB, Copy.back)), panelHints(opened))
         assertEquals("Brightness  Allow", rowLabel(Row.Brightness, opened))
         listOf(Meaning.Activate, Meaning.MoveLeft, Meaning.MoveRight).forEach { meaning ->
             val asked = reduce(opened, meaning).first

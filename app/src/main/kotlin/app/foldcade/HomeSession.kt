@@ -750,11 +750,26 @@ class HomeSession(
         if (collectionId !in board.folders) return index
         val focus = if (game == null) board.slots.indexOf(collectionId).coerceAtLeast(0) else index
         openNaming(collectionId, focus, fresh = true)
+        made = if (game != null) MadeCollection(collectionId, game) else null
         return focus
+    }
+
+    /** A collection just made to hold a game, while its name is typed. See [takeMade]. */
+    private var made: MadeCollection? = null
+
+    /**
+     * Once the name of the collection made for a game is saved, that collection and its game,
+     * once: the shell shows Add to again with it ticked, so the player sees both the name and
+     * the game in it (review-C 71). Null while the keyboard is open, after B, or for any other naming.
+     */
+    fun takeMade(): MadeCollection? {
+        if (typing != null) return null
+        return made.also { made = null }?.takeIf { it.named && it.collectionId in board.folders }
     }
 
     /** Opens the keyboard on the name of the folder or collection at [index], all of it selected. */
     fun startRename(index: Int) {
+        made = null
         val id = slots().getOrNull(index) ?: return
         if (id !in board.folders) return
         openNaming(id, index, fresh = false)
@@ -781,9 +796,14 @@ class HomeSession(
             startOnChips = fresh,
             onDone = { name ->
                 board = renameFolder(board, id, name)
+                // Saved: Add to comes back with the new collection ticked ([takeMade]).
+                made = made?.takeIf { it.collectionId == id }?.copy(named = true)
                 closeTyping()
             },
-            onCancel = ::closeTyping,
+            onCancel = {
+                made = null
+                closeTyping()
+            },
         )
     }
 
@@ -1371,3 +1391,6 @@ class LibraryView internal constructor(
             ordered.map { face(it.id).copy(onGrid = it.onHome) }, rowsBuilt = true)
     }
 }
+
+/** A collection made to hold [gameId], for Add to to show it ticked once it is named. */
+data class MadeCollection(val collectionId: String, val gameId: String, val named: Boolean = false)

@@ -104,7 +104,8 @@ class ContractTest {
             gridHints(null, HomeKeys.Moving, map),
         )
         assertEquals(
-            listOf(PromptKey.FaceX, PromptKey.FaceY, PromptKey.L1, PromptKey.R1, PromptKey.L2, PromptKey.Start, PromptKey.FaceB),
+            // Erase, Space, Shift and Done wear their buttons on their keys, so only the caret and Cancel are named.
+            listOf(PromptKey.L1, PromptKey.R1, PromptKey.FaceB),
             gridHints(null, HomeKeys.Typing, map).map { it.key },
         )
         assertEquals(

@@ -658,7 +658,7 @@ class ThemeSettings internal constructor(reader: ThemeStyleReader) {
 
 class ThemeFind internal constructor(reader: ThemeStyleReader) {
     /** The faint ring on the best result before the D-pad reaches it. */
-    val ringRestAlpha = reader.fraction("find", "ringRestAlpha", .38f)
+    val ringRestAlpha = reader.fraction("find", "ringRestAlpha", 0f)
     val filterAlpha = reader.fraction("find", "filterAlpha", .07f, TokenRole.Fill)
     val chosenAlpha = reader.fraction("find", "chosenAlpha", .30f, TokenRole.Fill)
     val chosenRimDp = reader.number("find", "chosenRimDp", 1.5f, role = TokenRole.Stroke)

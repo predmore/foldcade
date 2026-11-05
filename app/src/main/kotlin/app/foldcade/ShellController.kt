@@ -60,6 +60,8 @@ import app.foldcade.language.HintKey
 import app.foldcade.language.HomeKeys
 import app.foldcade.language.libraryFindFilter
 import app.foldcade.language.PanelLevel
+import app.foldcade.language.collectionRows
+import app.foldcade.language.tileMenu
 import app.foldcade.language.findKeyboardHints
 import app.foldcade.language.findResultHints
 import app.foldcade.language.KeyFocus
@@ -90,6 +92,8 @@ import app.foldcade.language.actionRows
 import app.foldcade.language.chordIndex
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroFolder
+import app.foldcade.language.HIDDEN_HERO_KEY
+import app.foldcade.language.MARK_HIDDEN
 import app.foldcade.language.folderCount
 import app.foldcade.language.FoundFolderCopy
 import app.foldcade.language.HeroItem
@@ -1021,6 +1025,7 @@ class ShellController(
             if (step != null && step.handled) {
                 commitHome(catalog = wasSelecting && meaning == Meaning.Back)
                 showBoard(step.focus ?: model.focus, keepDialog = true)
+                home.takeMade()?.let(::showMadeCollection)
                 if (!wasInFolder && home.openedFolderHasGame()) Log.i("Foldcade", "library-ui games")
                 if (!wasHeld && home.board.hold != null) Log.i("Foldcade", "home-ui lifted")
                 if (wasInGroup && home.board.hold?.openFolderId == null && home.board.hold != null) Log.i("Foldcade", "home-ui carried out")
@@ -1346,8 +1351,48 @@ class ShellController(
      */
     fun emptyCollection(): HomeFolder? = if (showingHome() && find == null) home.emptyCollection() else null
 
+    /**
+     * A collection just named, made to hold the focused game: Y's card comes back on Add to with
+     * the new collection's row focused and ticked, so the name and the game in it both show.
+     * B closes it as usual. Nothing opens when the focus has left that game, as after Find.
+     */
+    private fun showMadeCollection(made: MadeCollection) {
+        val shown = withShelf(model)
+        if (!showingHome(shown) || shown.panel != null || shown.dialog != null || shown.tileActions?.game != made.gameId) return
+        val index = collectionRows(shown.tileActions).indexOfFirst { it is Row.Collection && it.folderId == made.collectionId }
+        if (index < 0) return
+        home.keepMenu(made.gameId)
+        publish(shown.copy(panel = tileMenu(shown.focus, shown.layout).copy(level = PanelLevel.Collections, index = index, via = PanelLevel.Actions)))
+        cue(model.themeIndex, "notify")
+    }
+
+    /** Home's folder or collection [id], for its symbol on a menu row. */
+    fun homeFolder(id: String): HomeFolder? = home.board.folders[id]
+
+    /**
+     * The folder or collection open on Home's grid, which the place pill over it names. Null at
+     * Home's top level, in All games, Folders or Hidden, while Find is open, or in an empty
+     * collection, whose own page names it.
+     */
+    fun openPlace(): HomeFolder? {
+        if (!showingHome() || find != null) return null
+        val board = home.board
+        if (board.allOpen || board.foldersOpen) return null
+        val folder = board.openFolderId?.let { board.folders[it] } ?: return null
+        return folder.takeIf { home.emptyCollection() == null }
+    }
+
     /** An empty collection keeps its name and look on the top screen, where an empty slot shows nothing. */
     fun emptyCollectionHero(): HeroSubject? = emptyCollection()?.let(::folderHero)
+
+    /**
+     * Hidden with nothing in it: the place itself, its shut eye and "Nothing hidden", so the top
+     * screen names where the player is, as every other place does (review-B 135).
+     */
+    fun emptyHiddenHero(): HeroSubject? =
+        if (!model.libraryGrid && model.homeGrid == HomeGrid.Hidden && model.count == 0 && find == null) {
+            HeroSubject.Folder(HeroFolder(key = HIDDEN_HERO_KEY, name = Copy.hiddenApps, count = null, mark = MARK_HIDDEN, note = Copy.noHiddenApps))
+        } else null
 
     private fun folderHero(folder: HomeFolder): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
@@ -1377,6 +1422,7 @@ class ShellController(
         commitHome()
         showBoard(step.focus ?: model.focus, keepDialog = true)
         step.cue?.slot?.let { cue(model.themeIndex, it) }
+        home.takeMade()?.let(::showMadeCollection)
     }
 
     /** Characters a hardware keyboard typed: onto Find's query, or the name on the open keyboard. */

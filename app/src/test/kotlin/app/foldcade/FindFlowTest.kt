@@ -59,7 +59,7 @@ class FindFlowTest {
         assertEquals("Puzzle", shell.focusedGame()?.title)
         // Start goes to the results, on the best one, where A, X and Y mean what they do on a tile.
         // The keys' own hints while typing; the results' only once they have the D-pad.
-        assertEquals(FindCopy.type, shell.findHints()!!.first().label)
+        assertEquals(FindCopy.clear, shell.findHints()!!.last().label)
         shell.onMeaning(Meaning.Done, HostScreen.Bottom)
         assertTrue(find.onResults)
         assertEquals(HomeKeys.FindResults, shell.homeKeys())

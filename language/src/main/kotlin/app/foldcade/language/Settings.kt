@@ -529,7 +529,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     in choiceRows -> RowControl.Choice(value.orEmpty())
     Row.MusicVolume, Row.Brightness -> RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
-    Row.EditHome, Row.AddToCollection, is Row.RommConnection,
+    Row.EditHome, Row.Folders, Row.Hidden, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
     Row.Backup, is Row.PickFolderAgain, Row.Systems,
     -> RowControl.Opens

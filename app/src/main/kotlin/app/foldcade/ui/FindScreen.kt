@@ -77,8 +77,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Find on the screen with the keys: one strip of results above the controller keyboard.
- * The strip shows the best result first; the ring rests faintly on it while the keys have
- * the D-pad, so Up or Start plainly lands there, and lights fully once the results have it.
+ * The strip shows the best result first. Its ring lights only once the results have the
+ * D-pad, so one ring is lit at a time; the theme may let it rest faintly there while the keys do.
  * Results pop in one after another as they arrive, and a result still there after the next
  * letter glides to its new place rather than popping again. [tile] draws one result as the
  * grid would draw it. [fieldStyle] puts the query, compact, and the filters over the strip,
@@ -141,6 +141,7 @@ internal fun FindKeys(
                 titleBlock = titleBlock,
                 scale = scale,
                 emptyStyle = emptyStyle,
+                alone = fieldStyle != null,
                 onTap = onTapResult,
                 tile = tile,
             )
@@ -154,6 +155,8 @@ internal fun FindKeys(
                 modifier = Modifier.weight(1f),
                 chipRow = false,
                 done = FindCopy.results,
+                // With nothing found, Results has nowhere to go, so it looks it.
+                doneEnabled = session.results.isNotEmpty(),
                 // L2 steps the filters here; a search has no case to shift.
                 shiftButton = null,
             )
@@ -174,6 +177,7 @@ private fun ResultStrip(
     titleBlock: Dp,
     scale: Float,
     emptyStyle: TextStyle,
+    alone: Boolean,
     onTap: (Int) -> Unit,
     tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> Unit,
 ) {
@@ -202,8 +206,12 @@ private fun ResultStrip(
         val lead by eased(spare / 2f, motion.durationTravel, scale)
         // A name may reach into the gaps beside its tile, and a lone result's across the strip's empty width.
         val titleWidth = with(density) { if (results.size == 1) (widthPx - padPx * 2).toDp() else cell + gap }
-        if (results.isEmpty()) {
-            BasicText(FindCopy.noMatches, Modifier.align(Alignment.Center), style = emptyStyle)
+        // The top screen's card names an empty search and its next step. Alone, this screen does.
+        if (results.isEmpty() && alone) {
+            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                BasicText(FindCopy.noMatches, style = emptyStyle.copy(color = theme.onBackground))
+                BasicText(session.noMatchStep, style = emptyStyle)
+            }
         }
         // Motion belongs to the result list, not its tile. Offscreen results must finish
         // their original pop and keep gliding when a query changes their rank, so entering
@@ -276,7 +284,7 @@ private data class ResultPosition(
 
 /**
  * The strip's one ring. It glides from result to result like the grid's, full while the
- * results have the D-pad and faint on the best result while the keys do.
+ * results have the D-pad, and at the theme's rest strength on the best result while the keys do.
  */
 @Composable
 private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, top: Float, pitchPx: Float, scale: Float) {
@@ -493,14 +501,16 @@ internal fun PillCarousel(
                         val on by eased(if (index == chosen) 1f else 0f, motion.durationFocus, scale)
                         Box(
                             Modifier
-                                // A pill the row's edge would cut into its word is gone instead, so the edge
-                                // shows whole pills or none: no "DS" left of a "3DS". Its padding may pass the edge.
+                                // A pill the row's edge cuts into peeks in, fading as more of it is cut, so the
+                                // row reads as going on past its ends rather than leaving a hole there
+                                // (review-C 161). Its padding may pass the edge at full strength.
                                 .graphicsLayer {
                                     // The chosen pill always shows; the row centres on it.
                                     if (index == chosen) return@graphicsLayer
                                     val span = spans[index] ?: return@graphicsLayer
                                     val hidden = maxOf(scroll - span.left, span.right - scroll - room, 0f)
-                                    alpha = 1f - (hidden / padPx).coerceIn(0f, 1f)
+                                    val cut = (hidden - padPx).coerceAtLeast(0f)
+                                    alpha = 1f - (cut / (span.width * PEEK_SHARE)).coerceIn(0f, 1f)
                                 }
                                 .then(if (onTap != null) Modifier.hostPress { onTap(index) } else Modifier)
                                 .onGloballyPositioned {
@@ -620,6 +630,9 @@ private const val POP_STAGGER_LIMIT = 8
 
 /** The L2 and R2 glyphs beside the filters, as a share of their text. */
 private const val GLYPH_SHARE = 1.5f
+
+/** A pill cut by the row's edge is gone once this share of its width is past the edge. */
+private const val PEEK_SHARE = 0.7f
 private const val FADE = 52f
 
 /** The name card's padding, in the top screen's pixels, as Home's name card has. */
