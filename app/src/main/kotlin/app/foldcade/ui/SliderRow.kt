@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -74,8 +75,22 @@ fun SliderRow(
         fontFamily = theme.font,
         textAlign = TextAlign.End,
     )
-    // The same margins as a menu row, so the words line up down the list.
-    Column(modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp)) {
+    // The same margins as a menu row, so the words line up down the list. A labelled row with
+    // art leads with it in the menu rows' art column, so Settings' rows stay one list.
+    val lead = if (showLabel) icon else null
+    Row(modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    if (lead != null) {
+        val art = themeIcon(lead)
+        Box(Modifier.padding(end = 14.dp).size(32.dp), contentAlignment = Alignment.Center) {
+            Image(
+                painter = art.painter,
+                contentDescription = null,
+                colorFilter = art.tint(theme.onBackground),
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = theme.style.menu.artRestAlpha.let { it + (1f - it) * lit } },
+            )
+        }
+    }
+    Column(Modifier.weight(1f)) {
         if (showLabel) Row(
             Modifier
                 .fillMaxWidth()
@@ -128,6 +143,7 @@ fun SliderRow(
                 )
             }
         }
+    }
     }
 }
 

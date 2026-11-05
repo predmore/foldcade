@@ -25,7 +25,8 @@ data class FoldNotice(
 
 object NoticeCopy {
     const val access = "Notifications"
-    const val accessValue = "Allow"
+    /** The row shows only until access is granted, so its value is the state it is in. */
+    const val accessValue = "Off"
     const val accessTitle = "Show notifications in R1"
     const val accessBody =
         "Android asks once. Turn on notification access for Foldcade, then come back. They stay on this device."

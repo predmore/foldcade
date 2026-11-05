@@ -17,11 +17,11 @@ Pins preserve whether the game came from the standard or Gold build. Without an 
 
 Foldcade reads `.steam`, `.epic`, `.gog`, `.amazon`, and `.pcgame` exports. Each file holds GameNative's numeric game ID; its extension names the store. Keep the original extension.
 
-With **Settings › Library › Find games** enabled, these folders are found automatically on internal storage and mounted SD cards:
+With **Settings › Library › Auto-find games** on, these folders are found automatically on internal storage and mounted SD cards:
 
 - `ROMs` / `roms` and `Emulation/roms`, including `GameNative`, `steam`, `epic`, `gog`, `amazon`, or `pcgame` folders inside them.
 
-Foldcade names the games it found in R1. A removed folder stays removed. Folders already added through **Settings › Library › Add › Add a folder** continue working without Find games, including exports in their subfolders. Use **Add a folder** for any other location.
+Foldcade names the games it found in R1. A removed folder stays removed. Folders already added through **Settings › Library › Add** continue working without Auto-find games, including exports in their subfolders. Use **Add a folder** for any other location.
 
 For one game, choose **Export for frontend** in GameNative and save the file in one of those folders. Builds with **Frontend Sync** can maintain exports as games are installed or removed: choose a directory for each store in GameNative's Frontend Sync settings and confirm **OK**. Return to Foldcade after exports change.
 
@@ -42,7 +42,7 @@ Keep exports in separate folders. DroidDeck's `.droiddeck-sync.json` inventory i
 ## If something is missing
 
 - **No shortcut:** Make Foldcade Home, then request **Add to home screen** again in GameNative. Pins from another launcher are not imported.
-- **No exported games:** Enable Find games for the conventional folders above, or add the export folder manually. Return Home to rescan. For a game already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
+- **No exported games:** Turn on Auto-find games for the conventional folders above, or add the export folder manually. Return Home to rescan. For a game already in All, check [Home placement](README.md#a-game-is-in-all-but-missing-from-home).
 - **Game is unavailable:** Open GameNative and check its installation and account. A shortcut or export does not install a game.
 - **A Steam export opens in DroidDeck:** Keep GameNative exports separate from DroidDeck's sync inventory.
 

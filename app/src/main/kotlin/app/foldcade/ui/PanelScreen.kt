@@ -8,6 +8,7 @@ import android.os.Build
 import android.util.Log
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.foundation.Canvas
@@ -314,6 +315,8 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
     // else the islands' or the grid's, whichever Foldcade still draws.
     val ticker = listOfNotNull(
         model.panel?.screen?.panel(),
+        // Settings holds its Remove too.
+        model.settings?.screen?.panel(),
         model.playActivity?.screen?.panel(),
         session.menuPanel(),
         session.gridPanel(),
@@ -4822,6 +4825,7 @@ private fun DialogCard(
         title = dialog.title,
         body = dialog.body,
         detail = dialog.detail,
+        code = dialog.code,
         buttons = dialog.buttons.map { dialogButtonLabel(it, dialog.subject) },
         focused = dialog.index,
         hints = dialogHints(dialog, app.shell.model.faceMap),
@@ -4841,6 +4845,8 @@ internal fun DialogFrame(
     title: String,
     body: String,
     detail: String? = null,
+    /** A code to carry to another device, as a pairing PIN, large under the title ([DialogCode]). */
+    code: String? = null,
     buttons: List<String>,
     focused: Int,
     hints: List<HintKey>,
@@ -4870,6 +4876,7 @@ internal fun DialogFrame(
                     text = title,
                     style = text(theme.onBackground, design.type.dialogTitle, theme, display = true).copy(fontWeight = design.type.strongWeight),
                 )
+                code?.let { DialogCode(it) }
                 val parts = dialogBodyParts(body)
                 parts.intro?.let { BasicText(text = it, style = text(theme.onBackground, design.type.dialogBody, theme)) }
                 if (parts.steps.isNotEmpty()) DialogSteps(parts.steps)
@@ -4919,6 +4926,36 @@ private fun DialogSteps(steps: List<String>) {
         }
     }
 }
+
+/**
+ * A code the player carries to another device, as a pairing PIN: alone on its line at the
+ * clock's size, so it reads from across the room, with a breathing note that Foldcade waits.
+ */
+@Composable
+private fun DialogCode(code: String) {
+    val theme = foldTheme()
+    val design = LocalFoldTheme.current.theme.style
+    val scale = LocalFoldTheme.current.theme.motion.animatorScale(LocalContext.current.contentResolver)
+    val breath = androidx.compose.animation.core.rememberInfiniteTransition()
+        .animateFloat(design.menu.labelRestAlpha, 1f, LocalFoldTheme.current.theme.motion.pulse(scale))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(px(24f))) {
+        BasicText(
+            text = code,
+            modifier = Modifier.semantics { contentDescription = code.toList().joinToString(" ") },
+            style = text(theme.onBackground, design.type.clock, theme, display = true)
+                .copy(fontWeight = design.type.strongWeight, letterSpacing = DIALOG_CODE_SPACING),
+            maxLines = 1,
+        )
+        BasicText(
+            text = Copy.pairHostWaiting,
+            modifier = Modifier.graphicsLayer { alpha = breath.value },
+            style = text(theme.muted, design.type.hint, theme),
+            maxLines = 1,
+        )
+    }
+}
+
+private val DIALOG_CODE_SPACING = 0.12.em
 
 /**
  * A full-screen layer that takes every touch the page under it would have had. Drawing

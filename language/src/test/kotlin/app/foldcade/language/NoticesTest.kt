@@ -225,7 +225,8 @@ class NoticesTest {
     fun theSettingsRowAsksAndBackSaysNotNow() {
         assertEquals(false, Row.NoticeAccess in settingsRows(SettingsCategory.Screens, model(emptyList())))
         val row = model(emptyList()).copy(askNoticeAccess = true).onSetting(Row.NoticeAccess)
-        assertEquals("Notifications  Allow", rowLabel(Row.NoticeAccess, row))
+        // The value is the state; A is what asks.
+        assertEquals("Notifications  Off", rowLabel(Row.NoticeAccess, row))
         val asked = reduce(row, Meaning.Activate).first
         assertEquals(DialogKind.NoticeAccess, asked.dialog?.kind)
         assertEquals(row.settings, asked.settings)

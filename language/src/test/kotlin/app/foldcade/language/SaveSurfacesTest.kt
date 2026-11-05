@@ -79,8 +79,14 @@ class SaveSurfacesTest {
         assertEquals("romm.example/pair/device", code.shortUrl)
         assertEquals(Copy.connecting, rommConnectAction(busy = true, tokenTyped = true, originTyped = true, code = null, retry = false))
         assertEquals(Copy.connect, rommConnectAction(busy = false, tokenTyped = true, originTyped = true, code = code, retry = false))
-        assertEquals(Copy.waitingForPhone, rommConnectAction(busy = false, tokenTyped = false, originTyped = false, code = null, retry = false))
-        assertEquals(Copy.waitingForPhone, rommConnectAction(busy = false, tokenTyped = false, originTyped = true, code = code, retry = false))
+        // Waiting on the phone, the button still names its action; the phone's side says it waits.
+        assertEquals(Copy.connect, rommConnectAction(busy = false, tokenTyped = false, originTyped = false, code = null, retry = false))
+        assertEquals(Copy.connect, rommConnectAction(busy = false, tokenTyped = false, originTyped = true, code = code, retry = false))
+        assertTrue(rommWaitsForPhone(busy = false, tokenTyped = false, originTyped = false, code = null, retry = false))
+        assertTrue(rommWaitsForPhone(busy = false, tokenTyped = false, originTyped = true, code = code, retry = false))
+        assertFalse(rommWaitsForPhone(busy = false, tokenTyped = true, originTyped = true, code = code, retry = false))
+        assertFalse(rommWaitsForPhone(busy = false, tokenTyped = false, originTyped = true, code = null, retry = true))
+        assertFalse(rommWaitsForPhone(busy = true, tokenTyped = false, originTyped = false, code = null, retry = false))
         assertEquals(Copy.pairWithPhone, rommConnectAction(busy = false, tokenTyped = false, originTyped = true, code = null, retry = true))
         assertEquals(listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save), connectFields(ConnectKind.Romm))
     }

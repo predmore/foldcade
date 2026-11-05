@@ -22,14 +22,14 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 ## Connect with a code
 
-1. Choose **Sign in to RomM** on first start, or open **L1 › Settings › Library › Add › Add a RomM server**.
-2. Scan the QR code with a phone on the same Wi-Fi. Paste or enter your RomM server address on the phone, including `https://` or `http://`.
+1. Choose **Sign in to RomM** on first start, or open **L1 › Settings › Library › Add › RomM server**.
+2. The form leads with a QR code: **Scan with your phone to sign in**, with a phone on the same Wi-Fi. Paste or enter your RomM server address on the phone, including `https://` or `http://`.
 3. Tap **Continue to RomM**, then **Approve Foldcade on RomM**. Sign in on RomM and approve the code. One scan handles both steps. Foldcade also shows the approval QR code on the Thor.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.
 
 While the empty form is open, Foldcade looks nearby for a few seconds. A verified server offers **Use this server**: press **A** to choose it, then scan its approval code. This checks at most twelve likely addresses on the current IPv4 /24 at port 80, the host port in RomM’s default Compose example, using its unauthenticated `/api/heartbeat`. It does not scan other ports or the whole network. RomM has no standard Zeroconf advertisement; servers behind custom ports or reverse proxies usually need the phone path. A server address kept by a restored backup is already filled in and goes straight to approval.
 
-The phone page exists only while this form is shown. Its random, one-time URL accepts one address and closes; it never asks for a password or token. Only `http://` or `https://` addresses without embedded credentials are accepted, with normal certificate checks for HTTPS. The LAN handoff uses plain HTTP on your own network. If Wi-Fi is unavailable or client isolation blocks it, type the address into **Server** on the Thor. Typing and the optional token field remain available.
+The phone page exists only while this form is shown. Its random, one-time URL accepts one address and closes; it never asks for a password or token. Only `http://` or `https://` addresses without embedded credentials are accepted, with normal certificate checks for HTTPS. The LAN handoff uses plain HTTP on your own network. If Wi-Fi is unavailable or client isolation blocks it, type the address into **Server** on the Thor. Typing, under **Or type it**, and the optional token field remain available.
 
 Foldcade stores a token, not your RomM password.
 
@@ -59,7 +59,7 @@ After restoring a setup backup, which leaves sign-ins out, or once RomM refuses 
 
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
 
-The catalog loads at startup, after connecting or editing a connection, and again every 15 minutes while Home is shown. After adding games, let RomM finish its scan, then choose **Settings › Library › Sync games** to see them right away.
+The catalog loads at startup, after connecting or editing a connection, and again every 15 minutes while Home is shown. After adding games, let RomM finish its scan, then choose **Settings › Library › Sync games** to see them right away. The row reads **Syncing** while it works, then **Synced**, or **Can’t reach RomM** when the server didn’t answer; RomM’s tile wears the not-syncing mark until a sync gets through.
 
 ## Downloads and offline play
 

@@ -24,7 +24,7 @@ class ArtKeyForgetTest {
         val row = settingsRows(SettingsCategory.Library, shell.model).indexOf(Row.ArtKey)
         repeat(row) { shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom) }
         assertEquals(row, shell.model.settings?.row)
-        assertEquals(Copy.forgetKey, rowText(Row.ArtKey, shell.model).value)
+        assertEquals(Copy.keySaved, rowText(Row.ArtKey, shell.model).value)
     }
 
     @Test fun oneActivationOnlyAsksAndEveryWayOutKeepsTheKey() {
@@ -56,7 +56,7 @@ class ArtKeyForgetTest {
         assertTrue(effects.none { it == forget })
         assertEquals(listOf(keep, keep, keep), effects.filterNotNull())
         assertTrue(shell.model.artKeySaved)
-        assertEquals(Copy.forgetKey, rowText(Row.ArtKey, shell.model).value)
+        assertEquals(Copy.keySaved, rowText(Row.ArtKey, shell.model).value)
     }
 
     @Test fun touchesOnSettingsUnderTheDialogDoNothing() {
@@ -99,7 +99,7 @@ class ArtKeyForgetTest {
         assertNull(shell.model.dialog)
         // The app clears the key from the store, then marks it gone.
         shell.setArtKeySaved(false)
-        assertEquals(Copy.addKey, rowText(Row.ArtKey, shell.model).value)
+        assertEquals(Copy.noKey, rowText(Row.ArtKey, shell.model).value)
 
         shell.setArtKeySaved(true)
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))

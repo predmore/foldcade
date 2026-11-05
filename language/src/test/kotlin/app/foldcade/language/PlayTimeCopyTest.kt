@@ -58,7 +58,7 @@ class PlayTimeCopyTest {
         val asking = reduce(opened, Meaning.Activate).first
         assertEquals(DialogKind.UsageAccess, asking.dialog?.kind)
         assertEquals("Play time  Foldcade only", rowLabel(Row.UsageAccess, opened))
-        assertEquals("Play time  Everywhere", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
+        assertEquals("Play time  All games", rowLabel(Row.UsageAccess, opened.copy(usageGranted = true)))
     }
 
     @Test

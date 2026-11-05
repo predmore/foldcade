@@ -3,6 +3,7 @@ package app.foldcade.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.background
@@ -27,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -38,13 +40,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -76,6 +81,7 @@ import app.foldcade.language.SettingsPage
 import app.foldcade.language.SettingsShelf
 import app.foldcade.language.Theme
 import app.foldcade.language.TileStatus
+import app.foldcade.language.destructive
 import app.foldcade.language.emulatorShelf
 import app.foldcade.language.menuFit
 import app.foldcade.language.promptKeyOf
@@ -293,6 +299,7 @@ private fun CardRows(
                         modifier = place,
                         scale = scale,
                         labelStyle = labelStyle,
+                        icon = settingsRowIcon(row),
                     )
                 } else {
                     MenuRow(
@@ -304,7 +311,9 @@ private fun CardRows(
                         chord = null,
                         held = model.held,
                         scale = scale,
-                        modifier = if (interactive) place.press(tap) else place,
+                        // Remove fills while held, and shakes when let go early, as a download's does.
+                        modifier = (if (!interactive) place else if (row.destructive()) place.holdPress(app, index, screen, onEffect) else place.press(tap))
+                            .then(holdFeedback(model, row, scale)),
                         labelStyle = labelStyle,
                         height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
                     )
@@ -715,23 +724,42 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
 }
 
 /**
- * A settings row's art. Every Library row leads with some, so that column reads as one
+ * A settings row's art. Every row on every page leads with some, so each card reads as one
  * list rather than art here and gaps there. The menus keep [rowIcon] alone.
  */
 private fun settingsRowIcon(row: Row): Int? = when (row) {
-    // On a page that already shows the connection.
-    is Row.SignOut -> null
-    // The page already shows the folder, so its row wears the act.
-    is Row.ForgetFolder -> R.drawable.symbol_remove
+    // On a page that already shows the connection or the folder, the row wears the act.
+    is Row.SignOut, is Row.ForgetFolder -> R.drawable.symbol_remove
+    is Row.EditRomm -> R.drawable.symbol_rename
+    is Row.PickFolderAgain -> R.drawable.symbol_folder
     // Under the Emulators shelf, so the rows share Systems' icon column.
     Row.SaveSetup -> R.drawable.symbol_saves
     Row.FindSaves, Row.FindGames -> R.drawable.ic_control_search
     Row.SyncLibrary -> R.drawable.ic_badge_sync
     Row.AddFolder -> R.drawable.symbol_folder
     Row.AddRomm -> R.drawable.symbol_cloud
-    // A cartridge's label is its art.
-    Row.Artwork -> R.drawable.symbol_cartridge
+    Row.Artwork -> R.drawable.symbol_art
     Row.ArtKey -> R.drawable.ic_status_wrench
+    is Row.StreamHost -> R.drawable.symbol_pc
+    // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
+    Row.Theme -> R.drawable.symbol_gem
+    Row.IconTheme -> R.drawable.symbol_icon
+    Row.Background -> R.drawable.symbol_flame
+    Row.MotionSpeed -> R.drawable.symbol_rocket
+    Row.ButtonLabels -> R.drawable.symbol_console
+    Row.Music -> R.drawable.symbol_music
+    Row.MusicTrack -> R.drawable.symbol_disc
+    Row.MusicVolume -> R.drawable.ic_status_volume_3
+    // System: the two screens, where games open, Home, Android's permissions, Backup.
+    Row.ScreenLayout -> R.drawable.symbol_clamshell
+    Row.PlayOn -> R.drawable.symbol_play_badge
+    Row.SetAsHome, Row.DefaultHomeApp -> R.drawable.symbol_home
+    Row.UsageAccess -> R.drawable.ic_status_playtime
+    Row.NoticeAccess -> R.drawable.ic_status_bell
+    Row.Backup -> R.drawable.symbol_saves
+    Row.AndroidSettings -> R.drawable.symbol_android_apps
+    Row.Version -> R.drawable.ic_status_info
+    Row.Licenses -> R.drawable.symbol_shield
     else -> rowIcon(row)
 }
 
@@ -815,6 +843,39 @@ private fun CategoryRow(
             style = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** A held row's press: A is held while the finger is down, and letting go early leaves the row as it was. */
+private fun Modifier.holdPress(app: FoldcadeApp, index: Int, screen: HostScreen, onEffect: (Effect?) -> Unit): Modifier = pointerInput(index) {
+    detectTapGestures(onPress = {
+        val key = promptKeyOf(app.shell.model.faceMap.confirmKey) ?: PromptKey.FaceA
+        app.shell.setPromptHeld(key, true, app.shell.inputWindow(screen))
+        app.shell.touchSettingsRow(index, screen)
+        // A release after the hold is done, before the next tick, completes it here: its effect must run.
+        try { tryAwaitRelease() } finally { onEffect(app.shell.setPromptHeld(key, false, app.shell.inputWindow(screen))) }
+    })
+}
+
+/** The fill a held row grows while it is held, and the shake when it is let go early. */
+@Composable
+private fun holdFeedback(model: PickerModel, row: Row, scale: Float): Modifier {
+    if (!row.destructive()) return Modifier
+    val theme = LocalFoldTheme.current.theme
+    val motion = theme.motion
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(model.deleteShake) {
+        if (model.deleteShake == 0) return@LaunchedEffect
+        shake.snapTo(-theme.style.motion.shakePx)
+        shake.animateTo(theme.style.motion.shakePx, motion.playful(motion.durationShort, scale))
+        shake.animateTo(0f, motion.playful(motion.durationShort, scale))
+    }
+    return Modifier.graphicsLayer { translationX = shake.value }.drawBehind {
+        if (model.deleteHold?.row == row) drawRoundRect(
+            theme.focus.copy(alpha = theme.style.menu.holdAlpha),
+            size = Size(size.width * motion.holdFill(model.deleteProgress), size.height),
+            cornerRadius = CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()),
         )
     }
 }

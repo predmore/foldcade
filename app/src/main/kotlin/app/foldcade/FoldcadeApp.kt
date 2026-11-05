@@ -2179,8 +2179,21 @@ class FoldcadeApp : Application() {
             val picked = pickedStorageFolders(store.folderTrees())
             store.setFoundRoots(store.foundRoots().filter { id -> picked.none { containsFolder(it, id) || containsFolder(id, it) } })
         }
-        reloadFolder()
+        val picked = uri.toString()
+        val reload = reloadFolder()
         refreshFoundSaveFolders()
+        // A folder that brings nothing says so where it was picked, with the way to pick again.
+        scope.launch(Dispatchers.Main.immediate) {
+            reload.join()
+            // Art and info are sorted out after the scan, and a folder of art alone is no empty pick.
+            mediaIndexJob?.join()
+            if ((plugins.library(LocalFolderBackend.ID) as? LocalFolderBackend)?.mediaScan() == null) return@launch
+            val folder = libraryFolders().firstOrNull { it.uri == picked } ?: return@launch
+            val read = boundForest?.reportedTrees?.contains(picked) == true
+            if (!read || folder.games > 0 || folder.media) return@launch
+            val screen = shell.model.settings?.screen ?: shell.model.layout.menuScreen
+            shell.present(app.foldcade.language.emptyFolderDialog(folder.label, screen))
+        }
     }
 
     /**
@@ -2327,6 +2340,8 @@ class FoldcadeApp : Application() {
         val systems = seen.flatMap { it.systems }.distinct()
         // What was seen but can't be read yet leads Home's ways to add games, until access is allowed.
         shell.setRomFolderOffer(seen.firstOrNull()?.takeIf { !allFilesHeld }?.let { RomFolderOffer(places, systems, it.documentId) })
+        // A ROM folder seen on this device: Add a folder's picker opens there, not at the top of storage, where Android can't use the folder.
+        shell.setFolderStart(seen.firstOrNull()?.documentId)
         if (setupBackups.hasNotice()) return
         if (shell.maybeOfferFindGames(places, systems)) return
         // The offer is still owed: it waits for a moment without a dialog rather than queue behind Home.
@@ -2760,6 +2775,8 @@ class FoldcadeApp : Application() {
             refreshGameNative()
         }
         romm.join()
+        // Folders always answer; RomM said its own outcome as it ended.
+        withContext(Dispatchers.Main.immediate) { shell.noteLibrarySynced() }
         Log.i("Foldcade", "library-resync end")
     }
 
@@ -2918,7 +2935,11 @@ class FoldcadeApp : Application() {
                         )) {
                             is LoadedLibrary.Platforms -> loaded
                             LoadedLibrary.NoPlatforms -> null
-                            LoadedLibrary.Unreachable -> return@refreshRommCatalog
+                            LoadedLibrary.Unreachable -> {
+                                // Said where Sync games was pressed, and on RomM's tile, until a read gets through.
+                                withContext(Dispatchers.Main.immediate) { if (ticket == rommTicket.get()) shell.setRommReached(false) }
+                                return@refreshRommCatalog
+                            }
                         }
                         val games = listed?.let { loadEveryGame(libraryId, it) }.orEmpty()
                         // A list read with the saved token means it works again, after a refusal that passed.
@@ -2926,7 +2947,10 @@ class FoldcadeApp : Application() {
                         withContext(Dispatchers.Main.immediate) {
                             if (ticket != rommTicket.get() || store.rommOrigin() == null) return@withContext
                             // Only a live answer counts: an offline cache would read with a refused token too.
-                            if (tokenWorks && app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId))) shell.rommAccepted()
+                            val live = app.foldcade.plugins.romm.rommCatalogLive(plugins.library(libraryId))
+                            if (tokenWorks && live) shell.rommAccepted()
+                            // A list from the saved copy means RomM didn't answer this time.
+                            shell.setRommReached(live)
                             shell.ingestLibrary(
                                 libraryId,
                                 games,
@@ -2956,6 +2980,7 @@ class FoldcadeApp : Application() {
                     }
                 } catch (failure: Exception) {
                     Log.w("Foldcade", "RomM library failed", failure)
+                    withContext(Dispatchers.Main.immediate) { if (ticket == rommTicket.get() && store.rommOrigin() != null) shell.setRommReached(false) }
                 }
             }.also { rommRefreshJob = it }
         }

@@ -12,8 +12,11 @@ data class RomFolderOffer(val places: List<String>, val systems: List<String>, v
  * an SD card), and for asking to be Home when Moonlight or DroidDeck would use it.
  */
 object FoundFolderCopy {
-    /** Settings › Library's switch for all-files access, beside Emulators' Find saves. */
+    /** The first-run asks' button for all-files access. */
     const val findGames = "Find games"
+
+    /** Settings › Library's switch for the same access: on, Foldcade looks for ROM folders by itself. */
+    const val autoFindGames = "Auto-find games"
     const val sdCard = "SD card"
 
     /** A found folder on a removable card: `SD card · roms`. */

@@ -1,7 +1,9 @@
 package app.foldcade.language
 
 object RommPhoneCopy {
-    const val scan = "Scan on this Wi-Fi to send your address"
+    /** The form's lead: the phone is the way in, and typing is the fallback under [orType]. */
+    const val scan = "Scan with your phone to sign in"
+    const val orType = "Or type it"
     const val phoneHere = "Paste your RomM address on your phone"
     const val opening = "Getting your phone ready…"
     const val offline = "Join Wi-Fi to use your phone, or type here"

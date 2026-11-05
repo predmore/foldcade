@@ -6,6 +6,10 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,8 +20,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import app.foldcade.language.LicenseCopy
@@ -25,9 +34,11 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Theme
+import app.foldcade.language.noticeBlocks
 import app.foldcade.language.promptKeyOf
 import app.foldcade.ui.LocalFoldTheme
 import app.foldcade.ui.PageHeader
+import app.foldcade.ui.control
 import app.foldcade.ui.SETTINGS_PAGE_H
 import app.foldcade.ui.SETTINGS_PAGE_V
 import app.foldcade.ui.settingsCard
@@ -66,12 +77,13 @@ class LicensesActivity : PanelKeyActivity() {
         setContent {
             val scroll = rememberScrollState()
             val scope = rememberCoroutineScope()
+            val scale = theme.motion.animatorScale(LocalContext.current.contentResolver)
             SideEffect {
                 handle = { meaning ->
                     when (meaning) {
                         Meaning.Back -> finish()
-                        Meaning.MoveDown -> scope.launch { scroll.page(1) }
-                        Meaning.MoveUp -> scope.launch { scroll.page(-1) }
+                        Meaning.MoveDown -> scope.launch { scroll.page(1, theme, scale) }
+                        Meaning.MoveUp -> scope.launch { scroll.page(-1, theme, scale) }
                         else -> Unit
                     }
                 }
@@ -101,9 +113,14 @@ class LicensesActivity : PanelKeyActivity() {
     }
 }
 
-/** Settings' shell: Back's pill over one card, as tall as the page, that the D-pad pages through. */
+/**
+ * Settings' shell: Back's pill over one card, as tall as the page, that the D-pad pages through.
+ * The notices wrap to the card ([noticeBlocks]); a bar in the card's gutter shows how far down
+ * the page is and that there is more.
+ */
 @Composable
 private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState, back: PromptKey, onBack: () -> Unit) {
+    val blocks = remember(notice) { noticeBlocks(notice) }
     Column(
         Modifier
             .fillMaxSize()
@@ -117,23 +134,53 @@ private fun LicensesScreen(theme: Theme, notice: String, scroll: ScrollState, ba
                 .weight(1f)
                 .fillMaxWidth()
                 .settingsCard(theme)
-                .padding(horizontal = 28.dp),
+                .padding(start = 28.dp, end = 14.dp),
         ) {
-            BasicText(
-                text = notice.trim(),
-                modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(vertical = 24.dp),
-                style = TextStyle(
-                    color = theme.onBackground,
-                    fontFamily = theme.font,
-                    fontSize = theme.style.type.dialogBody,
-                    fontWeight = theme.style.type.bodyWeight,
-                ),
-            )
+            Column(
+                Modifier.fillMaxSize().padding(end = 22.dp).verticalScroll(scroll).padding(vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                blocks.forEach { block ->
+                    BasicText(
+                        text = block.text,
+                        style = TextStyle(
+                            color = theme.onBackground,
+                            fontFamily = if (block.heading) theme.displayFont else theme.font,
+                            fontSize = if (block.heading) theme.style.type.dialogTitle else theme.style.type.dialogBody,
+                            fontWeight = if (block.heading) theme.style.type.strongWeight else theme.style.type.bodyWeight,
+                        ),
+                    )
+                }
+            }
+            ScrollBar(theme, scroll, Modifier.align(Alignment.CenterEnd).padding(vertical = 24.dp))
         }
     }
 }
 
-private suspend fun ScrollState.page(direction: Int) {
-    val step = viewportSize.coerceAtLeast(240)
-    scrollTo((value + direction * step).coerceIn(0, maxValue))
+/** The strip bar's look, standing up: the track muted, the thumb as tall as the share of the page in view. */
+@Composable
+private fun ScrollBar(theme: Theme, scroll: ScrollState, modifier: Modifier) {
+    if (scroll.maxValue <= 0 || scroll.viewportSize <= 0) return
+    val density = LocalDensity.current
+    BoxWithConstraints(modifier.fillMaxHeight().width(with(density) { theme.style.tile.stripPx.toDp() })) {
+        val total = (scroll.maxValue + scroll.viewportSize).toFloat()
+        val thumb = maxHeight * (scroll.viewportSize / total)
+        Box(Modifier.fillMaxSize().background(theme.muted.copy(alpha = theme.style.tile.stripAlpha), theme.style.shape.control()))
+        Box(
+            Modifier
+                .graphicsLayer { translationY = (maxHeight - thumb).toPx() * (scroll.value.toFloat() / scroll.maxValue) }
+                .fillMaxWidth()
+                .height(thumb)
+                .background(theme.onBackground, theme.style.shape.control()),
+        )
+    }
 }
+
+/** A page at a time, gliding, as the grid's strip does. */
+private suspend fun ScrollState.page(direction: Int, theme: Theme, scale: Float) {
+    val step = (viewportSize * PAGE_SHARE).toInt().coerceAtLeast(240)
+    animateScrollTo((value + direction * step).coerceIn(0, maxValue), theme.motion.arrive(theme.motion.durationTravel, scale))
+}
+
+/** A page step leaves a line or two of the last page in view, so the reader keeps their place. */
+private const val PAGE_SHARE = 0.85f
