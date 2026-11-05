@@ -235,6 +235,7 @@ internal fun ConnectScreen(
                             originTyped = model.connectOrigin.isNotBlank() && !rommAddressUnusable(model.connectOrigin),
                             code = model.connectCode,
                             retry = model.connectRetry,
+                            unavailable = model.connectHint == Copy.rommCodeUnavailable,
                         )
                     }
                     // Waiting on the phone is not a press: Connect reads quieter until a token is typed or the code ends.
@@ -359,7 +360,7 @@ private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop
                             maxLines = 2,
                         )
                         if (hint != null) BasicText(
-                            if (phoneUrl != null) RommPhoneCopy.scan else Copy.rommPairAgain,
+                            app.foldcade.language.rommPairingNext(hint, phoneQr = phoneUrl != null),
                             modifier = Modifier.fillMaxWidth(),
                             style = formStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
                             maxLines = 3,

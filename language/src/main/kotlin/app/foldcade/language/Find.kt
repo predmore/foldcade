@@ -364,7 +364,7 @@ fun homeLanding(board: HomeBoard, id: String): HomeLanding? {
  * where it lives on Home (pinned, or in which folder or collection), or that it is not on
  * Home, and whether it is hidden. A game in its platform's folder is named by that place alone.
  */
-fun findFacts(board: HomeBoard, entry: FindEntry): List<String> {
+fun findFacts(board: HomeBoard, entry: FindEntry, kindOf: (String) -> HomeKind? = { null }): List<String> {
     val group = board.folders[entry.id]?.takeIf { entry.kind == FindKind.Group }
     val spot = homeLanding(board, entry.id)
     val place = when (spot) {
@@ -376,7 +376,7 @@ fun findFacts(board: HomeBoard, entry: FindEntry): List<String> {
     val inOwnFolder = spot is HomeLanding.Inside && board.folders[spot.groupId]?.platformId == entry.platformId
     return listOfNotNull(
         entry.platformName?.takeIf { entry.kind == FindKind.Game && it.isNotBlank() && !inOwnFolder },
-        group?.let { folderCountLine(folderCount(board, it.id), apps = it.holdsApps) },
+        group?.let { folderCountLine(folderCount(board, it.id), apps = countsApps(it, kindOf)) },
         place,
         FindCopy.hidden.takeIf { entry.hidden },
     )

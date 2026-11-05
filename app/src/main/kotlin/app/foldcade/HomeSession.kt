@@ -49,6 +49,8 @@ import app.foldcade.language.KeyFocus
 import app.foldcade.language.TypingCue
 import app.foldcade.language.TypingStep
 import app.foldcade.language.quickNames
+import app.foldcade.language.MARK_CLOUD
+import app.foldcade.language.countsApps
 import app.foldcade.language.folderCountLine
 import app.foldcade.language.allCount
 import app.foldcade.language.isApp
@@ -527,6 +529,9 @@ class HomeSession(
             return TileActions(folderOnHome = FolderSwitch(entry.folder.id, entry.onHome))
         }
         if (index < 0) return null
+        // An empty collection has nothing to move: A adds games, and its own Rename, Icon and
+        // Remove are on its tile on Home (review-D 116).
+        if (emptyCollection() != null) return null
         val id = slots().getOrNull(index)
         if (open?.recent == true) {
             return id?.let { gameActions(it, move = false, remove = null).copy(select = true) }
@@ -1334,7 +1339,7 @@ class HomeSession(
             return HomeFace(
                 id = id,
                 title = folder.name,
-                shortText = folderCountLine(count, apps = folder.holdsApps),
+                shortText = folderCountLine(count, apps = countsApps(folder) { item(it)?.kind }),
                 // A collection wears its folder card; the one being edited shows the focused choice.
                 mark = (iconPick?.takeIf { it.folderId == id }?.look ?: collectionLook(folder))?.mark ?: folder.mark,
                 empty = false,
@@ -1359,7 +1364,7 @@ class HomeSession(
             id = id,
             title = item?.title ?: if (waitingForRomm) keptTitle ?: waitingTitle else id,
             shortText = if (waitingForRomm && keptTitle != null) waitingTitle else platformName(item?.platformId ?: game?.platformId),
-            mark = if (waitingForRomm) "cloud" else item?.mark,
+            mark = if (waitingForRomm) MARK_CLOUD else item?.mark,
             empty = false,
             folder = false,
             allTile = false,

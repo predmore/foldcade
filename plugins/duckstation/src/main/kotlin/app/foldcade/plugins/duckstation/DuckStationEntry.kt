@@ -103,7 +103,7 @@ class DuckStationPlayer : Player, SaveFolderHolder, HostedSaveFolder {
         "1. Open DuckStation’s App Settings.",
         "2. Tap ⋮ and turn on Show Advanced Settings.",
         "3. Open Folders › Memory Cards › Choose New Location.",
-        "4. In the picker’s menu, pick Foldcade, tap Use this folder, then Allow.",
+        "4. In the picker’s menu, pick Foldcade › Use this folder › Allow.",
         "5. Tap Copy Files to bring your cards.",
     ).joinToString("\n")
 

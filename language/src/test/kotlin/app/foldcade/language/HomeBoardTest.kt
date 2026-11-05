@@ -573,6 +573,24 @@ class HomeBoardTest {
     }
 
     @Test
+    fun aCollectionOfOnlyAppsCountsApps() {
+        val settings = item("android:com.android.settings", kind = HomeKind.AndroidApp)
+        val tetris = item("lib:local:tetris", kind = HomeKind.Rom)
+        val kinds = listOf(settings, tetris).associate { it.id to it.kind }
+        val apps = HomeFolder("c2", "Collection 2", userMade = true, slots = listOf(settings.id, null))
+        assertTrue(countsApps(apps, kinds::get))
+        assertEquals("1 app", folderCountLine(1, apps = countsApps(apps, kinds::get)))
+        val board = HomeBoard(slots = listOf("c2"), folders = mapOf("c2" to apps))
+        assertEquals("1 app", findFacts(board, FindEntry("c2", "Collection 2", FindKind.Group), kinds::get).first())
+        // One game among them, an empty one, or a member the catalog doesn't know, reads in games.
+        assertFalse(countsApps(apps.copy(slots = listOf(settings.id, tetris.id)), kinds::get))
+        assertFalse(countsApps(apps.copy(slots = emptyList()), kinds::get))
+        assertFalse(countsApps(apps.copy(slots = listOf("lib:local:gone")), kinds::get))
+        // A system folder counts by its kind alone.
+        assertFalse(countsApps(HomeFolder("snes", "SNES", platformId = "snes", slots = listOf(settings.id)), kinds::get))
+    }
+
+    @Test
     fun emulatorsGetTheirOwnFolderApartFromGames() {
         val azahar = item("android:org.azahar_emu.azahar", kind = HomeKind.Emulator)
         val moonlight = item("android:com.limelight", kind = HomeKind.Emulator)

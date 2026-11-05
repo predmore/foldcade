@@ -102,14 +102,16 @@ class SettingsTilesTest {
         assertNull(settingsTileStatus(tile("azahar"), noGames))
         assertNull(settingsTileStatus(tile("retroarch.nes"), noGames))
         assertEquals(TileStatus.Fine, settingsTileStatus(tile("armsx2"), noGames))
-        // Its own page still says what is left.
-        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), noGames))
+        // Its own page still says what is left, as quietly as its tile (review-B S10), and it still counts as a step left.
+        assertEquals(RowControl.Value(SaveSetupCopy.notSetUp, opens = true), rowControl(Row.PlayerSave("azahar"), noGames))
+        assertTrue(rowNeedsYou(Row.PlayerSave("azahar"), noGames))
         assertEquals(
             listOf(tile("armsx2"), tile("eden"), tile("azahar"), tile("retroarch.nes"), Row.SaveSetup, Row.FindSaves),
             settingsRows(SettingsCategory.Players, noGames),
         )
         // The moment a game for it lands on Home, it wears the cloud and leads.
         val played = noGames.copy(boardEmulators = noGames.boardEmulators + "azahar")
+        assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), played))
         assertEquals(TileStatus.Attention, settingsTileStatus(tile("azahar"), played))
         assertEquals(tile("azahar"), settingsRows(SettingsCategory.Players, played).first())
     }

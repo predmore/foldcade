@@ -88,6 +88,12 @@ class SaveSurfacesTest {
         assertFalse(rommWaitsForPhone(busy = false, tokenTyped = false, originTyped = true, code = null, retry = true))
         assertFalse(rommWaitsForPhone(busy = true, tokenTyped = false, originTyped = false, code = null, retry = false))
         assertEquals(Copy.pairWithPhone, rommConnectAction(busy = false, tokenTyped = false, originTyped = true, code = null, retry = true))
+        // No code came from this address: the button asks again, and the line under the note names the address.
+        assertEquals(Copy.tryAgain, rommConnectAction(busy = false, tokenTyped = false, originTyped = true, code = null, retry = true, unavailable = true))
+        assertEquals(RommPhoneCopy.checkAddress, rommPairingNext(Copy.rommCodeUnavailable, phoneQr = true))
+        assertEquals(Copy.rommCheckAddress, rommPairingNext(Copy.rommCodeUnavailable, phoneQr = false))
+        assertEquals(RommPhoneCopy.scan, rommPairingNext(Copy.rommCodeExpired, phoneQr = true))
+        assertEquals(Copy.rommPairAgain, rommPairingNext(Copy.rommCodeExpired, phoneQr = false))
         assertEquals(listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save), connectFields(ConnectKind.Romm))
     }
 
@@ -147,7 +153,7 @@ class SaveSurfacesTest {
         // Once in use, the state wears the check.
         val inUse = model.copy(playerSaves = listOf(duck.copy(hostedInUse = true)))
         assertEquals(RowControl.Value(Copy.hostedSavesSet, opens = true, healthy = true), rowControl(Row.HostedSaves("duckstation"), inUse))
-        assertEquals(RowText(Copy.saveFolder, Copy.notSyncing), rowText(Row.PlayerSave("azahar"), model.copy(playerSaves = listOf(PlayerSaveSetting("azahar", "Azahar", false, installed = true)))))
+        assertEquals(RowText(Copy.saveFolder, Copy.notSyncing), rowText(Row.PlayerSave("azahar"), model.copy(playerSaves = listOf(PlayerSaveSetting("azahar", "Azahar", false, installed = true)), boardEmulators = setOf("azahar"))))
         // Set up saves says how many are left, and nothing once all sync.
         assertEquals(1, savesDue(model).size)
         assertEquals(RowControl.Value(SaveSetupCopy.toGo(1), attention = true, opens = true), rowControl(Row.SaveSetup, model))

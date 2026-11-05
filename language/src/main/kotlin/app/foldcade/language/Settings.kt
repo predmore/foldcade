@@ -415,11 +415,14 @@ fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     }
 }
 
-/** True while an emulator's row says Not syncing or waits to be set up. Set up saves reads its steps' progress from this too. */
+/**
+ * True while an emulator's row says Not syncing, or the quiet Not set up of one no game on Home
+ * plays on, or waits to be set up. Set up saves reads its steps' progress from this too.
+ */
 fun rowNeedsYou(row: Row, model: PickerModel): Boolean = when (row) {
     Row.RetroArchCores -> model.retroArch?.cores == null
     Row.EdenFolder -> model.eden?.fromRomm != true
-    else -> (rowControl(row, model) as? RowControl.Value)?.attention == true
+    else -> (rowControl(row, model) as? RowControl.Value)?.let { it.attention || it.text == SaveSetupCopy.notSetUp } == true
 }
 
 /**

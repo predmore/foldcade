@@ -253,6 +253,9 @@ val PLATFORM_MARKS: Set<String> = setOf(
 
 const val MARK_CONSOLE: String = "console"
 const val MARK_FOLDER: String = "folder"
+
+/** RomM's cloud object, as a tile waiting for RomM wears it. */
+const val MARK_CLOUD: String = "cloud"
 const val MARK_LIBRARY: String = "library"
 
 /** Recently played wears the clock, on a collection's folder card (see [collectionLook]). */
@@ -423,6 +426,16 @@ fun collectionChoices(board: HomeBoard, id: String): List<CollectionChoice> =
 
 fun folderCount(board: HomeBoard, folderId: String): Int =
     board.folders[folderId]?.slots?.count { it != null } ?: 0
+
+/**
+ * The group's count reads in apps: Android Apps and Emulators, and a collection that holds only
+ * apps, as one of just Android Settings does (review-C 308). One game among them, or nothing in
+ * it, keeps games. [kindOf] is a member's kind; null for one the catalog doesn't know.
+ */
+fun countsApps(folder: HomeFolder, kindOf: (String) -> HomeKind?): Boolean =
+    folder.holdsApps || folder.collection && folder.slots.filterNotNull().let { ids ->
+        ids.isNotEmpty() && ids.all { kindOf(it)?.isApp == true }
+    }
 
 /**
  * Merges [items] into [board]. Placed tiles stay put. A missing catalog id leaves an empty slot,

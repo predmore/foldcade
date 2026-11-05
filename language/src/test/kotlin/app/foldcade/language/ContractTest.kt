@@ -683,6 +683,7 @@ class ContractTest {
             rowsPerPage = 1,
             homeRoleHeld = true,
             playerSaves = listOf(setting),
+            boardEmulators = setOf("azahar"),
         )
         assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar")), Row.SaveSetup, Row.FindSaves), settingsRows(SettingsCategory.Players, opened))
         assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
@@ -725,7 +726,7 @@ class ContractTest {
     @Test
     fun theMemoryCardRowReadsSyncingOrSetUp() {
         val syncing = PlayerSaveSetting("armsx2", "ARMSX2", chosen = true, saveSyncing = true, installed = true)
-        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing))
+        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing), boardEmulators = setOf("armsx2"))
         assertEquals(
             listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")),
             settingsInnerRows(SettingsInner.Emulator("armsx2"), model),
@@ -755,7 +756,7 @@ class ContractTest {
             PlayerSaveSetting("aps3e", "aPS3e", true, setupSteps = "Install firmware", installed = true),
         )
         for (setting in settings) {
-            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting), boardEmulators = setOf(setting.playerId))
             val row = Row.PlayerSave(setting.playerId)
             assertEquals(Copy.playerSavesSet, rowText(row, model).value)
             assertEquals(RowControl.Value(Copy.playerSavesSet, opens = true, healthy = true), rowControl(row, model))
@@ -774,7 +775,7 @@ class ContractTest {
     fun hostedCardsInUseMakeTheUnchosenDataFolderOptional() {
         for (inUse in listOf(false, true)) {
             val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedTitle = "Cards", hostedInUse = inUse, installed = true)
-            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting))
+            val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting), boardEmulators = setOf("duckstation"))
             assertEquals(Copy.choose, rowText(Row.PlayerSave(setting.playerId), model).value)
             assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(setting.playerId), model))
             assertEquals(if (inUse) Copy.hostedSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
@@ -798,7 +799,7 @@ class ContractTest {
     fun theSetupRowShowsThePlayersSteps() {
         val steps = "Open aPS3e and finish its setup."
         val setting = PlayerSaveSetting("aps3e", "aPS3e", chosen = true, setupSteps = steps, installed = true)
-        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting))
+        val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting), boardEmulators = setOf("aps3e"))
         assertEquals(
             listOf(Row.PlayerSave("aps3e"), Row.PlayerSetup("aps3e")),
             settingsInnerRows(SettingsInner.Emulator("aps3e"), model),

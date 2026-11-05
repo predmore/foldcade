@@ -27,8 +27,14 @@ class EmptyCollectionHostTest {
         val hero = shell.emptyCollectionHero() as HeroSubject.Folder
         assertEquals(group.name, heroCopy(hero).title)
         assertEquals("0 games", heroCopy(hero).detail)
-        // Y has nothing to offer on a grid with no tiles, so it is not hinted.
+        // Y has nothing to offer on a grid with no tiles, so it is not hinted, and it opens no
+        // lone Move (review-D 116).
         assertFalse(shell.hasOptions())
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.panel)
+        assertEquals(group.id, shell.emptyCollection()?.id)
+        // The focus stays on Add games, so A still adds games.
+        assertNull(shell.model.focus.chrome)
 
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
@@ -51,6 +57,17 @@ class EmptyCollectionHostTest {
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertTrue(shell.atRest())
         assertEquals(root, shell.model.focus.cellIndex)
+    }
+
+    @Test fun yOnACollectionEmptiedToItsGapsOpensNothing() {
+        val emptied = group.copy(slots = listOf(null, null))
+        store.saveHomeBoard(encodeHome(initial.copy(folders = mapOf(group.id to emptied))))
+        val shell = shell()
+        open(shell, board().slots.indexOf(group.id))
+        assertEquals(group.id, shell.emptyCollection()?.id)
+        assertFalse(shell.hasOptions())
+        shell.onMeaning(Meaning.Options, HostScreen.Bottom)
+        assertNull(shell.model.panel)
     }
 
     @Test fun xAndOneTapAlsoAddGamesAndBackWithoutAddingStillReturns() {

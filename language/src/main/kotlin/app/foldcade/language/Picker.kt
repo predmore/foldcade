@@ -212,6 +212,9 @@ enum class DialogButton {
     /** The missing player's own download page, which [DialogState.subject] names. */
     GetPlayer,
 
+    /** Android's Wi-Fi panel, for a step that needs the internet while there is none. */
+    Wifi,
+
     /**
      * Not a button: Back on a dialog whose [DialogState.safeIndex] is [BACK_CLOSES]. It only
      * closes, and a held launch is cancelled, never started.
@@ -257,6 +260,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.SignInRomm -> FoundFolderCopy.signInRomm
     DialogButton.PlayAnyway -> Copy.playAnyway
     DialogButton.GetPlayer -> listOfNotNull(Copy.getPlayer, subject).joinToString(" ")
+    DialogButton.Wifi -> Copy.wifi
     DialogButton.Dismiss -> Copy.back
 }
 
@@ -287,9 +291,21 @@ fun dialogBodyParts(body: String): DialogBody {
     return DialogBody(lines.take(first).joinToString(" ").takeIf { it.isNotEmpty() }, steps)
 }
 
-/** The keys a dialog names under its card. A on a lit button needs no word, so only Back is named. */
+/**
+ * The button Back presses, when that button names what Back does: it wears Back's key on its
+ * chip, and the card names no Back key of its own (review-B S11: "Not now … B Not now").
+ * Null when Back only closes, or presses OK, which the card then names as Close or Cancel.
+ */
+fun dialogBackButton(dialog: DialogState): Int? =
+    dialog.safeIndex.takeIf { dialog.buttons.getOrNull(it).let { button -> button != null && button != DialogButton.Ok } }
+
+/**
+ * The keys a dialog names under its card. A on a lit button needs no word, so only Back is
+ * named, and only when no button wears its key ([dialogBackButton]).
+ */
 fun dialogHints(dialog: DialogState, faceMap: FaceMap): List<HintKey> =
-    listOf(HintKey(promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB, dialogBackLabel(dialog)))
+    if (dialogBackButton(dialog) != null) emptyList()
+    else listOf(HintKey(promptKeyOf(faceMap.backKey) ?: PromptKey.FaceB, dialogBackLabel(dialog)))
 
 data class DialogState(
     val kind: DialogKind,
@@ -751,6 +767,21 @@ fun playerNotice(title: String, body: String, screen: HostScreen): DialogState =
     screen = screen,
 )
 
+/**
+ * A RomM game Foldcade waited on and couldn't find. With no internet, that is the cause, so it
+ * says so and offers Wi-Fi, as Saves does offline (review-D 217); B closes. Online, RomM answered
+ * without the game, and OK closes.
+ */
+fun catalogGameUnavailableDialog(offline: Boolean, screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.Ok,
+    title = if (offline) Copy.noInternet else Copy.gameUnavailable,
+    body = if (offline) Copy.noInternetGameBody else Copy.gameUnavailableBody,
+    buttons = listOf(if (offline) DialogButton.Wifi else DialogButton.Ok),
+    index = 0,
+    safeIndex = if (offline) BACK_CLOSES else 0,
+    screen = screen,
+)
+
 fun noFileDialog(screen: HostScreen): DialogState = DialogState(
     kind = DialogKind.Ok,
     title = Copy.notOnDevice,
@@ -841,6 +872,7 @@ fun previewDialogState(kind: String, index: Int, screen: HostScreen): DialogStat
         "eden-restart" -> edenRestartDialog(screen)
         "eden-wrong-folder" -> edenWrongFolderDialog(screen, launchHeld = true)
         "core-download-failed" -> coreDownloadFailedDialog("mGBA", screen)
+        "catalog-offline" -> catalogGameUnavailableDialog(offline = true, screen = screen)
         "retroarch-storage" -> retroArchStorageDialog(screen)
         "missing-bios-romm" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true), screen)
         "missing-bios" -> playerNotice(FirmwareCopy.title, FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system"), screen)
@@ -1278,14 +1310,34 @@ fun rommConnectTitle(model: PickerModel, saved: Boolean): String = when {
     else -> Copy.addRommServer
 }
 
-fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
+fun rommConnectAction(
+    busy: Boolean,
+    tokenTyped: Boolean,
+    originTyped: Boolean,
+    code: PairingCode?,
+    retry: Boolean,
+    /** RomM gave no code at this address ([Copy.rommCodeUnavailable]): the button asks it again. */
+    unavailable: Boolean = false,
+): String = when {
     busy -> Copy.connecting
     tokenTyped -> Copy.connect
     // The phone is the way in until a token is typed: the button names what it will do, and
     // the phone's side says it waits ([rommWaitsForPhone]).
     !originTyped -> Copy.connect
     code != null && !retry -> Copy.connect
+    // Not a second way in by phone beside the address QR: it asks RomM again (review-A 210-F1′).
+    unavailable -> Copy.tryAgain
     else -> Copy.pairWithPhone
+}
+
+/**
+ * The muted line under a pairing note. Once RomM gave no code at the address, the address is
+ * the likely fault, so the line names it, and the QR's job when the phone can send another.
+ */
+fun rommPairingNext(hint: String, phoneQr: Boolean): String = when {
+    hint == Copy.rommCodeUnavailable -> if (phoneQr) RommPhoneCopy.checkAddress else Copy.rommCheckAddress
+    phoneQr -> RommPhoneCopy.scan
+    else -> Copy.rommPairAgain
 }
 
 /** True while the form waits on the phone, not the button: it reads quieter, and the phone's side says so. */
@@ -1570,6 +1622,14 @@ fun librarySyncValue(model: PickerModel): String? = when {
 /** Label on the left, current value on the right. A null value is a single action row. */
 data class RowText(val label: String, val value: String? = null)
 
+/**
+ * A save row that isn't set up yet: amber Not syncing while a game on Home plays on [playerId],
+ * so its saves are at stake, and a quiet Not set up while none does, as its tile and Set up
+ * saves say (review-B S10).
+ */
+private fun unsetSaves(playerId: String, model: PickerModel): String =
+    if (playerId in model.boardEmulators) Copy.notSyncing else SaveSetupCopy.notSetUp
+
 fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.PlayActivity -> RowText(PlayCopy.activity)
     Row.Home -> RowText(Copy.home)
@@ -1633,7 +1693,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val chosen = when {
             setting?.chosen == true -> setting.foundIn ?: Copy.playerSavesSet
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
-            else -> Copy.notSyncing
+            else -> unsetSaves(row.playerId, model)
         }
         // A player whose saves live in the folder Foldcade hosts (DuckStation) asks for its own
         // folder only for its BIOS, so the row says that, and its Choose is not a save waiting.
@@ -1643,7 +1703,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val inUse = when {
             setting?.hostedInUse == true -> Copy.hostedSavesSet
-            setting?.installed == true -> Copy.notSyncing
+            setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
         RowText(setting?.hostedTitle?.let { pageLabel(it, setting.label) } ?: row.playerId, inUse)
@@ -1652,7 +1712,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val state = when {
             setting?.saveSyncing == true -> Copy.hostedSavesSet
-            setting?.installed == true -> Copy.notSyncing
+            setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
         RowText(Copy.memoryCard, state)
@@ -1660,7 +1720,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.ThorSetup -> RowText(ThorSetupCopy.title, model.playerSaves.firstOrNull { it.playerId == row.playerId }?.thorSetup?.status?.let(ThorSetupCopy::status).orEmpty())
     is Row.PlayerSetup -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        RowText(Copy.setup, if (setting?.installed == true) Copy.notSyncing else Copy.hostedSavesUnset)
+        RowText(Copy.setup, if (setting?.installed == true) unsetSaves(row.playerId, model) else Copy.hostedSavesUnset)
     }
     Row.RetroArchCores -> RowText(
         Copy.retroArchCores,
@@ -1929,6 +1989,21 @@ enum class NoLibraryAction {
 
 fun noLibraryActions(model: PickerModel): List<NoLibraryAction> =
     listOfNotNull(NoLibraryAction.FindGames.takeIf { model.romFolderOffer != null }, NoLibraryAction.AddFolder, NoLibraryAction.AddRomm)
+
+/**
+ * The top screen over a library with no folder or server: the focused button, large, as Home
+ * shows its focused tile. The lit folder for a folder, the RomM cloud for a server (review-A 324).
+ */
+fun noLibraryHero(model: PickerModel): HeroSubject? {
+    if (!model.libraryGrid || model.gridKind != GridKind.NoLibrary || model.focus.chrome != null) return null
+    val action = noLibraryActions(model).getOrNull(model.focus.cellIndex) ?: return null
+    val (name, mark) = when (action) {
+        NoLibraryAction.FindGames -> FoundFolderCopy.findGames to MARK_FOLDER
+        NoLibraryAction.AddFolder -> Copy.addFolder to MARK_FOLDER
+        NoLibraryAction.AddRomm -> Copy.addRommServer to MARK_CLOUD
+    }
+    return HeroSubject.Folder(HeroFolder(key = "no-library/${action.name}", name = name, count = null, mark = mark))
+}
 
 /**
  * Add a folder: Android's picker. It opens at the ROM folder Foldcade saw when there is one,
