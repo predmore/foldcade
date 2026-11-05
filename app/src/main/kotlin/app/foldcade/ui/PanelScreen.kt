@@ -274,6 +274,7 @@ import app.foldcade.language.rowText
 import app.foldcade.language.SaveHealth
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
+import app.foldcade.language.heroActivityLine
 import app.foldcade.language.saveHealthLeads
 import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.pendingChip
@@ -1863,7 +1864,7 @@ private fun HeroLabel(
                 val activity = focusedGame?.let { app.shell.activityFor(it.id) }
                 val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
                 val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
-                val live = stopped?.let { Copy.downloadStopped } ?: activity?.let(::activityLine)
+                val live = stopped?.let { Copy.downloadStopped } ?: activity?.let { heroActivityLine(health, it) }
                 val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
                 val rest = listOf(
                     item?.availability.takeIf { live == null },
@@ -2492,8 +2493,9 @@ private fun rememberStagedHero(
     var stagedPlace by remember { mutableStateOf(place) }
     var stagedAt by remember { mutableLongStateOf(0L) }
     val dwell = motion.sceneDuration(app.shell.model.motionSpeed, animatorScale) / 2
+    // Metadata refreshes for the same subject reuse painters, so identical art cannot land twice.
+    val decoded = remember(subject?.key) { ConcurrentHashMap<Pair<String, HeroImageRole>, LoadedCover>() }
     LaunchedEffect(subject?.key, record, query, allowed, connections, artKeySaved, revision, preview) {
-        val decoded = ConcurrentHashMap<Pair<String, HeroImageRole>, LoadedCover>()
         fun chosen(cover: String?, scene: ArtScene?): HeroSources = when (preview?.kind) {
             ArtKind.Tile -> HeroSources(preview.url, scene)
             ArtKind.Hero -> HeroSources(cover, (scene ?: ArtScene()).copy(background = preview.url))
@@ -2511,8 +2513,16 @@ private fun rememberStagedHero(
         val loading = async { decodeHero(app, context, sources.await(), decoded) }
         val first = withTimeoutOrNull(HERO_ART_WAIT_MS) { loading.await() }
         delay(stagedAt + dwell - SystemClock.uptimeMillis())
+        fun retainCurrentImages() {
+            val images = staged.images
+            // Keep a focused game's previews bounded; outgoing layers own their own images.
+            decoded.entries.removeIf { (_, image) ->
+                image !== images.backdrop && image !== images.cover && image !== images.logo && image !== images.screen
+            }
+        }
         fun commit(images: HeroImages) {
             val sameGame = subject?.key == staged.subject?.key
+            if (sameGame && images == staged.images) return
             staged = StagedHero(subject, if (sameGame) HeroTravel.None else travelOf(stagedPlace, place), images)
             stagedPlace = place
             stagedAt = SystemClock.uptimeMillis()
@@ -2521,12 +2531,14 @@ private fun rememberStagedHero(
         else if (subject?.key != staged.subject?.key) commit(HeroImages())
         val initial = loading.await()
         if (initial != null && initial != staged.images) commit(initial)
+        retainCurrentImages()
         val found = sources.await()
         if ((record != null || query != null) && found.scene?.complete != true) {
             val refreshed = withContext(Dispatchers.Default) { chosen(found.cover, app.covers.fetchScene(record, query)) }
             if (refreshed != found) {
                 val images = decodeHero(app, context, refreshed, decoded)
                 if (images != null && images != staged.images) commit(images)
+                retainCurrentImages()
             }
         }
     }

@@ -30,4 +30,11 @@ fun saveHealthLine(health: SaveHealth): String? = when (health) {
 
 /** A save warning stays first even while a transfer is running or reporting its result. */
 fun saveHealthLeads(health: SaveHealth, activity: TileActivity?): Boolean = saveHealthLine(health) != null &&
-    (health.needsAttention || activity == null || activity == TileActivity.Paused || activity is TileActivity.OnHost)
+    (health is SaveHealth.NotSyncing ||
+        health == SaveHealth.Waiting && activity != TileActivity.Syncing && activity !is TileActivity.Synced ||
+        activity == null || activity == TileActivity.Paused || activity is TileActivity.OnHost)
+
+/** A standing setup fault already explains a sync result; a transfer can still show its progress beside it. */
+fun heroActivityLine(health: SaveHealth, activity: TileActivity): String? =
+    if (saveHealthLeads(health, activity) && (activity == TileActivity.Syncing || activity is TileActivity.Synced)) null
+    else activityLine(activity)
