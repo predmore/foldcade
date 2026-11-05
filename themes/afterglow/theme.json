@@ -2088,6 +2088,7 @@
       "trackAlpha": 0.06,
       "hourAlpha": 0.1,
       "hourDp": 1,
+      "markMinWidthDp": 8,
       "emptyBarAlpha": 0.12,
       "barCornerDp": 3
     },

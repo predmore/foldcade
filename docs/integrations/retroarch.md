@@ -14,6 +14,8 @@ RetroArch keeps its cores where other apps can't look. Once your games include a
 
 This one folder is still needed. RetroArch has no other way to tell an app which cores it has. Its core installer only copies a core in. Without the folder, Foldcade would have to guess. It could replace a core you installed, or play with a different core than yours, whose saves live in another folder.
 
+Choosing or cancelling the Cores folder picker returns to the same RetroArch Settings row. Cancelling leaves **Allow** in place; choosing the folder updates the row there.
+
 Foldcade reads the cores again before every RetroArch launch, so a core you just installed counts. Choose RetroArch's top folder, the one that holds `cores`; Foldcade says so if you pick another.
 
 Without that folder, Foldcade starts the first core in the table and can't warn you when it's missing. RetroArch then stays on a black screen.

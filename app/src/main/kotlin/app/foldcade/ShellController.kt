@@ -111,6 +111,7 @@ import app.foldcade.language.homeGameKey
 import app.foldcade.language.Motion
 import app.foldcade.language.SyncMark
 import app.foldcade.language.pendingGameTitle
+import app.foldcade.language.BackupCopy
 import app.foldcade.language.cancellableTransfer
 import app.foldcade.language.TileActivity
 import app.foldcade.language.PlayKey
@@ -363,7 +364,7 @@ class ShellController(
     // A board from before collections is kept as it was before this release first rewrites it.
     private val home = store.run {
         keepHomeBoardBeforeCollections()
-        HomeSession(homeBoardRaw(), sameGames = sameAliases).also { session ->
+        HomeSession(homeBoardRaw(), sameGames = sameAliases, rememberedName = ::rememberedRommName).also { session ->
             session.restoredGaps = restoreHolds().sources.keys
             // Apps a release with Android shelves hid there are hidden on Home, the one Hidden place.
             val hidden = takeShelfHiddenApps()
@@ -1786,7 +1787,7 @@ class ShellController(
     fun focusedLaunchesOnOneScreen(): Boolean {
         if (!store.session.bothScreensFree()) return false
         val game = focusedPlayable() ?: return false
-        return !game.occupiesBothDisplays && !isPaused(focusedTileId(game))
+        return !game.waitingForRomm && !game.occupiesBothDisplays && !isPaused(focusedTileId(game))
     }
 
     /** What A says for the focused game when it is not a choice of screens. */
@@ -1795,7 +1796,7 @@ class ShellController(
         val game = focusedPlayable() ?: return PlayKey.None
         return when {
             isPaused(focusedTileId(game)) -> PlayKey.Resume
-            game.occupiesBothDisplays -> PlayKey.Play
+            game.waitingForRomm || game.occupiesBothDisplays -> PlayKey.Play
             else -> PlayKey.None
         }
     }
@@ -2256,6 +2257,15 @@ class ShellController(
     private val catalogWaitTitles = HashMap<String, String>()
     private val catalogWaitRecords = HashMap<String, Game>()
 
+    /** The same memory-only name before, during and after a catalog wait, including a cold offline start. */
+    private fun rememberedRommName(id: String): String? {
+        fun readable(name: String?): String? = name?.trim()?.takeIf { it.isNotEmpty() && it != id }
+        readable(rememberedPlayName(id))?.let { return it }
+        val key = homeGameKey(id) ?: return null
+        val record = Game(RommCredentials.PLUGIN_ID, key, "", Availability.RemoteOnly, "")
+        return readable(plugins.metadata(RommCredentials.METADATA_ID)?.cached(record)?.title)
+    }
+
     fun beginCatalogWait(tileId: String) {
         val game = findGame(tileId)
         // This record is only an artwork identity, never a launch route. RomM's
@@ -2268,8 +2278,8 @@ class ShellController(
             plugins.metadata(RommCredentials.METADATA_ID)?.cached(it)
         }
         catalogWaitTitles[tileId] = pendingGameTitle(
-            game.title, tileId, TileActivity.LoadingLibrary,
-            rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
+            game.title.takeUnless { game.waitingForRomm && it == BackupCopy.waiting("RomM") }.orEmpty(), tileId, TileActivity.LoadingLibrary,
+            if (game.waitingForRomm) null else rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
         )
         // An unknown record would let art fetchers cache a failed provider lookup
         // or search for "Your game" under the real game's id before its catalog arrives.
@@ -2283,9 +2293,10 @@ class ShellController(
         if (activity[tileId] == TileActivity.LoadingLibrary) activity = activity - tileId
     }
 
-    /** Both screens reuse the name resolved once at the press, with no history/cache lookups in the grid. */
+    /** A newly named waiting face takes precedence over the title resolved at the press. */
     fun displayTitle(game: ShelfGame, activity: TileActivity? = activityOf(game.id)): String =
-        pendingGameTitle(game.title, game.id, activity, remembered = catalogWaitTitles[game.id])
+        if (game.waitingForRomm && activity == TileActivity.LoadingLibrary && game.title == BackupCopy.waiting("RomM")) catalogWaitTitles[game.id] ?: game.title
+        else pendingGameTitle(game.title, game.id, activity, remembered = catalogWaitTitles[game.id])
 
     /** Drops a finished sync's mark when its time is up. A newer report for the game stays. */
     fun expireActivity(libraryId: String, remoteKey: String, untilMillis: Long) {
