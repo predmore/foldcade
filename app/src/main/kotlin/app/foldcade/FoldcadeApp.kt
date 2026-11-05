@@ -2844,8 +2844,12 @@ class FoldcadeApp : Application() {
 
     /** Reloading also connects, which starts the plugin's sync of unsynced saves. */
     private fun reconnectRomm() {
-        syncRomm()
-        scope.launch(Dispatchers.Main.immediate) { onNetworkBack?.invoke() }
+        val sync = syncRomm()
+        // After RomM has reconnected: a read racing the reconnect fails as if RomM were down (seen on the Thor).
+        scope.launch(Dispatchers.Main.immediate) {
+            sync.join()
+            onNetworkBack?.invoke()
+        }
     }
 
     /** Home's hook for a validated network coming back, as to reload a Saves page that had none. */
