@@ -817,9 +817,16 @@ class HomeSession(
         if (id !in board.folders) return
         board = renameFolder(board, id, name)
         if (!pending.bulk) made = live.firstOrNull()?.let { MadeCollection(id, it, named = true) }
+        created = true
         // A collection made for a slot or the All tile takes the focus to its own slot.
-        if (pending.members.isEmpty()) renameCell = board.slots.indexOf(id).coerceAtLeast(renameCell)
+        if (pending.members.isEmpty()) board.slots.indexOf(id).takeIf { it >= 0 }?.let { renameCell = it }
     }
+
+    /** A collection was just made on Done, so the shell files what it admitted, as after any Y action. */
+    private var created = false
+
+    /** True once after Done made a collection. See [created]. */
+    fun takeCreated(): Boolean = created.also { created = false }
 
     /** A collection just made and named to hold a game. See [takeMade]. */
     private var made: MadeCollection? = null

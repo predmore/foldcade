@@ -136,4 +136,14 @@ class NewCollectionCancelTest {
         assertTrue(home.board.folders.values.none { it.collection })
         assertNull(home.takeMade())
     }
+
+    @Test fun doneOnASlotAScanFilledPutsFocusOnTheCollectionWhereverItWent() {
+        val home = home()
+        home.newCollection(3)
+        // A scan takes A away and brings two games: they fill slot 1 and the slot naming began on.
+        home.remerge(emptyList(), emptyList(), listOf(b, HomeItem("c", "Gamma", HomeKind.Rom), HomeItem("d", "Delta", HomeKind.Rom)), emptyList())
+        val step = home.handle(Meaning.Done, 3)
+        val made = home.board.folders.values.single { it.collection }
+        assertEquals(home.board.slots.indexOf(made.id), step?.focus?.cellIndex)
+    }
 }
