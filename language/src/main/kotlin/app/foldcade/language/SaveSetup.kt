@@ -362,8 +362,12 @@ fun retainSaveSetup(previous: PickerModel, next: PickerModel): PickerModel {
     val tiles = saveSetupTiles(next, page)
     var settled = page
     if (tiles.any { it.findSaves } && !settled.offeredFind) settled = settled.copy(offeredFind = true)
-    // A page that opened before the emulators loaded holds its order from the first strip it gets.
-    if (settled.order.isEmpty() && tiles.isNotEmpty()) settled = settled.copy(order = tiles.map { it.key })
+    // A page that opened before the emulators loaded holds its order from the first strip it gets,
+    // and one that opened before Home's games did, as right after a sign-in, ranks again once they
+    // name the emulators they play on: the ones due then lead.
+    if (tiles.isNotEmpty() && (settled.order.isEmpty() || previous.boardEmulators != next.boardEmulators)) {
+        settled = settled.copy(order = saveSetupTiles(next, settled.copy(order = emptyList())).map { it.key })
+    }
     // The tile the page came back for is on the strip now. A pick made behind the picker has landed
     // already, so a done tile's check lands here, and the focus glides on as after any pick.
     settled.restoring?.let { key ->

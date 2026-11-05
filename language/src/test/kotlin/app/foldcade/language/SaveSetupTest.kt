@@ -366,6 +366,16 @@ class SaveSetupTest {
         }
     }
 
+    @Test fun aPageOpenedBeforeHomesGamesLoadedRanksAgainWhenTheyDo() {
+        // Right after a sign-in the page opens before Home names its emulators: none is due yet.
+        val early = model.copy(allFilesGranted = true).saves("duckstation") { it.copy(hostedInUse = true) }.openSaveSetup(HostScreen.Top)
+        assertEquals("duckstation", early.tiles().first().key)
+        val loaded = retainSaveSetup(early, early.copy(boardEmulators = setOf("melonds", "armsx2")))
+        assertEquals(listOf("armsx2", "melonds", "duckstation"), loaded.tiles().take(3).map { it.key })
+        // The focus stays where it was.
+        assertEquals(early.page().focus, loaded.page().focus)
+    }
+
     @Test fun fromAllSetTheDpadStillReachesTheEnds() {
         val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms.copy(saveSyncing = true, saveSyncSteps = null), duck.copy(hostedInUse = true)))
         val end = one.openSaveSetup(HostScreen.Top)

@@ -103,6 +103,11 @@ internal fun SaveConflictBottom(
         val gap = fit.gap.dp
         val corner = RoundedCornerShape(design.metrics.cardCornerDp.dp)
         val border = with(LocalDensity.current) { design.metrics.dialogBorderPx.toDp() }
+        // Inside the card, room for the heavier ring's glow and the focused chip's grow, so the
+        // focused action never meets the card's edge.
+        val ring = design.focusRing
+        val reach = with(LocalDensity.current) { (ring.gap + ring.pronouncedStroke + ring.pronouncedSpread).toDp() } + FOCUS_GROW_ROOM
+        val inset = maxOf(edge, reach)
         Column(
             Modifier
                 .fillMaxSize()
@@ -115,12 +120,12 @@ internal fun SaveConflictBottom(
             Column(
                 Modifier
                     // The cards keep their one width on a wide screen; a narrow one fits the card to it.
-                    .widthIn(max = fit.cardWidth.dp * 2 + gap + edge * 2)
+                    .widthIn(max = fit.cardWidth.dp * 2 + gap + inset * 2)
                     .fillMaxWidth()
                     .clip(corner)
                     .background(theme.surface)
                     .border(border, theme.onBackground.copy(alpha = design.dialog.borderAlpha), corner)
-                    .padding(edge),
+                    .padding(inset),
                 verticalArrangement = Arrangement.spacedBy(if (fit.compact) 2.dp else 6.dp),
             ) {
                 BasicLine(Copy.saveConflictTitle, theme.onBackground, type.dialogTitle.value, theme, TextAlign.Start, maxLines = 1, display = true, weight = type.strongWeight)
@@ -313,6 +318,9 @@ private fun Modifier.conflictCard(focused: Boolean): Modifier {
         if (focused) with(FocusRing(theme)) { drawFocusRing(corner, pronounced = true) }
     }
 }
+
+/** How far a focused chip's 8% grow reaches past its edge, about a tenth of its width. */
+private val FOCUS_GROW_ROOM = 10.dp
 
 /** A focused save card grows a little, less than a chip, as it is so much larger. */
 private const val CARD_GROW = 1.03f
