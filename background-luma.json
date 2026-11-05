@@ -1,0 +1,18 @@
+{
+  "before": {
+    "roi": "crop=200:400:150:300",
+    "minimum_luma": 20.4987,
+    "below25_frames": 59,
+    "below25_start": 1.535478,
+    "below25_end": 3.301822,
+    "gap_seconds": 1.7663440000000001
+  },
+  "after": {
+    "roi": "crop=200:400:150:300",
+    "minimum_luma": 46.8955,
+    "below25_frames": 0,
+    "below25_start": null,
+    "below25_end": null,
+    "gap_seconds": 0
+  }
+}

@@ -1,0 +1,13 @@
+diff --git a/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt b/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
+index fa0c647a..81666423 100644
+--- a/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
++++ b/app/src/main/kotlin/app/foldcade/ui/PanelScreen.kt
+@@ -2448,6 +2448,8 @@ private data class HeroSources(val cover: String?, val scene: ArtScene?)
+ 
+ private suspend fun decodeHero(app: FoldcadeApp, context: Context, sources: HeroSources, decoded: MutableMap<Pair<String, HeroImageRole>, LoadedCover>): HeroImages? =
+     withContext(Dispatchers.Default) {
++        // QA-only fixture; excluded from the PR and production APK.
++        if (java.io.File(context.filesDir, "hero-delay-qa").exists()) delay(2500L)
+         suspend fun decode(uri: String?, px: Int, filter: FilterQuality = FilterQuality.Low): LoadedCover? {
+             if (uri == null) return null
+             val result = app.images.execute(coverRequest(context, uri, px)) as? SuccessResult ?: return null
