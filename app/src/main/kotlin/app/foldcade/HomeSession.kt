@@ -125,6 +125,8 @@ data class HomeFace(
     val onServer: Boolean = false,
     /** A folder's label when [title] does not fit under its tile ([folderShortName]). */
     val shortTitle: String? = null,
+    /** Home keeps this RomM member while the source has no catalog entry for it. */
+    val waitingForRomm: Boolean = false,
 )
 
 /**
@@ -339,6 +341,7 @@ class HomeSession(
             remoteKey = game?.remoteKey ?: shelfGame?.remoteKey,
             emptyShelfHint = shelfGame?.emptyShelfHint == true,
             availabilityLabel = shelfGame?.availabilityLabel,
+            waitingForRomm = face.waitingForRomm,
         )
     }
 
@@ -1275,11 +1278,15 @@ class HomeSession(
         val item = catalogById[id]
         val game = games[id]
         if (id in restoredGaps && item == null) return faceFor(null)
+        val waitingForRomm = item == null && id.startsWith("lib:romm:")
+        val waitingTitle = app.foldcade.language.BackupCopy.waiting("RomM")
+        val keptTitle = sequenceOf(game?.label, board.ranks[id]?.title)
+            .mapNotNull { it?.trim()?.takeIf { name -> name.isNotEmpty() && name != id } }.firstOrNull()
         return HomeFace(
             id = id,
-            title = item?.title ?: id,
-            shortText = platformName(item?.platformId ?: game?.platformId),
-            mark = item?.mark,
+            title = item?.title ?: if (waitingForRomm) keptTitle ?: waitingTitle else id,
+            shortText = if (waitingForRomm && keptTitle != null) waitingTitle else platformName(item?.platformId ?: game?.platformId),
+            mark = if (waitingForRomm) "cloud" else item?.mark,
             empty = false,
             folder = false,
             allTile = false,
@@ -1288,6 +1295,7 @@ class HomeSession(
             androidPackage = id.removePrefix("android:").takeIf { id.startsWith("android:") },
             occupiesBoth = false,
             onServer = copies(id).let { it.isNotEmpty() && it.all { copy -> copy.availability == Availability.RemoteOnly } },
+            waitingForRomm = waitingForRomm,
         )
     }
 

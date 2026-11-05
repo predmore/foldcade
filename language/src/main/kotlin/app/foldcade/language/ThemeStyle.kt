@@ -679,6 +679,8 @@ class ThemePlay internal constructor(reader: ThemeStyleReader) {
     val trackAlpha = reader.fraction("play", "trackAlpha", .06f, TokenRole.Fill)
     val hourAlpha = reader.fraction("play", "hourAlpha", .10f, TokenRole.Fill)
     val hourDp = reader.number("play", "hourDp", 1f, role = TokenRole.Stroke)
+    /** Short sessions remain visible without changing their recorded time. */
+    val markMinWidthDp = reader.number("play", "markMinWidthDp", 8f, role = TokenRole.Stroke)
     /** A day of the week with no play. */
     val emptyBarAlpha = reader.fraction("play", "emptyBarAlpha", .12f, TokenRole.Fill)
     val barCornerDp = reader.number("play", "barCornerDp", 3f, role = TokenRole.Corner)

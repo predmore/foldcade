@@ -4,12 +4,7 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
-import app.foldcade.language.HOME_ALL
-import app.foldcade.language.HomeBoard
-import app.foldcade.language.HomeFolder
-import app.foldcade.language.decodeHome
-import app.foldcade.language.encodeHome
-import app.foldcade.language.homeGameId
+import app.foldcade.language.*
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
 import org.junit.Test
@@ -23,6 +18,49 @@ class RommCachedHomeTest {
     private val entries = (42..46).map { id ->
         val game = Game("romm", id.toString(), "snes", Availability.RemoteOnly, "Game $id")
         GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)
+    }
+
+    @Test fun theFirstOfflineStartKeepsUncataloguedGamesAsRommWaitingTiles() {
+        val (_, shell) = fixture()
+        shell.openHomeFolder(collection.id)
+        val face = shell.homeFace(0)!!
+        assertEquals(collected, face.id)
+        assertEquals("Waiting for RomM", face.title)
+        assertEquals("cloud", face.mark)
+        assertTrue(face.waitingForRomm)
+        assertFalse(face.empty)
+        assertFalse(shell.focusedLaunchesOnOneScreen())
+        assertEquals(PlayKey.Play, shell.focusedPlayKey())
+        val hero = (shell.focusedHero() as HeroSubject.Item).item
+        assertEquals(face.title, hero.title)
+        assertEquals("cloud", hero.mark)
+        assertNull(shell.launchRoute(collected))
+        assertNull(shell.artQuery(shell.findGame(collected)))
+        // Pressing A still uses the existing catalog recovery/launch path; the view stays in its collection.
+        shell.beginCatalogWait(collected)
+        shell.endCatalogWait(collected)
+        assertEquals("Waiting for RomM", (shell.focusedHero() as HeroSubject.Item).item.title)
+        val record = entries.first { it.game!!.remoteKey == "45" }
+        shell.ingestLibrary("romm", entries, emptyList())
+        assertEquals(record.title, shell.homeFace(0)!!.title)
+        assertFalse(shell.homeFace(0)!!.waitingForRomm)
+        assertNotNull(shell.launchRoute(collected))
+    }
+
+    @Test fun aBoardThatKeptTheGamesNameUsesItAboveTheWaitingState() {
+        val board = HomeBoard(slots = listOf(pinned), ranks = mapOf(pinned to TileRank("Super Metroid")))
+        val home = HomeSession(null).apply { restore(board) }
+        val face = home.faceOf(pinned)
+        assertEquals("Super Metroid", face.title)
+        assertEquals("Waiting for RomM", face.shortText)
+        assertEquals("cloud", face.mark)
+        assertTrue(face.waitingForRomm)
+        assertTrue(home.asShelf(face).waitingForRomm)
+        // Internal ids or blank old names never become player-facing labels.
+        for (name in listOf(pinned, " ")) {
+            val unknown = HomeSession(null).apply { restore(board.copy(ranks = mapOf(pinned to TileRank(name)))) }.faceOf(pinned)
+            assertEquals("Waiting for RomM", unknown.title)
+        }
     }
 
     @Test fun anEarlySnapshotKeepsStartupPlacementsUntilTheCompleteListingReportsMissingGames() {

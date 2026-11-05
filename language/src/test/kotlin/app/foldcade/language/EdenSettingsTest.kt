@@ -39,9 +39,10 @@ class EdenSettingsTest {
             listOf(eden, Row.SettingsTile(SettingsInner.Emulator(RETROARCH_SHELF_KEY)), Row.SaveSetup, Row.FindSaves),
             settingsRows(SettingsCategory.Players, both),
         )
-        val (closed, effect) = reduce(granted.onSetting(Row.EdenFolder), Meaning.Activate)
+        val page = granted.onSetting(Row.EdenFolder)
+        val (opened, effect) = reduce(page, Meaning.Activate)
         assertEquals(Effect.ShowEdenFolder, effect)
-        assertNull(closed.settings)
+        assertEquals(page.settings, opened.settings)
     }
 
     @Test

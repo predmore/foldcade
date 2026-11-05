@@ -10,6 +10,20 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayTimeCopyTest {
+    @Test fun emptyDayTotalsAreQuietWithoutHidingShortPlay() {
+        assertEquals("–", playDayTotal(0L))
+        assertEquals("<1m", playDayTotal(1L))
+        assertEquals("2m", playDayTotal(120_000L))
+        assertEquals("0m", playDuration(0L))
+    }
+
+    @Test fun shortPlayMarksStayVisibleAndInsideTheDay() {
+        assertEquals(0f..8f, playMarkRange(0f..0.001f, 100f, 8f))
+        assertEquals(92f..100f, playMarkRange(.999f..1f, 100f, 8f))
+        assertEquals(25f..75f, playMarkRange(.25f.. .75f, 100f, 8f))
+        assertEquals(0f..4f, playMarkRange(.9f..1f, 4f, 8f))
+        assertEquals(0f..0f, playMarkRange(.9f..1f, 0f, 8f))
+    }
     @Test
     fun playedLineUsesActiveMinutes() {
         assertEquals("Played  —", playedLine(0))

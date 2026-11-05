@@ -57,6 +57,8 @@ After restoring a setup backup, which leaves sign-ins out, or once RomM refuses 
 - The RomM tile in **Settings › Library** wears the not-syncing mark, and its page reads **Signed out**, with **Sign in** and **Remove**.
 - A restored RomM game on Home is a gap until then. Focused, the top screen reads **Waiting for RomM** and **Sign in to bring it back**; **A**, or **Sign in** in its **Y** menu, opens the form.
 
+If you are signed in but RomM's catalog has not arrived, retained game tiles show the RomM cloud and **Waiting for RomM**. A name kept on the board appears above that state. **A Play** retries loading the game; a failed request explains how to check the connection. The game returns to its usual tile when the catalog arrives.
+
 Each Foldcade install registers as its own device in RomM and keeps it across restarts, so RomM keeps its sync history. Reinstalling Foldcade registers a new device.
 
 The catalog loads at startup, after connecting or editing a connection, and again every 15 minutes while Home is shown. After adding games, let RomM finish its scan, then choose **Settings › Library › Sync games** to see them right away. The row reads **Syncing** while it works, then **Synced**, or **Can’t reach RomM** when the server didn’t answer; RomM’s tile wears the not-syncing mark until a sync gets through.
