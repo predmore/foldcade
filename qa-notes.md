@@ -48,3 +48,7 @@ Thor QA round 2, 2026-11-04 21:15:30–21:22 PST:
 - Round 1 Opus findings addressed: Total source, non-game consistency, Apply hint, match-chip overlap, companion corners. An additional usage-only page gate and one orphaned “yet” were fixed during verification.
 
 Final verification after rebase onto main 5d86095e: testDebugUnitTest --rerun-tasks passed (2691 tests, 0 failures). One earlier full run hit an unrelated FindSpeedTest threshold (56ms vs40ms); isolated rerun and full rerun passed.
+
+Review round 2: no correctness findings; About page/companion and both Play activity pages scored9. Art scored8.5 solely because a single Hero/Logo used Tile's narrow current-image size. Verified the captures and changed only single Hero/Logo width to the available width; Tile and multi-candidate layouts stay the same. Full testDebugUnitTest --rerun-tasks passed after this adjustment (1m23s). Third Thor capture and final UX check pending.
+
+Thor QA round3, 2026-11-04 21:41:04–21:44 PST: verified r3-art-hero and r3-art-logo use the available width, and r3-art-tile retains its portrait-friendly size. All show the current check and Automatic / Back. No game or stream launched. HOME stayed app.foldcade; Wi-Fi stayed1. No save-backups existed. The test RomM device was deleted (HTTP204), .uxrpages removed, stay-on set false, and turn released. Rebased without conflicts onto main1303e2c7; final integration test rerun pending.
