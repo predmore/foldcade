@@ -106,7 +106,8 @@ class PlaySessions private constructor(
 
     fun shown(gameId: String): ShownPlay {
         val lifecycle = totals(gameId)
-        val usage = packageOf(gameId)?.let { usageByPackage[it] }
+        val pkg = packageOf(gameId)
+        val usage = pkg?.takeIf { name -> usageGames().any { packageOf(it) == name } }?.let { usageByPackage[it] }
         if (usageGranted && usage != null) {
             // Android retains only a short event window. Older launch history must stay visible.
             val ids = historyIds(gameId)
@@ -120,6 +121,11 @@ class PlaySessions private constructor(
     fun lastPlayedMillis(gameId: String): Long? = shown(gameId).lastPlayedMillis
 
     fun hasTrackedSession(): Boolean = !log.isEmpty()
+
+    /** A Play time page is useful for usage-only games too, even before the first launch here. */
+    fun hasPlay(): Boolean = hasTrackedSession() || usageGames().any { game ->
+        packageOf(game)?.let { usageByPackage[it]?.activeMillis ?: 0L }?.let { it > 0L } == true
+    }
 
     /** Replaces the usage overlay. Lifecycle sessions stay in place for when access is off. */
     fun applyUsage(granted: Boolean, samples: List<UsageSample>, nowMillis: Long,

@@ -71,6 +71,8 @@ class PlayUsageTest {
         assertEquals(120_000L, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertEquals(plays.shown(game).activeMillis, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertTrue(plays.spans().all { it.sessionId.isEmpty() })
+        assertFalse(plays.hasTrackedSession())
+        assertTrue("Y › Play time must be available for usage-only games", plays.hasPlay())
     }
 
     @Test fun aRomKeepsItsOwnLaunchTimeBesideTheWholeEmulatorsUsage() {
@@ -115,6 +117,29 @@ class PlayUsageTest {
             app.foldcade.language.LaunchableApp("com.example.emulator", "Emulator", true),
         ), setOf("com.example.emulator"))
         assertEquals(listOf("android:com.example.game"), shell.usageGameIds())
+    }
+
+    @Test fun gamePageTotalAndWeekIncludeUsageWhileNonGamePagesKeepLaunchTime() {
+        var now = 10_000_000L
+        val plays = PlaySessions.open(File(Files.createTempDirectory("play-page-total").toFile(), "events.log"), PlayClock { now })
+        val game = "android:com.example.game"
+        val utility = "android:com.example.app"
+        plays.packageOf = { playTimePackage(it) { null } }
+        plays.usageGames = { listOf(game) }
+        val session = plays.start(utility)
+        now += 30_000L
+        plays.signal(session, PlaySignal.End)
+        plays.applyUsage(true, listOf(
+            UsageSample("com.example.game", UsageMove.Resumed, now - 120_000L),
+            UsageSample("com.example.game", UsageMove.Paused, now),
+            UsageSample("com.example.app", UsageMove.Resumed, now - 600_000L),
+            UsageSample("com.example.app", UsageMove.Paused, now),
+        ), now)
+        val week = app.foldcade.language.playWeek(plays.spans(), now, java.time.ZoneOffset.UTC, app.foldcade.language.DateStyle())
+        assertEquals(120_000L, plays.shown(game).activeMillis)
+        assertEquals(plays.shown(game).activeMillis, week.top.single { it.first == game }.second)
+        assertEquals(30_000L, plays.shown(utility).activeMillis)
+        assertEquals(plays.shown(utility).activeMillis, week.top.single { it.first == utility }.second)
     }
 
 }

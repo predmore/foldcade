@@ -534,7 +534,8 @@ private fun PlayToday(app: FoldcadeApp) {
         }
     }
     val stamp = app.plays.stamp
-    val today = remember(stamp, day) {
+    val catalogEpoch = app.shell.model.shelfEpoch
+    val today = remember(stamp, catalogEpoch, day) {
         playToday(app.plays.spans(), System.currentTimeMillis(), ZoneId.systemDefault())
     }
     Glyph(R.drawable.ic_status_playtime, null)

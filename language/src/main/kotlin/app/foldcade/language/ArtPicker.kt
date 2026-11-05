@@ -98,6 +98,7 @@ data class ArtPickerState(
         listOf(ArtCandidate("current", url, url)) + candidates.filter { it.url != url }
     } ?: candidates
     val focused: ArtCandidate? get() = options.getOrNull(index)
+    val canApply: Boolean get() = focused?.let { it.url != currentArt[kind] } == true
 
     fun withCurrent(art: Map<ArtKind, String>): ArtPickerState {
         val focusedUrl = focused?.url
@@ -152,10 +153,10 @@ object ArtCopy {
     const val anotherMatch = "Another match"
 }
 
-fun artPickerHintGroups(faces: FaceMap): List<List<HintKey>> = listOf(
-    listOf(HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply)),
+fun artPickerHintGroups(faces: FaceMap, canApply: Boolean = true): List<List<HintKey>> = listOfNotNull(
+    if (canApply) listOf(HintKey(promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA, ArtCopy.apply)) else null,
     listOf(HintKey(actionFaces(faces).bottomGlyph, ArtCopy.automatic)),
     listOf(HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back)),
 )
 
-fun artPickerHints(faces: FaceMap): List<HintKey> = artPickerHintGroups(faces).flatten()
+fun artPickerHints(faces: FaceMap, canApply: Boolean = true): List<HintKey> = artPickerHintGroups(faces, canApply).flatten()

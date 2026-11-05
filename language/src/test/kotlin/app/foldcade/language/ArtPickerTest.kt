@@ -162,4 +162,15 @@ class ArtPickerTest {
         }
     }
 
+    @Test fun applyIsOfferedOnlyWhenTheFocusedImageCanChangeTheArt() {
+        val current = candidates.first().url
+        val state = ArtPickerState("game", candidates = candidates, currentArt = mapOf(ArtKind.Tile to current))
+        assertFalse(state.canApply)
+        assertFalse(artPickerHints(FaceMap.standard(), state.canApply).any { it.label == ArtCopy.apply })
+        val alternative = state.navigate(Meaning.MoveDown)
+        assertTrue(alternative.canApply)
+        assertTrue(artPickerHints(FaceMap.standard(), alternative.canApply).any { it.label == ArtCopy.apply })
+        assertFalse(state.copy(currentArt = emptyMap(), candidates = emptyList()).canApply)
+    }
+
 }

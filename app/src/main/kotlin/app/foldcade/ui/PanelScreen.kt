@@ -963,7 +963,11 @@ private fun CommandCenterScreen(
                             val game = app.shell.aboutGame(subject.game)
                             val art = rememberArt(app, game?.let(app.shell::artRecord), game?.let(app.shell::artQuery))
                             val cover = art?.cover?.let { rememberCoverPainter(app, it, 512) }
-                            if (cover != null) Image(cover.painter, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                            if (cover != null) Image(cover.painter, null,
+                                (if (cover.ratio < 1f) Modifier.fillMaxHeight() else Modifier.fillMaxWidth())
+                                    .aspectRatio(cover.ratio)
+                                    .clip(RoundedCornerShape(theme.style.metrics.cardCornerDp.dp / 2)),
+                                contentScale = ContentScale.Fit)
                             else MarkIcon(subject.mark ?: MARK_CONSOLE, theme.style.hero.markScale)
                         }
                         subject.icon != null -> InkIcon(subject.icon, Modifier.fillMaxSize(0.62f))
@@ -1295,6 +1299,9 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 }
             }
             val inset = px(design.metrics.heroInsetPx)
+            // The match chip occupies its own band below the islands while Art is open.
+            val matchSpace by eased(if (screen == model.layout.menuScreen && app.shell.artPicker != null) 44f else 0f,
+                motion.durationTravel, scale)
             // Wide enough for a platform, both screens, and play time on one line.
             val cardMax = this@BoxWithConstraints.maxWidth * 0.72f
             // Cocoon's hero: the art centred between the islands, a name card centred under it.
@@ -1305,7 +1312,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                         start = inset,
                         end = inset,
                         // Under the islands, on the screen that has them.
-                        top = if (screen == model.layout.menuScreen) inset + 48.dp else inset,
+                        top = if (screen == model.layout.menuScreen) inset + 48.dp + matchSpace.dp else inset,
                         bottom = inset,
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,

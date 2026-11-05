@@ -121,28 +121,31 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
                 }
             }
         }
-        Crossfade(state.kind, animationSpec = theme.motion.arrive(theme.motion.durationTravel, scale), modifier = Modifier.weight(1f)) { kind ->
+        val single = !state.loading && state.options.size == 1
+        Crossfade(state.kind to single, animationSpec = theme.motion.arrive(theme.motion.durationTravel, scale), modifier = Modifier.weight(1f)) { (kind, large) ->
             val shown = tabs[kind] ?: state.copy(kind = kind, candidates = emptyList(), loading = true)
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val cellWidth = (maxWidth - reach * 2) / 4
-                val cellHeight = maxHeight / 3
+                val rows = if (large) 1 else 3
+                val cellWidth = if (large) minOf(maxWidth * 0.62f, maxHeight * 1.1f) else (maxWidth - reach * 2) / 4
+                val cellHeight = maxHeight / rows
+                val padding = if (large) PaddingValues(horizontal = (maxWidth - cellWidth) / 2, vertical = reach) else PaddingValues(reach)
                 val scroll = rememberLazyListState()
                 LaunchedEffect(shown.index) {
-                    val column = shown.index / 3
+                    val column = shown.index / rows
                     if (column < scroll.firstVisibleItemIndex) scroll.animateScrollToItem(column)
                     else if (column >= scroll.firstVisibleItemIndex + 4) scroll.animateScrollToItem((column - 3).coerceAtLeast(0))
                 }
                 val gridSlots = rememberSelectionSlots()
                 var origin by remember { mutableStateOf(Offset.Zero) }
-                LazyRow(state = scroll, modifier = Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }, contentPadding = PaddingValues(reach)) {
+                LazyRow(state = scroll, modifier = Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }, contentPadding = padding) {
                     val options = shown.options
                     val count = if (shown.loading) maxOf(12, options.size) else options.size
-                    items((count + 2) / 3) { column ->
+                    items((count + rows - 1) / rows) { column ->
                         Column(Modifier.width(cellWidth)) {
-                            repeat(3) { row ->
-                                val index = column * 3 + row
+                            repeat(rows) { row ->
+                                val index = column * rows + row
                                 val candidate = options.getOrNull(index)
-                                Box(Modifier.width(cellWidth).height((cellHeight - reach * 2 / 3).coerceAtLeast(1.dp)).padding(6.dp)) {
+                                Box(Modifier.width(cellWidth).height((cellHeight - reach * 2 / rows).coerceAtLeast(1.dp)).padding(6.dp)) {
                                     if (candidate != null || shown.loading) {
                                         ArtCandidateTile(app, candidate, candidate != null && candidate.url == shown.currentArt[kind], Modifier.fillMaxSize()
                                             .onGloballyPositioned { coordinates ->
@@ -165,7 +168,7 @@ internal fun ArtPickerScreen(app: FoldcadeApp, state: ArtPickerState, scale: Flo
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            artPickerHintGroups(app.shell.model.faceMap).forEach { group ->
+            artPickerHintGroups(app.shell.model.faceMap, state.canApply).forEach { group ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     group.forEach { HintWord(app.shell.model, it) }
                 }
