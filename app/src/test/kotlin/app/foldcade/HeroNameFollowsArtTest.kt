@@ -8,6 +8,7 @@ import app.foldcade.ui.namedSubject
 import app.foldcade.ui.titleCollapse
 import app.foldcade.ui.richestShare
 import app.foldcade.ui.titleSafeStart
+import app.foldcade.ui.heroFactAlpha
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -28,6 +29,21 @@ class HeroNameFollowsArtTest {
         // The same subject shows the focus's fresher copy at once.
         val fresher = folder("old", count = 2)
         assertEquals(fresher, namedSubject(focus = fresher, shown = old, waited = false))
+    }
+
+    @Test fun theNamedGamesFactsFollowItsArtAndNeverAnotherGamesWarning() {
+        assertEquals(1f, heroFactAlpha("old", "old", null, 1f, 0f), 0f)
+        // The name timed out before its slow art: no previous game's save warning under it.
+        assertEquals(0f, heroFactAlpha("new", "old", null, 1f, 0f), 0f)
+        // As the art arrives, the single named line shares exactly its foreground opacity.
+        assertEquals(0f, heroFactAlpha("new", "new", "old", 0f, 1f), 0f)
+        assertEquals(.35f, heroFactAlpha("new", "new", "old", .35f, .65f), 0f)
+        assertEquals(.65f, heroFactAlpha("old", "new", "old", .35f, .65f), 0f)
+        // A fast third focus cannot inherit either retained game's facts.
+        assertEquals(0f, heroFactAlpha("third", "new", "old", .35f, .65f), 0f)
+        // Same-game art upgrades do not pulse the facts; an artless fallback can name itself.
+        assertEquals(1f, heroFactAlpha("new", "new", "new", .35f, .65f), 0f)
+        assertEquals(1f, heroFactAlpha("new", null, null, 0f, 0f), 0f)
     }
 
     @Test fun theSquareGoesWhereTheBoxIsBusiest() {
