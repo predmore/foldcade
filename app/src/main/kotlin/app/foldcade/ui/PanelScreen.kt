@@ -2751,13 +2751,22 @@ private fun FocusedName(app: FoldcadeApp, scale: Float, modifier: Modifier) {
     val model = app.shell.model
     val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero())
         ?.let { heroCopy(it).title }.orEmpty()
+    // With no hero and no band above the grid, the open folder or collection leads the name, muted,
+    // so this layout names the place too (review-C S3).
+    val place = app.shell.openPlace()?.name
     val shown = model.panel == null && model.focus.chrome == null && app.shell.find == null
     val alpha by motionState(
         if (shown) 1f else 0f,
         if (shown) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
     )
     BasicText(
-        name,
+        if (place == null) androidx.compose.ui.text.AnnotatedString(name) else androidx.compose.ui.text.buildAnnotatedString {
+            withStyle(androidx.compose.ui.text.SpanStyle(color = theme.muted)) { append(place) }
+            if (name.isNotEmpty()) {
+                withStyle(androidx.compose.ui.text.SpanStyle(color = theme.muted)) { append(" · ") }
+                append(name)
+            }
+        },
         modifier = modifier.graphicsLayer { this.alpha = alpha },
         style = text(theme.onBackground, design.type.menuRow, theme, display = true).copy(textAlign = TextAlign.Center),
         maxLines = 1,
@@ -3294,7 +3303,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
             model.dialog != null -> HintPlace.Dialog
             model.panel != null -> HintPlace.Menu
             // Hidden is opened from Edit home, so B going back is named even with nothing hidden.
-            !model.atLibraryRoot || model.homeGrid == HomeGrid.Hidden -> HintPlace.InsidePlatform
+            // A grid opened from the command center beside an app goes back to it on B (review-C 86).
+            !model.atLibraryRoot || model.homeGrid == HomeGrid.Hidden || app.store.session.browsing != null -> HintPlace.InsidePlatform
             else -> HintPlace.RootGrid
         },
     )

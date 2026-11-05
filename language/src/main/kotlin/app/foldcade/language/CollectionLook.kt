@@ -107,15 +107,16 @@ data class IconPick(
             Meaning.MoveLeft -> copy(glyph = (glyph - 1).coerceAtLeast(0))
             Meaning.MoveRight -> copy(glyph = (glyph + 1).coerceAtMost(last))
             // Up and down keep to the column the cursor is drawn in, the short last row centred under the rest.
+            // The short last row sits between two columns, so up takes the one on its left, and down the nearest glyph.
             Meaning.MoveUp -> when {
                 glyph < COLUMNS -> copy(onTints = true)
-                glyph >= lastStart -> copy(glyph = glyph - COLUMNS + LAST_ROW_SHIFT)
+                glyph >= lastStart -> copy(glyph = glyph - COLUMNS + kotlin.math.floor(LAST_ROW_SHIFT).toInt())
                 else -> copy(glyph = glyph - COLUMNS)
             }
             Meaning.MoveDown -> when {
                 glyph >= lastStart -> this
                 glyph + COLUMNS < lastStart -> copy(glyph = glyph + COLUMNS)
-                else -> copy(glyph = lastStart + (glyph % COLUMNS - LAST_ROW_SHIFT).coerceIn(0, last - lastStart))
+                else -> copy(glyph = lastStart + kotlin.math.floor(glyph % COLUMNS - LAST_ROW_SHIFT + 0.5f).toInt().coerceIn(0, last - lastStart))
             }
             else -> this
         }
@@ -129,11 +130,11 @@ data class IconPick(
          * How many columns in the glyph grid's short last row sits, so it is centred under the
          * full rows rather than left alone at the start of one. Zero when the last row is full.
          */
-        val LAST_ROW_SHIFT: Int = (COLUMNS - ((FOLDER_ICONS.size - 1) % COLUMNS + 1)) / 2
+        val LAST_ROW_SHIFT: Float = (COLUMNS - ((FOLDER_ICONS.size - 1) % COLUMNS + 1)) / 2f
 
-        /** The column glyph [index] is drawn in: its own, or for the last row's, shifted to centre it. */
-        fun glyphColumn(index: Int): Int =
-            index % COLUMNS + if (index >= FOLDER_ICONS.lastIndex / COLUMNS * COLUMNS) LAST_ROW_SHIFT else 0
+        /** The column glyph [index] is drawn at: its own, or for the last row's, shifted to centre it, perhaps by half a column. */
+        fun glyphColumn(index: Int): Float =
+            index % COLUMNS + if (index >= FOLDER_ICONS.lastIndex / COLUMNS * COLUMNS) LAST_ROW_SHIFT else 0f
 
         fun open(folderId: String, look: CollectionLook): IconPick = IconPick(
             folderId = folderId,

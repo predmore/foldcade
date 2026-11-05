@@ -54,18 +54,20 @@ class GridChromeTest {
         val last = FOLDER_ICONS.lastIndex
         val lastStart = last / columns * columns
         val count = last - lastStart + 1
-        assertEquals((columns - count) / 2, IconPick.LAST_ROW_SHIFT)
-        assertEquals(IconPick.LAST_ROW_SHIFT, IconPick.glyphColumn(lastStart))
-        assertEquals(0, IconPick.glyphColumn(0))
+        // Centred exactly, half a column over when the counts differ by an odd number (review r1).
+        assertEquals((columns - count) / 2f, IconPick.LAST_ROW_SHIFT, 0f)
+        assertEquals((columns - 1) / 2f, (IconPick.glyphColumn(lastStart) + IconPick.glyphColumn(last)) / 2f, 0f)
+        assertEquals(0f, IconPick.glyphColumn(0), 0f)
         val pick = IconPick.open("c", CollectionLook(FOLDER_ICONS[lastStart], CollectionTint.Gold))
-        // Up from the centred glyph lands on the one drawn above it, and down comes back.
+        // Up from the centred row lands on the glyph drawn at or just left of it, and down comes back.
         val up = pick.step(Meaning.MoveUp)
-        assertEquals(IconPick.glyphColumn(lastStart), IconPick.glyphColumn(up.glyph))
-        assertEquals(lastStart - columns + IconPick.LAST_ROW_SHIFT, up.glyph)
+        assertEquals(lastStart - columns + kotlin.math.floor(IconPick.LAST_ROW_SHIFT).toInt(), up.glyph)
         assertEquals(lastStart, up.step(Meaning.MoveDown).glyph)
         // Down from a column past the short row's end goes to its nearest glyph, and the last row goes nowhere.
         val left = IconPick.open("c", CollectionLook(FOLDER_ICONS[lastStart - columns], CollectionTint.Gold))
         assertEquals(lastStart, left.step(Meaning.MoveDown).glyph)
+        val right = IconPick.open("c", CollectionLook(FOLDER_ICONS[lastStart - 1], CollectionTint.Gold))
+        assertEquals(last, right.step(Meaning.MoveDown).glyph)
         assertEquals(pick, pick.step(Meaning.MoveDown))
     }
 
