@@ -678,6 +678,9 @@ private val THUMB = 36.dp
 /**
  * A save list's height in whole rows, when it holds more than fit: the card's edge then never
  * cuts a row in half, and the rows sit centred in the card. A list that fits fills the card.
+ * The ring's padding stays inside the scroll, so the first and last rows' rings are never
+ * clipped. At either end of the scroll the far padding is the next row's own empty top or
+ * bottom margin, which [menuFade] covers, so only whole rows read.
  */
 @Composable
 private fun Modifier.wholeRows(rows: Int): Modifier {
