@@ -813,7 +813,8 @@ class HomeSession(
                 // reversed, as Undo reverses a removal and keeps the arrivals.
                 if (unmade != null) {
                     board = if (board == unmade.after) unmade.before
-                    else HomeUndo(unmade.before, verb = "", started = 0L, after = unmade.after).restore(board)
+                    // Copies the scan folded into one tile are named as the board names them now.
+                    else HomeUndo(unmade.before, verb = "", started = 0L, after = unmade.after).adopt(sameGames).restore(board)
                     renameCell = unmade.cell
                 }
                 closeTyping()
