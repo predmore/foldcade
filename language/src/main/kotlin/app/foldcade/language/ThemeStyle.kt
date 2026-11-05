@@ -487,6 +487,8 @@ class ThemeTile internal constructor(reader: ThemeStyleReader) {
     val dotPx = reader.number("tile", "dotPx", 10f)
     val statusChipPx = reader.number("tile", "statusChipPx", 36f, TokenDomain.Positive)
     val statusIconPx = reader.number("tile", "statusIconPx", 24f, TokenDomain.Positive)
+    /** Share of a status chip seated outside the top-right corner, clear of cover titles. */
+    val statusOverlap = reader.fraction("tile", "statusOverlap", .5f, TokenRole.None)
     val statusBackingAlpha = reader.fraction("tile", "statusBackingAlpha", .72f, TokenRole.Fill)
     val downloadBarPx = reader.number("tile", "downloadBarPx", 12f, role = TokenRole.Stroke)
     val downloadTrackAlpha = reader.fraction("tile", "downloadTrackAlpha", .4f, TokenRole.Fill)

@@ -43,7 +43,7 @@ System and source folders appear with their first game. An emulator's own tile g
 
 ## Artwork
 
-Turn on **Settings › Library › Game art** to fetch artwork from libretro, Steam, and other public sources. RomM supplies its own covers and can find covers for other games too.
+Turn on **Settings › Library › Game art** to fetch artwork from libretro, Steam, and other public sources. RomM supplies its own covers and can find covers for other games too. Tall covers use their busiest square for the tile; a short title band crossing its edge keeps its nearby quiet margin, so the crop does not stop halfway through the logo.
 
 For more artwork, add a free SteamGridDB API key in **Settings › Library › SteamGridDB**. You don't have to type it: the form leads with a QR code, so scan it with a phone on the same Wi-Fi. That opens a one-time page from Foldcade with a link to [your SteamGridDB API page](https://www.steamgriddb.com/profile/preferences/api). Copy the key there, paste it back on Foldcade's page and tap **Send to Foldcade**. Foldcade checks the key and saves it. The page only works while the SteamGridDB form is open and accepts one key. A refused key gets a new code. Without Wi-Fi, the QR code opens SteamGridDB's page so you can read the key and type it. You can always type it in the **API key** field. With a key saved, the same row reads **Saved**; pressing it asks first, and the key stays unless you choose **Forget key** in that dialog. Games can launch without artwork setup.
 
