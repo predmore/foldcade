@@ -2493,8 +2493,9 @@ private fun rememberStagedHero(
     var stagedPlace by remember { mutableStateOf(place) }
     var stagedAt by remember { mutableLongStateOf(0L) }
     val dwell = motion.sceneDuration(app.shell.model.motionSpeed, animatorScale) / 2
-    // Metadata refreshes for the same subject reuse painters, so identical art cannot land twice.
-    val decoded = remember(subject?.key) { ConcurrentHashMap<Pair<String, HeroImageRole>, LoadedCover>() }
+    // Keep the staged art through source refreshes and an overshoot back to the same focus.
+    // retainCurrentImages bounds this cache after each completed candidate.
+    val decoded = remember { ConcurrentHashMap<Pair<String, HeroImageRole>, LoadedCover>() }
     LaunchedEffect(subject?.key, record, query, allowed, connections, artKeySaved, revision, preview) {
         fun chosen(cover: String?, scene: ArtScene?): HeroSources = when (preview?.kind) {
             ArtKind.Tile -> HeroSources(preview.url, scene)
