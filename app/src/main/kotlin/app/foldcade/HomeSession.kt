@@ -138,6 +138,8 @@ class HomeSession(
     nowMillis: Long = System.currentTimeMillis(),
     /** Each copy's id to the one tile it folds into ([foldSameGames]), as last saved. */
     sameGames: Map<String, String> = emptyMap(),
+    /** Already loaded history/metadata names for a retained RomM member; never reads disk or the network. */
+    private val rememberedName: (String) -> String? = { null },
 ) {
     /** Restored games waiting for a source have places, but no tile until the catalog knows them. */
     internal var restoredGaps: Set<String> = emptySet()
@@ -392,6 +394,14 @@ class HomeSession(
     private var facesIcon: IconPick? = null
     private var facesGaps: Set<String>? = null
     private var facesCache: List<HomeFace> = emptyList()
+    private val waitingNames = HashMap<String, String>()
+
+    private fun waitingName(id: String): String? = waitingNames[id] ?: rememberedName(id)?.trim()
+        ?.takeIf { it.isNotEmpty() && it != id }?.also {
+            waitingNames[id] = it
+            // A direct face lookup can learn a name before the visible faces are read again.
+            facesBoard = null
+        }
 
     fun face(index: Int): HomeFace? = faces().getOrNull(index)
 
@@ -1282,6 +1292,7 @@ class HomeSession(
         val waitingTitle = app.foldcade.language.BackupCopy.waiting("RomM")
         val keptTitle = sequenceOf(game?.label, board.ranks[id]?.title)
             .mapNotNull { it?.trim()?.takeIf { name -> name.isNotEmpty() && name != id } }.firstOrNull()
+            ?: if (waitingForRomm) waitingName(id) else null
         return HomeFace(
             id = id,
             title = item?.title ?: if (waitingForRomm) keptTitle ?: waitingTitle else id,

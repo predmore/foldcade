@@ -10,6 +10,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayTimeCopyTest {
+    @Test fun aFreshProfileAndAQuietWeekHaveDifferentEmptyCopy() {
+        assertEquals("No play yet", PlayCopy.empty(hasPlay = false))
+        assertEquals("No play this week", PlayCopy.empty(hasPlay = true))
+    }
     @Test fun emptyDayTotalsAreQuietWithoutHidingShortPlay() {
         assertEquals("–", playDayTotal(0L))
         assertEquals("<1m", playDayTotal(1L))

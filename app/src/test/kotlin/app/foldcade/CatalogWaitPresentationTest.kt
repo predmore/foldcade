@@ -93,8 +93,15 @@ class CatalogWaitPresentationTest {
             assertEquals("Cached Gain Ground", shell.artQuery(game)!!.title)
             val covers = CoverArt(host, ArtFinder({ emptyList() }, ArtIndex(root.resolve("art-index").toFile())))
             assertEquals("https://romm.example/cover/23.png", covers.cached(shell.artRecord(game), shell.artQuery(game))!!.cover)
+            // A cold Home can already name a waiting tile from metadata restored into memory.
+            val cold = shell(host)
+            assertEquals("Cached Gain Ground", (cold.focusedHero() as HeroSubject.Item).item.title)
+            assertEquals("Waiting for RomM", cold.homeFace(index(cold))!!.shortText)
             val played = shell(host, remembered = { "Played Gain Ground" })
+            assertEquals("Played Gain Ground", (played.focusedHero() as HeroSubject.Item).item.title)
             played.beginCatalogWait(id)
+            assertEquals("Played Gain Ground", (played.focusedHero() as HeroSubject.Item).item.title)
+            played.endCatalogWait(id)
             assertEquals("Played Gain Ground", (played.focusedHero() as HeroSubject.Item).item.title)
             assertNull(shell.launchRoute(id))
         } finally {

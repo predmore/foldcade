@@ -217,7 +217,7 @@ private fun MostPlayed(app: FoldcadeApp, week: PlayWeek, theme: Theme) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         BasicText(PlayCopy.mostPlayed, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
         if (week.top.isEmpty()) {
-            BasicText(PlayCopy.nothing, style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
+            BasicText(PlayCopy.empty(app.plays.hasPlay()), style = playText(theme.muted, theme, LocalFoldTheme.current.theme.style.type.sideRow))
         }
         val current = week.top.map { (gameId, _) -> gameId to app.shell.playTitle(gameId) }
         // A name a catalog still has is kept, so the row still reads once the game is gone.

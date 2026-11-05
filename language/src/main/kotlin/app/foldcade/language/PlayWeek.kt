@@ -67,6 +67,8 @@ object PlayCopy {
     const val pastWeek = "Past 7 days"
     const val mostPlayed = "Most played"
     const val nothing = "No play this week"
+    const val nothingYet = "No play yet"
+    fun empty(hasPlay: Boolean): String = if (hasPlay) nothing else nothingYet
     const val week = "Week"
     const val sessions = "Sessions"
     const val remove = "Remove"

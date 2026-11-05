@@ -4,7 +4,9 @@ import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.MemoryCredentialStore
 import app.foldcade.host.PluginHost
+import app.foldcade.host.play.PlayNames
 import app.foldcade.language.*
+import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
 import org.junit.Test
@@ -63,6 +65,41 @@ class RommCachedHomeTest {
         }
     }
 
+    @Test fun aColdOfflineStartKeepsThePersistedHistoryNameBeforeDuringAndAfterA() {
+        val dir = Files.createTempDirectory("romm-waiting-name").toFile()
+        try {
+            val file = dir.resolve("names.log")
+            PlayNames(file).remember(collected, "Super Metroid", durable = true)
+            val loaded = PlayNames(file)
+            assertTrue(file.delete()) // The shell only reads already loaded names.
+            val (store, shell) = fixture(loaded::name)
+            assertTrue(decodeHome(store.homeBoardRaw()).ranks.isEmpty())
+            shell.openHomeFolder(collection.id)
+            fun assertNamed() {
+                assertEquals("Super Metroid", shell.homeFace(0)!!.title)
+                assertEquals("Waiting for RomM", shell.homeFace(0)!!.shortText)
+                assertEquals("Super Metroid", (shell.focusedHero() as HeroSubject.Item).item.title)
+                assertNull(shell.launchRoute(collected))
+            }
+            assertNamed()
+            shell.beginCatalogWait(collected)
+            assertNamed()
+            shell.endCatalogWait(collected)
+            assertNamed()
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test fun learningAWaitingNameAlsoRefreshesTheVisibleFaces() {
+        var name: String? = null
+        val home = HomeSession(encodeHome(HomeBoard(slots = listOf(HOME_ALL, pinned))), rememberedName = { name })
+        assertEquals("Waiting for RomM", home.face(1)!!.title)
+        name = "Super Metroid"
+        assertEquals(name, home.faceOf(pinned).title)
+        assertEquals(name, home.face(1)!!.title)
+    }
+
     @Test fun anEarlySnapshotKeepsStartupPlacementsUntilTheCompleteListingReportsMissingGames() {
         val (store, shell) = fixture()
         shell.ingestLibrary("romm", listOf(entries.last()), emptyList(), restoreReported = false, settles = false)
@@ -97,7 +134,7 @@ class RommCachedHomeTest {
         assertEquals(collection.slots, board.folders.getValue(collection.id).slots)
     }
 
-    private fun fixture(): Pair<SessionStore, ShellController> {
+    private fun fixture(remembered: (String) -> String? = { null }): Pair<SessionStore, ShellController> {
         val board = HomeBoard(
             slots = listOf(HOME_ALL, pinned, collection.id),
             folders = mapOf(collection.id to collection),
@@ -108,6 +145,6 @@ class RommCachedHomeTest {
                 .putString("restore_holds", "{}").commit()
         }
         val store = SessionStore(prefs)
-        return store to ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        return store to ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), rememberedPlayName = remembered)
     }
 }

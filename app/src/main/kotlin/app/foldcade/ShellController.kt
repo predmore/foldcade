@@ -364,7 +364,7 @@ class ShellController(
     // A board from before collections is kept as it was before this release first rewrites it.
     private val home = store.run {
         keepHomeBoardBeforeCollections()
-        HomeSession(homeBoardRaw(), sameGames = sameAliases).also { session ->
+        HomeSession(homeBoardRaw(), sameGames = sameAliases, rememberedName = ::rememberedRommName).also { session ->
             session.restoredGaps = restoreHolds().sources.keys
             // Apps a release with Android shelves hid there are hidden on Home, the one Hidden place.
             val hidden = takeShelfHiddenApps()
@@ -2257,6 +2257,15 @@ class ShellController(
     private val catalogWaitTitles = HashMap<String, String>()
     private val catalogWaitRecords = HashMap<String, Game>()
 
+    /** The same memory-only name before, during and after a catalog wait, including a cold offline start. */
+    private fun rememberedRommName(id: String): String? {
+        fun readable(name: String?): String? = name?.trim()?.takeIf { it.isNotEmpty() && it != id }
+        readable(rememberedPlayName(id))?.let { return it }
+        val key = homeGameKey(id) ?: return null
+        val record = Game(RommCredentials.PLUGIN_ID, key, "", Availability.RemoteOnly, "")
+        return readable(plugins.metadata(RommCredentials.METADATA_ID)?.cached(record)?.title)
+    }
+
     fun beginCatalogWait(tileId: String) {
         val game = findGame(tileId)
         // This record is only an artwork identity, never a launch route. RomM's
@@ -2270,7 +2279,7 @@ class ShellController(
         }
         catalogWaitTitles[tileId] = pendingGameTitle(
             game.title.takeUnless { game.waitingForRomm && it == BackupCopy.waiting("RomM") }.orEmpty(), tileId, TileActivity.LoadingLibrary,
-            rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
+            if (game.waitingForRomm) null else rememberedPlayName(tileId), cached?.title?.takeIf { it.isNotBlank() } ?: record?.label,
         )
         // An unknown record would let art fetchers cache a failed provider lookup
         // or search for "Your game" under the real game's id before its catalog arrives.
