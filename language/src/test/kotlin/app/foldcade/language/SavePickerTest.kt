@@ -11,6 +11,31 @@ class SavePickerTest {
     private val save = SavePickerSave("17", "autosave", "melonds", "Steam Deck", 1_000, 32_768, false, null)
     private val state = SavePickerState(target, "Mario", "melonDS", SaveHealth.Fine, listOf("sav"), listOf(save), index = 1, loading = false)
 
+    @Test fun nothingOnRommAndNotSyncingPutsSetUpSavesInTheCardOnce() {
+        val empty = state.copy(health = SaveHealth.NotSyncing(SaveIssue.NoFolder), saves = emptyList(), index = 0)
+        assertTrue(empty.setupInCard)
+        // The card's button carries A, so the footer and chip don't say Set up again.
+        assertTrue(savePickerHints(empty, FaceMap.standard()).isEmpty())
+        assertEquals(Copy.notSyncing, SavePickerCopy.header(empty.health))
+        assertEquals(Effect.FixSavePicker(target), applySavePicker(empty, Meaning.Activate).second)
+        // With saves listed, the chip is the way in again, with A named once below.
+        val listed = empty.copy(saves = listOf(save))
+        assertFalse(listed.setupInCard)
+        assertEquals(listOf(HintKey(PromptKey.FaceA, Copy.setUp)), savePickerHints(listed, FaceMap.standard()))
+    }
+
+    @Test fun offlineSendsAToWifiAndOnlineTriesAgain() {
+        val offline = state.copy(error = true, offline = true, saves = emptyList(), index = 0)
+        assertEquals(listOf(HintKey(PromptKey.FaceA, SavePickerCopy.wifi)), savePickerHints(offline, FaceMap.standard()))
+        assertEquals(offline to Effect.OpenAndroidSetting(AndroidSetting.Wifi), applySavePicker(offline, Meaning.Activate))
+        val unreachable = offline.copy(offline = false)
+        assertEquals(listOf(HintKey(PromptKey.FaceA, SavePickerCopy.retry)), savePickerHints(unreachable, FaceMap.standard()))
+        val (retrying, effect) = applySavePicker(unreachable, Meaning.Activate)
+        assertEquals(Effect.LoadSavePicker(target), effect)
+        assertTrue(retrying!!.loading)
+        assertFalse(SavePickerCopy.error.contains('\''))
+    }
+
     @Test fun menuOffersSavesNearRestartAndKeepsTheOriginalTarget() {
         val tile = TileActions(saves = true, restart = true, removeDownload = true, game = "original-game")
         assertEquals(listOf(Row.Saves, Row.RestartGame, Row.RemoveDownload), actionRows(tile))

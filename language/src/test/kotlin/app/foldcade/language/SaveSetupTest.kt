@@ -128,9 +128,16 @@ class SaveSetupTest {
         assertEquals(SetupStep.InApp("armsx2", InAppStep.MemoryCard, "Make a folder card.", done = false), tiles.getValue("armsx2").step)
         assertEquals(listOf(SetupStep.Folder("aps3e", FolderPick.OwnProvider, findable = false, done = false)), tiles.getValue("aps3e").steps)
         assertEquals(listOf(SetupStep.EdenFolder(done = false)), tiles.getValue("eden").steps)
-        assertEquals(SaveSetupCopy.asksOnce, SaveSetupCopy.stepTitle(tiles.getValue("aps3e").step))
-        assertEquals(SaveSetupCopy.asksOnce, SaveSetupCopy.stepTitle(tiles.getValue("eden").step))
-        assertEquals(SaveSetupCopy.opensThere, SaveSetupCopy.stepBody(tiles.getValue("melonds")))
+        // Every trip through Android's picker has one title, one verb, and says what to tap.
+        for (key in listOf("aps3e", "eden", "melonds")) {
+            assertEquals(SaveSetupCopy.seeSaves, SaveSetupCopy.stepTitle(tiles.getValue(key).step))
+            assertEquals(SaveSetupCopy.allow, SaveSetupCopy.action(tiles.getValue(key)))
+            assertEquals(SaveSetupCopy.useThisFolder, SaveSetupCopy.stepBody(tiles.getValue(key)))
+        }
+        // RetroArch's cores are their own step, named for what Foldcade gets to see.
+        val cores = tiles.getValue("retroarch.nes").let { it.copy(steps = it.steps.drop(1)) }
+        assertEquals(SaveSetupCopy.seeRetroArch, SaveSetupCopy.stepTitle(cores.step))
+        assertEquals(SaveSetupCopy.allow, SaveSetupCopy.action(cores))
         assertEquals("Point Memory Cards at Foldcade.", SaveSetupCopy.stepBody(tiles.getValue("duckstation")))
         assertEquals("Open DuckStation", SaveSetupCopy.action(tiles.getValue("duckstation")))
     }
@@ -279,17 +286,45 @@ class SaveSetupTest {
         assertTrue(skipped.press(Meaning.Back).first.openSaveSetup(HostScreen.Top).page().skipped.isEmpty())
     }
 
+    @Test fun theEmulatorsHomesGamesPlayOnComeFirstAndAreTheOnesCounted() {
+        val board = model.copy(boardEmulators = setOf("melonds", "retroarch.nes"))
+        val opened = board.openSaveSetup(HostScreen.Top)
+        assertEquals(
+            listOf(FIND_SAVES_TILE, "melonds", "retroarch.nes", "aps3e", "armsx2", "duckstation", "eden"),
+            opened.tiles().map { it.key },
+        )
+        // R1, the Settings row and the page's head all read this one list.
+        assertEquals(listOf("melonds", "retroarch.nes"), savesDue(board).map { it.key })
+        assertEquals("2 to go", SaveSetupCopy.head(savesDue(board).size, savesRest(board, opened.tiles()).size))
+        // A skip is for this run alone: the count holds.
+        val skipped = opened.on("melonds").press(Meaning.ActivateBottom).first
+        assertEquals(2, savesDue(skipped, skipped.tiles()).size)
+        // Once Home's games all sync, the head says so while the rest still wear their own marks.
+        val synced = board.saves("melonds") { it.copy(chosen = true) }.saves("retroarch.nes") { it.copy(chosen = true) }
+            .copy(retroArch = board.retroArch!!.copy(cores = 3))
+        assertTrue(savesDue(synced).isEmpty())
+        val rest = savesRest(synced, saveSetupTiles(synced, SaveSetupPage())).size
+        assertEquals(SaveSetupCopy.gamesSync, SaveSetupCopy.head(0, rest))
+        assertEquals(SaveSetupCopy.doneForNow, SaveSetupCopy.endTitle(0, rest))
+        assertEquals("Your games sync. Finish any time in Settings › Emulators.", SaveSetupCopy.endBody(0, rest))
+        assertNull(rowText(Row.SaveSetup, synced).value)
+    }
+
+    @Test fun exStepsAreNumberedWhileTheFolderWaits() {
+        val tile = SetupTile("gba-emu.game-boy-advance", "GBA.emu", null, listOf(SetupStep.Folder("gba-emu.game-boy-advance", FolderPick.Browse, true, false)))
+        assertEquals(listOf(SaveSetupCopy.browse("GBA.emu"), SaveSetupCopy.exLaunchMode("GBA.emu")), numberedSteps(SaveSetupCopy.stepBody(tile)))
+    }
+
     @Test fun aSkippedFindSavesIsNotASkippedEmulator() {
         val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(melon))
         val opened = one.openSaveSetup(HostScreen.Top)
         assertEquals(FIND_SAVES_TILE, opened.page().focus)
         val passed = opened.press(Meaning.ActivateBottom).first
-        assertEquals(0, saveSetupSkipped(passed.tiles(), passed.page()))
-        assertEquals("1 to go", SaveSetupCopy.head(saveSetupLeft(passed.tiles(), passed.page()), 0))
+        assertEquals("1 to go", SaveSetupCopy.head(1, 0))
         // melonDS's folder picked: everything that saves syncs, so All set, Find saves skipped or not.
         val picked = passed.settle { it.saves("melonds") { s -> s.copy(chosen = true) } }.on(null)
         assertTrue(saveSetupFinished(picked.tiles(), picked.page()))
-        assertEquals("All set", SaveSetupCopy.endTitle(saveSetupSkipped(picked.tiles(), picked.page())))
+        assertEquals("All set", SaveSetupCopy.endTitle(savesDue(picked, picked.tiles()).size, savesRest(picked, picked.tiles()).size))
     }
 
     @Test fun skippingNeverQuietsTheSettingsBadgeOrTheNotice() {
@@ -301,19 +336,20 @@ class SaveSetupTest {
     }
 
     @Test fun skippingTheLastOneEndsOnDoneForNowNotAllSetAndConfirmCloses() {
-        val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms, duck.copy(hostedInUse = true)))
+        val one = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(arms, duck.copy(hostedInUse = true)), boardEmulators = setOf("armsx2"))
         val opened = one.openSaveSetup(HostScreen.Top)
         assertEquals("armsx2", opened.page().focus)
-        assertEquals("1 to go", SaveSetupCopy.head(saveSetupLeft(opened.tiles(), opened.page()), saveSetupSkipped(opened.tiles(), opened.page())))
+        assertEquals("1 to go", SaveSetupCopy.head(savesDue(opened, opened.tiles()).size, savesRest(opened, opened.tiles()).size))
         val done = opened.press(Meaning.ActivateBottom).first
         assertNull(done.page().focus)
         assertTrue(saveSetupFinished(done.tiles(), done.page()))
-        // A skipped emulator still does not sync, so the page never calls it All set.
-        val skipped = saveSetupSkipped(done.tiles(), done.page())
-        assertEquals(1, skipped)
-        assertEquals("1 skipped", SaveSetupCopy.head(saveSetupLeft(done.tiles(), done.page()), skipped))
-        assertEquals("Done for now", SaveSetupCopy.endTitle(skipped))
-        assertEquals("1 still not syncing", SaveSetupCopy.endBody(skipped))
+        // A skipped emulator still does not sync: it still counts, and the page never calls it All set.
+        val due = savesDue(done, done.tiles()).size
+        assertEquals(1, due)
+        assertEquals("1 to go", SaveSetupCopy.head(due, 0))
+        assertEquals("Done for now", SaveSetupCopy.endTitle(due, 0))
+        // It names where to finish later.
+        assertEquals("1 still not syncing. Finish any time in Settings › Emulators.", SaveSetupCopy.endBody(due, 0))
         assertEquals(listOf(HintKey(PromptKey.FaceA, SaveSetupCopy.done)), saveSetupActions(done, done.page()))
         assertNull(done.press(Meaning.Activate).first.saveSetup)
         // From All set, the D-pad still reaches the tiles.
@@ -325,10 +361,10 @@ class SaveSetupTest {
         val fine = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(melon.copy(chosen = true)), allFilesGranted = true)
         val opened = fine.openSaveSetup(HostScreen.Top)
         assertNull(opened.page().focus)
-        assertEquals(0, saveSetupSkipped(opened.tiles(), opened.page()))
+        assertTrue(savesDue(opened, opened.tiles()).isEmpty())
         assertEquals("All set", SaveSetupCopy.head(0, 0))
-        assertEquals("All set", SaveSetupCopy.endTitle(0))
-        assertNull(SaveSetupCopy.endBody(0))
+        assertEquals("All set", SaveSetupCopy.endTitle(0, 0))
+        assertNull(SaveSetupCopy.endBody(0, 0))
         assertFalse(saveSetupWanted(fine))
         val (settings, effect) = opened.on("melonds").press(Meaning.Activate)
         assertNull(effect)
@@ -346,10 +382,11 @@ class SaveSetupTest {
 
         var settings = model.openSettings(HostScreen.Top, SettingsCategory.Players)
         settings = settings.copy(settings = settings.settings!!.copy(onRows = true, row = settingsRows(SettingsCategory.Players, model).indexOf(Row.SaveSetup)))
-        // The row says how many still wait, in the attention colour.
-        val left = saveSetupLeft(saveSetupTiles(model, SaveSetupPage()), SaveSetupPage())
-        assertEquals(RowText(SaveSetupCopy.title, SaveSetupCopy.toGo(left)), rowText(Row.SaveSetup, model))
-        assertEquals(RowControl.Value(SaveSetupCopy.toGo(left), attention = true), rowControl(Row.SaveSetup, model))
+        // The row says how many Home's games still wait on, in the attention colour, and opens the page.
+        assertEquals(RowText(SaveSetupCopy.title), rowText(Row.SaveSetup, model))
+        val board = model.copy(boardEmulators = setOf("melonds", "aps3e"))
+        assertEquals(RowText(SaveSetupCopy.title, SaveSetupCopy.toGo(2)), rowText(Row.SaveSetup, board))
+        assertEquals(RowControl.Value(SaveSetupCopy.toGo(2), attention = true, opens = true), rowControl(Row.SaveSetup, board))
         // The A held from the row before does not open it.
         assertEquals(settings.settings, settings.press(Meaning.Activate, repeatCount = 2).first.settings)
         val opened = settings.press(Meaning.Activate).first
@@ -375,7 +412,7 @@ class SaveSetupTest {
     @Test fun theButtonsWearTheUsersOwnKeys() {
         val swapped = model.copy(faceMap = faceMapWithConfirm(FaceMap.standard(), PromptKey.FaceB)).openSaveSetup(HostScreen.Top).on("melonds")
         val actions = saveSetupActions(swapped, swapped.page())
-        assertEquals(listOf(HintKey(PromptKey.FaceB, SaveSetupCopy.pick), HintKey(actionFaces(swapped.faceMap).bottomGlyph, SaveSetupCopy.skip)), actions)
+        assertEquals(listOf(HintKey(PromptKey.FaceB, SaveSetupCopy.allow), HintKey(actionFaces(swapped.faceMap).bottomGlyph, SaveSetupCopy.skip)), actions)
         assertNotEquals(actions[0].key, actions[1].key)
         // Skip leaves once nothing is left to skip.
         val synced = swapped.settle { it.saves("melonds") { s -> s.copy(chosen = true) } }.on("melonds")

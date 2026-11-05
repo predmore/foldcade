@@ -56,6 +56,7 @@ import app.foldcade.language.SavePickerChoice
 import app.foldcade.language.SavePickerCopy
 import app.foldcade.language.SavePickerSave
 import app.foldcade.language.SavePickerState
+import app.foldcade.language.SaveSetupCopy
 import app.foldcade.language.Theme
 import app.foldcade.language.actionFaces
 import app.foldcade.language.formatSaveSize
@@ -230,7 +231,8 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                 Spacer(Modifier.weight(1f))
                 StatusChip(
                     state.health,
-                    focused = state.index == 0 && state.statusActs && state.copying == null && !state.loading && !state.error && !state.busy,
+                    // With nothing on RomM yet, the card's Set up saves holds the focus instead.
+                    focused = state.index == 0 && state.statusActs && !state.setupInCard && state.copying == null && !state.loading && !state.error && !state.busy,
                     lit = state.confirmation == null,
                     scale = scale,
                 ) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
@@ -249,6 +251,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                     state.loading -> CardMode.Loading
                     state.error -> CardMode.Error
                     state.copying != null -> CardMode.Destinations
+                    state.setupInCard -> CardMode.SetUp
                     state.saves.isEmpty() -> CardMode.Empty
                     else -> CardMode.Saves
                 }
@@ -265,8 +268,11 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                     when (shown) {
                         CardMode.Loading -> CardNote("cloud", SavePickerCopy.loading, pulse = true, scale = scale)
                         CardMode.Busy -> CardNote("cloud", SavePickerCopy.working, pulse = true, scale = scale)
-                        CardMode.Error -> CardNote("cloud", SavePickerCopy.error, pulse = false, scale = scale, modifier = Modifier.hostPress { press(Meaning.Activate) })
-                        CardMode.Empty -> CardNote("cloud", SavePickerCopy.empty, pulse = false, scale = scale)
+                        // Can't reach RomM wears the not-syncing cloud; no saves yet wears the saves symbol. Neither is a download.
+                        CardMode.Error -> CardNote(null, if (state.offline) SavePickerCopy.offline else SavePickerCopy.error, pulse = false, scale = scale,
+                            badge = R.drawable.ic_badge_unsynced, modifier = Modifier.hostPress { press(Meaning.Activate) })
+                        CardMode.Empty -> CardNote("saves", SavePickerCopy.empty, pulse = false, scale = scale)
+                        CardMode.SetUp -> SetUpInCard(app, scale) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
                         CardMode.Saves -> SaveList(app, state, art, dates, scale, dispatch)
                         CardMode.Destinations -> DestinationList(app, state.copy(copying = state.copying ?: copying), art, dates, scale, dispatch)
                     }
@@ -311,7 +317,50 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
 }
 
 /** What the card holds. Choosing a slot is a level in, so it slides in from the right and back out. */
-private enum class CardMode(val depth: Int) { Loading(0), Busy(0), Error(0), Empty(0), Saves(0), Destinations(1) }
+private enum class CardMode(val depth: Int) { Loading(0), Busy(0), Error(0), Empty(0), SetUp(0), Saves(0), Destinations(1) }
+
+/**
+ * Nothing on RomM yet and the emulator still needs setting up: the card's centre is the way on,
+ * the not-syncing cloud over Set up saves with A on its cap, ringed as the focus. The top screen
+ * already says there are no saves, so the card does not say it again.
+ */
+@Composable
+private fun SetUpInCard(app: FoldcadeApp, scale: Float, onClick: () -> Unit) {
+    val theme = LocalFoldTheme.current.theme
+    val design = theme.style
+    val model = app.shell.model
+    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+    val pop = bouncy(1f, scale)
+    val focusRing = remember(theme) { FocusRing(theme) }
+    Column(
+        Modifier.fillMaxSize().padding(CARD_PAD),
+        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val cloud = themeIcon("badge.unsynced", R.drawable.ic_badge_unsynced)
+        Image(cloud.painter, contentDescription = null, colorFilter = cloud.tint(design.colors.attention), modifier = Modifier.size(NOTE_ART))
+        Row(
+            Modifier
+                .graphicsLayer {
+                    val grow = 1f + design.menu.artGrow / 3f * pop.value
+                    scaleX = grow
+                    scaleY = grow
+                }
+                .drawBehind {
+                    val corner = size.height / 2f * design.shape.round
+                    drawRoundRect(color = theme.surface, cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner))
+                    with(focusRing) { drawFocusRing(corner, alpha = 1f) }
+                }
+                .hostPress(onClick)
+                .padding(start = 14.dp, end = 24.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PromptImage(if (confirm in model.held) "${promptGlyph(confirm)}_filled" else promptGlyph(confirm), 32.dp)
+            BasicText(SaveSetupCopy.title, style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true), maxLines = 1)
+        }
+    }
+}
 
 @Composable
 private fun SaveList(app: FoldcadeApp, state: SavePickerState, art: RunningApp?, dates: DateStyle, scale: Float, dispatch: (Effect?) -> Unit) {
@@ -456,7 +505,7 @@ private fun Thumb(app: FoldcadeApp?, screenshot: String?, symbol: String?, lit: 
 
 /** The card's one line when there is no list: a symbol over a few words, the symbol breathing while it waits. */
 @Composable
-private fun CardNote(symbol: String, text: String, pulse: Boolean, scale: Float, modifier: Modifier = Modifier) {
+private fun CardNote(symbol: String?, text: String, pulse: Boolean, scale: Float, modifier: Modifier = Modifier, badge: Int? = null) {
     val theme = LocalFoldTheme.current.theme
     val breath = if (pulse) {
         val transition = rememberInfiniteTransition()
@@ -468,7 +517,10 @@ private fun CardNote(symbol: String, text: String, pulse: Boolean, scale: Float,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(Modifier.size(NOTE_ART).graphicsLayer { alpha = breath?.value ?: theme.style.menu.artRestAlpha }, contentAlignment = Alignment.Center) {
-            SymbolIcon(symbol, 1f, theme.onBackground)
+            if (badge != null) {
+                val art = themeIcon(badge)
+                Image(art.painter, contentDescription = null, colorFilter = art.tint(theme.style.colors.attention), modifier = Modifier.fillMaxSize())
+            } else if (symbol != null) SymbolIcon(symbol, 1f, theme.onBackground)
         }
         BasicText(text, style = saveStyle(theme.onBackground, theme.style.type.menuRow, theme).copy(textAlign = TextAlign.Center))
     }

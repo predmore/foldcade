@@ -456,6 +456,9 @@ class ShellController(
     private var saveHealthReady = false
     private var current by mutableStateOf(initial())
 
+    /** The emulators Home's games play on, see [PickerModel.boardEmulators]. */
+    private var boardEmulators: Set<String> = emptySet()
+
     /**
      * Every change keeps the columns the grid showed, so the next focus scrolls only as far as it must.
      * A change that scrolls the strip itself, as a swipe does, keeps where it put it.
@@ -489,12 +492,15 @@ class ShellController(
                 else -> undo
             }
             current = stable.copy(firstColumn = shownFirstColumn(stable),
+                // Read off Home's games by refreshSaveHealth, never by a reducer, so no older model can drop it.
+                boardEmulators = boardEmulators,
                 // A replacement surface must not leave a return target for a later form.
                 connectReturnSettings = stable.connectReturnSettings.takeIf { stable.connectOpen },
                 deleteHold = if (canceled) null else next.deleteHold,
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
             if (canceled) cue(next.themeIndex, "back")
+            publishSavesDue()
             if (stable.saveSetup != null) saveSetupSeen = true
             closeArtAfterFocusChange()
             // Each game's name card starts closed: moving on folds the summary R3 opened.
@@ -710,16 +716,44 @@ class ShellController(
                 launchRoute(tile)?.let { routes[tile] = it }
             }
         }
-        val players = linkedMapOf<String, String>()
-        val checked = HashSet<String>()
-        for (route in routes.values) {
-            val player = savePlayer(route) ?: continue
-            if (!checked.add(player.id)) continue
-            if (playerSaveIssue(player, saveSync[player.id], setupSteps[player.id]) == null) continue
-            players[saveNoticePlayerId(player.id)] = player.displayName
-        }
+        // Every emulator Home's games play on, healthy or not: what still needs you is read from
+        // Settings › Emulators' own rows (savesDue), so R1 and Set up saves count the same ones.
+        val board = routes.values.mapNotNullTo(linkedSetOf()) { route -> savePlayer(route)?.let { saveNoticePlayerId(it.id) } }
         refreshSavePickerHealth()
-        onSaveHealthChanged(players)
+        // Each refresh is heard, as the waiting-saves notices ride on it, but only once.
+        savesDuePublished = null
+        if (board != boardEmulators) {
+            boardEmulators = board
+            model = model
+        }
+        publishSavesDue()
+    }
+
+
+    /** What R1's not-syncing notice last heard, so it hears again only when that changes. */
+    private var savesDuePublished: Map<String, String>? = null
+    private var savesDueRead: SavesDueInputs? = null
+
+    /** The model fields [savesDue] reads. The shelf is rebuilt only when one of them changes. */
+    private data class SavesDueInputs(
+        val saves: List<app.foldcade.language.PlayerSaveSetting>,
+        val board: Set<String>,
+        val retroArch: app.foldcade.language.RetroArchSetting?,
+        val eden: app.foldcade.language.EdenSetting?,
+        val signedIn: List<app.foldcade.language.SignedInBackend>,
+    )
+
+    /** R1's not-syncing notice names exactly the emulators [savesDue] counts, as Settings and Set up saves do. */
+    private fun publishSavesDue() {
+        if (!saveHealthReady) return
+        val now = current
+        val inputs = SavesDueInputs(now.playerSaves, now.boardEmulators, now.retroArch, now.eden, now.signedIn)
+        if (inputs == savesDueRead && savesDuePublished != null) return
+        savesDueRead = inputs
+        val due = app.foldcade.language.savesDue(now).associate { it.key to it.label }
+        if (due == savesDuePublished) return
+        savesDuePublished = due
+        onSaveHealthChanged(due)
     }
 
     /** Tiles whose game is still open in its player, see [RunningGames]. */

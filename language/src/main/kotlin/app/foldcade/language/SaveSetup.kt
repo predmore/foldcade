@@ -138,13 +138,13 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
 
 /**
  * The strip: Find saves first while all-files access is off and could find a folder someone
- * still needs (and, once offered, for the rest of the run), then every emulator on Settings ›
- * Emulators, A to Z.
+ * still needs (and, once offered, for the rest of the run), then the emulators Home's games play
+ * on, then every other emulator on Settings › Emulators, A to Z within each.
  */
 fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
     val emulators = emulatorShelf(model).map { entry ->
         SetupTile(entry.key, entry.label, entry.packageName, setupSteps(entry, model), model.playerSaves.firstOrNull { it.playerId == entry.key }?.foundIn)
-    }
+    }.sortedBy { it.key !in model.boardEmulators }
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
     val find = (!model.allFilesGranted && helps) || (model.allFilesGranted && page.offeredFind)
     if (!find) return emulators
@@ -155,16 +155,22 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
 
 /**
  * True once there are tiles and none still needs you: the page ends. Skipped ones count as
- * answered for this run, so the end says All set only when [saveSetupSkipped] is 0.
+ * answered for this run, so the end says All set only when nothing is left undone.
  */
 fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = tiles.isNotEmpty() && tiles.none { it.needsYou(page) }
 
-/** Emulators still waiting on you, for the head's count. Find saves is a shortcut, never a save that fails. */
-fun saveSetupLeft(tiles: List<SetupTile>, page: SaveSetupPage): Int = tiles.count { !it.findSaves && it.needsYou(page) }
+/**
+ * The one count of emulators that need you: those Home's games play on whose saves can't reach
+ * RomM yet, as Settings › Emulators' rows read. R1's notice names these, Settings › Emulators'
+ * Set up saves row counts them, and Set up saves walks them first. A skip on the page is for
+ * this run alone, so a skipped one still counts. Find saves is a shortcut, never a save that fails.
+ */
+fun savesDue(model: PickerModel, tiles: List<SetupTile> = saveSetupTiles(model, SaveSetupPage())): List<SetupTile> =
+    tiles.filter { !it.findSaves && !it.done && it.key in model.boardEmulators }
 
-/** Emulators skipped this run, whose saves still do not sync. A skipped Find saves is not one. */
-fun saveSetupSkipped(tiles: List<SetupTile>, page: SaveSetupPage): Int =
-    tiles.count { !it.findSaves && setupStatus(it, page) == SetupStatus.Skipped }
+/** Emulators no game on Home plays on that still need a step, which the page lists after [savesDue]. */
+fun savesRest(model: PickerModel, tiles: List<SetupTile>): List<SetupTile> =
+    tiles.filter { !it.findSaves && !it.done && it.key !in model.boardEmulators }
 
 /**
  * How long [tile]'s fresh check holds the focus. On Find saves it waits one stagger more for each
@@ -374,13 +380,16 @@ object SaveSetupCopy {
     const val done = "Done"
     const val allSet = "All set"
     const val doneForNow = "Done for now"
-    const val pick = "Pick"
     const val allow = "Allow"
-    const val pickFolder = "Pick its folder"
-    const val opensThere = "Opens right there. Tap Use this folder, then Allow."
-    const val asksOnce = "Android asks once"
+    /** Every step through Android's folder picker: the save folder, and Eden's own files. */
+    const val seeSaves = "Let Foldcade see its saves"
     const val useThisFolder = "Tap Use this folder, then Allow."
-    const val cores = "Show Foldcade its cores"
+    /** RetroArch's cores folder: which cores it has, so its games start. Its saves are a step of their own. */
+    const val seeRetroArch = "Let Foldcade see RetroArch"
+    /** The head once every emulator Home's games play on syncs, while others still wait. */
+    const val gamesSync = "Your games sync"
+    /** Where a player finishes what the page left, named on Done for now. */
+    const val finishLater = "Finish any time in Settings › Emulators."
     const val hostedFolder = "Point Memory Cards at Foldcade"
     const val memoryCard = "Switch to a folder card"
     const val finishSetup = "Finish its setup"
@@ -399,20 +408,26 @@ object SaveSetupCopy {
     fun browse(name: String) = "Find the folder $name keeps its saves in."
     fun open(name: String) = "Open $name"
     fun toGo(count: Int) = "$count to go"
-    fun skippedCount(count: Int) = "$count skipped"
 
-    /** The head's chip: what is left, then what was skipped, and All set only once every emulator syncs. */
-    fun head(left: Int, skipped: Int): String = when {
-        left > 0 -> toGo(left)
-        skipped > 0 -> skippedCount(skipped)
+    /**
+     * The head's chip: how many emulators Home's games play on still need you ([savesDue]), the
+     * count R1 says too. Then that those sync while others wait, and All set only once all do.
+     */
+    fun head(due: Int, rest: Int): String = when {
+        due > 0 -> toGo(due)
+        rest > 0 -> gamesSync
         else -> allSet
     }
 
-    /** The end's title. Skipped emulators still do not sync, so the page never calls that All set. */
-    fun endTitle(skipped: Int): String = if (skipped == 0) allSet else doneForNow
+    /** The end's title. Anything left still does not sync, so the page calls only nothing left All set. */
+    fun endTitle(due: Int, rest: Int): String = if (due == 0 && rest == 0) allSet else doneForNow
 
-    /** Under Done for now: how many emulators still do not sync. Null when all of them do. */
-    fun endBody(skipped: Int): String? = if (skipped == 0) null else "$skipped still not syncing"
+    /** Under Done for now: what still does not sync, and where to finish it. Null on All set. */
+    fun endBody(due: Int, rest: Int): String? = when {
+        due > 0 -> "$due still not syncing. $finishLater"
+        rest > 0 -> "$gamesSync. $finishLater"
+        else -> null
+    }
 
     /** A pick that was not [name]'s folder, in one line. */
     fun wrongFolder(name: String, markers: Collection<String>): String =
@@ -432,9 +447,8 @@ object SaveSetupCopy {
     /** The step's title. None once the tile syncs: its status chip already says so. */
     fun stepTitle(step: SetupStep?): String? = when (step) {
         null -> null
-        is SetupStep.Folder -> if (step.pick == FolderPick.OwnProvider) asksOnce else pickFolder
-        is SetupStep.EdenFolder -> asksOnce
-        is SetupStep.Cores -> cores
+        is SetupStep.Folder, is SetupStep.EdenFolder -> seeSaves
+        is SetupStep.Cores -> seeRetroArch
         is SetupStep.InApp -> when (step.kind) {
             InAppStep.HostedFolder -> hostedFolder
             InAppStep.MemoryCard -> memoryCard
@@ -450,7 +464,10 @@ object SaveSetupCopy {
         // These stable table IDs now live in the EX save plugin. Its private
         // launch mode cannot be read here, so keep the required setup visible.
         val ex = tile.key.substringBefore('.') in setOf("gba-emu", "gbc-emu", "nes-emu", "snes9x-ex", "md-emu")
-        return if (ex) listOfNotNull(body, exLaunchMode(tile.label)).joinToString("\n") else body
+        // Two things to do, so two numbered steps: the one A does, then the one in the emulator.
+        if (!ex) return body
+        if (body == null || tile.step == null) return listOfNotNull(body, exLaunchMode(tile.label)).joinToString("\n")
+        return "1. $body\n2. ${exLaunchMode(tile.label)}"
     }
 
     fun exLaunchMode(name: String) = "In $name: Options › System › Launch Mode › Main Slot (No State)."
@@ -465,11 +482,8 @@ object SaveSetupCopy {
             tile.foundIn != null -> foundIn(tile.foundIn)
             else -> null
         }
-        is SetupStep.Folder -> when (step.pick) {
-            FolderPick.Browse -> browse(tile.label)
-            FolderPick.OpensThere -> opensThere
-            FolderPick.OwnProvider -> useThisFolder
-        }
+        // The picker opening in the right place needs no saying: only what to tap there.
+        is SetupStep.Folder -> if (step.pick == FolderPick.Browse) browse(tile.label) else useThisFolder
         is SetupStep.EdenFolder, is SetupStep.Cores -> useThisFolder
         is SetupStep.InApp -> step.steps
         is SetupStep.AllFiles -> findOwnBody
@@ -478,8 +492,8 @@ object SaveSetupCopy {
     /** Confirm's word on the focused tile. */
     fun action(tile: SetupTile): String = when (val step = tile.step) {
         null -> SettingsCopy.title
-        is SetupStep.Folder -> if (step.pick == FolderPick.OwnProvider) allow else pick
-        is SetupStep.EdenFolder, is SetupStep.Cores, is SetupStep.AllFiles -> allow
+        // One verb for every trip through Android's picker, as its own last button says.
+        is SetupStep.Folder, is SetupStep.EdenFolder, is SetupStep.Cores, is SetupStep.AllFiles -> allow
         is SetupStep.InApp -> open(tile.label)
     }
 }

@@ -293,7 +293,6 @@ object Copy {
     const val eden = "Eden"
     const val edenUserSteps = "Make a user profile, then come back."
     const val edenFromRomm = "From RomM"
-    const val showCores = "Show"
     const val cores = "cores"
     const val oneCore = "1 core"
     const val savesKeptTitle = "Both saves were kept"

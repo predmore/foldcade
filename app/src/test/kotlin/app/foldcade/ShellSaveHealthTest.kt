@@ -41,7 +41,7 @@ class ShellSaveHealthTest {
         assertTrue(shell.model.notices.isEmpty())
         assertTrue(shell.model.playerSaves.none { it.installed })
         shell.model.playerSaves.forEach { setting ->
-            assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(setting.playerId), shell.model))
+            assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(setting.playerId), shell.model))
         }
         val packages = plugins.playerPackageNames()
         shell.setInstalledApps(emptyList(), packages, installedPlayers = emptySet())
@@ -55,7 +55,7 @@ class ShellSaveHealthTest {
         assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId("romm", "2")))
         val retroSetting = shell.model.playerSaves.first { it.label == "RetroArch" }
         assertFalse(retroSetting.installed)
-        assertEquals(RowControl.Value(Copy.choose), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
+        assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
 
         val retroPackage = retro.players.first().packageNames.first()
         shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage, retroPackage))
@@ -63,6 +63,9 @@ class ShellSaveHealthTest {
             assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId(it.backendId, it.remoteKey)))
         }
         assertEquals(Copy.savesNotSyncingEmulatorsBody(2), shell.model.notices.single().body)
+        // Settings › Emulators and Set up saves count the same two the notice does.
+        assertEquals(SaveSetupCopy.toGo(2), rowText(Row.SaveSetup, shell.model).value)
+        assertEquals(2, savesDue(shell.model).size)
         assertTrue(shell.model.playerSaves.first { it.label == "RetroArch" }.installed)
 
         // An uninstall removes it from the merged notice and clears its cached tile health.
@@ -221,6 +224,8 @@ class ShellSaveHealthTest {
             (player as SaveFolderHolder).bindSaveFolder("content://$id")
             Game("romm", index.toString(), player.platformId, Availability.Cached, "Game $index")
         }
+        // A folder bound in the plugin reaches Settings once its owner refreshes, as every pick does.
+        shell.refreshPlayerSaves()
         shell.ingestLibrary("romm", games.map { game ->
             GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)
         }, emptyList())

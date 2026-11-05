@@ -702,6 +702,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setHomeRoleHeld(held)
         if (launchesCompanion) showRestoredSetup()
         foldcade.onSaveConflicts = { refreshSaveConflict() }
+        foldcade.onNetworkBack = { foldcade.shell.model.savePicker?.takeIf { it.error }?.let { retrySavePicker(it.target) } }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
         applyShelfPreview(intent)
@@ -3659,9 +3660,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                withContext(Dispatchers.Main.immediate) { foldcade.shell.updateSavePicker(target) { it.copy(loading = false, error = true) } }
+                // With no network at all, the page sends the player to Wi-Fi and reloads once it is back.
+                val offline = !foldcade.hasValidatedNetwork()
+                withContext(Dispatchers.Main.immediate) { foldcade.shell.updateSavePicker(target) { it.copy(loading = false, error = true, offline = offline) } }
             }
         }
+    }
+
+    /** The Saves page tries again by itself, as when the network it lacked comes back. */
+    private fun retrySavePicker(target: app.foldcade.language.SavePickerTarget) {
+        foldcade.shell.updateSavePicker(target) { it.copy(loading = true, error = false, offline = false, message = null) }
+        loadSavePicker(target)
     }
 
     private fun changeServerSave(target: app.foldcade.language.SavePickerTarget, saveId: String?, destination: app.foldcade.language.SaveDestination? = null) {

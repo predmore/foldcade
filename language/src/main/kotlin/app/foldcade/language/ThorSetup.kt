@@ -10,19 +10,19 @@ data class ThorSetupSetting(
 )
 
 object ThorSetupCopy {
-    const val title = "Thor setup"
+    /** What the preset gives the player: Azahar's two 3DS screens, one on each Thor panel. */
+    const val title = "Both screens"
     const val apply = "Set up"
     const val restore = "Restore original"
     const val appInfo = "App info"
     const val fileAccess = "File access"
-    const val chooseFolder = "Choose folder"
     const val noticePrefix = "foldcade:thor-setup:"
-    const val needsNotice = "Azahar’s Thor setup needs a hand"
-    const val appliedNotice = "Azahar’s Thor setup is ready"
+    const val needsNotice = "Azahar on both screens needs a hand"
+    const val appliedNotice = "Azahar is set for both screens"
     const val failed = "Couldn’t change the settings. Your config and any backups are kept. Check the user folder, or set these options in Azahar."
     const val intro = "Foldcade sets untouched options once. Your own settings stay yours, even if you change them later."
     const val driver = "Pick your GPU driver in Azahar. Foldcade leaves that choice alone."
-    const val restoreBody = "Restore the whole original config file? Today’s settings are backed up beside it and in Foldcade first. The Thor setup won’t be applied again."
+    const val restoreBody = "Restore the whole original config file? Today’s settings are backed up beside it and in Foldcade first. Foldcade won’t set it up again."
     const val closeBody = "Finish playing and save your game first. Then open App info and choose Force stop. Return here to Set up, or launch your next game to apply the preset."
     const val closeRestoreBody = "Finish playing and save your game first. Then open App info and choose Force stop. Come back here to restore the original settings."
     const val accessBody = "This folder doesn’t allow a safe config replacement. For a local user folder, try Foldcade’s optional Find saves file access, then return here. You can also set the layout in Azahar."
@@ -37,13 +37,14 @@ object ThorSetupCopy {
         ThorSetupOption.AccurateShading -> "Accurate multiplication · On"
     }
     fun status(status: ThorSetupStatus): String = when (status) {
-        ThorSetupStatus.Ready -> "Not yet"
-        ThorSetupStatus.Applied -> "Applied"
+        ThorSetupStatus.Ready -> "Set up"
+        ThorSetupStatus.Applied -> "On"
         ThorSetupStatus.Kept -> "Kept yours"
         ThorSetupStatus.Restored -> "Restored"
         ThorSetupStatus.CloseEmulator -> "Close Azahar"
         ThorSetupStatus.FileAccess -> "File access"
-        ThorSetupStatus.ChooseFolder -> "Choose folder"
+        // The one word every row that opens Android's folder picker uses.
+        ThorSetupStatus.ChooseFolder -> Copy.choose
         ThorSetupStatus.Manual -> "In Azahar"
         ThorSetupStatus.Failed -> "Try again"
     }

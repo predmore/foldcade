@@ -37,6 +37,8 @@ data class SavePickerState(
     val index: Int = 0,
     val loading: Boolean = true,
     val error: Boolean = false,
+    /** With [error]: the device has no working network, so A opens Android's Wi-Fi panel rather than trying again. */
+    val offline: Boolean = false,
     val busy: Boolean = false,
     val copying: SavePickerSave? = null,
     val destinationIndex: Int = 0,
@@ -54,6 +56,12 @@ data class SavePickerState(
      * the chip is only read.
      */
     val statusActs: Boolean get() = health.needsAttention
+
+    /**
+     * Nothing on RomM yet and the emulator needs setting up: the card's centre is the one way
+     * on, Set up saves with A on its cap, so the head's chip only says how things are.
+     */
+    val setupInCard: Boolean get() = health is SaveHealth.NotSyncing && saves.isEmpty() && !loading && !error && !busy && copying == null
     val firstIndex: Int get() = if (statusActs || saves.isEmpty()) 0 else 1
 
     /** [index] moved onto a row that can hold it, after the saves or the health change. */
@@ -97,7 +105,12 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
     }
     if (meaning == Meaning.Back) return null to null
     if (state.loading) return state to null
-    if (state.error) return if (meaning == Meaning.Activate) state.copy(loading = true, error = false, message = null) to Effect.LoadSavePicker(state.target) else state to null
+    if (state.error) return when {
+        meaning != Meaning.Activate -> state to null
+        // Offline, trying again finds nothing: A goes where the network is fixed, and the page reloads when it is back.
+        state.offline -> state to Effect.OpenAndroidSetting(AndroidSetting.Wifi)
+        else -> state.copy(loading = true, error = false, offline = false, message = null) to Effect.LoadSavePicker(state.target)
+    }
     return when (meaning) {
         Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(state.firstIndex), message = null) to null
         Meaning.MoveDown -> state.copy(index = (state.index + 1).coerceAtMost(state.saves.size), message = null) to null
@@ -121,7 +134,10 @@ object SavePickerCopy {
     const val cancel = "Cancel"
     const val playing = "Playing"
     const val empty = "No saves on RomM yet"
-    const val error = "Can't reach RomM"
+    const val error = "Can’t reach RomM"
+    /** The card's line with no network at all. A opens Wi-Fi. */
+    const val offline = "No internet. Join Wi-Fi to see saves."
+    const val wifi = "Wi-Fi"
     const val retry = "Try again"
     const val loading = "Loading saves…"
     const val working = "Keeping your saves…"
@@ -207,7 +223,8 @@ object SavePickerCopy {
     }
     fun header(health: SaveHealth): String = when (health) {
         SaveHealth.Fine -> "Syncing with RomM"
-        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot) "Saves aren’t syncing" else "Not syncing · Set up"
+        // What to do is said once, beside A: in the footer, or on the card's Set up saves.
+        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot) "Saves aren’t syncing" else Copy.notSyncing
         SaveHealth.Waiting -> "Waiting to upload"
         SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
     }
@@ -238,7 +255,9 @@ object SavePickerCopy {
  * Slot names that are a file's or Foldcade's own, not a name anyone chose: Azahar's "title",
  * melonDS's "sav", RetroArch's "srm". Those saves go by when they were made instead.
  */
-private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "gci", "battery", "archive", "default", "save")
+private val MACHINE_SLOTS = setOf("title", "sav", "srm", "savedata", "card1", "gci", "battery", "archive", "default", "save",
+    // Argosy's standard slot for every game (rommapp/argosy-launcher SaveSyncApiClient.AUTOSAVE_SLOT_NAME).
+    "autosave")
 
 /** True when [slot] says nothing to a player, so its saves are named by date. */
 fun genericSlot(slot: String?, ownSlots: List<String>): Boolean =
@@ -321,7 +340,9 @@ fun relativeSaveWhen(millis: Long, now: Long, style: DateStyle, zone: ZoneId = Z
 fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
     if (state.loading || state.busy || state.confirmation != null) return emptyList()
     val confirm = promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA
-    if (state.error) return listOf(HintKey(confirm, SavePickerCopy.retry))
+    if (state.error) return listOf(HintKey(confirm, if (state.offline) SavePickerCopy.wifi else SavePickerCopy.retry))
+    // The card's own button carries A.
+    if (state.setupInCard) return emptyList()
     if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
     if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
     return when (state.health) {
