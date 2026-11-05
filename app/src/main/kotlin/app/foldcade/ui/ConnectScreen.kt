@@ -67,6 +67,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.PairingCode
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PromptKey
+import app.foldcade.language.RommPhoneCopy
 import app.foldcade.language.QrCode
 import app.foldcade.language.Theme
 import app.foldcade.language.connectFields
@@ -95,7 +96,7 @@ internal fun ConnectScreen(
     val scale = theme.motion.animatorScale(LocalContext.current.contentResolver)
     val model = app.shell.model
     val artKey = model.connectKind == ConnectKind.ArtKey
-    val fields = connectFields(model.connectKind)
+    val fields = connectFields(model.connectKind, model.connectFoundOrigin != null)
     val ringed = fields[model.connectIndex.coerceIn(fields.indices)]
     val origin = remember { FocusRequester() }
     val token = remember { FocusRequester() }
@@ -112,7 +113,7 @@ internal fun ConnectScreen(
         val field = when (ringed) {
             ConnectField.Origin -> origin
             ConnectField.Token -> token
-            ConnectField.Save -> return@LaunchedEffect
+            ConnectField.Save, ConnectField.FoundServer -> return@LaunchedEffect
         }
         takeKeyboardFocus()
         field.requestFocus()
@@ -160,6 +161,16 @@ internal fun ConnectScreen(
             ) {
                 Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (!artKey) {
+                        model.connectFoundOrigin?.let { found ->
+                            BasicText(
+                                "${RommPhoneCopy.useServer}: ${found.substringAfter("://")}",
+                                modifier = Modifier.fillMaxWidth().chip(ringed == ConnectField.FoundServer)
+                                    .hostPress { onEffect(app.shell.touchConnect(fields.indexOf(ConnectField.FoundServer), screen)) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                style = formStyle(theme.onBackground, design.type.dialogBody, theme, bold = true),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         FieldLabel(Copy.server, theme)
                         BasicTextField(
                             value = model.connectOrigin,
@@ -239,7 +250,7 @@ internal fun ConnectScreen(
                     )
                 }
                 val side = Modifier.width(if (compact) PANE_COMPACT else PANE).fillMaxHeight()
-                if (artKey) KeyDropSide(app.keyDrop.state, theme, compact, side) else PairingSide(model, theme, compact, side)
+                if (artKey) KeyDropSide(app.keyDrop.state, theme, compact, side) else PairingSide(model, app.rommPhone.state, theme, compact, side)
             }
         }
     }
@@ -253,7 +264,7 @@ private fun pairingNote(hint: String): Boolean = hint == Copy.rommCodeExpired ||
  * a code, the same square kept empty with one line about why.
  */
 @Composable
-private fun PairingSide(model: PickerModel, theme: Theme, compact: Boolean, modifier: Modifier) {
+private fun PairingSide(model: PickerModel, phone: app.foldcade.language.KeyDrop?, theme: Theme, compact: Boolean, modifier: Modifier) {
     val design = theme.style
     val code = model.connectCode
     val scale = theme.motion.animatorScale(LocalContext.current.contentResolver)
@@ -290,13 +301,18 @@ private fun PairingSide(model: PickerModel, theme: Theme, compact: Boolean, modi
                         )
                     } else {
                         val waitingForCode = model.connectOrigin.isNotBlank() && !model.connectRetry && !model.connectBusy
-                        EmptySquare(theme, pulse = waitingForCode, scale = scale, modifier = Modifier.size(square))
+                        val phoneUrl = (phone as? app.foldcade.language.KeyDrop.Open)?.url?.takeIf { app.foldcade.language.rommNeedsAddress(model) }
+                        if (phoneUrl != null) QrSquare(phoneUrl, RommPhoneCopy.scan, theme, Modifier.size(square))
+                        else EmptySquare(theme, pulse = waitingForCode, scale = scale, modifier = Modifier.size(square))
                         val hint = model.connectHint?.takeIf(::pairingNote)
                         BasicText(
                             when {
                                 hint != null -> hint
-                                model.connectOrigin.isBlank() -> Copy.rommPairNeedsServer
                                 waitingForCode -> Copy.rommGettingCode
+                                phoneUrl != null -> if ((phone as? app.foldcade.language.KeyDrop.Open)?.phoneHere == true) RommPhoneCopy.phoneHere else RommPhoneCopy.scan
+                                phone == app.foldcade.language.KeyDrop.Offline && app.foldcade.language.rommNeedsAddress(model) -> RommPhoneCopy.offline
+                                phone == app.foldcade.language.KeyDrop.Sent -> RommPhoneCopy.sent
+                                model.connectOrigin.isBlank() -> RommPhoneCopy.opening
                                 else -> Copy.rommPairAgain
                             },
                             modifier = Modifier.fillMaxWidth(),
@@ -305,8 +321,13 @@ private fun PairingSide(model: PickerModel, theme: Theme, compact: Boolean, modi
                             maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (model.connectOrigin.isBlank() && model.connectFoundOrigin == null) BasicText(
+                            if (model.connectSearching) RommPhoneCopy.searching else RommPhoneCopy.notFound,
+                            style = formStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
+                            maxLines = 2,
+                        )
                         if (hint != null) BasicText(
-                            Copy.rommPairAgain,
+                            if (phoneUrl != null) RommPhoneCopy.scan else Copy.rommPairAgain,
                             modifier = Modifier.fillMaxWidth(),
                             style = formStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center),
                             maxLines = 3,

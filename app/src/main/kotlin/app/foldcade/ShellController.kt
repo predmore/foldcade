@@ -2327,6 +2327,30 @@ class ShellController(
         model = model.copy(
             connectOrigin = origin,
             connectWarning = cleartextCredentialWarning(origin),
+            connectIndex = if (model.connectFoundOrigin != null) (model.connectIndex - 1).coerceAtLeast(0) else model.connectIndex,
+            connectFoundOrigin = null,
+            connectSearching = false,
+        )
+    }
+
+    /** An explicit phone/nearby choice starts a fresh challenge, even for a retried address. */
+    fun chooseRommOrigin(origin: String) {
+        editOrigin(origin)
+        connectOriginRevision += 1
+        model = model.copy(connectCode = null, connectHint = null, connectRetry = false, connectFoundOrigin = null, connectIndex = 0)
+    }
+
+    fun showNearbyRomm(origin: String?, searching: Boolean) {
+        if (!model.connectOpen || model.connectKind != ConnectKind.Romm || model.connectOrigin.isNotBlank()) return
+        val inserted = model.connectFoundOrigin == null && origin != null
+        model = model.copy(
+            connectFoundOrigin = origin,
+            connectSearching = searching,
+            connectIndex = when {
+                inserted && model.connectIndex > 0 -> model.connectIndex + 1
+                model.connectFoundOrigin != null && origin == null -> (model.connectIndex - 1).coerceAtLeast(0)
+                else -> model.connectIndex
+            },
         )
     }
 
@@ -2365,6 +2389,8 @@ class ShellController(
             connectReturnPanel = returnPanel,
             panel = null,
             connectOrigin = origin,
+            connectFoundOrigin = null,
+            connectSearching = origin.isBlank(),
             connectIndex = 0,
             connectWarning = cleartextCredentialWarning(origin),
             connectHint = null,
@@ -2548,7 +2574,7 @@ class ShellController(
 
     /** One tap focuses a text row. Save activates on that tap. */
     fun touchConnect(index: Int, screen: HostScreen): Effect? {
-        val field = connectFields(model.connectKind).getOrNull(index) ?: return null
+        val field = connectFields(model.connectKind, model.connectFoundOrigin != null).getOrNull(index) ?: return null
         if (field == ConnectField.Origin || field == ConnectField.Token) {
             if (model.connectIndex != index) model = model.copy(connectIndex = index)
             return null

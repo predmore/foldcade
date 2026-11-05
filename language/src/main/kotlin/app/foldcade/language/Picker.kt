@@ -1116,6 +1116,7 @@ data class LibraryFolder(
 )
 
 enum class ConnectField {
+    FoundServer,
     Origin,
     Token,
     Save,
@@ -1131,8 +1132,8 @@ enum class ConnectKind {
  * The form's rows, top to bottom. RomM's one button pairs a phone while the token is empty and
  * connects once one is typed, so a new code needs no button of its own.
  */
-fun connectFields(kind: ConnectKind = ConnectKind.Romm): List<ConnectField> = when (kind) {
-    ConnectKind.Romm -> listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
+fun connectFields(kind: ConnectKind = ConnectKind.Romm, foundServer: Boolean = false): List<ConnectField> = when (kind) {
+    ConnectKind.Romm -> (if (foundServer) listOf(ConnectField.FoundServer) else emptyList()) + listOf(ConnectField.Origin, ConnectField.Token, ConnectField.Save)
     ConnectKind.ArtKey -> listOf(ConnectField.Token, ConnectField.Save)
 }
 
@@ -1152,7 +1153,8 @@ data class PairingCode(val code: String, val url: String) {
  */
 fun rommConnectAction(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, code: PairingCode?, retry: Boolean): String = when {
     busy -> Copy.connecting
-    tokenTyped || !originTyped -> Copy.connect
+    tokenTyped -> Copy.connect
+    !originTyped -> Copy.waitingForPhone
     code != null && !retry -> Copy.waitingForPhone
     else -> Copy.pairWithPhone
 }
@@ -1604,6 +1606,7 @@ sealed interface Effect {
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
     data object RetryRommDeviceCode : Effect
+    data object UseFoundRomm : Effect
     data class DialogChoice(val button: DialogButton, val kind: DialogKind, val subject: String? = null) : Effect
 
     /** Pair with Moonlight's computer [key], so its games list themselves. */
@@ -1843,6 +1846,8 @@ data class PickerModel(
     /** The folders the library reads. Each has a row to remove it. */
     val folders: List<LibraryFolder> = emptyList(),
     val connectOrigin: String = "",
+    val connectFoundOrigin: String? = null,
+    val connectSearching: Boolean = false,
     val connectIndex: Int = 0,
     val connectScreen: HostScreen? = null,
     /** Editing returns to this connection's actions when the form closes. */
@@ -1985,7 +1990,7 @@ fun reduce(
         return coerced.copy(saveConflict = if (action != null) null else next) to effect
     }
     if (coerced.connectOpen) {
-        val fields = connectFields(coerced.connectKind)
+        val fields = connectFields(coerced.connectKind, coerced.connectFoundOrigin != null)
         val index = coerced.connectIndex.coerceIn(0, fields.lastIndex)
         val field = fields[index]
         return when (meaning) {
@@ -2002,6 +2007,7 @@ fun reduce(
             Meaning.MoveUp -> coerced.copy(connectIndex = (index - 1).coerceAtLeast(0)) to null
             Meaning.MoveDown -> coerced.copy(connectIndex = (index + 1).coerceAtMost(fields.lastIndex)) to null
             Meaning.Activate -> when (field) {
+                ConnectField.FoundServer -> coerced to Effect.UseFoundRomm.takeIf { repeatCount == 0 }
                 ConnectField.Save -> coerced to if (coerced.connectBusy) null else if (coerced.connectKind == ConnectKind.ArtKey) Effect.SaveArtKey else Effect.SaveRommToken
                 ConnectField.Origin, ConnectField.Token -> coerced.copy(connectIndex = index) to Effect.EditField
             }

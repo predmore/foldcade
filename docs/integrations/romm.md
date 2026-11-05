@@ -4,7 +4,7 @@ Connect a [RomM](https://romm.app) server, and its library becomes your Thor's. 
 
 What you get:
 
-- **Sign-in with a code** you approve on your phone. Foldcade stores a token, not your password.
+- **Sign-in from your phone**, without typing on the Thor. Foldcade stores a token, not your password.
 - **Verified downloads** that resume after an interruption when the server allows it, and stay ready for offline play.
 - **[Save sync](#save-sync)** for melonDS, RetroArch, Azahar, DuckStation, ARMSX2, aPS3e and Eden, with a choice and both copies kept when two devices disagree.
 - **[Firmware](#firmware)**, such as a PlayStation BIOS, placed where the emulator looks for it.
@@ -22,12 +22,18 @@ Configure the emulator before playing. RomM can catalog more systems than Foldca
 
 ## Connect with a code
 
-1. In Foldcade, open **L1 › Settings › Library › Add › Add a RomM server**. On a first start with no ROMs folder on the Thor, Foldcade asks where your games are: **Sign in to RomM** opens the same form. So does **Add games** at the end of Home while you have no folder or server.
-2. Enter its address, including `https://` or `http://`, such as `https://romm.example.com`.
-3. A code appears beside the fields, in groups of four, with a QR code. Scan it with your phone, or open the short address under it on any phone or computer, sign in, and approve the code. The button reads **Waiting for phone…** meanwhile.
+1. Choose **Sign in to RomM** on first start, or open **L1 › Settings › Library › Add › Add a RomM server**.
+2. Scan the QR code with a phone on the same Wi-Fi. Paste or enter your RomM server address on the phone, including `https://` or `http://`.
+3. Tap **Continue to RomM**, then **Approve Foldcade on RomM**. Sign in on RomM and approve the code. One scan handles both steps. Foldcade also shows the approval QR code on the Thor.
 4. Wait for the catalog to load, then choose a game from its system folder or **All**.
 
+While the empty form is open, Foldcade looks nearby for a few seconds. A verified server offers **Use this server**: press **A** to choose it, then scan its approval code. This checks at most twelve likely addresses on the current IPv4 /24 at port 80, the host port in RomM’s default Compose example, using its unauthenticated `/api/heartbeat`. It does not scan other ports or the whole network. RomM has no standard Zeroconf advertisement; servers behind custom ports or reverse proxies usually need the phone path. A server address kept by a restored backup is already filled in and goes straight to approval.
+
+The phone page exists only while this form is shown. Its random, one-time URL accepts one address and closes; it never asks for a password or token. Only `http://` or `https://` addresses without embedded credentials are accepted, with normal certificate checks for HTTPS. The LAN handoff uses plain HTTP on your own network. If Wi-Fi is unavailable or client isolation blocks it, type the address into **Server** on the Thor. Typing and the optional token field remain available.
+
 Foldcade stores a token, not your RomM password.
+
+If the phone cannot continue to the approval page, scan the approval QR on the Thor instead. An approval link to a different server address is not opened by the phone page.
 
 If the code expires or is declined, choose **Pair with phone** for a new one. To use a token instead, paste it into **Token (optional)**; the button then reads **Connect**. See [RomM's token guide](https://docs.romm.app/latest/developers/client-api-tokens/).
 
@@ -38,6 +44,10 @@ A manual token needs `roms.read`, `platforms.read`, `assets.read`, `assets.write
 Foldcade keeps one RomM server. Once it is saved, **Add** offers only folders.
 
 Select the RomM tile in **Settings › Library** to **Edit connection** or **Sign out**. Sign out asks first: saves stop syncing and RomM's games leave Home.
+
+While signed in, changing to a different server address asks for that server's token. Your existing token stays on its own server until the new connection is checked. A setup restored without a sign-in can use phone pairing for a different address.
+
+Pairing uses a separate connection until approval and sign-in checks finish. Backing out, declining, or letting a code expire keeps the saved library and its saves on their existing server.
 
 ## Signed out
 

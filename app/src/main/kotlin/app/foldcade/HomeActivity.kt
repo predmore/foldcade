@@ -447,6 +447,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             Effect.SaveRommToken -> saveRommToken()
             Effect.RetryRommDeviceCode -> beginRommDeviceCode()
+            Effect.UseFoundRomm -> foldcade.shell.model.connectFoundOrigin?.let {
+                beginRommFromPhone(it)
+            }
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> foldcade.saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -2885,11 +2888,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /**
      * Device code is the main path once an origin is on the form. Paste stays in the token field.
-     * The code is for the saved server when one exists, and for the typed origin otherwise.
+     * The code follows the address on this form, including a phone's explicit choice.
      */
+    internal fun beginRommFromPhone(origin: String) {
+        foldcade.shell.chooseRommOrigin(origin)
+        beginRommDeviceCode()
+    }
+
     private fun beginRommDeviceCode() {
         deviceCodeJob?.cancel()
-        val instanceId = RommCredentials.PLUGIN_ID
         val visit = foldcade.shell.beginDeviceCodeAttempt()
         deviceCodeJob = foldcade.scope.launch {
             var pairedRevision: Int? = null
@@ -2897,17 +2904,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val (revision, origin) = withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.connectOriginRevision to normalizeSetupOrigin(foldcade.shell.model.connectOrigin)
                 }
-                val saved = foldcade.store.rommOrigin()?.let(::normalizeSetupOrigin)
-                if (origin == null || revision == pairedRevision || (saved != null && saved != origin)) {
+                if (origin == null || revision == pairedRevision) {
                     delay(200)
                     continue
                 }
                 delay(400)
                 if (!withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, revision) }) continue
                 pairedRevision = revision
+                // Keep the existing token's server-switch policy; restored setups have no visible token.
+                val mayConfigure = mayPairRommOrigin(foldcade.store.rommOrigin(), origin, foldcade.store.restoreCredentials(foldcade.credentials))
+                if (!withContext(Dispatchers.Main.immediate) {
+                    if (!foldcade.shell.deviceCodeFormCurrent(visit, revision)) false
+                    else if (!mayConfigure) {
+                        foldcade.shell.showSetupHint(app.foldcade.language.RommPhoneCopy.changeServerToken, retry = true)
+                        false
+                    } else true
+                }) continue
                 try {
-                    foldcade.plugins.configure(instanceId, mapOf(ROMM_ORIGIN_KEY to origin))
-                    val outcome = pollRommDeviceCode(instanceId, visit, revision)
+                    // An attempt owns its own wiring. Only validateRommToken publishes an accepted origin.
+                    val pairing = requireNotNull(app.foldcade.plugins.romm.RommPlugins.supply).pendingSignIn(origin)
+                    val outcome = pollRommDeviceCode(pairing, visit, revision)
                     withContext(Dispatchers.Main.immediate) {
                         if (foldcade.shell.deviceCodeFormCurrent(visit, revision)) {
                             when (outcome) {
@@ -2931,11 +2947,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private suspend fun pollRommDeviceCode(libraryId: String, visit: Int, originRevision: Int): DeviceCodePoll = pollDeviceCode(
-        begin = { foldcade.plugins.beginDeviceCode(libraryId) },
+    private suspend fun pollRommDeviceCode(pairing: app.foldcade.api.plugin.LibraryBackend, visit: Int, originRevision: Int): DeviceCodePoll = pollDeviceCode(
+        begin = { pairing.beginDeviceCode() },
         poll = { code ->
             val current = withContext(Dispatchers.Main.immediate) { foldcade.shell.deviceCodeFormCurrent(visit, originRevision) }
-            if (current) foldcade.plugins.pollDeviceCode(libraryId, code) else DeviceCodePoll.Expired
+            if (current) pairing.pollDeviceCode(code) else DeviceCodePoll.Expired
         },
         onChallenge = { challenge ->
             withContext(Dispatchers.Main.immediate) {

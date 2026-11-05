@@ -28,7 +28,7 @@ Keep the hero-top.png and hero-bottom.png paths.
 
 Your games live on your own server, and Foldcade makes that server the Thor's library.
 
-- **Sign in with a code.** Type your server's address, approve the code on your phone, and you are in. Foldcade keeps a token, never your password.
+- **Sign in from your phone.** Scan once, send your server’s address from your phone, and approve Foldcade on RomM. A nearby server or a restored address saves that step too. Foldcade keeps a token, never your password.
 - **The whole catalog, nothing to copy first.** Every game on the server appears in Foldcade, filed by system, with RomM's covers. Press **A**, and Foldcade downloads the game, checks it against RomM, and starts it. The tile and the top screen show the progress.
 - **Downloads you can trust.** Each file must match the size and checksum RomM lists before it plays. An archive is checked by size, since RomM's checksum describes what is inside it. A download that stops picks up where it left off when the server allows it. Downloaded games play offline, and **Y › Delete download** gives the space back without touching your saves.
 - **Saves that come with you.** With RomM 5.4 or newer, Foldcade fetches the newest save before a game starts and sends yours back when you return to Home. Stop on one Thor and keep going on another. A paused game resumes as you left it, without a sync. Offline play waits for the next sync.
