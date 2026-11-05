@@ -1916,27 +1916,30 @@ private fun HeroLabel(
     }
 }
 
-/**
- * Fade each game's facts with that game's foreground art, including a retarget mid-fade.
- * The title may name a slow focus after NAME_WAIT_MS; its facts never run ahead of its art.
- */
+/** One readable line for the named game, at that game's foreground-art alpha. */
 @Composable
-private fun HeroFactFade(fade: HeroFade<StagedHero>, fallback: HeroSubject, content: @Composable (HeroSubject) -> Unit) {
+private fun HeroFactFade(fade: HeroFade<StagedHero>, named: HeroSubject, content: @Composable (HeroSubject) -> Unit) {
     val blend = fade.layers.value
-    val front = blend.front?.subject
-    val back = blend.back?.subject
-    Box(contentAlignment = Alignment.Center) {
-        if (front == null && back == null) content(fallback)
-        else if (front?.key == back?.key) content(front ?: fallback)
-        else {
-            back?.let { shown -> key(shown.key) {
-                Box(Modifier.graphicsLayer { alpha = fade.outgoing.value }) { content(shown) }
-            } }
-            front?.let { shown -> key(shown.key) {
-                Box(Modifier.graphicsLayer { alpha = fade.incoming.value }) { content(shown) }
-            } }
-        }
-    }
+    Box(Modifier.graphicsLayer {
+        alpha = heroFactAlpha(
+            named.key, blend.front?.subject?.key, blend.back?.subject?.key,
+            fade.incoming.value, fade.outgoing.value,
+        )
+    }) { content(named) }
+}
+
+/**
+ * The 400 ms name fallback must not put the previous game's facts under a new name.
+ * A line with no matching art waits invisibly at its own size; same-game upgrades
+ * keep it whole. Only one line is composed, so a dissolve never doubles the letters
+ * or holds the card open to the outgoing game's width.
+ */
+internal fun heroFactAlpha(named: String, front: String?, back: String?, incoming: Float, outgoing: Float): Float = when {
+    front == null && back == null -> 1f
+    named == front && front == back -> 1f
+    named == front -> incoming
+    named == back -> outgoing
+    else -> 0f
 }
 
 @Composable
@@ -5024,8 +5027,8 @@ private fun Cell(
                         Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE))
                     } else {
                         Modifier.align(Alignment.TopEnd).offset(
-                            x = px(tile.statusChipPx * tile.statusOverlap),
-                            y = -px(tile.statusChipPx * tile.statusOverlap),
+                            x = px(tile.statusChipPx * tile.statusOverlap) - corner * CORNER_SAFE,
+                            y = -px(tile.statusChipPx * tile.statusOverlap) + corner * CORNER_SAFE,
                         )
                     },
                 )
