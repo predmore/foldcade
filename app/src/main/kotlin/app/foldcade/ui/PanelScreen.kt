@@ -3787,50 +3787,47 @@ private fun StripGrid(
             }
             .padding(pad),
     ) {
-        StatusChipLayer {
-            val low by remember(lastColumn) {
-                derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
-            }
-            val high by remember(lastColumn, columns) {
-                derivedStateOf { ceil(shownFirst() + columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
-            }
-            var rowPx by remember { mutableStateOf(0) }
-            for (drawn in low..high) {
-                // Keyed, so a column keeps its decoded art as the strip scrolls. Unkeyed,
-                // columns moved slots as the strip settled and every tile reloaded.
-                key(drawn) {
-                    Box(
-                        Modifier
-                            .offset { IntOffset(((drawn - shownFirst()) * pitchPx).roundToInt(), 0) }
-                            .graphicsLayer {
-                                // A column fades as it slides past either edge, so the strip has no cut ends.
-                                val along = drawn - shownFirst()
-                                val outside = maxOf(-along, along - (columns - 1), 0f)
-                                alpha = (1f - outside).coerceIn(0f, 1f)
-                            },
-                    ) {
-                        StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
+        val low by remember(lastColumn) {
+            derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+        }
+        val high by remember(lastColumn, columns) {
+            derivedStateOf { ceil(shownFirst() + columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+        }
+        var rowPx by remember { mutableStateOf(0) }
+        val columnsToDraw = (low..high).map { drawn ->
+            key(drawn) {
+                val frame = Modifier
+                    .offset { IntOffset(((drawn - shownFirst()) * pitchPx).roundToInt(), 0) }
+                    .graphicsLayer {
+                        val along = drawn - shownFirst()
+                        val outside = maxOf(-along, along - (columns - 1), 0f)
+                        alpha = (1f - outside).coerceIn(0f, 1f)
                     }
-                }
+                Triple(drawn, frame, StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it })
             }
-            if (homeTiles) {
-                HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
-                CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
-                    (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
-                }
+        }
+        columnsToDraw.forEach { (column, frame, draw) -> key(column) { Box(frame) { draw(TileLayer.Face) } } }
+        if (homeTiles) {
+            HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
+            CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
+                (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
             }
-            GridCursor(
-                app = app,
-                index = model.focus.cellIndex,
-                cell = cell,
-                gap = rowGap,
-                columns = columns,
-                pitchPx = pitchPx,
-                rowPx = rowPx,
-                shownFirst = shownFirst,
-                jump = folderToken,
-                scale = scale,
-            )
+        }
+        GridCursor(
+            app = app,
+            index = model.focus.cellIndex,
+            cell = cell,
+            gap = rowGap,
+            columns = columns,
+            pitchPx = pitchPx,
+            rowPx = rowPx,
+            shownFirst = shownFirst,
+            jump = folderToken,
+            scale = scale,
+        )
+        // Chips share the columns' and cells' actual motion, above the cursor as a whole.
+        Box(Modifier.zIndex(1f)) {
+            columnsToDraw.forEach { (column, frame, draw) -> key(column) { Box(frame) { draw(TileLayer.Status) } } }
         }
     }
 }
@@ -3892,8 +3889,6 @@ private fun GridCursor(
     val theme = foldTheme()
     val radius = cell * theme.iconRadius
     val ring = remember { Path() }
-    val chipPath = remember { Path() }
-    val chip = LocalStatusChipCutout.current
     Box(
         Modifier
             .size(cell)
@@ -3913,26 +3908,21 @@ private fun GridCursor(
                 ring.reset()
                 ring.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
                 // Only outside the tile, so the glow never washes over the art.
-                // The chip stays on its tile while the ring glides. Cut only at landing,
-                // so an empty corner never travels across the art between tiles.
-                val landedChip = chip.takeIf { x == column && y == row }
-                withoutStatusChip(landedChip, theme, cornerPx, chipPath, motion.scaleFocus) {
-                    clipPath(ring, ClipOp.Difference) {
-                        with(FocusRing(theme)) {
-                            drawFocusRing(cornerPx)
-                            val t = burst.value
-                            if (t < 1f) {
-                                for (wave in 0 until BURST_WAVES) {
-                                    // Each wave starts a little after the one before and grows as it fades.
-                                    val local = ((t - wave * BURST_LAG) / (1f - BURST_LAG)).coerceIn(0f, 1f)
-                                    if (local <= 0f || local >= 1f) continue
-                                    val grow = BURST_REACH * size.minDimension * local
-                                    drawFocusRing(
-                                        cornerPx + grow,
-                                        alpha = 1f - local,
-                                        bounds = Rect(-grow, -grow, size.width + grow, size.height + grow),
-                                    )
-                                }
+                clipPath(ring, ClipOp.Difference) {
+                    with(FocusRing(theme)) {
+                        drawFocusRing(cornerPx)
+                        val t = burst.value
+                        if (t < 1f) {
+                            for (wave in 0 until BURST_WAVES) {
+                                // Each wave starts a little after the one before and grows as it fades.
+                                val local = ((t - wave * BURST_LAG) / (1f - BURST_LAG)).coerceIn(0f, 1f)
+                                if (local <= 0f || local >= 1f) continue
+                                val grow = BURST_REACH * size.minDimension * local
+                                drawFocusRing(
+                                    cornerPx + grow,
+                                    alpha = 1f - local,
+                                    bounds = Rect(-grow, -grow, size.width + grow, size.height + grow),
+                                )
                             }
                         }
                     }
@@ -3974,7 +3964,7 @@ private fun StripColumn(
     pitchPx: Float,
     rowPx: () -> Int,
     onRowHeight: (Int) -> Unit,
-) {
+): TileContent {
     val context = LocalContext.current
     val shell = app.shell
     val focus = shell.model.focus
@@ -3987,117 +3977,126 @@ private fun StripColumn(
     val lifted = shell.homeLiftedIndex()
     val foldersOpen = shell.homeFoldersOpen()
     val addGames = if (showingHome) shell.addGamesSlot() else null
-    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
-        for (row in 0 until Metrics.rows) {
-            val index = GridStrip.index(column, row)
-            // The activity runs what a second tap opens, as it does for A.
-            val tap = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) }
-            // A tile's height with its title is the row pitch the cursor steps by. Past the last tile,
-            // nothing is drawn but a lifted gap.
-            val beyond = index >= shell.model.count
-            val past = beyond && !(showingHome && lifted == index)
-            val id = if (showingHome && !past) shell.homeFace(index)?.id else null
-            val glide = slotGlide(memory, id, index, carry?.id)
-            val placed = if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier
-            Box(
-                placed.then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0)).then(
-                    if (glide == null) Modifier else Modifier.zIndex(1f).graphicsLayer {
-                        val pitchY = (if (rowPx() > 0) rowPx().toFloat() else cell.toPx()) + gap.toPx()
-                        translationX = glide.x.value * pitchPx
-                        translationY = glide.y.value * pitchY
-                    },
-                ),
-            ) {
-                if (past && index == addGames) {
-                    // Past the last tile, while nothing brings games: the way to add some.
-                    val focused = shell.model.dialog == null && shell.model.panel == null && !shell.model.connectOpen &&
-                        focus.chrome == null && focus.cellIndex == index && carry == null
-                    Cell(
-                        title = Copy.addGames,
-                        mark = null,
-                        control = ADD_GAMES_GLYPH,
-                        showTitle = showTitle,
-                        focused = focused,
-                        size = cell,
-                        titleWidth = titleWidth,
-                        corner = radius,
-                        icon = null,
-                        // It rests lit like any tile, so a fresh Home's first step never reads as an empty slot (review-A 02).
-                        offHome = false,
-                        onClick = { tap() },
-                    )
-                } else if (past) {
-                    // A tap rests the cursor here, as on any empty slot. Resting there, it is where Y's
-                    // card grows from, as a tile is (review-C 142).
-                    val focused = shell.model.dialog == null && !shell.model.connectOpen &&
-                        focus.chrome == null && focus.cellIndex == index && carry == null
-                    Box(Modifier.size(cell).then(if (focused) Modifier.tileAnchor(radiusPx * motion.scaleFocus) else Modifier).hostPress { tap() })
-                } else {
-                    val source = if (showingHome) index else displaySource(shell.model, index)
-                    val face = if (showingHome) shell.homeFace(index) else null
-                    val game = shell.tileFromOrder(source)
-                    // A tile in the hand draws itself over the grid, so its slot is only
-                    // the space it left, and focus is where it is held.
-                    // Y's menu grows out of the focused tile, which stays lit and lifted under it.
-                    val focused = shell.model.dialog == null &&
-                        (shell.model.panel?.let { it.side == Side.Tile } ?: true) &&
-                        !shell.model.connectOpen &&
-                        focus.chrome == null &&
-                        focus.cellIndex == index &&
-                        carry == null
-                    val activity = shell.activityAt(source)
-                    val label = game?.let { shell.displayTitle(it, activity) }.orEmpty()
-                    val libraryTile = library && face == null
-                    // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
-                    // its Not on Home tab, since every game is in its folder on Home.
-                    val offHome = face != null && foldersOpen && face.folder && !face.onGrid
-                    val appObject = appGlyph(game?.androidPackage)
-                    val art = tileArt(app, game, face, automatic = appObject == null)
-                    val themedApp = if (art == null) appObject else null
-                    Cell(
-                        title = label,
-                        mark = game?.mark,
-                        shortTitle = face?.shortTitle ?: appShortName(game?.androidPackage),
-                        themedApp = themedApp,
-                        art = art,
-                        showTitle = showTitle,
-                        focused = focused,
-                        size = cell,
-                        titleWidth = titleWidth,
-                        corner = radius,
-                        icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
-                        empty = face?.empty == true || beyond,
-                        selected = face?.id in shell.homeSelection()?.checked.orEmpty(),
-                        lifted = lifted == index && carry == null,
-                        socket = carry?.slot == index,
-                        opened = carry?.over == index,
-                        editing = editing,
-                        offHome = offHome,
-                        onServer = face?.onServer == true,
-                        downloading = shell.isDownloading(face?.id),
-                        activity = activity,
-                        saveHealth = shell.saveHealthAt(source, game),
-                        library = libraryTile,
-                        settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
-                        // The focused tile is where a launch grows its art from, and Y's menu its card.
-                        bloom = if (focused) {
-                            Modifier.bloomSource(app, screen, BloomFrom.Tile, radiusPx * motion.scaleFocus).tileAnchor(radiusPx * motion.scaleFocus)
-                        } else Modifier,
-                        onClick = { tap() },
-                        onDrag = if (editing) {
-                            { meaning -> shell.dragHome(meaning) }
-                        } else {
-                            null
-                        },
-                        onPickUp = if (editing) {
-                            { shell.pickUpHome(index) }
-                        } else {
-                            null
-                        },
-                        onDrop = { (context as? FoldcadeHomeActivity)?.dispatch(shell.onMeaning(Meaning.Activate, screen)) },
-                    )
-                }
+    val tiles = (0 until Metrics.rows).map { row ->
+        val index = GridStrip.index(column, row)
+        // The activity runs what a second tap opens, as it does for A.
+        val tap = { (context as? FoldcadeHomeActivity)?.dispatch(shell.touchCell(index, screen)) }
+        // A tile's height with its title is the row pitch the cursor steps by. Past the last tile,
+        // nothing is drawn but a lifted gap.
+        val beyond = index >= shell.model.count
+        val past = beyond && !(showingHome && lifted == index)
+        val id = if (showingHome && !past) shell.homeFace(index)?.id else null
+        val glide = slotGlide(memory, id, index, carry?.id)
+        val placed = if (row == 0 && !past) Modifier.onSizeChanged { onRowHeight(it.height) } else Modifier
+        val frame = selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0).then(
+            if (glide == null) Modifier else Modifier.zIndex(1f).graphicsLayer {
+                val pitchY = (if (rowPx() > 0) rowPx().toFloat() else cell.toPx()) + gap.toPx()
+                translationX = glide.x.value * pitchPx
+                translationY = glide.y.value * pitchY
+            },
+        )
+        val tile: TileContent = if (past && index == addGames) {
+            // Past the last tile, while nothing brings games: the way to add some.
+            val focused = shell.model.dialog == null && shell.model.panel == null && !shell.model.connectOpen &&
+                focus.chrome == null && focus.cellIndex == index && carry == null
+            Cell(
+                title = Copy.addGames,
+                mark = null,
+                control = ADD_GAMES_GLYPH,
+                showTitle = showTitle,
+                focused = focused,
+                size = cell,
+                titleWidth = titleWidth,
+                corner = radius,
+                icon = null,
+                // It rests lit like any tile, so a fresh Home's first step never reads as an empty slot (review-A 02).
+                offHome = false,
+                onClick = { tap() },
+            )
+        } else if (past) {
+            // A tap rests the cursor here, as on any empty slot. Resting there, it is where Y's
+            // card grows from, as a tile is (review-C 142).
+            val focused = shell.model.dialog == null && !shell.model.connectOpen &&
+                focus.chrome == null && focus.cellIndex == index && carry == null
+            val empty: TileContent = { layer ->
+                Box(Modifier.size(cell).then(if (layer == TileLayer.Face) {
+                    (if (focused) Modifier.tileAnchor(radiusPx * motion.scaleFocus) else Modifier).hostPress { tap() }
+                } else Modifier))
             }
+            empty
+        } else {
+            val source = if (showingHome) index else displaySource(shell.model, index)
+            val face = if (showingHome) shell.homeFace(index) else null
+            val game = shell.tileFromOrder(source)
+            // A tile in the hand draws itself over the grid, so its slot is only
+            // the space it left, and focus is where it is held.
+            // Y's menu grows out of the focused tile, which stays lit and lifted under it.
+            val focused = shell.model.dialog == null &&
+                (shell.model.panel?.let { it.side == Side.Tile } ?: true) &&
+                !shell.model.connectOpen &&
+                focus.chrome == null &&
+                focus.cellIndex == index &&
+                carry == null
+            val activity = shell.activityAt(source)
+            val label = game?.let { shell.displayTitle(it, activity) }.orEmpty()
+            val libraryTile = library && face == null
+            // Folders marks the exception: a folder off Home rests dimmed. All games leaves that to
+            // its Not on Home tab, since every game is in its folder on Home.
+            val offHome = face != null && foldersOpen && face.folder && !face.onGrid
+            val appObject = appGlyph(game?.androidPackage)
+            val art = tileArt(app, game, face, automatic = appObject == null)
+            val themedApp = if (art == null) appObject else null
+            Cell(
+                title = label,
+                mark = game?.mark,
+                shortTitle = face?.shortTitle ?: appShortName(game?.androidPackage),
+                themedApp = themedApp,
+                art = art,
+                showTitle = showTitle,
+                focused = focused,
+                size = cell,
+                titleWidth = titleWidth,
+                corner = radius,
+                icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
+                empty = face?.empty == true || beyond,
+                selected = face?.id in shell.homeSelection()?.checked.orEmpty(),
+                lifted = lifted == index && carry == null,
+                socket = carry?.slot == index,
+                opened = carry?.over == index,
+                editing = editing,
+                offHome = offHome,
+                onServer = face?.onServer == true,
+                downloading = shell.isDownloading(face?.id),
+                activity = activity,
+                saveHealth = shell.saveHealthAt(source, game),
+                library = libraryTile,
+                settledAt = if (face?.folder == true) shell.settledAt(face.id) else 0L,
+                // The focused tile is where a launch grows its art from, and Y's menu its card.
+                bloom = if (focused) {
+                    Modifier.bloomSource(app, screen, BloomFrom.Tile, radiusPx * motion.scaleFocus).tileAnchor(radiusPx * motion.scaleFocus)
+                } else Modifier,
+                onClick = { tap() },
+                onDrag = if (editing) {
+                    { meaning -> shell.dragHome(meaning) }
+                } else {
+                    null
+                },
+                onPickUp = if (editing) {
+                    { shell.pickUpHome(index) }
+                } else {
+                    null
+                },
+                onDrop = { (context as? FoldcadeHomeActivity)?.dispatch(shell.onMeaning(Meaning.Activate, screen)) },
+            )
+        }
+        val draw: TileContent = { layer ->
+            Box(if (layer == TileLayer.Face) placed.then(frame) else frame) { tile(layer) }
+        }
+        draw
+    }
+    return { layer ->
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            tiles.forEach { it(layer) }
         }
     }
 }
@@ -4400,8 +4399,6 @@ private fun CarriedTile(
     val radius = cell * theme.iconRadius
     val ring = remember(theme) { FocusRing(theme) }
     val ringPath = remember { Path() }
-    val chipPath = remember { Path() }
-    val chip = LocalStatusChipCutout.current
     val bobPx = with(LocalDensity.current) { px(motion.bobPx).toPx() }
     val glowPx = with(LocalDensity.current) { px(motion.liftGlowPx).toPx() }
     val underGlow = game.mark?.let { markGlyph(it) }?.accent ?: theme.focus
@@ -4449,7 +4446,7 @@ private fun CarriedTile(
                 },
         ) {
             val themedApp = if (art == null) appObject else null
-            Cell(
+            val tile = Cell(
                 title = game.title,
                 mark = game.mark,
                 themedApp = themedApp,
@@ -4465,6 +4462,7 @@ private fun CarriedTile(
                 // A tap on the tile in the hand puts it down, as a tap on its slot did.
                 onClick = { carry?.let { onTap(it.at) } },
             )
+            Box { tile(TileLayer.Face) }
             // The ring hugs the drawn tile, which the cell scales to focus size itself.
             val carriedFloor = LocalFoldTheme.current.theme.style.tile.carriedRingAlpha
             Box(
@@ -4479,13 +4477,12 @@ private fun CarriedTile(
                         val cornerPx = radius.toPx()
                         ringPath.reset()
                         ringPath.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
-                        withoutStatusChip(chip, theme, cornerPx, chipPath, motion.scaleFocus) {
-                            clipPath(ringPath, ClipOp.Difference) {
-                                with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
-                            }
+                        clipPath(ringPath, ClipOp.Difference) {
+                            with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
                         }
                     },
             )
+            Box(Modifier.zIndex(1f)) { tile(TileLayer.Status) }
         }
     }
 }
@@ -4495,7 +4492,7 @@ private fun CarriedTile(
  * or a group's mark. A hidden one wears a badge, since Find shows it all the same.
  */
 @Composable
-private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, showTitle: Boolean, onClick: () -> Unit) {
+private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, showTitle: Boolean, onClick: () -> Unit): TileContent {
     val shell = app.shell
     val game = if (entry.kind == FindKind.Group) null else shell.findGame(entry.id)
     val appObject = appGlyph(game?.androidPackage)
@@ -4506,31 +4503,34 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
     val corner = size * foldTheme().iconRadius
     val themedApp = if (art == null) appObject else null
     val cornerPx = with(LocalDensity.current) { corner.toPx() }
-    Box {
-        Cell(
-            // The focused result is where a launch from Find grows its art from.
-            bloom = if (focused) {
-                Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx * foldTheme().motion.scaleFocus, find = true)
-                    .tileAnchor(cornerPx * foldTheme().motion.scaleFocus)
-            } else Modifier,
-            title = entry.title,
-            shortTitle = appShortName(game?.androidPackage),
-            mark = entry.mark ?: game?.mark,
-            themedApp = themedApp,
-            art = art,
-            showTitle = showTitle,
-            focused = focused,
-            size = size,
-            titleWidth = titleWidth,
-            corner = corner,
-            icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
-            onServer = shell.onServer(entry.id),
-            downloading = shell.isDownloading(entry.id),
-            saveHealth = shell.saveHealthOf(entry.id),
-            onClick = onClick,
-        )
-        if (entry.hidden) {
-            HiddenBadge(px(HIDDEN_BADGE_PX), Modifier.padding(maxOf(px(8f), corner * CORNER_SAFE)))
+    val tile = Cell(
+        // The focused result is where a launch from Find grows its art from.
+        bloom = if (focused) {
+            Modifier.bloomSource(app, screen, BloomFrom.Tile, cornerPx * foldTheme().motion.scaleFocus, find = true)
+                .tileAnchor(cornerPx * foldTheme().motion.scaleFocus)
+        } else Modifier,
+        title = entry.title,
+        shortTitle = appShortName(game?.androidPackage),
+        mark = entry.mark ?: game?.mark,
+        themedApp = themedApp,
+        art = art,
+        showTitle = showTitle,
+        focused = focused,
+        size = size,
+        titleWidth = titleWidth,
+        corner = corner,
+        icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
+        onServer = shell.onServer(entry.id),
+        downloading = shell.isDownloading(entry.id),
+        saveHealth = shell.saveHealthOf(entry.id),
+        onClick = onClick,
+    )
+    return { layer ->
+        Box {
+            tile(layer)
+            if (layer == TileLayer.Status && entry.hidden) {
+                HiddenBadge(px(HIDDEN_BADGE_PX), Modifier.padding(maxOf(px(8f), corner * CORNER_SAFE)))
+            }
         }
     }
 }
@@ -4560,6 +4560,9 @@ private const val HOME_TARGET_RISE = 18f
 
 /** How visible the Home target is while it only peeks in, before the tile reaches it. */
 private const val HOME_TARGET_PEEK = 0.45f
+
+/** Existing clearance from a tile's rounded corner. */
+private const val CORNER_SAFE = 0.3f
 
 private const val HIDDEN_BADGE_PX = 40f
 
@@ -4595,8 +4598,6 @@ private fun TileStatus(
     activity: TileActivity?,
     saveHealth: SaveHealth,
     animatorScale: Float,
-    tileScale: () -> Float,
-    tileLiftY: () -> Float,
     modifier: Modifier,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
@@ -4621,7 +4622,6 @@ private fun TileStatus(
     val shown = if (synced != null) syncMarkShown(synced, animatorScale) else null
     Row(
         modifier = modifier
-            .statusChipCutout(focused && !showsBar, tileScale, tileLiftY) { shown?.value ?: 1f }
             .then(if (showsBar) Modifier.fillMaxWidth() else Modifier)
             .graphicsLayer {
                 val grown = shown?.value?.let { SYNC_MARK_FROM + (1f - SYNC_MARK_FROM) * it } ?: 1f
@@ -4727,6 +4727,7 @@ private const val SETTLE_FROM = 0.86f
 /** Only a look taken this recently settles; the tile sees it as soon as the editor closes. */
 private const val SETTLE_WINDOW_MILLIS = 600L
 
+/** Prepare once, then paint faces below the cursor and chips above it with the same motion. */
 @Composable
 private fun Cell(
     title: String,
@@ -4767,11 +4768,10 @@ private fun Cell(
     onPickUp: (() -> Unit)? = null,
     onDrag: ((Meaning) -> Unit)? = null,
     onDrop: (() -> Unit)? = null,
-) {
+): TileContent {
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
-    val tilePx = with(LocalDensity.current) { size.toPx() }
     val glyph = themedApp ?: mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
     val checked by motionState(if (selected) 1f else 0f, motion.playful(motion.durationFocus, animatorScale))
@@ -4806,255 +4806,262 @@ private fun Cell(
     }
     val glowStops = remember { FloatArray(GlowFalloff.STOPS.size) }
     val strength by motionState(if (offHome && !focused) tile.offHomeAlpha else 1f, motion.arrive(motion.durationFocus, animatorScale))
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.zIndex(if (focused || lifted || opened) 1f else 0f).graphicsLayer { alpha = strength },
-    ) {
-        val accent = glyph?.accent
-        Box(
-            modifier = Modifier
-                .size(size)
-                .graphicsLayer {
-                    clip = false
-                    scaleX = drawn * settle.value
-                    scaleY = drawn * settle.value
-                    translationY = -size.toPx() * 0.025f * checked
-                }
-                .then(bloom)
-                .drawWithCache {
-                    // The light behind a mark, built when the tile's size or mark changes, not each frame.
-                    val markLight = theme.style.glow
-                    val light = accent?.takeIf { art == null && icon == null }?.let {
-                        Brush.radialGradient(
-                            0f to it.copy(alpha = markLight.markLightPeak).compositeOver(theme.surface),
-                            markLight.markLightFade to theme.surface,
-                            center = Offset(this.size.width * 0.5f, this.size.height * markLight.markLightTop),
-                            radius = this.size.width * markLight.markLightReach,
-                        )
-                    }
-                    onDrawBehind {
-                        val glow = accent
-                        val bounds = this.size
-                        val cornerPx = corner.toPx()
-                        val focusShown = lit()
-                        if (glow != null && !socket) {
-                            val half = min(bounds.width, bounds.height) * 0.5f
-                            val reach = half + lerp(theme.style.glow.restOverflow, theme.style.glow.focusOverflow, focusShown)
-                            val tightness = lerp(theme.style.glow.restTightness, theme.style.glow.focusTightness, focusShown)
-                            val rim = lerp(theme.style.glow.restRim, theme.style.glow.focusRim, focusShown)
-                            val peak = lerp(theme.style.glow.restPeak, theme.style.glow.focusPeak, focusShown)
-                            SoftGlow.fillStops(glowStops, tightness, rim)
-                            drawRadialGlow(center, reach, glow, glowStops, peak)
-                        }
-                        if (socket) {
-                            // The space a held tile left: a faint outline, so the eye knows where it was.
-                            val strokePx = tile.outlinePx
-                            val inset = strokePx / 2f
-                            drawRoundRect(
-                                color = theme.onBackground.copy(alpha = tile.socketAlpha),
-                                topLeft = Offset(inset, inset),
-                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                                cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                style = Stroke(width = strokePx),
-                            )
-                        } else if (!empty) {
-                            // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
-                            // as a halo around it. Focus is the grid's sliding ring, the only border it draws.
-                            drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                            // A mark sits on a soft light in its own colour, kept inside the card.
-                            if (light != null) drawRoundRect(brush = light, cornerRadius = CornerRadius(cornerPx, cornerPx))
-                            if (editing) {
-                                val strokePx = if (focused || lifted || opened) tile.editStrokePx else tile.outlinePx
-                                val inset = strokePx / 2f
-                                drawRoundRect(
-                                    color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else tile.editRestAlpha),
-                                    topLeft = Offset(inset, inset),
-                                    size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                                    cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                    style = Stroke(width = strokePx),
-                                )
-                            }
-                        } else if (lifted) {
-                            // A lifted gap is the ring alone, so the space being carried shows where it is.
-                            val strokePx = tile.editStrokePx
-                            val inset = strokePx / 2f
-                            drawRoundRect(
-                                color = theme.focus,
-                                topLeft = Offset(inset, inset),
-                                size = Size(bounds.width - strokePx, bounds.height - strokePx),
-                                cornerRadius = CornerRadius(cornerPx, cornerPx),
-                                style = Stroke(width = strokePx),
-                            )
-                        }
-                        // Any other empty slot draws nothing, so the grid ends where its tiles do.
-                    }
-                },
-            contentAlignment = Alignment.Center,
+    return { layer ->
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.zIndex(if (focused || lifted || opened) 1f else 0f).graphicsLayer { alpha = strength }
+                .then(if (layer == TileLayer.Status) Modifier.clearAndSetSemantics { } else Modifier),
         ) {
-            if (socket) return@Box
-            // Only the art is clipped. Status chips sit over the rim, as on the emulator shelf.
+            val accent = glyph?.accent
             Box(
-                Modifier.fillMaxSize()
-                    .clip(RoundedCornerShape(corner))
-                    .then(
-                        if (onPickUp != null && onDrag != null) {
-                            Modifier.pointerInput(title) {
-                                var walked = Offset.Zero
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        walked = Offset.Zero
-                                        onPickUp()
-                                    },
-                                    // Letting go puts the tile down where it is, into a group it is over.
-                                    onDragEnd = { onDrop?.invoke() },
-                                    onDrag = { _, amount ->
-                                        walked += amount
-                                        val step = size.toPx() * 0.45f
-                                        val meaning = when {
-                                            walked.x > step -> Meaning.MoveRight
-                                            walked.x < -step -> Meaning.MoveLeft
-                                            walked.y > step -> Meaning.MoveDown
-                                            walked.y < -step -> Meaning.MoveUp
-                                            else -> null
-                                        }
-                                        if (meaning != null) {
-                                            walked = Offset.Zero
-                                            onDrag(meaning)
-                                        }
-                                    },
-                                )
+                modifier = Modifier
+                    .size(size)
+                    .graphicsLayer {
+                        clip = false
+                        scaleX = drawn * settle.value
+                        scaleY = drawn * settle.value
+                        translationY = -size.toPx() * 0.025f * checked
+                    }
+                    .then(if (layer == TileLayer.Face) bloom else Modifier)
+                    .drawWithCache {
+                        // The light behind a mark, built when the tile's size or mark changes, not each frame.
+                        val markLight = theme.style.glow
+                        val light = accent?.takeIf { layer == TileLayer.Face && art == null && icon == null }?.let {
+                            Brush.radialGradient(
+                                0f to it.copy(alpha = markLight.markLightPeak).compositeOver(theme.surface),
+                                markLight.markLightFade to theme.surface,
+                                center = Offset(this.size.width * 0.5f, this.size.height * markLight.markLightTop),
+                                radius = this.size.width * markLight.markLightReach,
+                            )
+                        }
+                        onDrawBehind {
+                            if (layer == TileLayer.Face) {
+                                val glow = accent
+                                val bounds = this.size
+                                val cornerPx = corner.toPx()
+                                val focusShown = lit()
+                                if (glow != null && !socket) {
+                                    val half = min(bounds.width, bounds.height) * 0.5f
+                                    val reach = half + lerp(theme.style.glow.restOverflow, theme.style.glow.focusOverflow, focusShown)
+                                    val tightness = lerp(theme.style.glow.restTightness, theme.style.glow.focusTightness, focusShown)
+                                    val rim = lerp(theme.style.glow.restRim, theme.style.glow.focusRim, focusShown)
+                                    val peak = lerp(theme.style.glow.restPeak, theme.style.glow.focusPeak, focusShown)
+                                    SoftGlow.fillStops(glowStops, tightness, rim)
+                                    drawRadialGlow(center, reach, glow, glowStops, peak)
+                                }
+                                if (socket) {
+                                    // The space a held tile left: a faint outline, so the eye knows where it was.
+                                    val strokePx = tile.outlinePx
+                                    val inset = strokePx / 2f
+                                    drawRoundRect(
+                                        color = theme.onBackground.copy(alpha = tile.socketAlpha),
+                                        topLeft = Offset(inset, inset),
+                                        size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                        style = Stroke(width = strokePx),
+                                    )
+                                } else if (!empty) {
+                                    // Every tile is a filled card, as on Cocoon's grid. A mark's glow is left
+                                    // as a halo around it. Focus is the grid's sliding ring, the only border it draws.
+                                    drawRoundRect(color = theme.surface, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                                    // A mark sits on a soft light in its own colour, kept inside the card.
+                                    if (light != null) drawRoundRect(brush = light, cornerRadius = CornerRadius(cornerPx, cornerPx))
+                                    if (editing) {
+                                        val strokePx = if (focused || lifted || opened) tile.editStrokePx else tile.outlinePx
+                                        val inset = strokePx / 2f
+                                        drawRoundRect(
+                                            color = theme.focus.copy(alpha = if (focused || lifted || opened) 1f else tile.editRestAlpha),
+                                            topLeft = Offset(inset, inset),
+                                            size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                            cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                            style = Stroke(width = strokePx),
+                                        )
+                                    }
+                                } else if (lifted) {
+                                    // A lifted gap is the ring alone, so the space being carried shows where it is.
+                                    val strokePx = tile.editStrokePx
+                                    val inset = strokePx / 2f
+                                    drawRoundRect(
+                                        color = theme.focus,
+                                        topLeft = Offset(inset, inset),
+                                        size = Size(bounds.width - strokePx, bounds.height - strokePx),
+                                        cornerRadius = CornerRadius(cornerPx, cornerPx),
+                                        style = Stroke(width = strokePx),
+                                    )
+                                }
+                                // Any other empty slot draws nothing, so the grid ends where its tiles do.
                             }
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .hostPress(onClick)
-                    // The title is on the tile, so the dump keeps it without a visible label.
-                    .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
-                if (icon != null) {
-                    if (icon.fullBleed) {
-                        // An adaptive icon fills the tile edge to edge, resting back like a cover.
-                        Image(
-                            bitmap = icon.image,
-                            contentDescription = title,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Image(
-                            bitmap = icon.image,
-                            contentDescription = title,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .scale(theme.artScale)
-                                .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-                } else if (art != null) {
-                    // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
-                    Image(
-                        painter = art,
-                        contentDescription = title,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
-                        contentScale = ContentScale.Crop,
-                    )
-                } else if (!empty) {
-                    val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
-                    if (themedApp == null && glyph != null && CollectionLook.parse(mark) != null) {
-                        // A collection being dressed changes as the cursor moves, so each look fades in.
-                        Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                shown?.let { markGlyph(it) }?.let { MarkIcon(it, theme.artScale, glyphAlpha) }
+                if (socket) return@Box
+                if (layer == TileLayer.Face) {
+                    // Only the art is clipped. Status chips sit over the rim, as on the emulator shelf.
+                    Box(
+                        Modifier.fillMaxSize()
+                            .clip(RoundedCornerShape(corner))
+                            .then(
+                                if (onPickUp != null && onDrag != null) {
+                                    Modifier.pointerInput(title) {
+                                        var walked = Offset.Zero
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = {
+                                                walked = Offset.Zero
+                                                onPickUp()
+                                            },
+                                            // Letting go puts the tile down where it is, into a group it is over.
+                                            onDragEnd = { onDrop?.invoke() },
+                                            onDrag = { _, amount ->
+                                                walked += amount
+                                                val step = size.toPx() * 0.45f
+                                                val meaning = when {
+                                                    walked.x > step -> Meaning.MoveRight
+                                                    walked.x < -step -> Meaning.MoveLeft
+                                                    walked.y > step -> Meaning.MoveDown
+                                                    walked.y < -step -> Meaning.MoveUp
+                                                    else -> null
+                                                }
+                                                if (meaning != null) {
+                                                    walked = Offset.Zero
+                                                    onDrag(meaning)
+                                                }
+                                            },
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .hostPress(onClick)
+                            // The title is on the tile, so the dump keeps it without a visible label.
+                            .clearAndSetSemantics { this[SemanticsProperties.Text] = listOf(AnnotatedString(title)) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (icon != null) {
+                            if (icon.fullBleed) {
+                                // An adaptive icon fills the tile edge to edge, resting back like a cover.
+                                Image(
+                                    bitmap = icon.image,
+                                    contentDescription = title,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Image(
+                                    bitmap = icon.image,
+                                    contentDescription = title,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .scale(theme.artScale)
+                                        .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
+                                    contentScale = ContentScale.Fit,
+                                )
+                            }
+                        } else if (art != null) {
+                            // Cover art fills the rounded tile. At rest it sits a little back, so focus reads.
+                            Image(
+                                painter = art,
+                                contentDescription = title,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer { alpha = lerp(tile.restAlpha, 1f, lit()) },
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else if (!empty) {
+                            val glyphAlpha = { lerp(tile.restAlpha, 1f, lit()) }
+                            if (themedApp == null && glyph != null && CollectionLook.parse(mark) != null) {
+                                // A collection being dressed changes as the cursor moves, so each look fades in.
+                                Crossfade(mark, animationSpec = motion.arrive(motion.durationFocus, animatorScale)) { shown ->
+                                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        shown?.let { markGlyph(it) }?.let { MarkIcon(it, theme.artScale, glyphAlpha) }
+                                    }
+                                }
+                            } else if (glyph != null) {
+                                MarkIcon(glyph, theme.artScale, glyphAlpha)
+                            } else if (control != null) {
+                                themeIconOrNull(control, CONTROL_PX)?.let { ink ->
+                                    Image(
+                                        painter = ink.painter,
+                                        contentDescription = null,
+                                        colorFilter = ink.tint(theme.onBackground),
+                                        modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
+                                    )
+                                }
+                            } else {
+                                BasicText(
+                                    text = monogram(title),
+                                    modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha() },
+                                    style = text(
+                                        theme.onBackground,
+                                        LocalFoldTheme.current.theme.style.type.heroTitle,
+                                        theme,
+                                        display = true,
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
                             }
                         }
-                    } else if (glyph != null) {
-                        MarkIcon(glyph, theme.artScale, glyphAlpha)
-                    } else if (control != null) {
-                        themeIconOrNull(control, CONTROL_PX)?.let { ink ->
-                            Image(
-                                painter = ink.painter,
-                                contentDescription = null,
-                                colorFilter = ink.tint(theme.onBackground),
-                                modifier = Modifier.fillMaxSize(theme.artScale * CONTROL_FILL).graphicsLayer { alpha = glyphAlpha() },
-                            )
+                        val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
+                        if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
+                                .padding(maxOf(px(8f), corner * CORNER_SAFE))
+                                .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
+                                .clip(theme.style.shape.control()).background(theme.background)) {
+                            CheckMark(true, focused, animatorScale)
                         }
-                    } else {
-                        BasicText(
-                            text = monogram(title),
-                            modifier = Modifier.scale(theme.artScale).graphicsLayer { alpha = glyphAlpha() },
-                            style = text(
-                                theme.onBackground,
-                                LocalFoldTheme.current.theme.style.type.heroTitle,
-                                theme,
-                                display = true,
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Clip,
-                        )
                     }
                 }
-                val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
-                if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
-                        .padding(maxOf(px(8f), corner * CORNER_SAFE))
-                        .graphicsLayer { alpha = check.progress.value; scaleX = checked; scaleY = checked }
-                        .clip(theme.style.shape.control()).background(theme.background)) {
-                    CheckMark(true, focused, animatorScale)
+                // On the server, not on this device. A downloaded game has no badge at all.
+                if (layer == TileLayer.Status && (onServer || downloading || activity != null || saveHealth.needsAttention)) {
+                    TileStatus(
+                        onServer = onServer,
+                        focused = focused,
+                        downloading = downloading,
+                        activity = activity,
+                        saveHealth = saveHealth,
+                        animatorScale = animatorScale,
+                        // Transfers need a full-width bar; other chips straddle the top-right rim.
+                        modifier = if (activity is TileActivity.Downloading || activity == TileActivity.Checking) {
+                            Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE))
+                        } else {
+                            Modifier.align(Alignment.TopEnd).offset(
+                                x = px(tile.statusChipPx * tile.statusOverlap) - corner * CORNER_SAFE,
+                                y = -px(tile.statusChipPx * tile.statusOverlap) + corner * CORNER_SAFE,
+                            )
+                        },
+                    )
                 }
             }
-            // On the server, not on this device. A downloaded game has no badge at all.
-            if (onServer || downloading || activity != null || saveHealth.needsAttention) {
-                TileStatus(
-                    onServer = onServer,
-                    focused = focused,
-                    downloading = downloading,
-                    activity = activity,
-                    saveHealth = saveHealth,
-                    animatorScale = animatorScale,
-                    tileScale = { drawn * settle.value },
-                    tileLiftY = { -tilePx * 0.025f * checked },
-                    // Transfers need a full-width bar; other chips straddle the top-right rim.
-                    modifier = if (activity is TileActivity.Downloading || activity == TileActivity.Checking) {
-                        Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE))
-                    } else {
-                        Modifier.align(Alignment.TopEnd).offset(
-                            x = px(tile.statusChipPx * tile.statusOverlap) - corner * CORNER_SAFE,
-                            y = -px(tile.statusChipPx * tile.statusOverlap) + corner * CORNER_SAFE,
-                        )
-                    },
+            if (showTitle) {
+                val labelStyle = text(
+                    if (focused) theme.onBackground else theme.muted,
+                    LocalFoldTheme.current.theme.style.type.gridLabel,
+                    theme,
+                ).copy(textAlign = TextAlign.Center)
+                val measurer = rememberTextMeasurer()
+                val roomPx = with(LocalDensity.current) { titleWidth.roundToPx() }
+                val shown = if (shortTitle == null) title else remember(title, shortTitle, labelStyle.fontSize, labelStyle.fontFamily, roomPx) {
+                    if (measurer.measure(title, labelStyle, maxLines = 1, softWrap = false).size.width <= roomPx) title else shortTitle
+                }
+                BasicText(
+                    text = if (socket) "" else shown,
+                    modifier = Modifier
+                        .zIndex(1f)
+                        // Reserve the same title height in the status pass without painting it.
+                        .drawWithContent { if (layer == TileLayer.Face) drawContent() }
+                        .clearAndSetSemantics { }
+                        .padding(top = focusOutset(size) + px(12f))
+                        // The tile's slot stays its width. A wider title spills evenly either side.
+                        .width(size)
+                        .requiredWidth(titleWidth),
+                    style = labelStyle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-        if (showTitle) {
-            val labelStyle = text(
-                if (focused) theme.onBackground else theme.muted,
-                LocalFoldTheme.current.theme.style.type.gridLabel,
-                theme,
-            ).copy(textAlign = TextAlign.Center)
-            val measurer = rememberTextMeasurer()
-            val roomPx = with(LocalDensity.current) { titleWidth.roundToPx() }
-            val shown = if (shortTitle == null) title else remember(title, shortTitle, labelStyle.fontSize, labelStyle.fontFamily, roomPx) {
-                if (measurer.measure(title, labelStyle, maxLines = 1, softWrap = false).size.width <= roomPx) title else shortTitle
-            }
-            BasicText(
-                text = if (socket) "" else shown,
-                modifier = Modifier
-                    .zIndex(1f)
-                    .clearAndSetSemantics { }
-                    .padding(top = focusOutset(size) + px(12f))
-                    // The tile's slot stays its width. A wider title spills evenly either side.
-                    .width(size)
-                    .requiredWidth(titleWidth),
-                style = labelStyle,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
