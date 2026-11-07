@@ -9,6 +9,7 @@ import app.foldcade.ui.titleCollapse
 import app.foldcade.ui.richestShare
 import app.foldcade.ui.titleSafeStart
 import app.foldcade.ui.heroFactAlpha
+import app.foldcade.ui.heroCardShown
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -90,6 +91,15 @@ class HeroNameFollowsArtTest {
         }
         assertEquals(1f to 1f, titleCollapse(1f))
         assertEquals(0f to 0f, titleCollapse(0f))
+    }
+
+    @Test fun aLogoWithoutFactsHasNoCard() {
+        assertEquals(0f to 0f, titleCollapse(heroCardShown(hasFacts = false, title = 0f, summary = 0f)))
+        // A title, a real fact line (even during #390's brief blank), or an open summary keeps it.
+        assertEquals(1f, heroCardShown(hasFacts = false, title = 1f, summary = 0f), 0f)
+        assertEquals(1f, heroCardShown(hasFacts = true, title = 0f, summary = 0f), 0f)
+        assertEquals(1f, heroCardShown(hasFacts = false, title = 0f, summary = 1f), 0f)
+        assertEquals(.25f, heroCardShown(hasFacts = false, title = .25f, summary = 0f), 0f)
     }
 
     @Test fun aBloomFromATileKeepsTheTitleItsTileShowedAsItWidens() {

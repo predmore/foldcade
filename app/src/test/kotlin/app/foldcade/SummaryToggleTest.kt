@@ -80,4 +80,26 @@ class SummaryToggleTest {
         shell.withdrawSummary(incoming)
         assertNull(shell.summaryOffered)
     }
+
+    @Test fun theHintHoldsWhileDetailsLoadButRThreeCannotOpenThePreviousGame() {
+        val shell = shell()
+        val hero = Any()
+        val first = shell.focusedHero()!!.key
+        shell.offerSummary(hero, first)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertNotEquals(first, shell.focusedHero()!!.key)
+        shell.offerSummary(hero, null, pending = true)
+        assertTrue(shell.offersInfoHint())
+        assertFalse(shell.offersInfo())
+        shell.onMeaning(Meaning.Info, HostScreen.Bottom)
+        assertNull(shell.summaryOpenFor)
+        // A completed empty lookup really withdraws the hint.
+        shell.offerSummary(hero, null)
+        assertFalse(shell.offersInfoHint())
+        shell.offerSummary(hero, shell.focusedHero()!!.key)
+        assertTrue(shell.offersInfoHint())
+        assertTrue(shell.offersInfo())
+        shell.withdrawSummary(hero)
+        assertFalse(shell.offersInfoHint())
+    }
 }

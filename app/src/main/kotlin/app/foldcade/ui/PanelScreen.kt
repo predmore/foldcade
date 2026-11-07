@@ -7,6 +7,7 @@ import android.graphics.Shader
 import android.os.Build
 import android.util.Log
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.graphics.TransformOrigin
@@ -131,7 +132,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -1394,7 +1394,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 val typing = presence(app.shell.typing()?.typing, motion.durationIsland, scale)
                 val finding = presence(find, motion.durationIsland, scale)
                 // The facts and summary of the game the name card names: the one whose art is on screen.
-                val details = rememberGameDetails(app, (named as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
+                val detailState = rememberGameDetailsState(app, (named as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null })
+                val details = detailState.details
                 // The card opens to the summary only when R3 asked for this game, while the cursor rests on
                 // the grid with nothing over the card.
                 val resting = cellFocused && find == null && naming == null && typing.shown == null && finding.shown == null &&
@@ -1404,13 +1405,16 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 val summaryKey = named?.key?.takeIf {
                     named is HeroSubject.Item && it == subject?.key && !named.item.emptyShelfHint && details?.summary != null
                 }
+                val summaryPending = subject is HeroSubject.Item && !subject.item.emptyShelfHint &&
+                    (named?.key != subject.key || !detailState.resolved)
                 val offerer = remember { Any() }
-                androidx.compose.runtime.SideEffect { app.shell.offerSummary(offerer, summaryKey) }
+                androidx.compose.runtime.SideEffect { app.shell.offerSummary(offerer, summaryKey, pending = summaryPending) }
                 androidx.compose.runtime.DisposableEffect(offerer) { onDispose { app.shell.withdrawSummary(offerer) } }
                 if (named != null || finding.shown != null) {
                     Spacer(Modifier.height(px(24f)))
                     Box(contentAlignment = Alignment.Center) {
                         if (named != null) Box(Modifier.graphicsLayer { alpha = (1f - max(typing.progress.value, finding.progress.value)) * (1f - max(islandDim.value, dialogDim.value)) }) {
+                            val factLine = heroFactLine(app, named, cardMax, details, games[named.key])
                             HeroLabel(
                                 app,
                                 named,
@@ -1420,13 +1424,10 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                                 scale = scale,
                                 overArt = sceneArt,
                                 named = !(staged.subject?.key == named.key && staged.images.logo != null),
+                                hasFacts = factLine.isNotEmpty(),
                             ) {
                                 HeroFactFade(artFade, named) { shown ->
-                                    HeroFacts(
-                                        app, shown, cellFocused, cardMax,
-                                        details = rememberGameDetails(app, (shown as? HeroSubject.Item)?.let { records[it.key] }?.takeIf { naming == null }),
-                                        game = games[shown.key],
-                                    )
+                                    HeroFacts(shown, cellFocused, factLine)
                                 }
                             }
                         }
@@ -1844,6 +1845,7 @@ private fun HeroLabel(
     scale: Float,
     overArt: Boolean = false,
     named: Boolean = true,
+    hasFacts: Boolean,
     facts: @Composable () -> Unit,
 ) {
     val design = LocalFoldTheme.current.theme.style
@@ -1856,8 +1858,8 @@ private fun HeroLabel(
     // Each game starts closed, so moving on closes the card at once and never shows the last game's words.
     val unfold = remember(shown.key) { Animatable(0f) }
     val still = motion.heroFadeOnly(app.shell.model.motionSpeed, scale)
-    // A game whose logo is already up never shows its title, so the card does not shrink around it.
-    val titleShown = remember(shown.key) { Animatable(if (named) 1f else 0f) }
+    // Keep the row's current height across games, easing title ↔ logo with the art's dissolve.
+    val titleShown = remember { Animatable(if (named) 1f else 0f) }
     LaunchedEffect(shown.key, named, scale) {
         titleShown.animateTo(if (named) 1f else 0f,
             motion.dissolve(motion.heroDuration(app.shell.model.motionSpeed, scale), 1f))
@@ -1873,6 +1875,8 @@ private fun HeroLabel(
     Column(
         Modifier
             .widthIn(min = px(360f), max = maxWidth)
+            // A logo can stand alone. Keep #390's brief blank when a real fact line is fading in.
+            .collapsingHeroTitle { heroCardShown(hasFacts, titleShown.value, unfold.value) }
             .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
             // Over the game's art the card lets it through.
             .background(if (overArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface)
@@ -1934,20 +1938,19 @@ internal fun heroFactAlpha(named: String, front: String?, back: String?, incomin
 }
 
 @Composable
-private fun HeroFacts(
+private fun heroFactLine(
     app: FoldcadeApp,
     shown: HeroSubject,
-    cellFocused: Boolean,
     maxWidth: Dp,
     details: GameDetails?,
     game: ShelfGame?,
-) {
+): AnnotatedString {
     val theme = foldTheme()
     val copy = heroCopy(shown)
     val item = (shown as? HeroSubject.Item)?.item
     val dateStyle = rememberDateStyle(app)
     if (item?.emptyShelfHint == true) {
-        ShelfMeta(line = copy.detail, hintFocused = cellFocused, centred = true)
+        return AnnotatedString(copy.detail)
     } else {
         val focusedGame = game?.takeIf { it.id == item?.key }
         // What the library is doing with this game leads the line, in the focus colour.
@@ -1979,26 +1982,38 @@ private fun HeroFacts(
                 measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
             }
         }
-        if (facts.isNotEmpty() || live != null || saveLine != null) {
-            BasicText(
-                text = buildAnnotatedString {
-                    if (saveLine != null) {
-                        withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
-                        if (live != null || facts.isNotEmpty()) append(" · ")
-                    }
-                    if (live != null) {
-                        withStyle(SpanStyle(color = theme.focus)) { append(live) }
-                        if (facts.isNotEmpty()) append(" · ")
-                    }
-                    append(facts)
-                },
-                style = metaStyle.copy(textAlign = TextAlign.Center),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        return buildAnnotatedString {
+            if (saveLine != null) {
+                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
+                if (live != null || facts.isNotEmpty()) append(" · ")
+            }
+            if (live != null) {
+                withStyle(SpanStyle(color = theme.focus)) { append(live) }
+                if (facts.isNotEmpty()) append(" · ")
+            }
+            append(facts)
         }
     }
 }
+
+@Composable
+private fun HeroFacts(shown: HeroSubject, cellFocused: Boolean, line: AnnotatedString) {
+    val theme = foldTheme()
+    if ((shown as? HeroSubject.Item)?.item?.emptyShelfHint == true) {
+        ShelfMeta(line = heroCopy(shown).detail, hintFocused = cellFocused, centred = true)
+    } else if (line.isNotEmpty()) {
+        BasicText(
+            text = line,
+            style = text(theme.muted, theme.style.type.heroMeta, theme).copy(textAlign = TextAlign.Center),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** With no fact line, the whole card folds away with its last visible title or summary. */
+internal fun heroCardShown(hasFacts: Boolean, title: Float, summary: Float): Float =
+    if (hasFacts) 1f else max(title, summary)
 
 /** The title makes room for its decoded logo over the same fade, without moving the art in one frame. */
 private fun Modifier.collapsingHeroTitle(progress: () -> Float): Modifier = clipToBounds().layout { measurable, constraints ->
@@ -3004,7 +3019,7 @@ private fun FocusedName(app: FoldcadeApp, scale: Float, modifier: Modifier) {
         if (shown) motion.arrive(motion.durationFocus, scale) else motion.leave(motion.durationFocus, scale),
     )
     BasicText(
-        if (place == null) androidx.compose.ui.text.AnnotatedString(name) else androidx.compose.ui.text.buildAnnotatedString {
+        if (place == null) AnnotatedString(name) else androidx.compose.ui.text.buildAnnotatedString {
             withStyle(androidx.compose.ui.text.SpanStyle(color = theme.muted)) { append(place) }
             if (name.isNotEmpty()) {
                 withStyle(androidx.compose.ui.text.SpanStyle(color = theme.muted)) { append(" · ") }
@@ -3599,7 +3614,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val atRoot = gridKeys && find == null && shell.find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
     // R3 Info, last and quiet, only for a game whose summary the hero can open.
-    val nextKeys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfo())
+    val nextKeys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfoHint())
     // Keep every part of the departing row together, including its visibility under dialogs.
     val nextRow = GridHintRow(
         keys = if (model.dialog == null) nextKeys else emptyList(),

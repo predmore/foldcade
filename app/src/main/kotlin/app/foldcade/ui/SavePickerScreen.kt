@@ -198,7 +198,7 @@ private fun Overview(state: SavePickerState, theme: Theme, scale: Float, modifie
         }
         when {
             state.loading -> Pulsing(SavePickerCopy.loading, theme, design.type.heroMeta, scale)
-            state.error -> BasicText(SavePickerCopy.error, style = saveStyle(theme.muted, design.type.heroMeta, theme))
+            state.error -> BasicText(if (state.offline) Copy.noInternet else SavePickerCopy.error, style = saveStyle(theme.muted, design.type.heroMeta, theme))
             else -> BasicText(SavePickerCopy.count(state.saves.size), style = saveStyle(theme.muted, design.type.heroMeta, theme))
         }
     }

@@ -5,7 +5,9 @@ object FirmwareCopy {
     fun missing(system: String, files: List<String>, place: String, rommConnected: Boolean = false): String {
         val detail = files.joinToString(", ").removePrefix("$system BIOS ").trim('(', ')')
         // A BIOS on RomM is placed by itself (#365), so RomM leads when it is there; the folder stays the other way (review-D 109).
-        val where = if (rommConnected) "Add it to RomM’s firmware for $system, or put it in $place" else "Put it in $place"
+        // UAX #14 WJ keeps a path's slash with its next segment: https://www.unicode.org/reports/tr14/#WJ
+        val destination = place.replace("/", "/\u2060")
+        val where = if (rommConnected) "Add it to RomM’s firmware for $system, or put it in $destination" else "Put it in $destination"
         return "Missing the $system BIOS ($detail). $where. Then start the game again."
     }
     fun folder(player: String, place: String, files: List<String> = emptyList()): String =
