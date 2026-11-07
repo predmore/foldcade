@@ -3908,7 +3908,10 @@ private fun GridCursor(
                 ring.reset()
                 ring.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
                 // Only outside the tile, so the glow never washes over the art.
-                withoutStatusChip(chip, theme, cornerPx, chipPath) {
+                // The chip stays on its tile while the ring glides. Cut only at landing,
+                // so an empty corner never travels across the art between tiles.
+                val landedChip = chip.takeIf { x == column && y == row }
+                withoutStatusChip(landedChip, theme, cornerPx, chipPath) {
                     clipPath(ring, ClipOp.Difference) {
                         with(FocusRing(theme)) {
                             drawFocusRing(cornerPx)

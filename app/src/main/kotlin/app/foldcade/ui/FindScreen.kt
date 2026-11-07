@@ -316,7 +316,9 @@ private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, to
                 path.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(corner, corner)))
                 // Only outside the tile, so the glow never washes over the art. The ring fades
                 // itself: a faded layer would cut its glow off at the tile's square edge.
-                withoutStatusChip(chip, theme, corner, chipPath) {
+                // The chip belongs to the result; the sliding ring reaches it at landing.
+                val landedChip = chip.takeIf { x == index.toFloat() }
+                withoutStatusChip(landedChip, theme, corner, chipPath) {
                     clipPath(path, ClipOp.Difference) { with(ring) { drawFocusRing(corner, alpha = strength) } }
                 }
             },
