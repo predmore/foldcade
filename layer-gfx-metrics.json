@@ -1,0 +1,42 @@
+[
+  {
+    "log": "baseline-gfxinfo.txt",
+    "frames": 1474,
+    "jank": 195,
+    "jank_percent": 13.23,
+    "p50": 8,
+    "p90": 27,
+    "p95": 32,
+    "p99": 40
+  },
+  {
+    "log": "layers-gfxinfo.txt",
+    "frames": 1496,
+    "jank": 243,
+    "jank_percent": 16.24,
+    "p50": 7,
+    "p90": 29,
+    "p95": 36,
+    "p99": 46
+  },
+  {
+    "log": "layers-repeat-gfxinfo.txt",
+    "frames": 1511,
+    "jank": 218,
+    "jank_percent": 14.43,
+    "p50": 7,
+    "p90": 27,
+    "p95": 34,
+    "p99": 44
+  },
+  {
+    "log": "baseline-repeat-gfxinfo.txt",
+    "frames": 1513,
+    "jank": 214,
+    "jank_percent": 14.14,
+    "p50": 7,
+    "p90": 27,
+    "p95": 34,
+    "p99": 42
+  }
+]
