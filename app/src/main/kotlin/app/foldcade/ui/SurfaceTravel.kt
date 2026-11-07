@@ -24,6 +24,9 @@ internal class SurfaceTravel<T>(initial: T) {
         val next = SurfaceFrame(target, previous)
         frame = next
         try {
+            // Preparing the destination can itself take a frame. Submit it at alpha zero
+            // before starting the clock, so that work cannot consume the visible dissolve.
+            awaitDraw()
             animate(next)
         } finally {
             // Cancellation, including a rapid return Home, must not strand a split surface.

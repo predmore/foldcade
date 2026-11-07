@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -12,9 +13,13 @@ class SurfaceTravelTest {
     @Test fun theCoveredWindowKeepsOneSurfaceUntilItDraws() = runBlocking {
         val travel = SurfaceTravel("grid")
         val commit = CompletableDeferred<Unit>()
+        val prepared = CompletableDeferred<Unit>()
         val finish = CompletableDeferred<Unit>()
+        var draws = 0
+        var animating = false
         val job = launch(start = CoroutineStart.UNDISPATCHED) {
-            travel.change("center", { commit.await() }) { next ->
+            travel.change("center", { if (++draws == 1) commit.await() else prepared.await() }) { next ->
+                animating = true
                 assertEquals("grid", next.back)
                 assertEquals("center", next.front)
                 assertEquals(0f, next.incoming.value, 0f)
@@ -25,6 +30,12 @@ class SurfaceTravelTest {
         assertEquals("grid", travel.frame.front)
         assertNull(travel.frame.back)
         commit.complete(Unit)
+        yield()
+        assertEquals("center", travel.frame.front)
+        assertEquals("grid", travel.frame.back)
+        assertEquals(0f, travel.frame.incoming.value, 0f)
+        assertFalse(animating)
+        prepared.complete(Unit)
         finish.complete(Unit)
         job.join()
         assertEquals("center", travel.frame.front)
@@ -65,5 +76,19 @@ class SurfaceTravelTest {
         } catch (_: IllegalStateException) { }
         assertEquals("grid", travel.frame.front)
         assertNull(travel.frame.back)
+    }
+
+    @Test fun cancellationWhilePreparingTheDestinationStillDropsTheSplit() = runBlocking {
+        val travel = SurfaceTravel("grid")
+        var draws = 0
+        val pending = CompletableDeferred<Unit>()
+        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+            travel.change("center", { if (++draws == 2) pending.await() }) { fail("Not prepared yet") }
+        }
+        assertEquals("grid", travel.frame.back)
+        job.cancelAndJoin()
+        assertEquals("center", travel.frame.front)
+        assertNull(travel.frame.back)
+        assertEquals(1f, travel.frame.incoming.value, 0f)
     }
 }
