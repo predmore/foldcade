@@ -187,90 +187,92 @@ private fun ResultStrip(
     val density = LocalDensity.current
     val results = session.results
     BoxWithConstraints(Modifier.fillMaxWidth().height(cell + titleBlock + pad * 2)) {
-        val pitchPx = with(density) { (cell + gap).toPx() }
-        val padPx = with(density) { pad.toPx() }
-        val widthPx = with(density) { maxWidth.toPx() }
-        val across = max(1, floor((widthPx - padPx * 2 + with(density) { gap.toPx() }) / pitchPx).toInt())
-        val focus = if (session.onResults) session.index else 0
-        // The first result on screen moves only as far as it must to keep the focus in view.
-        val first = remember { IntArray(1) }
-        first[0] = when {
-            focus < first[0] -> focus
-            focus > first[0] + across - 1 -> focus - across + 1
-            else -> first[0]
-        }.coerceIn(0, max(0, results.size - across))
-        val targetFirst = first[0].toFloat()
-        val shownFirst by eased(targetFirst, motion.durationTravel, scale)
-        // Results centre while there are fewer than fit, and start at the left once they fill it.
-        val spare = max(0f, widthPx - padPx * 2 - (results.size * pitchPx - with(density) { gap.toPx() }))
-        val lead by eased(spare / 2f, motion.durationTravel, scale)
-        // A name may reach into the gaps beside its tile, and a lone result's across the strip's empty width.
-        val titleWidth = with(density) { if (results.size == 1) (widthPx - padPx * 2).toDp() else cell + gap }
-        // The top screen's card names an empty search and its next step. Alone, this screen does.
-        if (results.isEmpty() && alone) {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                BasicText(FindCopy.noMatches, style = emptyStyle.copy(color = theme.onBackground))
-                BasicText(session.noMatchStep, style = emptyStyle)
+        StatusChipLayer {
+            val pitchPx = with(density) { (cell + gap).toPx() }
+            val padPx = with(density) { pad.toPx() }
+            val widthPx = with(density) { maxWidth.toPx() }
+            val across = max(1, floor((widthPx - padPx * 2 + with(density) { gap.toPx() }) / pitchPx).toInt())
+            val focus = if (session.onResults) session.index else 0
+            // The first result on screen moves only as far as it must to keep the focus in view.
+            val first = remember { IntArray(1) }
+            first[0] = when {
+                focus < first[0] -> focus
+                focus > first[0] + across - 1 -> focus - across + 1
+                else -> first[0]
+            }.coerceIn(0, max(0, results.size - across))
+            val targetFirst = first[0].toFloat()
+            val shownFirst by eased(targetFirst, motion.durationTravel, scale)
+            // Results centre while there are fewer than fit, and start at the left once they fill it.
+            val spare = max(0f, widthPx - padPx * 2 - (results.size * pitchPx - with(density) { gap.toPx() }))
+            val lead by eased(spare / 2f, motion.durationTravel, scale)
+            // A name may reach into the gaps beside its tile, and a lone result's across the strip's empty width.
+            val titleWidth = with(density) { if (results.size == 1) (widthPx - padPx * 2).toDp() else cell + gap }
+            // The top screen's card names an empty search and its next step. Alone, this screen does.
+            if (results.isEmpty() && alone) {
+                Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                    BasicText(FindCopy.noMatches, style = emptyStyle.copy(color = theme.onBackground))
+                    BasicText(session.noMatchStep, style = emptyStyle)
+                }
             }
-        }
-        // Motion belongs to the result list, not its tile. Offscreen results must finish
-        // their original pop and keep gliding when a query changes their rank, so entering
-        // the viewport never restarts either animation.
-        val positions = results.mapIndexed { index, entry ->
-            key(entry.id) {
-                val at = eased(index.toFloat(), motion.durationTravel, scale)
-                val pop = remember { Animatable(0f) }
-                LaunchedEffect(Unit) {
-                    if (motion.reduced(scale)) {
-                        pop.snapTo(1f)
-                        return@LaunchedEffect
+            // Motion belongs to the result list, not its tile. Offscreen results must finish
+            // their original pop and keep gliding when a query changes their rank, so entering
+            // the viewport never restarts either animation.
+            val positions = results.mapIndexed { index, entry ->
+                key(entry.id) {
+                    val at = eased(index.toFloat(), motion.durationTravel, scale)
+                    val pop = remember { Animatable(0f) }
+                    LaunchedEffect(Unit) {
+                        if (motion.reduced(scale)) {
+                            pop.snapTo(1f)
+                            return@LaunchedEffect
+                        }
+                        delay(min(index, POP_STAGGER_LIMIT) * POP_STAGGER_MS)
+                        withContext(SteadyMenu) { pop.animateTo(1f, motion.playful(motion.durationSelect, scale)) }
                     }
-                    delay(min(index, POP_STAGGER_LIMIT) * POP_STAGGER_MS)
-                    withContext(SteadyMenu) { pop.animateTo(1f, motion.playful(motion.durationSelect, scale)) }
-                }
-                ResultPosition(entry, index, at, pop.asState())
-            }
-        }
-        // Follow the animated positions, including tiles crossing the window on a reorder.
-        // Prepare the destination window as soon as the cursor moves, before the scroll's
-        // next frame makes it visible. Otherwise fast held input can outrun incoming art.
-        // Only membership changes recompose; per-frame motion stays in layout and layers.
-        val visible by remember(positions, across, targetFirst) {
-            derivedStateOf {
-                positions.filter {
-                    findResultInWindow(it.at.value, shownFirst, across, it.index.toFloat(), targetFirst)
+                    ResultPosition(entry, index, at, pop.asState())
                 }
             }
-        }
-        visible.forEach { position ->
-            key(position.entry.id) {
-                Box(
-                    Modifier
-                        .offset { IntOffset((padPx + lead + (position.at.value - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
-                        .graphicsLayer {
-                            // A result fades as it slides past either edge, so the strip has no cut ends.
-                            val along = position.at.value - shownFirst
-                            val outside = maxOf(-along, along - (across - 1), 0f)
-                            val grown = popFrom + (1f - popFrom) * position.pop.value
-                            alpha = (1f - outside).coerceIn(0f, 1f) * position.pop.value.coerceIn(0f, 1f)
-                            scaleX = grown
-                            scaleY = grown
-                        },
-                ) {
-                    tile(position.entry, session.onResults && session.index == position.index, cell, titleWidth) { onTap(position.index) }
+            // Follow the animated positions, including tiles crossing the window on a reorder.
+            // Prepare the destination window as soon as the cursor moves, before the scroll's
+            // next frame makes it visible. Otherwise fast held input can outrun incoming art.
+            // Only membership changes recompose; per-frame motion stays in layout and layers.
+            val visible by remember(positions, across, targetFirst) {
+                derivedStateOf {
+                    positions.filter {
+                        findResultInWindow(it.at.value, shownFirst, across, it.index.toFloat(), targetFirst)
+                    }
                 }
             }
-        }
-        if (results.isNotEmpty()) {
-            ResultRing(
-                index = focus,
-                lit = session.onResults,
-                cell = cell,
-                left = { padPx + lead + (focus - shownFirst) * pitchPx },
-                top = padPx,
-                pitchPx = pitchPx,
-                scale = scale,
-            )
+            visible.forEach { position ->
+                key(position.entry.id) {
+                    Box(
+                        Modifier
+                            .offset { IntOffset((padPx + lead + (position.at.value - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
+                            .graphicsLayer {
+                                // A result fades as it slides past either edge, so the strip has no cut ends.
+                                val along = position.at.value - shownFirst
+                                val outside = maxOf(-along, along - (across - 1), 0f)
+                                val grown = popFrom + (1f - popFrom) * position.pop.value
+                                alpha = (1f - outside).coerceIn(0f, 1f) * position.pop.value.coerceIn(0f, 1f)
+                                scaleX = grown
+                                scaleY = grown
+                            },
+                    ) {
+                        tile(position.entry, session.onResults && session.index == position.index, cell, titleWidth) { onTap(position.index) }
+                    }
+                }
+            }
+            if (results.isNotEmpty()) {
+                ResultRing(
+                    index = focus,
+                    lit = session.onResults,
+                    cell = cell,
+                    left = { padPx + lead + (focus - shownFirst) * pitchPx },
+                    top = padPx,
+                    pitchPx = pitchPx,
+                    scale = scale,
+                )
+            }
         }
     }
 }
@@ -294,6 +296,8 @@ private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, to
     val x by eased(index.toFloat(), motion.durationTravel, scale)
     val ring = remember(theme) { FocusRing(theme) }
     val path = remember { Path() }
+    val chipPath = remember { Path() }
+    val chip = LocalStatusChipCutout.current
     val radius = cell * theme.iconRadius
     Box(
         Modifier
@@ -312,7 +316,9 @@ private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, to
                 path.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(corner, corner)))
                 // Only outside the tile, so the glow never washes over the art. The ring fades
                 // itself: a faded layer would cut its glow off at the tile's square edge.
-                clipPath(path, ClipOp.Difference) { with(ring) { drawFocusRing(corner, alpha = strength) } }
+                withoutStatusChip(chip, theme, corner, chipPath) {
+                    clipPath(path, ClipOp.Difference) { with(ring) { drawFocusRing(corner, alpha = strength) } }
+                }
             },
     )
 }

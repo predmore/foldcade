@@ -3782,49 +3782,51 @@ private fun StripGrid(
             }
             .padding(pad),
     ) {
-        val low by remember(lastColumn) {
-            derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
-        }
-        val high by remember(lastColumn, columns) {
-            derivedStateOf { ceil(shownFirst() + columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
-        }
-        var rowPx by remember { mutableStateOf(0) }
-        for (drawn in low..high) {
-            // Keyed, so a column keeps its decoded art as the strip scrolls. Unkeyed,
-            // columns moved slots as the strip settled and every tile reloaded.
-            key(drawn) {
-                Box(
-                    Modifier
-                        .offset { IntOffset(((drawn - shownFirst()) * pitchPx).roundToInt(), 0) }
-                        .graphicsLayer {
-                            // A column fades as it slides past either edge, so the strip has no cut ends.
-                            val along = drawn - shownFirst()
-                            val outside = maxOf(-along, along - (columns - 1), 0f)
-                            alpha = (1f - outside).coerceIn(0f, 1f)
-                        },
-                ) {
-                    StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
+        StatusChipLayer {
+            val low by remember(lastColumn) {
+                derivedStateOf { floor(shownFirst()).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+            }
+            val high by remember(lastColumn, columns) {
+                derivedStateOf { ceil(shownFirst() + columns - 1).toInt().coerceIn(0, lastColumn.coerceAtLeast(0)) }
+            }
+            var rowPx by remember { mutableStateOf(0) }
+            for (drawn in low..high) {
+                // Keyed, so a column keeps its decoded art as the strip scrolls. Unkeyed,
+                // columns moved slots as the strip settled and every tile reloaded.
+                key(drawn) {
+                    Box(
+                        Modifier
+                            .offset { IntOffset(((drawn - shownFirst()) * pitchPx).roundToInt(), 0) }
+                            .graphicsLayer {
+                                // A column fades as it slides past either edge, so the strip has no cut ends.
+                                val along = drawn - shownFirst()
+                                val outside = maxOf(-along, along - (columns - 1), 0f)
+                                alpha = (1f - outside).coerceIn(0f, 1f)
+                            },
+                    ) {
+                        StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it }
+                    }
                 }
             }
-        }
-        if (homeTiles) {
-            HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
-            CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
-                (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
+            if (homeTiles) {
+                HomeTarget(carry, cell, width, pitchPx, shownFirst, scale)
+                CarriedTile(app, carry, memory, cell, rowGap, rowPx, pitchPx, shownFirst, scale) { at ->
+                    (context as? FoldcadeHomeActivity)?.dispatch(app.shell.touchCell(at, screen))
+                }
             }
+            GridCursor(
+                app = app,
+                index = model.focus.cellIndex,
+                cell = cell,
+                gap = rowGap,
+                columns = columns,
+                pitchPx = pitchPx,
+                rowPx = rowPx,
+                shownFirst = shownFirst,
+                jump = folderToken,
+                scale = scale,
+            )
         }
-        GridCursor(
-            app = app,
-            index = model.focus.cellIndex,
-            cell = cell,
-            gap = rowGap,
-            columns = columns,
-            pitchPx = pitchPx,
-            rowPx = rowPx,
-            shownFirst = shownFirst,
-            jump = folderToken,
-            scale = scale,
-        )
     }
 }
 
@@ -3885,6 +3887,8 @@ private fun GridCursor(
     val theme = foldTheme()
     val radius = cell * theme.iconRadius
     val ring = remember { Path() }
+    val chipPath = remember { Path() }
+    val chip = LocalStatusChipCutout.current
     Box(
         Modifier
             .size(cell)
@@ -3904,21 +3908,23 @@ private fun GridCursor(
                 ring.reset()
                 ring.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
                 // Only outside the tile, so the glow never washes over the art.
-                clipPath(ring, ClipOp.Difference) {
-                    with(FocusRing(theme)) {
-                        drawFocusRing(cornerPx)
-                        val t = burst.value
-                        if (t < 1f) {
-                            for (wave in 0 until BURST_WAVES) {
-                                // Each wave starts a little after the one before and grows as it fades.
-                                val local = ((t - wave * BURST_LAG) / (1f - BURST_LAG)).coerceIn(0f, 1f)
-                                if (local <= 0f || local >= 1f) continue
-                                val grow = BURST_REACH * size.minDimension * local
-                                drawFocusRing(
-                                    cornerPx + grow,
-                                    alpha = 1f - local,
-                                    bounds = Rect(-grow, -grow, size.width + grow, size.height + grow),
-                                )
+                withoutStatusChip(chip, theme, cornerPx, chipPath) {
+                    clipPath(ring, ClipOp.Difference) {
+                        with(FocusRing(theme)) {
+                            drawFocusRing(cornerPx)
+                            val t = burst.value
+                            if (t < 1f) {
+                                for (wave in 0 until BURST_WAVES) {
+                                    // Each wave starts a little after the one before and grows as it fades.
+                                    val local = ((t - wave * BURST_LAG) / (1f - BURST_LAG)).coerceIn(0f, 1f)
+                                    if (local <= 0f || local >= 1f) continue
+                                    val grow = BURST_REACH * size.minDimension * local
+                                    drawFocusRing(
+                                        cornerPx + grow,
+                                        alpha = 1f - local,
+                                        bounds = Rect(-grow, -grow, size.width + grow, size.height + grow),
+                                    )
+                                }
                             }
                         }
                     }
@@ -4388,6 +4394,8 @@ private fun CarriedTile(
     val radius = cell * theme.iconRadius
     val ring = remember(theme) { FocusRing(theme) }
     val ringPath = remember { Path() }
+    val chipPath = remember { Path() }
+    val chip = LocalStatusChipCutout.current
     val bobPx = with(LocalDensity.current) { px(motion.bobPx).toPx() }
     val glowPx = with(LocalDensity.current) { px(motion.liftGlowPx).toPx() }
     val underGlow = game.mark?.let { markGlyph(it) }?.accent ?: theme.focus
@@ -4466,8 +4474,10 @@ private fun CarriedTile(
                         val cornerPx = radius.toPx()
                         ringPath.reset()
                         ringPath.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
-                        clipPath(ringPath, ClipOp.Difference) {
-                            with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
+                        withoutStatusChip(chip, theme, cornerPx, chipPath) {
+                            clipPath(ringPath, ClipOp.Difference) {
+                                with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
+                            }
                         }
                     },
             )
@@ -4605,6 +4615,7 @@ private fun TileStatus(
     val shown = if (synced != null) syncMarkShown(synced, animatorScale) else null
     Row(
         modifier = modifier
+            .statusChipCutout(focused && !showsBar) { shown?.value ?: 1f }
             .then(if (showsBar) Modifier.fillMaxWidth() else Modifier)
             .graphicsLayer {
                 val grown = shown?.value?.let { SYNC_MARK_FROM + (1f - SYNC_MARK_FROM) * it } ?: 1f
@@ -4700,9 +4711,6 @@ private fun syncMarkShown(synced: TileActivity.Synced, animatorScale: Float): St
     }
     return shown.asState()
 }
-
-/** A status chip sits this share of the tile's corner radius in from each edge, clear of the curve. */
-private const val CORNER_SAFE = 0.3f
 
 /** A sync mark grows in from this scale. */
 private const val SYNC_MARK_FROM = 0.6f
