@@ -59,7 +59,11 @@ internal fun Modifier.statusChipCutout(active: Boolean, alpha: () -> Float): Mod
     return onSizeChanged { source.size = it }
 }
 
-/** The same top-right seat as the status Row, in the cursor's unscaled tile pixels. */
+/**
+ * The same top-right seat as the status Row, in shared tile pixels. Cell's outer scaled Box
+ * contains both the art and TileStatus. A landed ring uses that same focus scale, so its cut
+ * scales with the chip. Inverse-scaling here would move the cut away from the chip.
+ */
 internal fun statusChipRect(tile: Size, chip: IntSize, chipHeight: Float, overlap: Float, corner: Float): Rect {
     val offset = chipHeight * overlap - corner * CORNER_SAFE
     return Rect(tile.width + offset - chip.width, -offset, tile.width + offset, -offset + chip.height)

@@ -3539,8 +3539,6 @@ private fun MenuHints(app: FoldcadeApp) {
 private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     val shell = app.shell
     val model = shell.model
-    // A dialog names its own keys on its card, so the grid's would only show dimmed under it.
-    if (model.dialog != null) return
     val actions = hintFor(
         when {
             model.connectOpen -> HintPlace.Connect
@@ -3602,23 +3600,30 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         model.homeGrid == HomeGrid.StandIns && !model.libraryGrid && model.atLibraryRoot && shell.homeKeys() == HomeKeys.Idle
     // R3 Info, last and quiet, only for a game whose summary the hero can open.
     val nextKeys = withInfoHint(withFindHint(shown, atRoot), summary = gridKeys && !selecting && model.undoVerb == null && shell.offersInfo())
-    val lastKeys = remember { arrayOf(nextKeys) }
-    if (!LocalTravelLeaving.current) lastKeys[0] = nextKeys
-    val keys = lastKeys[0]
-    // Open with on a game still open in its player says when its choice takes effect (UX-17).
-    val note = panelNote(model)
-    if (keys.isEmpty()) return
+    // Keep every part of the departing row together, including its visibility under dialogs.
+    val nextRow = GridHintRow(
+        keys = if (model.dialog == null) nextKeys else emptyList(),
+        prefixes = buildList {
+            // The hero counts the selection; without a hero, its count leads the keys.
+            if (selecting && app.store.session.heroPanel() == null) add(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·")
+            if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) add(model.undoVerb + " ·")
+            if (destructive) add(Copy.hold)
+            // Open with names when a still-running player's choice takes effect (UX-17).
+            panelNote(model)?.let { add("$it ·") }
+        },
+    )
+    val snapshot = remember { GridHintSnapshot(nextRow) }
+    val row = snapshot.shown(nextRow, leaving = LocalTravelLeaving.current)
+    if (row.keys.isEmpty()) return
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(px(16f), Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The hero's pill counts the selection; with no hero, the count leads the keys instead.
-        if (selecting && app.store.session.heroPanel() == null) BasicText(SelectionCopy.count(shell.homeSelection()!!.checked.size) + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
-        if (!selecting && model.undoVerb != null && model.panel == null && model.dialog == null) BasicText(text = model.undoVerb + " ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
-        if (destructive) BasicText(text = Copy.hold, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
-        if (note != null) BasicText(text = "$note ·", style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
-        keys.forEach { key -> HintWord(model, key) }
+        row.prefixes.forEach { prefix ->
+            BasicText(prefix, style = text(foldTheme().muted, LocalFoldTheme.current.theme.style.type.hint, foldTheme()))
+        }
+        row.keys.forEach { key -> HintWord(model, key) }
     }
 }
 
@@ -4017,7 +4022,6 @@ private fun StripColumn(
                         titleWidth = titleWidth,
                         corner = radius,
                         icon = null,
-                        favorite = false,
                         // It rests lit like any tile, so a fresh Home's first step never reads as an empty slot (review-A 02).
                         offHome = false,
                         onClick = { tap() },
@@ -4062,7 +4066,6 @@ private fun StripColumn(
                         titleWidth = titleWidth,
                         corner = radius,
                         icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
-                        favorite = game?.favorite == true,
                         empty = face?.empty == true || beyond,
                         selected = face?.id in shell.homeSelection()?.checked.orEmpty(),
                         lifted = lifted == index && carry == null,
@@ -4456,7 +4459,6 @@ private fun CarriedTile(
                 size = cell,
                 corner = radius,
                 icon = if (art == null && themedApp == null) launcherIcon(game.androidPackage) else null,
-                favorite = game.favorite,
                 onServer = face.onServer,
                 downloading = shell.isDownloading(face.id),
                 saveHealth = shell.saveHealthOf(game.id),
@@ -4522,7 +4524,6 @@ private fun FoundTile(app: FoldcadeApp, screen: HostScreen, entry: FindEntry, fo
             titleWidth = titleWidth,
             corner = corner,
             icon = if (art == null && themedApp == null) launcherIcon(game?.androidPackage) else null,
-            favorite = false,
             onServer = shell.onServer(entry.id),
             downloading = shell.isDownloading(entry.id),
             saveHealth = shell.saveHealthOf(entry.id),
@@ -4741,7 +4742,6 @@ private fun Cell(
     titleWidth: Dp = size,
     corner: Dp,
     icon: LauncherArt?,
-    favorite: Boolean,
     empty: Boolean = false,
     selected: Boolean = false,
     lifted: Boolean = false,
@@ -4996,16 +4996,6 @@ private fun Cell(
                             overflow = TextOverflow.Clip,
                         )
                     }
-                }
-                // A pinned app's dot, on its launcher icon or on the theme's object for it.
-                if (favorite && (icon != null || themedApp != null)) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(px(8f))
-                            .size(px(tile.dotPx))
-                            .background(theme.focus, theme.style.shape.control()),
-                    )
                 }
                 val check = presence(true.takeIf { selected }, motion.durationFocus, animatorScale)
                 if (check.shown != null) Box(Modifier.align(Alignment.TopStart)
