@@ -1,0 +1,12 @@
+{
+  "baseline": "c8ba7c2c",
+  "implementation": "c87d3dfb",
+  "package": "app.foldcade.uxr4hero",
+  "primary_before": "motion/mixed-before-grid-scroll-top.mp4",
+  "primary_after": "motion/verified-after-grid-scroll-top.mp4",
+  "method": "Seven Right presses from 3D Sonic 2 on All games; eight warmed adjacent games, alternating logo/title; paired 8 Mbit/s Android screenrecord, 25 s, tblend difference + signalstats per encoded frame.",
+  "profile": "Logo: 3D Sonic 2, Contra, Golden Axe II, Metroid. No usable logo/hero: Bravely Second, Fantasy Life i, Mario & Luigi, Need for Speed. Test-only choices.json forces unavailable image paths, keeping real box/screenshots. Pok\u00e9mon HOME has real logo/hero and no history/facts.",
+  "discarded": "mixed-after/final-after clips used a different starting column after a fragile QA reset; retained for audit, excluded from primary comparison. First before clip was exploratory before deterministic mixed profile.",
+  "tests": "Two full --rerun-tasks runs; unrelated RomM timeouts (17.6 s vs 12 s bound; 2 s browse cancellation and 10 s firmware fixture) on busy host. Aggregate retry passes: 2805 tests, 331 suites, zero failures/errors. Log tests-finish.log.",
+  "cleanup": "Two FIFO Thor turns; original app.foldcade HOME and enabled Wi-Fi restored, stay-on false, no QA save backups, QA RomM device DELETE 204, own package uninstalled, turn released. Real release data untouched."
+}
