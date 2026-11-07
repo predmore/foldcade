@@ -1,0 +1,98 @@
+[
+  {
+    "cycle": 0,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 1.240750958,
+    "finish": 1.285822458
+  },
+  {
+    "cycle": 0,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 1.308721375,
+    "finish": 1.383867875
+  },
+  {
+    "cycle": 1,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 1.585286791,
+    "finish": 1.625577
+  },
+  {
+    "cycle": 1,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 1.698001208,
+    "finish": 1.748297458
+  },
+  {
+    "cycle": 2,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 1.838066333,
+    "finish": 1.88366325
+  },
+  {
+    "cycle": 2,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 1.910889458,
+    "finish": 1.939767416
+  },
+  {
+    "cycle": 3,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 2.125897625,
+    "finish": 2.165959708
+  },
+  {
+    "cycle": 3,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 2.314439208,
+    "finish": 2.346142333
+  },
+  {
+    "cycle": 4,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 2.492071125,
+    "finish": 2.53072125
+  },
+  {
+    "cycle": 4,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 2.688435375,
+    "finish": 2.72377875
+  },
+  {
+    "cycle": 5,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 2.919903375,
+    "finish": 2.959727291
+  },
+  {
+    "cycle": 5,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 3.048827791,
+    "finish": 3.086355125
+  },
+  {
+    "cycle": 6,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 3.278451375,
+    "finish": 3.324011875
+  },
+  {
+    "cycle": 6,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 3.484682375,
+    "finish": 3.524415458
+  },
+  {
+    "cycle": 7,
+    "key": "KEYCODE_BUTTON_A",
+    "start": 3.671905875,
+    "finish": 3.711876625
+  },
+  {
+    "cycle": 7,
+    "key": "KEYCODE_BUTTON_B",
+    "start": 3.877430541,
+    "finish": 3.924806166
+  }
+]
