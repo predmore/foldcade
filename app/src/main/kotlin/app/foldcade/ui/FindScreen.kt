@@ -318,7 +318,7 @@ private fun ResultRing(index: Int, lit: Boolean, cell: Dp, left: () -> Float, to
                 // itself: a faded layer would cut its glow off at the tile's square edge.
                 // The chip belongs to the result; the sliding ring reaches it at landing.
                 val landedChip = chip.takeIf { x == index.toFloat() }
-                withoutStatusChip(landedChip, theme, corner, chipPath) {
+                withoutStatusChip(landedChip, theme, corner, chipPath, 1f + (motion.scaleFocus - 1f) * strength) {
                     clipPath(path, ClipOp.Difference) { with(ring) { drawFocusRing(corner, alpha = strength) } }
                 }
             },

@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -25,12 +26,17 @@ import app.foldcade.language.Theme
 /** The existing rounded-corner clearance shared by checks, hidden marks and status chips. */
 internal const val CORNER_SAFE = 0.3f
 
-internal class StatusChipSource(val alpha: () -> Float) {
+internal class StatusChipSource(
+    val scale: () -> Float = { 1f },
+    val liftY: () -> Float = { 0f },
+    val alpha: () -> Float,
+) {
     var size by mutableStateOf(IntSize.Zero)
 }
 
 /** Only the current tile's chip cuts the cursor. An old tile disposing cannot clear its successor. */
 internal class StatusChipCutout {
+    val matrix = Matrix()
     var source by mutableStateOf<StatusChipSource?>(null)
         private set
 
@@ -48,10 +54,14 @@ internal fun StatusChipLayer(content: @Composable () -> Unit) {
 
 /** Size changes only on layout; animation values are observed solely by the cursor's draw block. */
 @Composable
-internal fun Modifier.statusChipCutout(active: Boolean, alpha: () -> Float): Modifier {
+internal fun Modifier.statusChipCutout(active: Boolean, scale: () -> Float, liftY: () -> Float, alpha: () -> Float): Modifier {
     val cutout = LocalStatusChipCutout.current ?: return this
     val latest = rememberUpdatedState(alpha)
-    val source = remember { StatusChipSource { latest.value() } }
+    val latestScale = rememberUpdatedState(scale)
+    val latestLift = rememberUpdatedState(liftY)
+    val source = remember {
+        StatusChipSource(scale = { latestScale.value() }, liftY = { latestLift.value() }) { latest.value() }
+    }
     DisposableEffect(cutout, active, source) {
         if (active) cutout.show(source)
         onDispose { cutout.hide(source) }
@@ -60,19 +70,28 @@ internal fun Modifier.statusChipCutout(active: Boolean, alpha: () -> Float): Mod
 }
 
 /**
- * The same top-right seat as the status Row, in shared tile pixels. Cell's outer scaled Box
- * contains both the art and TileStatus. A landed ring uses that same focus scale, so its cut
- * scales with the chip. Inverse-scaling here would move the cut away from the chip.
+ * The same top-right seat as the status Row, before Cell's scale and selection lift.
+ * Both art and TileStatus are in that scaled Box. Normal focus matches the ring; a
+ * checked tile grows and lifts further, so [statusChipMatrix] maps that difference.
  */
 internal fun statusChipRect(tile: Size, chip: IntSize, chipHeight: Float, overlap: Float, corner: Float): Rect {
     val offset = chipHeight * overlap - corner * CORNER_SAFE
     return Rect(tile.width + offset - chip.width, -offset, tile.width + offset, -offset + chip.height)
 }
 
-internal fun DrawScope.withoutStatusChip(cutout: StatusChipCutout?, theme: Theme, corner: Float, path: Path, draw: DrawScope.() -> Unit) {
+/** Cell pixels to ring pixels: apply the tile's transform, then undo the ring's own scale. */
+internal fun statusChipMatrix(tile: Size, scale: Float, liftY: Float, ringScale: Float, matrix: Matrix): Matrix {
+    matrix.reset()
+    matrix.translate(tile.width / 2f, tile.height / 2f + liftY / ringScale)
+    matrix.scale(scale / ringScale, scale / ringScale)
+    matrix.translate(-tile.width / 2f, -tile.height / 2f)
+    return matrix
+}
+
+internal fun DrawScope.withoutStatusChip(cutout: StatusChipCutout?, theme: Theme, corner: Float, path: Path, ringScale: Float, draw: DrawScope.() -> Unit) {
     val source = cutout?.source
     val chip = source?.size
-    if (source == null || chip == null || chip.width <= 0 || chip.height <= 0 || source.alpha() <= 0f) {
+    if (cutout == null || source == null || chip == null || chip.width <= 0 || chip.height <= 0 || source.alpha() <= 0f) {
         draw()
         return
     }
@@ -80,5 +99,6 @@ internal fun DrawScope.withoutStatusChip(cutout: StatusChipCutout?, theme: Theme
     path.reset()
     path.addOutline(theme.style.shape.control().createOutline(rect.size, layoutDirection, this))
     path.translate(Offset(rect.left, rect.top))
+    path.transform(statusChipMatrix(size, source.scale(), source.liftY(), ringScale, cutout.matrix))
     clipPath(path, ClipOp.Difference, block = draw)
 }

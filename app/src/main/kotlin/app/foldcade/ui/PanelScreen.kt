@@ -3916,7 +3916,7 @@ private fun GridCursor(
                 // The chip stays on its tile while the ring glides. Cut only at landing,
                 // so an empty corner never travels across the art between tiles.
                 val landedChip = chip.takeIf { x == column && y == row }
-                withoutStatusChip(landedChip, theme, cornerPx, chipPath) {
+                withoutStatusChip(landedChip, theme, cornerPx, chipPath, motion.scaleFocus) {
                     clipPath(ring, ClipOp.Difference) {
                         with(FocusRing(theme)) {
                             drawFocusRing(cornerPx)
@@ -4479,7 +4479,7 @@ private fun CarriedTile(
                         val cornerPx = radius.toPx()
                         ringPath.reset()
                         ringPath.addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerPx, cornerPx)))
-                        withoutStatusChip(chip, theme, cornerPx, chipPath) {
+                        withoutStatusChip(chip, theme, cornerPx, chipPath, motion.scaleFocus) {
                             clipPath(ringPath, ClipOp.Difference) {
                                 with(ring) { drawFocusRing(cornerPx, alpha = carriedFloor + (1f - carriedFloor) * raised) }
                             }
@@ -4595,6 +4595,8 @@ private fun TileStatus(
     activity: TileActivity?,
     saveHealth: SaveHealth,
     animatorScale: Float,
+    tileScale: () -> Float,
+    tileLiftY: () -> Float,
     modifier: Modifier,
 ) {
     val motion = LocalFoldTheme.current.theme.motion
@@ -4619,7 +4621,7 @@ private fun TileStatus(
     val shown = if (synced != null) syncMarkShown(synced, animatorScale) else null
     Row(
         modifier = modifier
-            .statusChipCutout(focused && !showsBar) { shown?.value ?: 1f }
+            .statusChipCutout(focused && !showsBar, tileScale, tileLiftY) { shown?.value ?: 1f }
             .then(if (showsBar) Modifier.fillMaxWidth() else Modifier)
             .graphicsLayer {
                 val grown = shown?.value?.let { SYNC_MARK_FROM + (1f - SYNC_MARK_FROM) * it } ?: 1f
@@ -4769,6 +4771,7 @@ private fun Cell(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
+    val tilePx = with(LocalDensity.current) { size.toPx() }
     val glyph = themedApp ?: mark?.let { markGlyph(it) }
     val animatorScale = motion.animatorScale(LocalContext.current.contentResolver)
     val checked by motionState(if (selected) 1f else 0f, motion.playful(motion.durationFocus, animatorScale))
@@ -5014,6 +5017,8 @@ private fun Cell(
                     activity = activity,
                     saveHealth = saveHealth,
                     animatorScale = animatorScale,
+                    tileScale = { drawn * settle.value },
+                    tileLiftY = { -tilePx * 0.025f * checked },
                     // Transfers need a full-width bar; other chips straddle the top-right rim.
                     modifier = if (activity is TileActivity.Downloading || activity == TileActivity.Checking) {
                         Modifier.align(Alignment.BottomEnd).padding(maxOf(px(8f), corner * CORNER_SAFE))
