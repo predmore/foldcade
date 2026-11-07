@@ -7,6 +7,8 @@ import app.foldcade.ui.bloomCropBias
 import app.foldcade.ui.namedSubject
 import app.foldcade.ui.titleCollapse
 import app.foldcade.ui.richestShare
+import app.foldcade.ui.titleSafeStart
+import app.foldcade.ui.heroFactAlpha
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -29,6 +31,21 @@ class HeroNameFollowsArtTest {
         assertEquals(fresher, namedSubject(focus = fresher, shown = old, waited = false))
     }
 
+    @Test fun theNamedGamesFactsFollowItsArtAndNeverAnotherGamesWarning() {
+        assertEquals(1f, heroFactAlpha("old", "old", null, 1f, 0f), 0f)
+        // The name timed out before its slow art: no previous game's save warning under it.
+        assertEquals(0f, heroFactAlpha("new", "old", null, 1f, 0f), 0f)
+        // As the art arrives, the single named line shares exactly its foreground opacity.
+        assertEquals(0f, heroFactAlpha("new", "new", "old", 0f, 1f), 0f)
+        assertEquals(.35f, heroFactAlpha("new", "new", "old", .35f, .65f), 0f)
+        assertEquals(.65f, heroFactAlpha("old", "new", "old", .35f, .65f), 0f)
+        // A fast third focus cannot inherit either retained game's facts.
+        assertEquals(0f, heroFactAlpha("third", "new", "old", .35f, .65f), 0f)
+        // Same-game art upgrades do not pulse the facts; an artless fallback can name itself.
+        assertEquals(1f, heroFactAlpha("new", "new", "new", .35f, .65f), 0f)
+        assertEquals(1f, heroFactAlpha("new", null, null, 0f, 0f), 0f)
+    }
+
     @Test fun theSquareGoesWhereTheBoxIsBusiest() {
         // A title band at the bottom of a tall box, a plain sky at its top.
         val bottomTitle = IntArray(72) { if (it >= 60) 900 else 100 }
@@ -38,6 +55,32 @@ class HeroNameFollowsArtTest {
         // Even detail keeps the middle, and a square has nowhere to go.
         assertEquals(0.5f, richestShare(IntArray(72) { 100 }, window = 48), 0f)
         assertEquals(0.5f, richestShare(IntArray(48) { it }, window = 48), 0f)
+    }
+
+    @Test fun aTitleBandAtTheSquareEdgeFinishesBeforeTheCrop() {
+        // Thor's 256×384 tile decode, read 48 px wide. Samus pulls the richest
+        // square up to 11–59, inside METROID. The title and subtitle finish at 68.
+        val metroid = intArrayOf(
+            861,1649,1347,1337,1842,1509,1085,1545,1642,1615,3156,3572,3444,4096,4618,3984,4151,4328,
+            4013,3863,4135,4035,4004,3615,3773,3425,2024,2080,2551,2039,1885,1924,1806,2419,2554,2969,
+            2760,2679,2244,2483,2197,2278,1592,1364,1095,1110,786,563,411,370,291,220,266,236,178,131,
+            7926,4131,5406,3483,3321,3931,3262,3010,2553,2092,171,2512,936,132,72,66,
+        )
+        val start = titleSafeStart(metroid, 48)
+        assertEquals(23, start)
+        assertTrue((56..68).all { it in start until start + 48 })
+        // The same band printed at the top is completed toward the top.
+        assertEquals(1, titleSafeStart(metroid.reversedArray(), 48))
+    }
+
+    @Test fun finishingATitleDoesNotChaseAContinuousIllustrationOrLeaveTheBox() {
+        val continuous = IntArray(72) { if (it in 16..65) 900 else 100 }
+        // No quiet division inside the square: shifting just chops the other edge of art.
+        assertEquals(app.foldcade.ui.richestStart(continuous, 48), titleSafeStart(continuous, 48))
+        assertEquals(12, titleSafeStart(IntArray(72) { 100 }, 48))
+        assertEquals(0, titleSafeStart(IntArray(48) { 100 }, 48))
+        val edgeTitle = IntArray(72) { if (it >= 60) 900 else 100 }
+        assertEquals(24, titleSafeStart(edgeTitle, 48))
     }
 
     @Test fun aCollapsingTitleIsGoneBeforeItsLineClosesOnIt() {

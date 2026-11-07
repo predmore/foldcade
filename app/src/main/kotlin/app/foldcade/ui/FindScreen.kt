@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -80,8 +81,9 @@ import kotlinx.coroutines.withContext
  * The strip shows the best result first. Its ring lights only once the results have the
  * D-pad, so one ring is lit at a time; the theme may let it rest faintly there while the keys do.
  * Results pop in one after another as they arrive, and a result still there after the next
- * letter glides to its new place rather than popping again. [tile] draws one result as the
- * grid would draw it. [fieldStyle] puts the query, compact, and the filters over the strip,
+ * letter glides to its new place rather than popping again. [tile] prepares one result once.
+ * Its face draws before the ring and its status after, with the same placement and pop state.
+ * [fieldStyle] puts the query, compact, and the filters over the strip,
  * for a screen with no top screen beside it.
  */
 @Composable
@@ -99,7 +101,7 @@ internal fun FindKeys(
     onTapKey: (KeyFocus) -> Unit,
     onTapResult: (Int) -> Unit,
     onTapFilter: (Int) -> Unit,
-    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> Unit,
+    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> TileContent,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -179,7 +181,7 @@ private fun ResultStrip(
     emptyStyle: TextStyle,
     alone: Boolean,
     onTap: (Int) -> Unit,
-    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> Unit,
+    tile: @Composable (entry: FindEntry, focused: Boolean, size: Dp, titleWidth: Dp, onClick: () -> Unit) -> TileContent,
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
@@ -242,25 +244,22 @@ private fun ResultStrip(
                 }
             }
         }
-        visible.forEach { position ->
+        val resultsToDraw = visible.map { position ->
             key(position.entry.id) {
-                Box(
-                    Modifier
-                        .offset { IntOffset((padPx + lead + (position.at.value - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
-                        .graphicsLayer {
-                            // A result fades as it slides past either edge, so the strip has no cut ends.
-                            val along = position.at.value - shownFirst
-                            val outside = maxOf(-along, along - (across - 1), 0f)
-                            val grown = popFrom + (1f - popFrom) * position.pop.value
-                            alpha = (1f - outside).coerceIn(0f, 1f) * position.pop.value.coerceIn(0f, 1f)
-                            scaleX = grown
-                            scaleY = grown
-                        },
-                ) {
-                    tile(position.entry, session.onResults && session.index == position.index, cell, titleWidth) { onTap(position.index) }
-                }
+                val frame = Modifier
+                    .offset { IntOffset((padPx + lead + (position.at.value - shownFirst) * pitchPx).roundToInt(), padPx.roundToInt()) }
+                    .graphicsLayer {
+                        val along = position.at.value - shownFirst
+                        val outside = maxOf(-along, along - (across - 1), 0f)
+                        val grown = popFrom + (1f - popFrom) * position.pop.value
+                        alpha = (1f - outside).coerceIn(0f, 1f) * position.pop.value.coerceIn(0f, 1f)
+                        scaleX = grown
+                        scaleY = grown
+                    }
+                Triple(position.entry.id, frame, tile(position.entry, session.onResults && session.index == position.index, cell, titleWidth) { onTap(position.index) })
             }
         }
+        resultsToDraw.forEach { (id, frame, draw) -> key(id) { Box(frame) { draw(TileLayer.Face) } } }
         if (results.isNotEmpty()) {
             ResultRing(
                 index = focus,
@@ -271,6 +270,10 @@ private fun ResultStrip(
                 pitchPx = pitchPx,
                 scale = scale,
             )
+        }
+        // Use the same pop/placement frame after the ring; no mirrored notch geometry.
+        Box(Modifier.zIndex(1f)) {
+            resultsToDraw.forEach { (id, frame, draw) -> key(id) { Box(frame) { draw(TileLayer.Status) } } }
         }
     }
 }

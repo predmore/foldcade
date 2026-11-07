@@ -318,8 +318,9 @@ A home grid tile, beyond its corner (`iconRadius`) and glow.
 | `tile.outlinePx` | 3 | That outline, and tiles while Edit home is open |
 | `tile.editStrokePx` | 9 | The tile Edit home is on, and a carried gap |
 | `tile.editRestAlpha` | 0.45 | Edit home's outline on other tiles |
-| `tile.dotPx` | 10 | The favourite and on-Home dots |
+| `tile.dotPx` | 10 | Legacy dot size, retained for pack compatibility; the host no longer draws favourite dots |
 | `tile.statusChipPx` | 36 | The status chip's height |
+| `tile.statusOverlap` | 0.5 | Share of a game status chip outside the tile's top-right corner; transfer bars stay inset |
 | `tile.statusIconPx` | 24 | Its badge |
 | `tile.statusBackingAlpha` | 0.72 | Its backing over cover art |
 | `tile.downloadBarPx` | 12 | The download bar's thickness |
