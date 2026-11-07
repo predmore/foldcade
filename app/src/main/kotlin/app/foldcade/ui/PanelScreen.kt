@@ -1864,6 +1864,12 @@ private fun HeroLabel(
         titleShown.animateTo(if (named) 1f else 0f,
             motion.dissolve(motion.heroDuration(app.shell.model.motionSpeed, scale), 1f))
     }
+    // Logo → logo can also lose its last fact line. Its row and the card's padding ease away too.
+    val factsShown = remember { Animatable(if (hasFacts) 1f else 0f) }
+    LaunchedEffect(hasFacts, scale) {
+        factsShown.animateTo(if (hasFacts) 1f else 0f,
+            motion.dissolve(motion.heroDuration(app.shell.model.motionSpeed, scale), 1f))
+    }
     // R3 opens it ([unfolds]); R3 again, B, or moving on folds it.
     LaunchedEffect(shown.key, summary != null, unfolds, still) {
         if (summary == null || !unfolds) {
@@ -1876,7 +1882,7 @@ private fun HeroLabel(
         Modifier
             .widthIn(min = px(360f), max = maxWidth)
             // A logo can stand alone. Keep #390's brief blank when a real fact line is fading in.
-            .collapsingHeroTitle { heroCardShown(hasFacts, titleShown.value, unfold.value) }
+            .collapsingHeroTitle { heroCardShown(factsShown.value, titleShown.value, unfold.value) }
             .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
             // Over the game's art the card lets it through.
             .background(if (overArt) theme.surface.copy(alpha = design.hero.cardAlpha) else theme.surface)
@@ -1896,7 +1902,7 @@ private fun HeroLabel(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            facts()
+            Box(Modifier.collapsingHeroTitle { factsShown.value }) { facts() }
         }
         // The summary is laid out whole from the start and the card grows around it, so its lines never rewrap.
         if (summary != null) {
@@ -2001,7 +2007,9 @@ private fun HeroFacts(shown: HeroSubject, cellFocused: Boolean, line: AnnotatedS
     val theme = foldTheme()
     if ((shown as? HeroSubject.Item)?.item?.emptyShelfHint == true) {
         ShelfMeta(line = heroCopy(shown).detail, hintFocused = cellFocused, centred = true)
-    } else if (line.isNotEmpty()) {
+    } else {
+        // Even an empty BasicText measures one line until factsShown folds it. Removing the
+        // text node immediately would still snap that line's height off the outgoing art.
         BasicText(
             text = line,
             style = text(theme.muted, theme.style.type.heroMeta, theme).copy(textAlign = TextAlign.Center),
@@ -2011,9 +2019,9 @@ private fun HeroFacts(shown: HeroSubject, cellFocused: Boolean, line: AnnotatedS
     }
 }
 
-/** With no fact line, the whole card folds away with its last visible title or summary. */
-internal fun heroCardShown(hasFacts: Boolean, title: Float, summary: Float): Float =
-    if (hasFacts) 1f else max(title, summary)
+/** The whole card folds with its last visible fact line, title or summary, including its padding. */
+internal fun heroCardShown(facts: Float, title: Float, summary: Float): Float =
+    max(facts, max(title, summary))
 
 /** The title makes room for its decoded logo over the same fade, without moving the art in one frame. */
 private fun Modifier.collapsingHeroTitle(progress: () -> Float): Modifier = clipToBounds().layout { measurable, constraints ->
