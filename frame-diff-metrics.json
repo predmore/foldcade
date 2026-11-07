@@ -56,6 +56,62 @@
     ]
   },
   {
+    "clip": "review-final-grid-scroll-bottom.mp4",
+    "frames": 1112,
+    "max_yavg": 44.1484,
+    "above20": 11,
+    "top_frames": [
+      [
+        247,
+        44.1484
+      ],
+      [
+        284,
+        42.0883
+      ],
+      [
+        208,
+        41.0673
+      ],
+      [
+        165,
+        39.1302
+      ],
+      [
+        248,
+        39.119
+      ]
+    ]
+  },
+  {
+    "clip": "review-final-grid-scroll-top.mp4",
+    "frames": 498,
+    "max_yavg": 24.2711,
+    "above20": 1,
+    "top_frames": [
+      [
+        154,
+        24.2711
+      ],
+      [
+        254,
+        17.4721
+      ],
+      [
+        106,
+        13.4381
+      ],
+      [
+        255,
+        11.4727
+      ],
+      [
+        107,
+        11.2655
+      ]
+    ]
+  },
+  {
     "clip": "verified-after-grid-scroll-bottom.mp4",
     "frames": 1090,
     "max_yavg": 44.46,

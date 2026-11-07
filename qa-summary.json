@@ -1,12 +1,17 @@
 {
   "baseline": "c8ba7c2c",
-  "implementation": "c87d3dfb",
+  "implementation": "7d97e928b8ab40d633967143109eb4f18f94ff93",
   "package": "app.foldcade.uxr4hero",
   "primary_before": "motion/mixed-before-grid-scroll-top.mp4",
-  "primary_after": "motion/verified-after-grid-scroll-top.mp4",
+  "primary_after": "motion/review-final-grid-scroll-top.mp4",
   "method": "Seven Right presses from 3D Sonic 2 on All games; eight warmed adjacent games, alternating logo/title; paired 8 Mbit/s Android screenrecord, 25 s, tblend difference + signalstats per encoded frame.",
   "profile": "Logo: 3D Sonic 2, Contra, Golden Axe II, Metroid. No usable logo/hero: Bravely Second, Fantasy Life i, Mario & Luigi, Need for Speed. Test-only choices.json forces unavailable image paths, keeping real box/screenshots. Pok\u00e9mon HOME has real logo/hero and no history/facts.",
   "discarded": "mixed-after/final-after clips used a different starting column after a fragile QA reset; retained for audit, excluded from primary comparison. First before clip was exploratory before deterministic mixed profile.",
-  "tests": "Two full --rerun-tasks runs; unrelated RomM timeouts (17.6 s vs 12 s bound; 2 s browse cancellation and 10 s firmware fixture) on busy host. Aggregate retry passes: 2805 tests, 331 suites, zero failures/errors. Log tests-finish.log.",
-  "cleanup": "Two FIFO Thor turns; original app.foldcade HOME and enabled Wi-Fi restored, stay-on false, no QA save backups, QA RomM device DELETE 204, own package uninstalled, turn released. Real release data untouched."
+  "tests": "Final full testDebugUnitTest --rerun-tasks passed: 2806 tests, 331 suites, zero failures/errors; 220 tasks executed. review-fix-build.log. Earlier busy-host RomM timeout failures were retried; a fresh uncached RommLibraryTest class also passed 55/55.",
+  "cleanup": "Final Thor turn cleaned: original app.foldcade HOME and enabled Wi-Fi restored, stay-on false, no QA save backups, QA RomM device DELETE 204, own package uninstalled, turn released. Real release data untouched.",
+  "initial_after": "motion/verified-after-grid-scroll-top.mp4",
+  "review_followup": "Opus round 1 F1: logo facts/no-facts snapped the card. Added unkeyed facts animation, collapsed the fact row with it, retained an empty BasicText measurement until it folds, and animated card padding with the last visible row. Captured Picross 3D Round 2 (facts) \u2194 Pokemon HOME (no facts) before/after.",
+  "facts_before": "motion/review-before-facts-logo-top.mp4",
+  "facts_after": "motion/review-after-facts-logo-top.mp4",
+  "held_final": "logs/held-review-after-gfxinfo.txt"
 }
