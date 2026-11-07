@@ -77,11 +77,16 @@ class LaunchGateDialogsTest {
         assertEquals(Copy.close, dialogBackLabel(noFileDialog(screen)))
         assertEquals(Copy.notNow, dialogBackLabel(homePrompt(screen)))
         assertEquals(Copy.close, dialogBackLabel(backupDialog(screen, undo = false)))
-        // Back's own key sits on Not now; Close and OK dialogs keep the hint at the right.
+        // Back's own key sits on the button it presses, including an OK-only notice.
         assertEquals(homePrompt(screen).buttons.indexOf(DialogButton.NotNow), dialogBackButton(homePrompt(screen)))
-        assertNull(dialogBackButton(noFileDialog(screen)))
         assertNull(dialogBackButton(backupDialog(screen, undo = false)))
-        assertEquals(Copy.close, dialogHints(noFileDialog(screen), FaceMap.standard()).single().label)
+        for (notice in listOf(noFileDialog(screen), playerNotice("BIOS needed", "Body", screen))) {
+            assertEquals(listOf(DialogButton.Ok), notice.buttons)
+            assertEquals(0, dialogBackButton(notice))
+            assertTrue(dialogHints(notice, FaceMap.standard()).isEmpty())
+            val (_, effect) = reduce(PickerModel(count = 1, rowsPerPage = 1, dialog = notice), Meaning.Back, screen)
+            assertEquals(DialogButton.Ok, (effect as Effect.DialogChoice).button)
+        }
     }
 
     @Test fun theSaveFolderAskOpensOnChooseAndPlaysOnlyFromItsOwnButton() {

@@ -265,7 +265,9 @@ class ShellController(
      * A hero says which game it could open to a summary, or none. Two heroes can be drawn while
      * one crossfades into the other, so each takes back only its own offer ([withdrawSummary]).
      */
-    fun offerSummary(owner: Any, key: String?) {
+    fun offerSummary(owner: Any, key: String?, pending: Boolean = false) {
+        // Keep the last hint while the next hero/details resolve. Activation still requires its key.
+        if (pending) return
         if (summaryOffers.keys.lastOrNull() !== owner || summaryOffers[owner] != key) {
             summaryOffers.remove(owner)
             summaryOffers[owner] = key
@@ -289,6 +291,9 @@ class ShellController(
 
     /** R3 has something to open: the hero holds the focused game's summary and the grid rests on it. */
     fun offersInfo(): Boolean = summaryOffered != null && summaryOffered == focusedHero()?.key && summaryResting()
+
+    /** The hint holds its place during a focus change; R3 never opens the outgoing game's summary. */
+    fun offersInfoHint(): Boolean = summaryOffered != null && summaryResting()
 
     /** The name card shows the focused game's summary now. */
     fun summaryShown(): Boolean = summaryOpenFor != null && summaryOpenFor == summaryOffered && offersInfo()

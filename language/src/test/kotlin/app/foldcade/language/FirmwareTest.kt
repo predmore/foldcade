@@ -16,13 +16,13 @@ class FirmwareTest {
     }
     @Test fun missingBiosNamesTheSystemAndOnlyOffersAnExistingRommConnection() {
         val local = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
-        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/system. Then start the game again.", local)
+        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Put it in RetroArch/\u2060system. Then start the game again.", local)
         assertFalse(local.contains("RomM"))
         val connected = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system", rommConnected = true)
-        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Add it to RomM’s firmware for Sega CD, or put it in RetroArch/system. Then start the game again.", connected)
+        assertEquals("Missing the Sega CD BIOS (bios_CD_U.bin). Add it to RomM’s firmware for Sega CD, or put it in RetroArch/\u2060system. Then start the game again.", connected)
         assertTrue(connected.indexOf("Sega CD") < connected.indexOf("bios_CD_U.bin"))
         // RomM, the way that places the file by itself, comes before the folder.
-        assertTrue(connected.indexOf("RomM") < connected.indexOf("RetroArch/system"))
+        assertTrue(connected.indexOf("RomM") < connected.indexOf("RetroArch/\u2060system"))
         assertTrue(connected.length < 140)
         assertTrue(FirmwareCopy.missing("PlayStation", listOf("PlayStation BIOS (.bin)"), "DuckStation/bios").startsWith("Missing the PlayStation BIOS (.bin)."))
     }
@@ -30,7 +30,7 @@ class FirmwareTest {
     @Test fun missingBiosNamesTheExactFileAndOneDestination() {
         val message = FirmwareCopy.missing("Sega CD", listOf("bios_CD_U.bin"), "RetroArch/system")
         assertTrue(message.contains("bios_CD_U.bin"))
-        assertTrue(message.contains("RetroArch/system"))
+        assertTrue(message.contains("RetroArch/\u2060system"))
         assertFalse(message.contains("RomM"))
         assertFalse(message.contains("download"))
         assertEquals("PlayStation BIOS ready", FirmwareCopy.ready("PlayStation"))

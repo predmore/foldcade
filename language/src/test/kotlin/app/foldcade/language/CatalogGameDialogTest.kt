@@ -25,6 +25,7 @@ class CatalogGameDialogTest {
         val dialog = catalogGameUnavailableDialog(offline = false, screen = screen)
         assertEquals(Copy.gameUnavailable, dialog.title)
         assertEquals(listOf(DialogButton.Ok), dialog.buttons)
-        assertTrue(dialogHints(dialog, FaceMap.standard()).single().label == Copy.close)
+        assertEquals(0, dialogBackButton(dialog))
+        assertTrue(dialogHints(dialog, FaceMap.standard()).isEmpty())
     }
 }

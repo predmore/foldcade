@@ -294,10 +294,10 @@ fun dialogBodyParts(body: String): DialogBody {
 /**
  * The button Back presses, when that button names what Back does: it wears Back's key on its
  * chip, and the card names no Back key of its own (review-B S11: "Not now … B Not now").
- * Null when Back only closes, or presses OK, which the card then names as Close or Cancel.
+ * Null when Back only closes without pressing a button, which the card names as Close or Cancel.
  */
 fun dialogBackButton(dialog: DialogState): Int? =
-    dialog.safeIndex.takeIf { dialog.buttons.getOrNull(it).let { button -> button != null && button != DialogButton.Ok } }
+    dialog.safeIndex.takeIf { dialog.buttons.getOrNull(it) != null }
 
 /**
  * The keys a dialog names under its card. A on a lit button needs no word, so only Back is
