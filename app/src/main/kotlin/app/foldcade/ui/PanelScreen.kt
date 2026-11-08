@@ -108,6 +108,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -3908,7 +3909,10 @@ private fun GridCursor(
     // A new folder, or a ring coming back from elsewhere, starts on its tile.
     // Held moves glide from tile to tile.
     val visible by remember { derivedStateOf { alpha > 0f } }
-    val lands = !shown || !visible
+    // Under a finger the tiles are already moving, so the ring hops from tile to tile at once
+    // instead of chasing them across the gaps, and is never seen between two.
+    val touching by remember { derivedStateOf { fingered() } }
+    val lands = !shown || !visible || touching
     val x by glideState(column, motion.durationTravel, scale, snap = lands, jump = jump)
     val y by glideState(row, motion.durationTravel, scale, snap = lands, jump = jump)
     // Show on Home: once the ring has reached the tile, two rings burst out of it and fade.
@@ -3944,6 +3948,8 @@ private fun GridCursor(
                 // It fades with its tile at the edge, as the columns do.
                 val outside = if (fingered()) maxOf(-along, along - (columns - 1), 0f) else 0f
                 this.alpha = alpha * (1f - outside).coerceIn(0f, 1f)
+                // Faded per stroke, not through a tile-sized layer that would cut the glow square.
+                compositingStrategy = CompositingStrategy.ModulateAlpha
             }
             .drawBehind {
                 val cornerPx = radius.toPx()
