@@ -21,7 +21,8 @@ internal class CompiledAnimationExpression(
 class AnimationSymbols {
     private val names = linkedMapOf<String, Int>()
     private val used = mutableSetOf<String>()
-    val size: Int get() = names.size
+    private var unnamed = 0
+    val size: Int get() = names.size + unnamed
 
     /** Every name an expression compiled here reads, so a host can skip inputs nothing reads. */
     val referenced: Set<String> get() = used
@@ -29,8 +30,10 @@ class AnimationSymbols {
     fun define(name: String): Int {
         require(name.matches(Regex("[A-Za-z_][A-Za-z0-9_]*"))) { "Invalid variable '$name'" }
         require(name !in names) { "Duplicate variable '$name'" }
-        return names.size.also { names[name] = it }
+        return size.also { names[name] = it }
     }
+    /** A slot no expression can name, for state an expression keeps between frames. */
+    internal fun reserve(): Int = size.also { unnamed++ }
     fun index(name: String): Int = names[name] ?: error("Unknown variable '$name'")
     fun compile(source: String): AnimationExpression {
         val reader = ExpressionReader(source, this)

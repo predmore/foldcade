@@ -271,6 +271,47 @@ class ThemeSceneTest {
     }
 
     @Test
+    fun theBeadRidesItsRibbonWhileTheGridSlides() {
+        val ribbons = afterglow().scenes.getValue(BackgroundMotion("afterglow:ribbons"))
+        val bead = ribbons.layers[1] as SceneLayer.Disc
+        val sampler = ScenePathSampler(bead.path!!, ribbons)
+        val width = 1240f
+        val height = 1080f
+        val u = ribbons.symbols.index("u")
+        val strand = ribbons.symbols.index("strand")
+        // The ribbon's height at screen x, as the shader draws it at this scroll.
+        fun ribbonAt(time: Double, scroll: Float, x: Float): Double {
+            val now = ribbons.state().apply { update(time, width, height, true, 1f, live = SceneLive(scroll = scroll)) }.values
+            now[u] = (x / width).toDouble()
+            ribbons.variables.forEach { (slot, expression) -> now[slot] = expression.evaluate(now) }
+            val name = "y${now[strand].toInt()}"
+            return height * now[ribbons.symbols.index(name)]
+        }
+        for (turn in 0 until 3) {
+            val state = ribbons.state()
+            val start = 22.0 * turn + 0.2
+            val still = ribbons.state()
+            state.update(start, width, height, true, 1f, live = SceneLive(scroll = 0f))
+            still.update(start, width, height, true, 1f, live = SceneLive(scroll = 0f))
+            for ((time, scroll) in listOf(2.0 to 80f, 4.0 to 310f, 6.0 to -150f)) {
+                still.update(22.0 * turn + time, width, height, true, 1f, live = SceneLive(scroll = 0f))
+                sampler.sample(still.values, bead.along.evaluate(still.values).toFloat())
+                val x = sampler.x; val y = sampler.y
+                state.update(22.0 * turn + time, width, height, true, 1f, live = SceneLive(scroll = scroll))
+                sampler.sample(state.values, bead.along.evaluate(state.values).toFloat())
+                // Slid with the ribbon as the camera moved, and still on it.
+                assertEquals("turn $turn at $time", x - scroll, sampler.x, 0.5f)
+                assertEquals("turn $turn at $time", y, sampler.y, 0.5f)
+                assertEquals("turn $turn at $time", ribbonAt(22.0 * turn + time, scroll, sampler.x), sampler.y.toDouble(), 2.0)
+            }
+            // The next trip starts at the left edge again, wherever the grid has got to.
+            state.update(22.0 * (turn + 1) + 0.5, width, height, true, 1f, live = SceneLive(scroll = 500f))
+            sampler.sample(state.values, bead.along.evaluate(state.values).toFloat())
+            assertTrue("next trip starts at ${sampler.x}", sampler.x in 0f..width * 0.05f)
+        }
+    }
+
+    @Test
     fun independentIconProvidersKeepBackgroundAssetsOwnedByTheirOriginalPack() {
         val base = afterglow()
         val icon = ThemeIconAsset("ink", "ink.png", byteArrayOf(1), null, false)
