@@ -245,6 +245,43 @@ class ContractTest {
     }
 
     @Test
+    fun aDragStepsTheCursorOntoTheNextWholeTileAsItsOwnSlidesAway() {
+        val count = 9 * Metrics.rows
+        val row = 1
+        val model = PickerModel(count = count, rowsPerPage = Metrics.rows, focus = GridFocus(GridStrip.index(1, row), 1))
+        // A little of its tile past the edge, the cursor stays on it.
+        assertEquals(model, draggedTo(model, 1f + DRAG_EDGE_GIVE))
+        assertEquals(model, draggedTo(model, 1f - (Metrics.columns - 1) - DRAG_EDGE_GIVE))
+        // More than that, and it steps along its row to the first whole column.
+        val left = draggedTo(model, 1.3f)
+        assertEquals(GridStrip.index(2, row), left.focus.cellIndex)
+        assertEquals(2, left.focus.lastColumn)
+        // Its new tile is on screen where the strip rests, so nothing scrolls under it.
+        assertEquals(1, shownFirstColumn(left))
+        // Further, it walks a column at a time, always onto a tile on screen.
+        val further = draggedTo(left, 3.6f)
+        assertEquals(GridStrip.index(4, row), further.focus.cellIndex)
+        assertEquals(4, shownFirstColumn(further))
+        // Dragged back, the right edge pushes it the other way.
+        val back = draggedTo(further, 0.4f)
+        assertEquals(GridStrip.index(Metrics.columns - 1, row), back.focus.cellIndex)
+        assertEquals(0, shownFirstColumn(back))
+        // Stretched past either end, the strip still rests within reach, and so does the cursor.
+        val lastFirst = GridStrip.lastFirst(count, Metrics.columns)
+        val pastEnd = draggedTo(model, lastFirst + 0.4f)
+        assertEquals(lastFirst, shownFirstColumn(pastEnd))
+        assertEquals(lastFirst + 1, GridStrip.column(pastEnd.focus.cellIndex))
+        val pastStart = draggedTo(further, -0.4f)
+        assertEquals(0, shownFirstColumn(pastStart))
+        assertEquals(GridStrip.index(Metrics.columns - 2, row), pastStart.focus.cellIndex)
+        // Where the finger lets go still decides where the strip rests.
+        assertEquals(GridStrip.index(4, row), scrolledTo(further, 4).focus.cellIndex)
+        // A tile in the hand keeps the strip where its moves put it.
+        val holding = model.copy(hold = Hold(index = 1, origin = 1, orderBefore = (0 until count).toList()))
+        assertEquals(holding, draggedTo(holding, 4f))
+    }
+
+    @Test
     fun aLaunchesOnTopAndXOnTheBottom() {
         val model = PickerModel(count = 6, rowsPerPage = 1, focus = GridFocus(cellIndex = 2, lastColumn = 2))
         assertEquals(Effect.Launch(2, elsewhere = false), reduce(model, Meaning.Activate).second)

@@ -2580,6 +2580,39 @@ fun scrolledTo(model: PickerModel, first: Int): PickerModel {
     )
 }
 
+/**
+ * How much of a dragged tile slides past an edge before the cursor steps off it,
+ * along its row, to the next tile that is still whole on screen.
+ */
+const val DRAG_EDGE_GIVE = 0.25f
+
+/**
+ * A finger holds the strip at [held] columns, between whole columns. The cursor stays
+ * on its tile until [DRAG_EDGE_GIVE] of that tile has slid past an edge. Then it steps
+ * along its row to the outermost tile still on screen, so it always rests on a whole
+ * tile and never waits at an edge while tiles slide past it. The strip comes to rest
+ * only when the finger lets go, in [scrolledTo].
+ */
+fun draggedTo(model: PickerModel, held: Float): PickerModel {
+    if (model.count <= 0 || reach(model) != GridStrip.reach(model.count)) return model
+    val shown = model.columnsShown
+    val lastColumn = GridStrip.reachColumns(model.count) - 1
+    val low = kotlin.math.ceil(held - DRAG_EDGE_GIVE).toInt().coerceIn(0, lastColumn)
+    val high = kotlin.math.floor(held + shown - 1 + DRAG_EDGE_GIVE).toInt().coerceIn(low, lastColumn)
+    val focus = model.focus
+    val column = GridStrip.column(focus.cellIndex)
+    if (column in low..high) return model
+    val next = column.coerceIn(low, high)
+    return model.copy(
+        // The nearest whole column, which keeps the new tile on screen.
+        firstColumn = kotlin.math.round(held).toInt().coerceIn(0, GridStrip.lastFirst(model.count, shown)),
+        focus = focus.copy(
+            cellIndex = GridStrip.index(next, GridStrip.row(focus.cellIndex)),
+            lastColumn = focus.lastColumn.coerceIn(low, high),
+        ),
+    )
+}
+
 /** A, or X when [elsewhere]. X launches a game on the screen Play on does not name, and does what A does anywhere else. */
 private fun activate(model: PickerModel, screen: HostScreen, elsewhere: Boolean = false): Pair<PickerModel, Effect?> {
     return when (model.focus.chrome) {

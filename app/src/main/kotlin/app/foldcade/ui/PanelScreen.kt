@@ -3713,6 +3713,9 @@ private fun StripGrid(
     WarmColumns(app, first, columns)
     // Where a finger holds the strip, in columns. Null while no finger does.
     var held by remember { mutableStateOf<Float?>(null) }
+    // The strip is still gliding to rest from where a finger let it go.
+    var settling by remember { mutableStateOf(false) }
+    val fingered = remember { { held != null || settling } }
     val reduced = motion.reduced(scale)
     // Read where it is used, in offsets and layers, so scrolling redraws without
     // recomposing the columns. Composition only hears which columns are on screen.
@@ -3744,8 +3747,13 @@ private fun StripGrid(
             strip.snapTo(if (reduced) target else from)
             held = null
             if (reduced) return@launch
-            withContext(SteadyMenu) {
-                strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
+            settling = true
+            try {
+                withContext(SteadyMenu) {
+                    strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
+                }
+            } finally {
+                settling = false
             }
         }
     }
@@ -3800,7 +3808,10 @@ private fun StripGrid(
                             walked += amount
                             at = change.position
                             tracker.addPosition(change.uptimeMillis, at)
-                            held = stretched(from - walked / pitchPx, lastFirst.toFloat())
+                            val dragged = stretched(from - walked / pitchPx, lastFirst.toFloat())
+                            held = dragged
+                            // The cursor steps off a tile sliding out of view, onto the next whole one.
+                            app.shell.touchDrag(dragged)
                         },
                     )
                 } finally {
@@ -3845,6 +3856,7 @@ private fun StripGrid(
             pitchPx = pitchPx,
             rowPx = rowPx,
             shownFirst = shownFirst,
+            fingered = fingered,
             jump = folderToken,
             scale = scale,
         )
@@ -3873,6 +3885,8 @@ private fun GridCursor(
     pitchPx: Float,
     rowPx: Int,
     shownFirst: () -> Float,
+    /** A finger holds the strip, or it is settling from one. */
+    fingered: () -> Boolean,
     jump: String,
     scale: Float,
 ) {
@@ -3918,13 +3932,18 @@ private fun GridCursor(
             .then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0))
             .graphicsLayer {
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                // Kept on screen: a finger can drag its tile away, and then the ring waits at the edge.
-                translationX = (x - shownFirst()).coerceIn(0f, columns - 1f) * pitchPx
+                val along = x - shownFirst()
+                // Under a finger the ring rides its tile, and the shell steps it onto the next
+                // whole tile before this one leaves, so it is never left between two.
+                // Steered, it is kept on screen as the strip follows it.
+                translationX = (if (fingered()) along else along.coerceIn(0f, columns - 1f)) * pitchPx
                 translationY = y * pitchY
                 clip = false
                 scaleX = motion.scaleFocus
                 scaleY = motion.scaleFocus
-                this.alpha = alpha
+                // It fades with its tile at the edge, as the columns do.
+                val outside = if (fingered()) maxOf(-along, along - (columns - 1), 0f) else 0f
+                this.alpha = alpha * (1f - outside).coerceIn(0f, 1f)
             }
             .drawBehind {
                 val cornerPx = radius.toPx()
