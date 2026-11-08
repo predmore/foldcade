@@ -31,6 +31,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.Motion
 import app.foldcade.language.MusicTrack
 import app.foldcade.language.defaultMusicTrack
+import app.foldcade.language.duckedSoundSlot
 import app.foldcade.language.fadeInOnFocusReturn
 import app.foldcade.language.homeMusicMayStart
 import app.foldcade.language.homeOnEveryScreen
@@ -176,20 +177,15 @@ class HomeMusic(
     }
 
     /**
-     * Duck only when this theme actually has the UI sound for [meaning].
-     * The built-in theme has none, so the loop does not dip on every key.
+     * Duck only for a [duckedSoundSlot] key, and only when this theme has that sound.
+     * Moves are not among them, so the loop does not dip on every d-pad press.
      */
     fun duckForThemeSound(meaning: Meaning) {
         if (!onMainThread()) {
             handler.post { duckForThemeSound(meaning) }
             return
         }
-        val slot = when (meaning) {
-            Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> "move"
-            Meaning.Activate -> "activate"
-            Meaning.Back -> "back"
-            else -> return
-        }
+        val slot = duckedSoundSlot(meaning) ?: return
         if (!themeHasSound(slot)) return
         val existing = player ?: return
         if (!existing.isPlaying) return

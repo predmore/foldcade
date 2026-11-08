@@ -119,6 +119,17 @@ fun playbackLevel(
 }
 
 /**
+ * The theme sound slot whose cue dips the loop for [meaning], or null when it does not dip.
+ * Moves never dip: d-pad taps and held repeats come many times a second, and a dip
+ * on each one pumps the loop down and up. A and B are single presses, so they still do.
+ */
+fun duckedSoundSlot(meaning: Meaning): String? = when (meaning) {
+    Meaning.Activate -> "activate"
+    Meaning.Back -> "back"
+    else -> null
+}
+
+/**
  * A UI-sound duck. A late callback from an older duck cannot turn it back on,
  * and [clear] drops it when the player is released.
  */

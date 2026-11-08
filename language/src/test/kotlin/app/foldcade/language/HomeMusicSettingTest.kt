@@ -117,6 +117,15 @@ class HomeMusicSettingTest {
     }
 
     @Test
+    fun movesDoNotDipTheLoop() {
+        listOf(Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight).forEach {
+            assertEquals(null, duckedSoundSlot(it))
+        }
+        assertEquals("activate", duckedSoundSlot(Meaning.Activate))
+        assertEquals("back", duckedSoundSlot(Meaning.Back))
+    }
+
+    @Test
     fun themeBackgroundMusicIsOptional() {
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson(null))
         assertEquals(DEFAULT_BACKGROUND_MUSIC, backgroundMusicFromThemeJson("""{"name":"Example"}"""))
