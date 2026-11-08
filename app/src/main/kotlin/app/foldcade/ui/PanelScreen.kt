@@ -108,6 +108,7 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -3713,6 +3714,10 @@ private fun StripGrid(
     WarmColumns(app, first, columns)
     // Where a finger holds the strip, in columns. Null while no finger does.
     var held by remember { mutableStateOf<Float?>(null) }
+    // The strip is still gliding to rest from where a finger let it go: the tile it left the cursor on.
+    var settling by remember { mutableStateOf<Int?>(null) }
+    // A d-pad step or a tap while it settles moves the cursor as it always does, not as the finger did.
+    val fingered = remember { { held != null || settling == app.shell.model.focus.cellIndex } }
     val reduced = motion.reduced(scale)
     // Read where it is used, in offsets and layers, so scrolling redraws without
     // recomposing the columns. Composition only hears which columns are on screen.
@@ -3744,8 +3749,13 @@ private fun StripGrid(
             strip.snapTo(if (reduced) target else from)
             held = null
             if (reduced) return@launch
-            withContext(SteadyMenu) {
-                strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
+            settling = app.shell.model.focus.cellIndex
+            try {
+                withContext(SteadyMenu) {
+                    strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
+                }
+            } finally {
+                settling = null
             }
         }
     }
@@ -3800,7 +3810,10 @@ private fun StripGrid(
                             walked += amount
                             at = change.position
                             tracker.addPosition(change.uptimeMillis, at)
-                            held = stretched(from - walked / pitchPx, lastFirst.toFloat())
+                            val dragged = stretched(from - walked / pitchPx, lastFirst.toFloat())
+                            held = dragged
+                            // The cursor steps off a tile sliding out of view, onto the next whole one.
+                            app.shell.touchDrag(dragged)
                         },
                     )
                 } finally {
@@ -3825,6 +3838,8 @@ private fun StripGrid(
                         val along = drawn - shownFirst()
                         val outside = maxOf(-along, along - (columns - 1), 0f)
                         alpha = (1f - outside).coerceIn(0f, 1f)
+                        // Faded per stroke, so a tile's halo past the column is not cut square at the edge.
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
                     }
                 Triple(drawn, frame, StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it })
             }
@@ -3845,6 +3860,7 @@ private fun StripGrid(
             pitchPx = pitchPx,
             rowPx = rowPx,
             shownFirst = shownFirst,
+            fingered = fingered,
             jump = folderToken,
             scale = scale,
         )
@@ -3873,6 +3889,8 @@ private fun GridCursor(
     pitchPx: Float,
     rowPx: Int,
     shownFirst: () -> Float,
+    /** A finger holds the strip, or it is settling from one. */
+    fingered: () -> Boolean,
     jump: String,
     scale: Float,
 ) {
@@ -3894,7 +3912,10 @@ private fun GridCursor(
     // A new folder, or a ring coming back from elsewhere, starts on its tile.
     // Held moves glide from tile to tile.
     val visible by remember { derivedStateOf { alpha > 0f } }
-    val lands = !shown || !visible
+    // Under a finger the tiles are already moving, so the ring hops from tile to tile at once
+    // instead of chasing them across the gaps, and is never seen between two.
+    val touching by remember { derivedStateOf { fingered() } }
+    val lands = !shown || !visible || touching
     val x by glideState(column, motion.durationTravel, scale, snap = lands, jump = jump)
     val y by glideState(row, motion.durationTravel, scale, snap = lands, jump = jump)
     // Show on Home: once the ring has reached the tile, two rings burst out of it and fade.
@@ -3918,13 +3939,20 @@ private fun GridCursor(
             .then(selectionFeedback(shell.homeSelection()?.refusals?.takeIf { shell.homeSelection()?.refusedAt == index } ?: 0))
             .graphicsLayer {
                 val pitchY = (if (rowPx > 0) rowPx.toFloat() else cell.toPx()) + gap.toPx()
-                // Kept on screen: a finger can drag its tile away, and then the ring waits at the edge.
-                translationX = (x - shownFirst()).coerceIn(0f, columns - 1f) * pitchPx
+                val along = x - shownFirst()
+                // Under a finger the ring rides its tile, and the shell steps it onto the next
+                // whole tile before this one leaves, so it is never left between two.
+                // Steered, it is kept on screen as the strip follows it.
+                translationX = (if (fingered()) along else along.coerceIn(0f, columns - 1f)) * pitchPx
                 translationY = y * pitchY
                 clip = false
                 scaleX = motion.scaleFocus
                 scaleY = motion.scaleFocus
-                this.alpha = alpha
+                // It fades with its tile at the edge, as the columns do.
+                val outside = if (fingered()) maxOf(-along, along - (columns - 1), 0f) else 0f
+                this.alpha = alpha * (1f - outside).coerceIn(0f, 1f)
+                // Faded per stroke, not through a tile-sized layer that would cut the glow square.
+                compositingStrategy = CompositingStrategy.ModulateAlpha
             }
             .drawBehind {
                 val cornerPx = radius.toPx()

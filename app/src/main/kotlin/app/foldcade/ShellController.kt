@@ -127,6 +127,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.GridStrip
 import app.foldcade.language.scrolledTo
+import app.foldcade.language.draggedTo
 import app.foldcade.language.shownFirstColumn
 import app.foldcade.language.PromptKey
 import app.foldcade.language.RemoveVerb
@@ -2831,6 +2832,19 @@ class ShellController(
         if (next == model) return
         publish(next)
         if (next.focus != before) cue(model.themeIndex, "move")
+    }
+
+    /**
+     * A finger holds the strip at [held] columns. The cursor steps along its row as its tile
+     * slides past an edge, as a d-pad step would, so it is always on a whole tile.
+     */
+    fun touchDrag(held: Float) {
+        if (!scrollsByTouch()) return
+        val next = draggedTo(model, held)
+        if (next == model) return
+        cancelHomeReturnOnInput()
+        publish(next)
+        cue(model.themeIndex, "move")
     }
 
     fun touchChrome(chrome: Chrome, screen: HostScreen) {
