@@ -3714,9 +3714,10 @@ private fun StripGrid(
     WarmColumns(app, first, columns)
     // Where a finger holds the strip, in columns. Null while no finger does.
     var held by remember { mutableStateOf<Float?>(null) }
-    // The strip is still gliding to rest from where a finger let it go.
-    var settling by remember { mutableStateOf(false) }
-    val fingered = remember { { held != null || settling } }
+    // The strip is still gliding to rest from where a finger let it go: the tile it left the cursor on.
+    var settling by remember { mutableStateOf<Int?>(null) }
+    // A d-pad step or a tap while it settles moves the cursor as it always does, not as the finger did.
+    val fingered = remember { { held != null || settling == app.shell.model.focus.cellIndex } }
     val reduced = motion.reduced(scale)
     // Read where it is used, in offsets and layers, so scrolling redraws without
     // recomposing the columns. Composition only hears which columns are on screen.
@@ -3748,13 +3749,13 @@ private fun StripGrid(
             strip.snapTo(if (reduced) target else from)
             held = null
             if (reduced) return@launch
-            settling = true
+            settling = app.shell.model.focus.cellIndex
             try {
                 withContext(SteadyMenu) {
                     strip.animateTo(target, motion.glide(motion.durationTravel, scale, target - from, speed), initialVelocity = speed)
                 }
             } finally {
-                settling = false
+                settling = null
             }
         }
     }
