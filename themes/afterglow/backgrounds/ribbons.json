@@ -29,7 +29,8 @@
     "strand": "turn % 3",
     "beadFade": "if(live, window(loop, 0.4, 8, 2.5), 0)",
     "shimmerFade": "if(live, window(loop, 6.8, 7, 2.5), 0)",
-    "across": "u + slide",
+    "tripScroll": {"hold": "scroll", "each": "turn"},
+    "across": "u + tripScroll / width",
     "y0": "center0 + sweep0*sin(2*pi*across*1.0 + flow0) + 0.034*sin(2*pi*across*2.0 + ripple0)",
     "y1": "center1 + sweep1*sin(2*pi*across*0.8 + flow1) + 0.03*sin(2*pi*across*2.4 + ripple1)",
     "y2": "center2 + sweep2*sin(2*pi*across*1.3 + flow2) + 0.026*sin(2*pi*across*3.0 + ripple2)"
@@ -175,7 +176,7 @@
       "rim": 0.48,
       "path": {
         "samples": 48,
-        "x": "width*u",
+        "x": "width*u + tripScroll - scroll",
         "y": "height*if(strand == 0, y0, if(strand == 1, y1, y2))"
       },
       "along": "clamp((loop-0.4)/8,0,1)",

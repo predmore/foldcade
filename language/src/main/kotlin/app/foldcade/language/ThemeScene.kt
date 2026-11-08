@@ -193,6 +193,7 @@ fun parseThemeScene(
     LATER_SCENE_INPUTS.filter { root["variables"]?.jsonObject?.containsKey(it) != true }.forEach(symbols::define)
     fun expr(value: JsonElement?, fallback: String = "0"): AnimationExpression {
         if (value !is JsonObject) return symbols.compile(value?.jsonPrimitive?.content ?: fallback)
+        if ("hold" in value) return holdTrack(value, symbols)
         val frames = value["keyframes"]!!.jsonArray.map { it.jsonArray }
         require(frames.size >= 2 && frames.all { it.size == 2 }) { "A track needs at least two [time, value] keyframes" }
         val times = frames.map { it[0].jsonPrimitive.double }.toDoubleArray()
@@ -296,6 +297,26 @@ fun parseThemeScene(
 } catch (error: Exception) {
     report(ThemeDiagnostic(source, error.message ?: error.javaClass.simpleName))
     null
+}
+
+/**
+ * `{"hold": "scroll", "each": "turn"}`: what `hold` was when `each` last changed, or on the first
+ * frame. It lives in the surface's own values, so each panel holds its own.
+ */
+private fun holdTrack(value: JsonObject, symbols: AnimationSymbols): AnimationExpression {
+    require(value.keys == setOf("hold", "each")) { "A hold needs only 'hold' and 'each'" }
+    val held = symbols.compile(value["hold"]!!.jsonPrimitive.content)
+    val each = symbols.compile(value["each"]!!.jsonPrimitive.content)
+    val started = symbols.reserve()
+    val lastEach = symbols.reserve()
+    val kept = symbols.reserve()
+    return CompiledAnimationExpression(AnimationExpression { values ->
+        val now = each.evaluate(values)
+        if (values[started] == 0.0 || now != values[lastEach]) {
+            values[started] = 1.0; values[lastEach] = now; values[kept] = held.evaluate(values)
+        }
+        values[kept]
+    }, held.dependencies + each.dependencies)
 }
 
 /**
