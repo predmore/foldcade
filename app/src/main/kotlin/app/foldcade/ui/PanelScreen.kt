@@ -3837,6 +3837,8 @@ private fun StripGrid(
                         val along = drawn - shownFirst()
                         val outside = maxOf(-along, along - (columns - 1), 0f)
                         alpha = (1f - outside).coerceIn(0f, 1f)
+                        // Faded per stroke, so a tile's halo past the column is not cut square at the edge.
+                        compositingStrategy = CompositingStrategy.ModulateAlpha
                     }
                 Triple(drawn, frame, StripColumn(app, screen, cell, rowGap, cell + columnGap / 2, drawn, showTitle, carry, memory, pitchPx, { rowPx }) { rowPx = it })
             }
