@@ -1932,8 +1932,8 @@ sealed interface Effect {
     data class CloseGame(val gameId: String?) : Effect
     data class MoveGame(val gameId: String?) : Effect
 
-    /** A on a day of Play activity: list that day's sessions. The shell fills them in. */
-    data class OpenPlayDay(val weeksBack: Int, val day: Int) : Effect
+    /** A on a day of Play activity: list that day's sessions, of [game] alone on its page. The shell fills them in. */
+    data class OpenPlayDay(val date: java.time.LocalDate, val game: String? = null) : Effect
 
     /** Take a play session out of the history, after its X was held. */
     data class RemovePlaySession(val sessionId: String) : Effect
@@ -2291,7 +2291,7 @@ fun reduce(
     if (settings != null) return applySettings(coerced, settings, meaning, repeatCount).let { (next, effect) -> retainSettingsShelf(coerced, next).versionCopySettled() to effect }
     coerced.gameAbout?.let { return applyGameAbout(coerced, it, meaning, repeatCount) }
     val activity = coerced.playActivity
-    if (activity != null) return applyPlayActivity(coerced, activity, meaning)
+    if (activity != null) return applyPlayActivity(coerced, activity, meaning, repeatCount)
     val panel = coerced.panel
     if (panel != null) {
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) {
@@ -3137,7 +3137,7 @@ private fun activateRow(
         Row.RemoveDownload -> model.copy(panel = null, focus = panel.grid) to Effect.RemoveDownload(model.tileActions?.game)
         Row.Saves -> model.copy(panel = null, focus = panel.grid) to model.tileActions?.game?.let(Effect::OpenSaves)
         Row.PlayTime -> model.tileActions?.game?.let { game ->
-            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid, game = game)) to
+            model.copy(panel = null, focus = panel.grid, playActivity = PlayActivityPage(screen = model.layout.pageScreen, grid = panel.grid, zoom = PlayZoom.Month, game = game)) to
                 Effect.OpenPlayGame(game)
         } ?: (model.copy(panel = panel) to null)
         Row.About -> model.tileActions?.game?.let { game ->

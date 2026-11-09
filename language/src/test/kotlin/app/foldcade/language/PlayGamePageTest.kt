@@ -41,43 +41,50 @@ class PlayGamePageTest {
         // A full page, on the larger top screen, wherever Y's menu was.
         assertEquals(ScreenLayout.Default.pageScreen, opened.playActivity?.screen)
         assertEquals(Effect.OpenPlayGame(game), effect)
+        // A game opens on its month.
+        assertEquals(PlayZoom.Month, opened.playActivity?.zoom)
     }
 
     @Test
-    fun onAGamesPageUpAndDownMoveOverSourcesAndAMovesThenPutsBack() {
-        val page = gamePage(listOf("old", "other"))
+    fun onAGamesPageYListsTheSourcesWhereUpAndDownMoveAndAMovesThenPutsBack() {
+        val chart = gamePage(listOf("old", "other"))
+        // The D-pad is on the chart until Y opens Move time from.
+        assertEquals(0, reduce(chart, Meaning.MoveDown).first.playActivity?.source)
+        val page = reduce(chart, Meaning.Options).first
         assertEquals(1, reduce(page, Meaning.MoveDown).first.playActivity?.source)
         assertEquals(1, reduce(reduce(page, Meaning.MoveDown).first, Meaning.MoveDown).first.playActivity?.source)
         assertEquals(0, reduce(page, Meaning.MoveUp).first.playActivity?.source)
-        // Left and right still step the game's weeks.
-        assertEquals(1, reduce(page, Meaning.MoveLeft).first.playActivity?.weeksBack)
 
         val (moved, move) = reduce(page, Meaning.Activate)
         assertEquals(Effect.MovePlayTime("old", game), move)
         assertEquals(setOf("old"), moved.playActivity?.moved)
-        assertEquals(listOf(PlayCopy.undo, PlayCopy.week, Copy.back), playActivityHints(moved).map { it.label })
+        assertEquals(listOf(PlayCopy.undo, Copy.back), playActivityHints(moved).map { it.label })
 
         val (back, undo) = reduce(moved, Meaning.Activate)
         assertEquals(Effect.UndoPlayMove("old", game), undo)
         assertEquals(emptySet<String>(), back.playActivity?.moved)
-        assertEquals(listOf(PlayCopy.holdToMove, PlayCopy.week, Copy.back), playActivityHints(back).map { it.label })
-        assertEquals(listOf(PromptKey.FaceA, PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(back).map { it.key })
+        assertEquals(listOf(PlayCopy.holdToMove, Copy.back), playActivityHints(back).map { it.label })
+        assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceB), playActivityHints(back).map { it.key })
 
-        // X and Select do not reach a day's sessions here: the schedule is only read.
+        // X does not reach a day's sessions from the list.
         assertNull(reduce(page, Meaning.ActivateBottom).second)
+        // B goes back to the chart, keeping what moved; then it closes the page.
+        val chartAgain = reduce(moved, Meaning.Back).first
+        assertEquals(setOf("old"), chartAgain.playActivity?.moved)
+        assertFalse(chartAgain.playActivity!!.moving)
         listOf(Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.View).forEach { meaning ->
-            val closed = reduce(moved, meaning).first
+            val closed = reduce(chartAgain, meaning).first
             assertNull(closed.playActivity)
-            assertEquals(page.playActivity!!.grid, closed.focus)
+            assertEquals(chart.playActivity!!.grid, closed.focus)
         }
     }
 
     @Test
-    fun aGamesPageWithNothingToTakeHasOnlyWeekAndBack() {
+    fun aGamesPageWithNothingToTakeHasNoMoveTime() {
         val page = gamePage(emptyList())
-        assertEquals(page.playActivity, reduce(page, Meaning.Activate).first.playActivity)
-        assertNull(reduce(page, Meaning.Activate).second)
-        assertEquals(listOf(PlayCopy.week, Copy.back), playActivityHints(page).map { it.label })
+        assertEquals(page.playActivity, reduce(page, Meaning.Options).first.playActivity)
+        assertEquals(listOf(PlayCopy.sessions, Copy.back), playActivityHints(page).map { it.label })
+        assertEquals(listOf(Copy.back), playActivityHints(page, hasSessions = false).map { it.label })
     }
 
     @Test
@@ -143,7 +150,8 @@ class PlayGamePageTest {
     private fun gamePage(sources: List<String>): PickerModel {
         val grid = GridFocus(cellIndex = 3)
         return PickerModel(count = 8, rowsPerPage = 2, focus = grid).copy(
-            playActivity = PlayActivityPage(HostScreen.Top, grid = grid, game = game, sources = sources),
+            playActivity = PlayActivityPage(HostScreen.Top, grid = grid, game = game, sources = sources)
+                .opened(PlayCalendar(java.time.LocalDate.of(2026, 11, 9), listOf(java.time.LocalDate.of(2026, 10, 2)))),
         )
     }
 }

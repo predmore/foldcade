@@ -2,6 +2,7 @@ package app.foldcade.language
 
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.TextStyle
 
@@ -30,28 +31,34 @@ data class PlayDay(
 
 /** Seven days, oldest first, with the games played most in them. */
 data class PlayWeek(
-    val label: String,
     val days: List<PlayDay>,
     val totalMillis: Long,
     /** Game ids and their time in this week, most first. */
     val top: List<Pair<String, Long>>,
 )
 
-/** The Play activity page. [weeksBack] is 0 for the seven days ending today. */
+/**
+ * The Play activity page: everything played, or one game's ([game]) history. Its cursor is
+ * one date, [day], shared by the three zooms: a day row in Week, a day cell in Month, and
+ * that day's month bar in Year. The shell fills [calendar] and [day] as the page opens and
+ * keeps the calendar fresh as play changes; until then the D-pad waits.
+ */
 data class PlayActivityPage(
     val screen: HostScreen,
-    val weeksBack: Int = 0,
     /** Grid focus to restore when the page closes. */
     val grid: GridFocus = GridFocus(),
-    /** The day row in focus, 0 the oldest of the seven. Today to start. */
-    val day: Int = PLAY_WEEK_DAYS - 1,
-    /** The open day's session ids, in the order listed. Null while the week shows. */
+    val zoom: PlayZoom = PlayZoom.Week,
+    /** The date in focus. Null until the shell opens the page on one. */
+    val day: LocalDate? = null,
+    /** How far the cursor may go. Null until the shell reads the history. */
+    val calendar: PlayCalendar? = null,
+    /** The open day's session ids, in the order listed. Null while the chart has the D-pad. */
     val sessions: List<String>? = null,
     /** The session in focus on the open day's list. */
     val session: Int = 0,
     /**
-     * The game the page is about, opened from its Y menu's Play time: the schedule shows only
-     * its play, and the side lists [sources]. Null for everything played.
+     * The game the page is about, opened from its Y menu's Play time: the chart shows only
+     * its play, and Y lists [sources]. Null for everything played.
      */
     val game: String? = null,
     /** On a game's page, the other games with play that can move onto it, likeliest first. */
@@ -60,22 +67,77 @@ data class PlayActivityPage(
     val source: Int = 0,
     /** Sources moved onto [game] while the page is open. A on one again puts it back. */
     val moved: Set<String> = emptySet(),
+    /** Y opened Move time from on a game's page: the D-pad is on [sources]. */
+    val moving: Boolean = false,
+) {
+    /** The date in focus, today before the shell has opened the page on one. */
+    val cursor: LocalDate get() = day ?: calendar?.today ?: LocalDate.EPOCH
+}
+
+/**
+ * Opens [page] on its history: everything played opens on this week's today; a game opens on
+ * the month it was last played, on that day, or on today when it never was.
+ */
+fun PlayActivityPage.opened(calendar: PlayCalendar): PlayActivityPage = copy(
+    calendar = calendar,
+    zoom = if (game != null) PlayZoom.Month else PlayZoom.Week,
+    day = if (game != null) calendar.lastPlayed ?: calendar.today else calendar.today,
 )
+
+/** The history changed under the open page: its bounds move and the cursor stays inside them. */
+fun PlayActivityPage.refreshed(calendar: PlayCalendar): PlayActivityPage =
+    if (calendar == this.calendar) this else copy(calendar = calendar, day = calendar.clamp(cursor))
 
 object PlayCopy {
     const val activity = "Play activity"
-    const val pastWeek = "Past 7 days"
     const val mostPlayed = "Most played"
     const val nothing = "No play this week"
+    const val nothingThen = "No play that week"
     const val nothingYet = "No play yet"
+    /** Under [nothingYet]: where play comes from. */
+    const val playSomething = "Play a game and its time shows here."
     fun empty(hasPlay: Boolean): String = if (hasPlay) nothing else nothingYet
+
+    /** A month or a year with no play: "No play in November", "No play in 2024". */
+    fun nothingIn(period: String): String = "No play in $period"
+
+    /** The zooms, as their tabs name them. */
     const val week = "Week"
+    const val month = "Month"
+    const val year = "Year"
+    fun zoom(zoom: PlayZoom): String = when (zoom) {
+        PlayZoom.Week -> week
+        PlayZoom.Month -> month
+        PlayZoom.Year -> year
+    }
+    const val thisWeek = "This week"
+
     const val sessions = "Sessions"
     const val remove = "Remove"
+    /** A on a month bar: that month's calendar. */
+    const val open = "Open"
+    /** Y on a game's page: the games its time can come from. */
+    const val moveTime = "Move time"
 
     /** A game's Y menu row, and the top of its own Play activity. */
     const val playTime = "Play time"
-    const val total = "Total"
+
+    /** A game's page: its lifetime facts. */
+    const val timePlayed = "Time played"
+    const val firstPlayed = "First played"
+    const val lastPlayed = "Last played"
+    const val daysPlayed = "Days played"
+    const val sessionsPlayed = "Sessions"
+    const val longest = "Longest"
+    const val bestStreak = "Best streak"
+    /** A fact with nothing to say yet. */
+    const val none = "–"
+    const val today = "Today"
+    const val yesterday = "Yesterday"
+    const val noPlay = "No play"
+
+    fun sessionCount(count: Int): String = if (count == 1) "1 session" else "$count sessions"
+    fun dayCount(count: Int): String = if (count == 1) "1 day" else "$count days"
 
     /** Over the other games on a game's page. */
     const val moveFrom = "Move time from"
@@ -116,87 +178,62 @@ object PlayCopy {
     const val removedGame = "Removed game"
 }
 
-/** How many games the page lists under the schedule. */
+/** How many games the page lists beside the chart. */
 const val PLAY_TOP_GAMES = 4
 
-/** Days on the page. */
+/** Days on a week. */
 const val PLAY_WEEK_DAYS = 7
 
-/** The seven dates that end [weeksBack] weeks before today, in [zone], oldest first. */
-fun playWeekDates(nowMillis: Long, zone: ZoneId, weeksBack: Int = 0): List<LocalDate> {
-    val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
-    val last = today.minusWeeks(weeksBack.coerceAtLeast(0).toLong())
-    return (PLAY_WEEK_DAYS - 1 downTo 0).map { last.minusDays(it.toLong()) }
+/** The week holding [date], named: "This week" for today's, else its first and last days. */
+fun playWeekLabel(start: LocalDate, today: LocalDate, style: DateStyle): String {
+    val end = start.plusDays(PLAY_WEEK_DAYS - 1L)
+    if (today in start..end) return PlayCopy.thisWeek
+    val last = if (end.year == today.year) style.monthDay(end) else style.monthDayYear(end)
+    return "${style.monthDay(start)} – $last"
 }
 
-/**
- * The seven days that end [weeksBack] weeks before today, in [zone], named and
- * dated in the device's [style]. A stretch that crosses midnight counts on both
- * days, each for its own part.
- */
-fun playWeek(
-    spans: List<PlaySpan>,
-    nowMillis: Long,
-    zone: ZoneId,
-    style: DateStyle,
-    weeksBack: Int = 0,
-): PlayWeek {
-    val dates = playWeekDates(nowMillis, zone, weeksBack)
-    val perGame = HashMap<String, Long>()
-    val days = dates.map { date ->
-        val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
-        val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val length = (end - start).coerceAtLeast(1L).toFloat()
-        var total = 0L
-        val blocks = spans.mapNotNull { span ->
-            val from = maxOf(span.startMillis, start)
-            val to = minOf(span.endMillis, end)
-            if (to <= from) return@mapNotNull null
-            total += to - from
-            perGame[span.gameId] = (perGame[span.gameId] ?: 0L) + (to - from)
-            ((from - start) / length)..((to - start) / length)
-        }
-        PlayDay(date, date.dayOfWeek.getDisplayName(TextStyle.SHORT, style.locale), blocks, total)
-    }
-    val label = if (weeksBack <= 0) {
-        PlayCopy.pastWeek
-    } else {
-        "${style.monthDay(dates.first())} – ${style.monthDay(dates.last())}"
-    }
-    return PlayWeek(
-        label = label,
-        days = days,
-        totalMillis = days.sumOf { it.totalMillis },
-        top = perGame.entries
-            .sortedWith(compareByDescending<Map.Entry<String, Long>> { it.value }.thenBy { it.key })
-            .take(PLAY_TOP_GAMES)
-            .map { it.key to it.value },
-    )
+/** The chart card's top line: the week, "November 2026", or "2026". */
+fun playPeriodLabel(zoom: PlayZoom, day: LocalDate, today: LocalDate, style: DateStyle): String = when (zoom) {
+    PlayZoom.Week -> playWeekLabel(playWeekStart(day, style.firstDayOfWeek), today, style)
+    PlayZoom.Month -> style.monthYear(day)
+    PlayZoom.Year -> day.year.toString()
 }
 
-/**
- * The sessions with time in front on day [day] (0 the oldest) of the week [weeksBack]
- * weeks back, first started first. Each is whole, so one that crossed midnight shows
- * on both days with all of its time: removing it removes all of it.
- */
-fun playDaySessions(spans: List<PlaySpan>, nowMillis: Long, zone: ZoneId, weeksBack: Int, day: Int): List<DaySession> {
-    val date = playWeekDates(nowMillis, zone, weeksBack).getOrNull(day) ?: return emptyList()
-    val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
-    val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val bySession = spans.filter { it.sessionId.isNotEmpty() }.groupBy { it.sessionId }
-    return bySession.values
-        .filter { stretches -> stretches.any { it.endMillis > start && it.startMillis < end } }
-        .map { stretches ->
-            DaySession(
-                sessionId = stretches.first().sessionId,
-                gameId = stretches.first().gameId,
-                startMillis = stretches.minOf { it.startMillis },
-                endMillis = stretches.maxOf { it.endMillis },
-                activeMillis = stretches.sumOf { it.endMillis - it.startMillis },
-            )
-        }
-        .sortedWith(compareBy<DaySession> { it.startMillis }.thenBy { it.sessionId })
+/** A month's own name, as the empty month and the year's readout say it: "November". */
+fun playMonthName(month: java.time.Month, style: DateStyle): String =
+    month.getDisplayName(TextStyle.FULL_STANDALONE, style.locale).replaceFirstChar { it.titlecase(style.locale) }
+
+/** What the chart says with nothing in its period: a week, a month, or a year with no play. */
+fun playPeriodEmpty(zoom: PlayZoom, day: LocalDate, today: LocalDate, style: DateStyle): String = when (zoom) {
+    PlayZoom.Week -> if (today in playWeekStart(day, style.firstDayOfWeek).let { it..it.plusDays(PLAY_WEEK_DAYS - 1L) }) PlayCopy.nothing else PlayCopy.nothingThen
+    PlayZoom.Month -> PlayCopy.nothingIn(if (day.year == today.year) playMonthName(day.month, style) else style.monthYear(day))
+    PlayZoom.Year -> PlayCopy.nothingIn(day.year.toString())
 }
+
+/** The cursor's one line on a day: "Tue, Nov 4 · 2h 10m · 3 sessions", or "Tue, Nov 4 · No play". */
+fun playDayReadout(date: LocalDate, millis: Long, sessions: Int, style: DateStyle): String {
+    val name = style.weekdayMonthDay(date)
+    if (millis <= 0L) return "$name · ${PlayCopy.noPlay}"
+    return if (sessions > 0) "$name · ${playDuration(millis)} · ${PlayCopy.sessionCount(sessions)}" else "$name · ${playDuration(millis)}"
+}
+
+/** The cursor's one line on a month bar: "March · 12h 40m · 9 days", or "March · No play". */
+fun playMonthReadout(month: java.time.Month, millis: Long, days: Int, style: DateStyle): String {
+    val name = playMonthName(month, style)
+    if (millis <= 0L) return "$name · ${PlayCopy.noPlay}"
+    return "$name · ${playDuration(millis)} · ${PlayCopy.dayCount(days)}"
+}
+
+/** When a game was last played, as its page says it: Today, Yesterday, or the date. */
+fun playWhen(date: LocalDate?, today: LocalDate, style: DateStyle): String = when (date) {
+    null -> PlayCopy.none
+    today -> PlayCopy.today
+    today.minusDays(1) -> PlayCopy.yesterday
+    else -> if (date.year == today.year) style.monthDay(date) else style.monthDayYear(date)
+}
+
+/** A run of days in a row, as Best streak says it: "–" under two. */
+fun playStreak(days: Int): String = if (days < 2) PlayCopy.none else PlayCopy.dayCount(days)
 
 /**
  * Time in front today, in [zone], for the L1 island. A stretch that began
@@ -235,14 +272,71 @@ fun playMarkRange(block: ClosedFloatingPointRange<Float>, trackWidth: Float, min
 }
 
 /**
- * Up and down move between the days; left goes a week back and right a week
- * forward, up to this week. A lists the day's sessions, which the shell reads
- * from the log ([Effect.OpenPlayDay]). B, L1, and R1 close the page and put the
- * grid focus back. On the list, up and down move, the bottom button removes
- * the session in focus (the shell has it held first), and back goes to the week.
+ * Where a D-pad press takes the cursor in [zoom], before the calendar's bounds. Week: up and
+ * down are a day, left and right a week. Month: four ways over the calendar, a day across
+ * and a week down. Year: left and right are a month, landing on its first day. Null when
+ * the press does not move the cursor there.
  */
-internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meaning: Meaning): Pair<PickerModel, Effect?> {
-    if (page.game != null) return applyPlayGame(model, page, page.game, meaning)
+fun playStep(zoom: PlayZoom, day: LocalDate, meaning: Meaning): LocalDate? = when (zoom) {
+    PlayZoom.Week -> when (meaning) {
+        Meaning.MoveUp -> day.minusDays(1)
+        Meaning.MoveDown -> day.plusDays(1)
+        Meaning.MoveLeft -> day.minusWeeks(1)
+        Meaning.MoveRight -> day.plusWeeks(1)
+        else -> null
+    }
+    PlayZoom.Month -> when (meaning) {
+        Meaning.MoveUp -> day.minusWeeks(1)
+        Meaning.MoveDown -> day.plusWeeks(1)
+        Meaning.MoveLeft -> day.minusDays(1)
+        Meaning.MoveRight -> day.plusDays(1)
+        else -> null
+    }
+    PlayZoom.Year -> when (meaning) {
+        Meaning.MoveLeft -> day.withDayOfMonth(1).minusMonths(1)
+        Meaning.MoveRight -> day.withDayOfMonth(1).plusMonths(1)
+        else -> null
+    }
+}
+
+/**
+ * The cursor after [meaning], kept between the first day played and today. A press that would
+ * leave the bounds goes as far as they allow; one that cannot move at all (in Year, one that
+ * stays in its month) returns null, so the page stays exactly as it was.
+ */
+fun playMove(page: PlayActivityPage, meaning: Meaning): LocalDate? {
+    val calendar = page.calendar ?: return null
+    val from = page.cursor
+    val target = calendar.clamp(playStep(page.zoom, from, meaning) ?: return null)
+    val same = if (page.zoom == PlayZoom.Year) YearMonth.from(target) == YearMonth.from(from) else target == from
+    return target.takeUnless { same }
+}
+
+/**
+ * The page at [zoom], keeping its date. From Year into Month, the cursor lands on the focused
+ * month's last played day, or its first day when it had none.
+ */
+fun playZoomed(page: PlayActivityPage, zoom: PlayZoom): PlayActivityPage {
+    val calendar = page.calendar ?: return page.copy(zoom = zoom)
+    val day = if (page.zoom == PlayZoom.Year && zoom != PlayZoom.Year) {
+        val month = YearMonth.from(page.cursor)
+        calendar.lastPlayedIn(month) ?: calendar.clamp(month.atDay(1))
+    } else page.cursor
+    return page.copy(zoom = zoom, day = day)
+}
+
+/**
+ * The D-pad moves the cursor date over the chart, and L2 and R2 zoom in and out around it.
+ * A lists the focused day's sessions, which the shell reads from the log
+ * ([Effect.OpenPlayDay]); on a month bar it opens that month. On a game's page, Y lists the
+ * games its time can come from. B closes an open list, then the page; L1, R1, and Select
+ * close the page and put the grid focus back. On a day's list, up and down move, the bottom
+ * button removes the session in focus (the shell has it held first), and B goes back.
+ * Held keys repeat only the D-pad, so a held A or B does one thing.
+ */
+internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meaning: Meaning, repeatCount: Int = 0): Pair<PickerModel, Effect?> {
+    val close = model.copy(playActivity = null, focus = page.grid) to null
+    if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel || meaning == Meaning.View) return close
     val listed = page.sessions
     if (listed != null) {
         val at = page.session.coerceIn(0, (listed.size - 1).coerceAtLeast(0))
@@ -252,71 +346,86 @@ internal fun applyPlayActivity(model: PickerModel, page: PlayActivityPage, meani
             Meaning.ActivateBottom -> {
                 val id = listed.getOrNull(at) ?: return model to null
                 val rest = listed - id
-                // The last one gone, the day has nothing to list; the week shows again.
+                // The last one gone, the day has nothing to list; the chart shows again.
                 val next = if (rest.isEmpty()) page.copy(sessions = null, session = 0) else page.copy(sessions = rest, session = at.coerceAtMost(rest.lastIndex))
                 model.copy(playActivity = next) to Effect.RemovePlaySession(id)
             }
-            Meaning.Back -> model.copy(playActivity = page.copy(sessions = null, session = 0)) to null
-            Meaning.LeftPanel, Meaning.RightPanel, Meaning.View -> model.copy(playActivity = null, focus = page.grid) to null
+            Meaning.Back -> if (repeatCount > 0) model to null else model.copy(playActivity = page.copy(sessions = null, session = 0)) to null
             else -> model to null
         }
     }
+    if (page.moving && page.game != null) return applyPlayMoving(model, page, page.game, meaning, repeatCount)
+    if (repeatCount > 0 && meaning in PLAY_ONCE) return model to null
     return when (meaning) {
-        Meaning.MoveUp -> model.copy(playActivity = page.copy(day = (page.day - 1).coerceAtLeast(0))) to null
-        Meaning.MoveDown -> model.copy(playActivity = page.copy(day = (page.day + 1).coerceAtMost(PLAY_WEEK_DAYS - 1))) to null
-        Meaning.MoveLeft -> model.copy(playActivity = page.copy(weeksBack = page.weeksBack + 1)) to null
-        Meaning.MoveRight -> model.copy(playActivity = page.copy(weeksBack = (page.weeksBack - 1).coerceAtLeast(0))) to null
-        Meaning.Activate -> model to Effect.OpenPlayDay(page.weeksBack, page.day.coerceIn(0, PLAY_WEEK_DAYS - 1))
-        // Select closes it again, as L1 then Select opened it.
-        Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.View -> model.copy(playActivity = null, focus = page.grid) to null
+        Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight ->
+            playMove(page, meaning)?.let { model.copy(playActivity = page.copy(day = it)) to null } ?: (model to null)
+        Meaning.LetterBackward -> page.zoom.finer()?.let { model.copy(playActivity = playZoomed(page, it)) to null } ?: (model to null)
+        Meaning.LetterForward -> page.zoom.coarser()?.let { model.copy(playActivity = playZoomed(page, it)) to null } ?: (model to null)
+        Meaning.Activate -> when {
+            page.calendar == null -> model to null
+            page.zoom == PlayZoom.Year -> model.copy(playActivity = playZoomed(page, PlayZoom.Month)) to null
+            else -> model to Effect.OpenPlayDay(page.cursor, page.game)
+        }
+        Meaning.Options -> if (page.game != null && page.sources.isNotEmpty()) {
+            model.copy(playActivity = page.copy(moving = true, source = page.source.coerceIn(0, page.sources.lastIndex))) to null
+        } else model to null
+        Meaning.Back -> close
         else -> model to null
     }
 }
 
+/** Keys a held press does once: a held D-pad still travels. */
+private val PLAY_ONCE = setOf(Meaning.Activate, Meaning.Options, Meaning.Back, Meaning.LetterBackward, Meaning.LetterForward)
+
 /**
- * A game's page. Up and down move over the other games with play; left and right step
- * the weeks of this game's schedule. A held A moves the focused game's play here (the
- * shell holds it first), and A on one moved here puts it back. B, L1, R1, and Select close.
+ * Move time from, on a game's page. Up and down move over the other games with play. A held
+ * A moves the focused game's play here (the shell holds it first), and A on one moved here
+ * puts it back. Y or B goes back to the chart.
  */
-private fun applyPlayGame(model: PickerModel, page: PlayActivityPage, game: String, meaning: Meaning): Pair<PickerModel, Effect?> {
+private fun applyPlayMoving(model: PickerModel, page: PlayActivityPage, game: String, meaning: Meaning, repeatCount: Int): Pair<PickerModel, Effect?> {
     val at = page.source.coerceIn(0, (page.sources.size - 1).coerceAtLeast(0))
     return when (meaning) {
         Meaning.MoveUp -> model.copy(playActivity = page.copy(source = (at - 1).coerceAtLeast(0))) to null
         Meaning.MoveDown -> model.copy(playActivity = page.copy(source = (at + 1).coerceAtMost(page.sources.lastIndex.coerceAtLeast(0)))) to null
-        Meaning.MoveLeft -> model.copy(playActivity = page.copy(weeksBack = page.weeksBack + 1)) to null
-        Meaning.MoveRight -> model.copy(playActivity = page.copy(weeksBack = (page.weeksBack - 1).coerceAtLeast(0))) to null
         Meaning.Activate -> {
             val from = page.sources.getOrNull(at) ?: return model to null
             if (from in page.moved) {
+                // Undo is a tap; a held A that already moved does not put it straight back.
+                if (repeatCount > 0) return model to null
                 model.copy(playActivity = page.copy(source = at, moved = page.moved - from)) to Effect.UndoPlayMove(from, game)
             } else {
                 model.copy(playActivity = page.copy(source = at, moved = page.moved + from)) to Effect.MovePlayTime(from, game)
             }
         }
-        Meaning.Back, Meaning.LeftPanel, Meaning.RightPanel, Meaning.View -> model.copy(playActivity = null, focus = page.grid) to null
+        Meaning.Back, Meaning.Options -> if (repeatCount > 0) model to null else model.copy(playActivity = page.copy(moving = false)) to null
         else -> model to null
     }
 }
 
-/** The hint row under the page: the week's keys, the open day's, or a game's. */
+/**
+ * The hint row under the page: an open list's keys, or the chart's in its zoom. [hasSessions]
+ * is whether the focused day has sessions A can list.
+ */
 fun playActivityHints(model: PickerModel, hasSessions: Boolean = true): List<HintKey> {
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
-    val page = model.playActivity
-    if (page?.game != null) {
-        val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
-        val focused = page.sources.getOrNull(page.source)
-        return listOfNotNull(
-            focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.holdToMove) },
-            HintKey(PromptKey.DpadSides, PlayCopy.week),
-            back,
-        )
-    }
-    if (model.playActivity?.sessions != null) {
+    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+    val page = model.playActivity ?: return listOf(back)
+    if (page.sessions != null) {
         return listOf(HintKey(actionFaces(model.faceMap).bottomGlyph, PlayCopy.remove), back)
     }
+    if (page.moving && page.game != null) {
+        val focused = page.sources.getOrNull(page.source)
+        return listOfNotNull(focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.holdToMove) }, back)
+    }
     return listOfNotNull(
-        if (hasSessions) HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, PlayCopy.sessions) else null,
-        HintKey(PromptKey.DpadSides, PlayCopy.week),
+        when {
+            page.zoom == PlayZoom.Year -> HintKey(confirm, PlayCopy.open)
+            hasSessions -> HintKey(confirm, PlayCopy.sessions)
+            else -> null
+        },
+        // Week's sides step whole weeks while up and down step days, so they are named; Month and Year move as drawn.
+        if (page.zoom == PlayZoom.Week) HintKey(PromptKey.DpadSides, PlayCopy.week) else null,
+        if (page.game != null && page.sources.isNotEmpty()) HintKey(actionFaces(model.faceMap).optionsGlyph, PlayCopy.moveTime) else null,
         back,
     )
 }
