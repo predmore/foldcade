@@ -4197,6 +4197,13 @@ class ShellController(
     fun noteShelfChanged() = noteShelfChanged(gridFocusId())
 
     private fun noteShelfChanged(focusedId: String?) {
+        shelfChanged(focusedId)
+        // Copies can split off a tile without its id changing: an open Play activity page reads its
+        // history again, and an open day's list keeps only sessions still under this game.
+        refreshPlayPage()
+    }
+
+    private fun shelfChanged(focusedId: String?) {
         if (homeReturnBlocked()) cancelHomeReturnOnInput()
         syncHome()
         // A rescan can take the game an About page is about. A copy folding under another tile keeps

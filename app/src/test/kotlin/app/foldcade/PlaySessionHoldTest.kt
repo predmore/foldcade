@@ -93,6 +93,20 @@ class PlaySessionHoldTest {
     }
 
     @Test
+    fun aCopySplittingOffWhileADayIsListedTakesItsSessionOutOfTheList() {
+        val shell = listed()
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Top)
+        // A rescan renames one copy's ROM: its session is another game's now, under the same page.
+        days = { _, _ -> listOf("s1") }
+        shell.noteShelfChanged()
+        assertEquals(listOf("s1"), shell.model.playActivity?.sessions)
+        assertEquals(0, shell.model.playActivity?.session)
+        // A held X can only reach what is still listed.
+        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Top)
+        assertEquals("s1", shell.model.deleteHold?.gameId)
+    }
+
+    @Test
     fun aHeldBClosesThePageAndItsRepeatsNeverReachTheGrid() {
         val shell = page()
         val grid = shell.model.playActivity!!.grid
