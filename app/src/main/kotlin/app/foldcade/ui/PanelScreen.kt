@@ -353,6 +353,14 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         screen?.let { app.shell.registerInputWindow(it, activity.inputWindow) }
         onDispose { app.shell.cancelDeleteHold(activity.inputWindow) }
     }
+    // A RomM download keeps this panel lit, so the screen timeout cannot put the Thor to sleep mid-download.
+    // The view is the panel's own, so this follows it into a recovery window.
+    val panelView = LocalView.current
+    val downloading = app.shell.downloading.isNotEmpty()
+    androidx.compose.runtime.DisposableEffect(panelView, downloading) {
+        panelView.keepScreenOn = downloading
+        onDispose { panelView.keepScreenOn = false }
+    }
     val drawsHere = panel != null && session.draws(panel)
     // A full-screen page on the other screen leaves this one its command center, not a blurred grid.
     val besidePage = model.folderGuide != null || (screen != null && pageBeside(app, model, session, screen) != null)

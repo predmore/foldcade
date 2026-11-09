@@ -77,6 +77,68 @@ class RommReadRetryTest {
         }
     }
 
+    @Test fun aDownloadThatKeepsMovingIsNeverGivenUpOn() = runBlocking {
+        val waits = mutableListOf<Long>()
+        var reads = 0
+        var moved = false
+        val done = RommReadRetry(pause = { waits += it }).run(progressed = { moved.also { moved = false } }) {
+            // Twenty stalls, each after a little more of the file arrived.
+            if (reads++ < 20) {
+                moved = true
+                throw RommUnavailable("timeout", java.net.SocketTimeoutException())
+            }
+            "done"
+        }
+        assertEquals("done", done)
+        assertEquals(21, reads)
+        assertTrue(waits.all { it == 1_000L })
+    }
+
+    @Test fun aMovedDownloadThatStallsStopsAfterAboutAMinute() = runBlocking {
+        val waits = mutableListOf<Long>()
+        var reads = 0
+        var moved = false
+        val error = RommUnavailable("offline", java.net.NoRouteToHostException())
+        val failure = runCatching {
+            RommReadRetry(pause = { waits += it }).run(progressed = { moved.also { moved = false } }) {
+                if (reads++ == 0) moved = true
+                throw error
+            }
+        }.exceptionOrNull()
+        assertSame(error, failure)
+        assertEquals(7, reads)
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 30_000L), waits)
+    }
+
+    @Test fun aMovedDownloadRetriesALostLinkButNotPolicyOrCertificateFailures() = runBlocking {
+        for (error in listOf(RommUnavailable("offline", java.net.NoRouteToHostException()),
+            RommUnavailable("dns", java.net.UnknownHostException()),
+            RommUnavailable("tls read", javax.net.ssl.SSLException("Read error: Connection reset by peer")))) {
+            var reads = 0
+            var moved = false
+            val done = RommReadRetry(pause = {}).run(progressed = { moved.also { moved = false } }) {
+                if (reads++ == 0) { moved = true; throw error }
+                "done"
+            }
+            assertEquals("done", done)
+        }
+        for (error in listOf(RommUnavailable("policy", CleartextRejected("http://other.example")),
+            RommUnavailable("cert", javax.net.ssl.SSLHandshakeException("untrusted")),
+            RommResponseException("wrong hash"), RommUnauthorized("token"))) {
+            var reads = 0
+            var moved = false
+            val failure = runCatching {
+                RommReadRetry(pause = { error("must not wait") }).run(progressed = { moved.also { moved = false } }) {
+                    reads++
+                    moved = true
+                    throw error
+                }
+            }.exceptionOrNull()
+            assertSame(error, failure)
+            assertEquals(1, reads)
+        }
+    }
+
     @Test fun cancelDuringBackoffNeverTriesTheRequestAgain() = runBlocking {
         val waiting = CompletableDeferred<Unit>()
         var reads = 0

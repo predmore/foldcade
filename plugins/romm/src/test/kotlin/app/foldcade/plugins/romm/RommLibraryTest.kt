@@ -114,6 +114,76 @@ class RommLibraryTest {
         }
     }
 
+    @Test fun aLargeDownloadThatKeepsMovingResumesPastEveryStall() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val waits = mutableListOf<Long>()
+        val harness = harness(ops, retry = RommReadRetry(pause = { waits += it }))
+        var attempts = 0
+        // Each try picks up where its partial file ended, gets a little further, then stalls.
+        ops.downloadSteps = listOf(RomProgress.Receiving(100L, 1_000L))
+        ops.onDownload = { _, name, root, ids, _, _ ->
+            if (attempts++ < 8) {
+                ops.downloadSteps = listOf(RomProgress.Receiving((attempts + 1) * 100L, 1_000L))
+                throw RommUnavailable("timeout", java.net.SocketTimeoutException())
+            }
+            RommClient.romCacheFile(root, 1234, name, ids).also {
+                Files.createDirectories(it.parent)
+                Files.writeString(it, "hello-rom")
+            }
+        }
+        try {
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            assertTrue(harness.library.ensureLocal(game) is LaunchTarget.ContentUri)
+            assertEquals(9, attempts)
+            assertTrue(waits.all { it == 1_000L })
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun anAddOnCountsItsOwnProgressAfterAGameThatOverranItsSize() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "switch")) }
+        ops.onRoms = { page(rom("switch", 3).copy(hasSimpleSingleFile = false, hasMultipleFiles = true, files = listOf(
+            RomFileSummary(35, "game.nsp", 9, category = "game", isTopLevel = true),
+            RomFileSummary(36, "update.nsp", 3_000, category = "update", isTopLevel = false),
+        ))) }
+        val waits = mutableListOf<Long>()
+        val harness = harness(ops, retry = RommReadRetry(pause = { waits += it }))
+        var addOnTries = 0
+        // The game reports more than its listed size, so the shared bar runs ahead of the add-on.
+        ops.downloadSteps = listOf(RomProgress.Receiving(5_000L, null))
+        ops.onDownload = { _, name, root, ids, _, _ ->
+            if (name == "update.nsp") {
+                if (addOnTries++ < 8) {
+                    ops.downloadSteps = listOf(RomProgress.Receiving((addOnTries + 1) * 100L, 3_000L))
+                    throw RommUnavailable("timeout", java.net.SocketTimeoutException())
+                }
+            } else {
+                ops.downloadSteps = listOf(RomProgress.Receiving(100L, 3_000L))
+            }
+            RommClient.romCacheFile(root, 1234, name, ids).also {
+                Files.createDirectories(it.parent)
+                Files.writeString(it, "x")
+            }
+        }
+        try {
+            val game = harness.library.listGames("switch", GameQuery()).games.single()
+            // The fake files need not boot. Every add-on try that moved must have been retried.
+            runCatching { harness.library.ensureLocal(game) }
+            assertEquals(9, addOnTries)
+            assertTrue(waits.all { it == 1_000L })
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test fun cancellingServerPreparationDropsTheWaitAndClearsItsTile() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds")) }

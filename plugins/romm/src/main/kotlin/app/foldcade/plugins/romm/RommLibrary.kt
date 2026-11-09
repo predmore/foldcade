@@ -447,15 +447,25 @@ internal class RommLibrary internal constructor(
                 val sizes = listOf(spec.expectedSize) + spec.addOns.map { it.size }
                 val total = if (sizes.all { it != null }) sizes.sumOf { it!! } else null
                 var before = 0L
-                val progress: (RomProgress) -> Unit = { step ->
-                    reporter(if (step is RomProgress.Receiving) RomProgress.Receiving(before + step.bytes, total) else step)
-                }
+                // A failed try resumes from its partial file. One that got further into
+                // this file than any try before it starts a fresh count of tries.
                 suspend fun download(
                     name: String, ids: List<Long>, size: Long?, md5: String?, target: Path? = null,
-                ): Path = readRetry.run(allowConversion = true, onWait = { converting ->
-                    report(romId, if (converting) GameActivity.PreparingOnServer else GameActivity.Retrying)
-                }) {
-                    ops.downloadRom(rom.id, name, current.romRoot, ids, size, md5, progress, target)
+                ): Path {
+                    var reached = 0L
+                    var moved = false
+                    val progress: (RomProgress) -> Unit = { step ->
+                        if (step is RomProgress.Receiving && step.bytes > reached) {
+                            reached = step.bytes
+                            moved = true
+                        }
+                        reporter(if (step is RomProgress.Receiving) RomProgress.Receiving(before + step.bytes, total) else step)
+                    }
+                    return readRetry.run(allowConversion = true, onWait = { converting ->
+                        report(romId, if (converting) GameActivity.PreparingOnServer else GameActivity.Retrying)
+                    }, progressed = { moved.also { moved = false } }) {
+                        ops.downloadRom(rom.id, name, current.romRoot, ids, size, md5, progress, target)
+                    }
                 }
                 val path = download(
                     name = spec.fileName,

@@ -459,14 +459,20 @@ class RommClient(
             Files.deleteIfExists(partial)
             try {
                 var received = 0L
+                // Each try starts over, so only passing the furthest try so far counts as moving.
+                var reached = 0L
+                var moved = false
                 val total = firmware.fileSizeBytes.takeIf { it > 0L }
-                val onBytes = progress?.let { report ->
-                    { count: Int ->
-                        received += count
-                        report(RomProgress.Receiving(received, total))
+                val onBytes = { count: Int ->
+                    received += count
+                    if (received > reached) {
+                        reached = received
+                        moved = true
                     }
+                    progress?.invoke(RomProgress.Receiving(received, total))
+                    Unit
                 }
-                RommReadRetry().run {
+                RommReadRetry().run(progressed = { moved.also { moved = false } }) {
                     streamGet(
                         api("/firmware/${firmware.id}/content/${encode(safeFileName(firmware.fileName))}"),
                         partial,
