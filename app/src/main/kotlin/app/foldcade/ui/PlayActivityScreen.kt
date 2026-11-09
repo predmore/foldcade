@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -534,6 +535,7 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, f
     val measurer = rememberTextMeasurer()
     var area by remember { mutableStateOf(IntSize.Zero) }
     val fill = theme.style.colors.progress ?: theme.focus
+    val rim = remember(theme) { FocusRing(theme) }
     val label = playText(theme.muted, theme, type.hint).copy(textAlign = TextAlign.Center)
     val numeral = playText(theme.onBackground, theme, type.hint)
     val strong = playText(theme.background, theme, type.hint, bold = true)
@@ -563,8 +565,19 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, f
                         val future = cell.date > today || cell.date < first
                         drawRoundRect(theme.onBackground.copy(alpha = play.cellAlpha * if (future) play.futureAlpha else 1f), at, box, corner)
                         if (cell.level > 0) drawRoundRect(fill.copy(alpha = play.heatAlpha(cell.level) * t), at, box, corner)
-                        // A list open on this day, which has the D-pad instead: the cell keeps a soft mark, as Week's row does.
-                        if (!ring && cell.date == day) drawRoundRect(theme.focus.copy(alpha = play.openedAlpha), at, box, corner, style = Stroke(play.todayDp.dp.toPx() * 2f))
+                        // A list open on this day, which has the D-pad instead: the cell keeps the cursor's colours as a quiet
+                        // inner line, with no ring or glow, as Week's row keeps a soft band.
+                        if (!ring && cell.date == day) {
+                            val line = play.todayDp.dp.toPx() * 2f
+                            drawRoundRect(
+                                Brush.horizontalGradient(listOf(rim.start, rim.end), startX = at.x, endX = at.x + cellW),
+                                at + Offset(line / 2f, line / 2f),
+                                Size(cellW - line, cellH - line),
+                                CornerRadius((corner.x - line / 2f).coerceAtLeast(0f)),
+                                alpha = play.openedAlpha,
+                                style = Stroke(line),
+                            )
+                        }
                         if (cell.date == today) {
                             val stroke = play.todayDp.dp.toPx()
                             drawRoundRect(

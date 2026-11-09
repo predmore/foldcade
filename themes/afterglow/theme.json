@@ -2107,7 +2107,7 @@
       "todayDp": 1.5,
       "todayAlpha": 0.55,
       "monthBarCornerDp": 6,
-      "openedAlpha": 0.55,
+      "openedAlpha": 0.9,
       "yearChipAlpha": 0.24,
       "shareBarDp": 4,
       "slideDp": 40,

@@ -708,8 +708,8 @@ class ThemePlay internal constructor(reader: ThemeStyleReader) {
     val todayAlpha = reader.fraction("play", "todayAlpha", .55f)
     /** A month's bar on the year. */
     val monthBarCornerDp = reader.number("play", "monthBarCornerDp", 6f, role = TokenRole.Corner)
-    /** The day a list is open on, while the list has the D-pad: a soft ring in the focus colour. */
-    val openedAlpha = reader.fraction("play", "openedAlpha", .55f)
+    /** The day a list is open on, while the list has the D-pad: a thin inner line in the focus ring's colours. */
+    val openedAlpha = reader.fraction("play", "openedAlpha", .9f)
     /** Year's strip: the shown year's chip, in `colors.progress`. */
     val yearChipAlpha = reader.fraction("play", "yearChipAlpha", .24f, TokenRole.Fill)
     /** The thin bar under each of the most played: its share of the period. */

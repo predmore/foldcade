@@ -538,7 +538,7 @@ Play activity: the week, month, and year, the days and their sessions. The bars 
 | `play.todayDp` | 1.5 | The ring marking today's cell |
 | `play.todayAlpha` | 0.55 | Its strength |
 | `play.monthBarCornerDp` | 6 | A month's bar's corner on the year |
-| `play.openedAlpha` | 0.55 | The day a list is open on, while the list has the D-pad: a soft ring in the focus colour |
+| `play.openedAlpha` | 0.9 | The day a list is open on, while the list has the D-pad: a thin inner line in the focus ring's colours |
 | `play.yearChipAlpha` | 0.24 | Year's strip of years: the shown year's chip, in `colors.progress` |
 | `play.shareBarDp` | 4 | The bar under each of the most played: its share of the period |
 | `play.slideDp` | 40 | How far a week, month, or year slides as the next one comes in |
