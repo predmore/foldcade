@@ -237,10 +237,10 @@ internal data class IslandScroll(val available: Dp, val state: ScrollState, val 
 internal val LocalIslandScroll = staticCompositionLocalOf<IslandScroll?> { null }
 
 /** Fade only edges with rows beyond them; the ring remains inside the scroll padding. */
-internal fun Modifier.menuFade(scroll: ScrollState): Modifier =
+internal fun Modifier.menuFade(scroll: ScrollState, fade: Dp = 12.dp): Modifier =
     graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
         drawContent()
-        val edge = minOf(12.dp.toPx(), size.height / 2f)
+        val edge = minOf(fade.toPx(), size.height / 2f)
         if (size.height <= 0f) return@drawWithContent
         val clear = androidx.compose.ui.graphics.Color.Transparent
         val solid = androidx.compose.ui.graphics.Color.Black

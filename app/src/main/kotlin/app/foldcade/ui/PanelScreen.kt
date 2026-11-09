@@ -276,6 +276,7 @@ import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
 import app.foldcade.language.panelHints
 import app.foldcade.language.playActivityHints
+import app.foldcade.language.playHoldsKey
 import app.foldcade.language.noticeAge
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
@@ -3630,7 +3631,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
     } else emptyList()
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
-        model.playActivity?.sessions != null
+        playHoldsKey(model)
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph

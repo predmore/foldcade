@@ -2046,21 +2046,21 @@
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
-                            "default": 0.24,
+                            "default": 0.36,
                             "description": "follows base.fillScale"
                         },
                         "heat2Alpha": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
-                            "default": 0.46,
+                            "default": 0.56,
                             "description": "follows base.fillScale"
                         },
                         "heat3Alpha": {
                             "type": "number",
                             "minimum": 0.0,
                             "maximum": 1.0,
-                            "default": 0.7,
+                            "default": 0.76,
                             "description": "follows base.fillScale"
                         },
                         "heat4Alpha": {
@@ -2106,6 +2106,19 @@
                             "minimum": 0.0,
                             "default": 6.0,
                             "description": "dp; follows base.cornerScale"
+                        },
+                        "openedAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "yearChipAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.24,
+                            "description": "follows base.fillScale"
                         },
                         "shareBarDp": {
                             "type": "number",

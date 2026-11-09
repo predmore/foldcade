@@ -528,9 +528,9 @@ Play activity: the week, month, and year, the days and their sessions. The bars 
 | `play.markMinWidthDp` | 8 | Minimum width of a played stretch, kept inside the day's track |
 | `play.emptyBarAlpha` | 0.12 | A day of the week with no play |
 | `play.barCornerDp` | 3 | A day's bar's corner |
-| `play.heat1Alpha` | 0.24 | A day's cell on the month calendar at the lightest of four steps: up to a quarter of the player's own played days were this short |
-| `play.heat2Alpha` | 0.46 | The second step, up to half |
-| `play.heat3Alpha` | 0.7 | The third step, up to three quarters |
+| `play.heat1Alpha` | 0.36 | A day's cell on the month calendar at the lightest of four steps: up to a quarter of the player's own played days were this short |
+| `play.heat2Alpha` | 0.56 | The second step, up to half |
+| `play.heat3Alpha` | 0.76 | The third step, up to three quarters |
 | `play.heat4Alpha` | 1 | The deepest step: among the player's longest days |
 | `play.cellAlpha` | 0.05 | A day's cell with no play |
 | `play.cellCornerDp` | 8 | A day's cell's corner |
@@ -538,6 +538,8 @@ Play activity: the week, month, and year, the days and their sessions. The bars 
 | `play.todayDp` | 1.5 | The ring marking today's cell |
 | `play.todayAlpha` | 0.55 | Its strength |
 | `play.monthBarCornerDp` | 6 | A month's bar's corner on the year |
+| `play.openedAlpha` | 0.55 | The day a list is open on, while the list has the D-pad: a soft ring in the focus colour |
+| `play.yearChipAlpha` | 0.24 | Year's strip of years: the shown year's chip, in `colors.progress` |
 | `play.shareBarDp` | 4 | The bar under each of the most played: its share of the period |
 | `play.slideDp` | 40 | How far a week, month, or year slides as the next one comes in |
 | `play.zoomScale` | 0.06 | How much the chart grows or shrinks as L2 and R2 zoom: in going closer, out going further |

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -59,7 +61,6 @@ import app.foldcade.R
 import app.foldcade.playName
 import app.foldcade.language.DateStyle
 import app.foldcade.language.MARK_CONSOLE
-import app.foldcade.language.PLAY_TOP_GAMES
 import app.foldcade.language.PLAY_WEEK_DAYS
 import app.foldcade.language.PickerModel
 import app.foldcade.language.PlayActivityPage
@@ -71,6 +72,7 @@ import app.foldcade.language.PromptKey
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.Theme
+import app.foldcade.language.actionFaces
 import app.foldcade.language.playDayReadout
 import app.foldcade.language.playDuration
 import app.foldcade.language.playDayTotal
@@ -79,6 +81,8 @@ import app.foldcade.language.playMonthGrid
 import app.foldcade.language.playMonthReadout
 import app.foldcade.language.playPeriodEmpty
 import app.foldcade.language.playPeriodLabel
+import app.foldcade.language.playPeriodReach
+import app.foldcade.language.playYearWindow
 import app.foldcade.language.playStreak
 import app.foldcade.language.playWeekStart
 import app.foldcade.language.playWeekdays
@@ -148,6 +152,10 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val chart = chartKey(page.zoom, day, style)
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
     val moving = presence(page.takeIf { it.moving && it.sessions == null }, motion.durationIsland, scale)
+    // Each minute, a set clock, or a new time zone: today may be another day, so the bounds follow.
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
+    LaunchedEffect(status.minute, status.time) { app.shell.notePlayClock() }
+    val first = page.calendar?.first ?: today
     Column(
         Modifier
             .fillMaxSize()
@@ -205,18 +213,18 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
             ) {
                 // The period and its total crossfade as the chart moves.
                 ChartSwap(chart, scale, Modifier.fillMaxWidth(), travel = 0f) { shown ->
-                    PeriodLine(history, shown, today, style, theme)
+                    PeriodLine(history, shown, page.calendar, today, style, theme)
                 }
                 // The ring is on the chart while it takes the D-pad; an open list keeps its day lit.
                 val ring = page.sessions == null && !page.moving
                 ChartSwap(chart, scale, Modifier.weight(1f).fillMaxWidth()) { shown ->
                     when (shown.zoom) {
-                        PlayZoom.Week -> WeekChart(history, shown.start, day, today, ring, style, theme, scale)
-                        PlayZoom.Month -> MonthChart(history, shown.start, day, today, ring, style, theme, scale)
-                        PlayZoom.Year -> YearChart(history, shown.start.year, day, today, ring, style, theme, scale)
+                        PlayZoom.Week -> WeekChart(history, shown.start, day, first, today, ring, style, theme, scale)
+                        PlayZoom.Month -> MonthChart(history, shown.start, day, first, today, ring, style, theme, scale)
+                        PlayZoom.Year -> YearChart(history, shown.start.year, day, first, today, ring, style, theme, scale)
                     }
                 }
-                Readout(history, page.zoom, day, style, theme)
+                Readout(history, chart, day, today, quietPeriod = game != null, style, theme)
             }
             Box(
                 Modifier
@@ -226,22 +234,29 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     .background(theme.surface),
             ) {
                 // The card's own content gives way to a day's sessions or to Move time from, and comes back after.
-                Box(Modifier.fillMaxSize().sinking { maxOf(listing.progress.value, moving.progress.value) }) {
-                    if (game != null) GameFacts(app, history, game, today, style, theme)
+                // One after the other, never both at once: the card leaving is gone by halfway, and the one arriving starts there.
+                Box(Modifier.fillMaxSize().sinking { firstHalf(maxOf(listing.progress.value, moving.progress.value)) }) {
+                    if (game != null) GameFacts(app, history, game, today, style, theme, page.sources.isNotEmpty())
                     else MostPlayed(app, history, chart, today, style, theme)
                 }
                 listing.shown?.let { shown ->
-                    Box(Modifier.fillMaxSize().rise { listing.progress.value }) {
+                    Box(Modifier.fillMaxSize().rise { secondHalf(listing.progress.value) }) {
                         DaySessions(app, history, shown, style, theme, scale)
                     }
                 }
                 moving.shown?.let { shown ->
-                    if (game != null) Box(Modifier.fillMaxSize().rise { moving.progress.value }) { GameSources(app, shown, theme, scale) }
+                    if (game != null) Box(Modifier.fillMaxSize().rise { secondHalf(moving.progress.value) }) { GameSources(app, shown, game, theme, scale) }
                 }
             }
         }
     }
 }
+
+/** A swap's first half: what leaves is gone by the middle. */
+private fun firstHalf(progress: Float): Float = (progress * 2f).coerceIn(0f, 1f)
+
+/** A swap's second half: what arrives starts at the middle. */
+private fun secondHalf(progress: Float): Float = (progress * 2f - 1f).coerceIn(0f, 1f)
 
 /**
  * [content] for [key], sliding and fading to the next key's as it changes: along the timeline
@@ -309,28 +324,114 @@ private fun ChartSwap(key: ChartKey, scale: Float, modifier: Modifier, travel: F
     }
 }
 
-/** The chart card's top line: the period on the left, its time on the right. */
+/**
+ * The chart card's top line: the period between ‹ and ›, each lit while the D-pad can reach a
+ * period that way and dim at the first day played and at today, then its time on the right.
+ * Year shows every year played instead, each with its time, the shown one lit.
+ */
 @Composable
-private fun PeriodLine(history: PlayHistory, key: ChartKey, today: LocalDate, style: DateStyle, theme: Theme) {
+private fun PeriodLine(history: PlayHistory, key: ChartKey, calendar: app.foldcade.language.PlayCalendar?, today: LocalDate, style: DateStyle, theme: Theme) {
     val type = theme.style.type
+    if (key.zoom == PlayZoom.Year) {
+        YearStrip(history, key.start.year, calendar, today, theme)
+        return
+    }
     val total = remember(history, key) { history.total(key.start, key.end()) }
+    val (earlier, later) = playPeriodReach(calendar, key.start, key.end())
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Chevron("‹", earlier, theme)
         BasicText(
             playPeriodLabel(key.zoom, key.start, today, style),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f, fill = false).padding(horizontal = CHEVRON_GAP),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = playText(theme.muted, theme, type.heroMeta),
         )
+        Chevron("›", later, theme)
+        Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
         BasicText(playDuration(total), maxLines = 1, style = playText(theme.onBackground, theme, type.heroMeta, bold = true))
     }
 }
 
-/** What a hover would say about the cursor: its day or month, the time, and how many sessions or days. */
+/** ‹ or ›: lit when the D-pad can reach a period that way, dim at the bounds. */
 @Composable
-private fun Readout(history: PlayHistory, zoom: PlayZoom, day: LocalDate, style: DateStyle, theme: Theme) {
-    val text = remember(history, zoom, day, style) {
-        if (zoom == PlayZoom.Year) {
+private fun Chevron(glyph: String, lit: Boolean, theme: Theme) {
+    BasicText(
+        glyph,
+        maxLines = 1,
+        style = playText(if (lit) theme.onBackground else theme.muted.copy(alpha = theme.style.play.futureAlpha), theme, theme.style.type.heroMeta, bold = true),
+    )
+}
+
+/**
+ * Year's top line: each year since the first one played with its time, the shown year lit.
+ * It follows the cursor and never takes focus. With more years than fit, it shows those around
+ * the shown one, and ‹ › say there are more, dim at the first year played and this one.
+ */
+@Composable
+private fun YearStrip(history: PlayHistory, year: Int, calendar: app.foldcade.language.PlayCalendar?, today: LocalDate, theme: Theme) {
+    val type = theme.style.type
+    val first = calendar?.first?.year ?: today.year
+    val last = today.year
+    val measurer = rememberTextMeasurer()
+    val label = playText(theme.muted, theme, type.hint)
+    val lit = playText(theme.onBackground, theme, type.hint, bold = true)
+    val texts = remember(history, first, last) { (first..last).associateWith { "$it · ${yearDuration(history.yearTotal(it))}" } }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val chevrons = with(density) { measurer.measure("‹›", playText(theme.muted, theme, type.heroMeta, bold = true)).size.width.toDp() + CHEVRON_GAP * 2 }
+        val padPx = with(density) { YEAR_CHIP_PAD.toPx() }
+        val gapPx = with(density) { YEAR_CHIP_GAP.toPx() }
+        val room = with(density) { (maxWidth - chevrons).toPx() }
+        val window = remember(texts, year, room) {
+            playYearWindow(first, last, year, room, gapPx) { measurer.measure(texts.getValue(it), lit).size.width + padPx * 2 }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Chevron("‹", year > first, theme)
+            Row(
+                Modifier.weight(1f).padding(horizontal = CHEVRON_GAP),
+                horizontalArrangement = Arrangement.spacedBy(YEAR_CHIP_GAP, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                window.forEach { shown ->
+                    val on = shown == year
+                    BasicText(
+                        texts.getValue(shown),
+                        maxLines = 1,
+                        style = if (on) lit else label,
+                        modifier = Modifier
+                            .clip(theme.style.shape.control())
+                            .drawBehind {
+                                drawRoundRect(
+                                    if (on) (theme.style.colors.progress ?: theme.focus).copy(alpha = theme.style.play.yearChipAlpha)
+                                    else theme.onBackground.copy(alpha = theme.style.play.trackAlpha),
+                                    cornerRadius = CornerRadius(size.height * theme.style.shape.round),
+                                )
+                            }
+                            .padding(horizontal = YEAR_CHIP_PAD, vertical = 4.dp),
+                    )
+                }
+            }
+            Chevron("›", year < last, theme)
+        }
+    }
+}
+
+/** A year's time on its chip: whole hours once there are any, "–" for none. */
+private fun yearDuration(millis: Long): String = if (millis <= 0L) PlayCopy.none else shortDuration(millis)
+
+/**
+ * What a hover would say about the cursor: its day or month, the time, and how many sessions or
+ * days. On a game's page, whose side card keeps the lifetime facts, a period with no play says
+ * so here instead.
+ */
+@Composable
+private fun Readout(history: PlayHistory, key: ChartKey, day: LocalDate, today: LocalDate, quietPeriod: Boolean, style: DateStyle, theme: Theme) {
+    val zoom = key.zoom
+    val text = remember(history, key, day, style, quietPeriod, today) {
+        if (quietPeriod && history.total(key.start, key.end()) <= 0L) {
+            playPeriodEmpty(zoom, day, today, style)
+        } else if (zoom == PlayZoom.Year) {
             val month = YearMonth.from(day)
             playMonthReadout(month.month, history.monthTotal(month), history.monthDaysPlayed(month), style)
         } else {
@@ -345,7 +446,7 @@ private fun Readout(history: PlayHistory, zoom: PlayZoom, day: LocalDate, style:
  * come are drawn dim. The cursor's row wears the highlight.
  */
 @Composable
-private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
+private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, first: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
     val type = theme.style.type
     val week = remember(history, start, style) { history.week(start, style) }
     val slots = rememberSelectionSlots()
@@ -356,8 +457,11 @@ private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, to
             .selectionHighlight(slots, week.days.indexOfFirst { it.date == day }.takeIf { it >= 0 }, ring = ring, scale = scale),
     ) {
         HourScale(theme)
+        // The focus ring's reach, so a larger font's first row never wears its ring across the hours.
+        Spacer(Modifier.height(ringReach() / 2))
         week.days.forEachIndexed { index, row ->
-            val future = row.date > today
+            // Days still to come and days before the first play are drawn dim: the cursor reaches neither.
+            val future = row.date > today || row.date < first
             // The seven rows share what the card has, so a larger font still fits all of them.
             Row(
                 Modifier
@@ -403,7 +507,7 @@ private class MonthCell(val date: LocalDate, val inMonth: Boolean, val level: In
  * D-pad moves only the highlight.
  */
 @Composable
-private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
+private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, first: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
     val play = theme.style.play
     val type = theme.style.type
     val month = YearMonth.from(start)
@@ -446,9 +550,11 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, t
                         val row = index / PLAY_WEEK_DAYS
                         val at = Offset(col * (cellW + gap), row * (cellH + gap))
                         val box = Size(cellW, cellH)
-                        val future = cell.date > today
+                        val future = cell.date > today || cell.date < first
                         drawRoundRect(theme.onBackground.copy(alpha = play.cellAlpha * if (future) play.futureAlpha else 1f), at, box, corner)
                         if (cell.level > 0) drawRoundRect(fill.copy(alpha = play.heatAlpha(cell.level) * t), at, box, corner)
+                        // A list open on this day, which has the D-pad instead: the cell keeps a soft mark, as Week's row does.
+                        if (!ring && cell.date == day) drawRoundRect(theme.focus.copy(alpha = play.openedAlpha), at, box, corner, style = Stroke(play.todayDp.dp.toPx() * 2f))
                         if (cell.date == today) {
                             val stroke = play.todayDp.dp.toPx()
                             drawRoundRect(
@@ -499,7 +605,7 @@ private fun MonthSlots(slots: SelectionSlots, cells: List<MonthCell>, size: IntS
  * are dim stubs. Drawn on one canvas; the bars grow in as a year arrives.
  */
 @Composable
-private fun YearChart(history: PlayHistory, year: Int, day: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
+private fun YearChart(history: PlayHistory, year: Int, day: LocalDate, first: LocalDate, today: LocalDate, ring: Boolean, style: DateStyle, theme: Theme, scale: Float) {
     val play = theme.style.play
     val type = theme.style.type
     val months = remember(history, year) { (1..12).map { history.monthTotal(YearMonth.of(year, it)) } }
@@ -540,7 +646,8 @@ private fun YearChart(history: PlayHistory, year: Int, day: LocalDate, today: Lo
                 months.forEachIndexed { index, millis ->
                     val left = index * (barW + gapPx)
                     val inset = barW * BAR_INSET
-                    val future = YearMonth.of(year, index + 1) > YearMonth.from(today)
+                    val month = YearMonth.of(year, index + 1)
+                    val future = month > YearMonth.from(today) || month < YearMonth.from(first)
                     val stub = 3.dp.toPx()
                     if (millis > 0L) {
                         val height = (track * millis / most * t).coerceAtLeast(stub)
@@ -596,8 +703,8 @@ private fun MostPlayed(app: FoldcadeApp, history: PlayHistory, key: ChartKey, to
             current.forEach { (gameId, title) -> if (title != null) app.plays.rememberName(gameId, title) }
         }
         val fill = theme.style.colors.progress ?: theme.focus
-        // Two lines while the card has room for them, as a game's own page gives a long name; a full four keep to one.
-        val nameLines = if (top.size < PLAY_TOP_GAMES) 2 else 1
+        // Two lines, so two games of one series still read apart; the card holds three that way.
+        val nameLines = 2
         top.forEachIndexed { index, (gameId, millis) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayCover(app, gameId, TOP_COVER)
@@ -633,10 +740,14 @@ private fun MostPlayed(app: FoldcadeApp, history: PlayHistory, key: ChartKey, to
  * first and last played, days played, sessions, the longest, and the best streak.
  */
 @Composable
-private fun GameFacts(app: FoldcadeApp, history: PlayHistory, game: String, today: LocalDate, style: DateStyle, theme: Theme) {
+private fun GameFacts(app: FoldcadeApp, history: PlayHistory, game: String, today: LocalDate, style: DateStyle, theme: Theme, hasSources: Boolean) {
     val type = theme.style.type
     app.plays.stamp // Its time follows removals and moves.
     val shown = app.plays.shown(game)
+    if (shown.activeMillis <= 0L && history.first == null) {
+        NoPlayYet(app, game, theme, hasSources)
+        return
+    }
     val last = shown.lastPlayedMillis?.let { java.time.Instant.ofEpochMilli(it).atZone(history.zone).toLocalDate() } ?: history.last
     val facts = listOf(
         PlayCopy.firstPlayed to playWhen(history.first, today, style),
@@ -671,6 +782,30 @@ private fun GameFacts(app: FoldcadeApp, history: PlayHistory, game: String, toda
 }
 
 /**
+ * A game's page before any play: its cover large, No play yet, and what comes next, with Y's
+ * Move time when another game's time could be this one's.
+ */
+@Composable
+private fun NoPlayYet(app: FoldcadeApp, game: String, theme: Theme, hasSources: Boolean) {
+    val type = theme.style.type
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = FACT_PAD, vertical = CARD_PAD),
+        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        PlayCover(app, game, NO_PLAY_COVER)
+        BasicText(PlayCopy.nothingYet, maxLines = 1, style = playText(theme.onBackground, theme, type.heroTitle, bold = true, display = true))
+        BasicText(PlayCopy.firstSession, style = playText(theme.muted, theme, type.sideRow).copy(textAlign = TextAlign.Center))
+        if (hasSources) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PromptImage(promptGlyph(actionFaces(app.shell.model.faceMap).optionsGlyph), 28.dp)
+                BasicText(PlayCopy.moveTime, maxLines = 1, style = playText(theme.onBackground, theme, type.sideRow))
+            }
+        }
+    }
+}
+
+/**
  * The open day's sessions, first started first: the game, when it ran, and its time.
  * One highlight glides over them; a held X fills it and takes the session out.
  */
@@ -695,7 +830,7 @@ private fun DaySessions(app: FoldcadeApp, history: PlayHistory, page: PlayActivi
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .menuFade(scroll)
+                .menuFade(scroll, LIST_FADE)
                 .verticalScroll(scroll)
                 .padding(reach)
                 .selectionHighlight(slots, listed.indexOfFirst { it.sessionId == focused }.takeIf { it >= 0 }, ring = true, scale = scale),
@@ -740,31 +875,54 @@ private fun DaySessions(app: FoldcadeApp, history: PlayHistory, page: PlayActivi
 }
 
 /**
- * Move time from, on a game's page: the other games with play, likeliest first, each with its
- * time, and Gone when no library has it now. A held A fills the one in focus and moves its play
- * here; it then reads Moved here, and A puts it back.
+ * Move time from, on a game's page: the game's own time on top, counting up as time moves onto
+ * it, then the other games with play, likeliest first, each with its time, and Gone when no
+ * library has it now. A held A fills the one in focus and moves its play here; it then reads
+ * Moved here with what it moved, and A puts it back.
  */
 @Composable
-private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, theme: Theme, scale: Float) {
+private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, theme: Theme, scale: Float) {
     val stamp = app.plays.stamp
     val type = theme.style.type
+    val motion = theme.motion
     val played = remember(stamp) { app.plays.played() }
     val model = app.shell.model
     val reach = ringReach()
     val slots = rememberSelectionSlots()
     val scroll = rememberScrollState()
     val focused = page.sources.getOrNull(page.source)
+    val total = app.plays.shown(game).activeMillis
+    val counted = remember { Animatable(total.toFloat()) }
+    LaunchedEffect(total) { counted.animateTo(total.toFloat(), motion.arrive(motion.durationIsland * COUNT_SPAN, scale)) }
+    // What each source had before it moved, so its row can say how much came here.
+    val before = remember { mutableMapOf<String, Long>() }
+    page.sources.forEach { source -> if (source !in page.moved) played[source]?.activeMillis?.takeIf { it > 0L }?.let { before[source] = it } }
     Column(Modifier.fillMaxSize().padding(horizontal = (CARD_PAD - reach).coerceAtLeast(0.dp), vertical = CARD_PAD - DAY_INSET)) {
+        Row(
+            Modifier.padding(horizontal = reach, vertical = DAY_INSET),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PlayCover(app, game, TOP_COVER)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                BasicText(PlayCopy.timePlayed, maxLines = 1, style = playText(theme.muted, theme, type.hint))
+                BasicText(
+                    if (counted.value > 0f) playDuration(counted.value.toLong()) else PlayCopy.nothingYet,
+                    maxLines = 1,
+                    style = playText(theme.onBackground, theme, type.heroMeta, bold = true),
+                )
+            }
+        }
         BasicText(
             PlayCopy.moveFrom,
-            modifier = Modifier.padding(horizontal = reach, vertical = DAY_INSET),
+            modifier = Modifier.padding(horizontal = reach, vertical = 4.dp),
             style = playText(theme.muted, theme, type.sideRow),
         )
         Column(
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .menuFade(scroll)
+                .menuFade(scroll, LIST_FADE)
                 .verticalScroll(scroll)
                 .padding(reach)
                 .selectionHighlight(slots, page.source.takeIf { page.sources.isNotEmpty() }, ring = true, scale = scale),
@@ -796,7 +954,7 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, theme: Theme, 
                             )
                             BasicText(
                                 when {
-                                    moved -> PlayCopy.moved
+                                    moved -> before[source]?.let(PlayCopy::movedAmount) ?: PlayCopy.moved
                                     gone -> "${playDuration(played[source]?.activeMillis ?: 0L)} · ${PlayCopy.gone}"
                                     else -> playDuration(played[source]?.activeMillis ?: 0L)
                                 },
@@ -898,6 +1056,18 @@ private fun rememberKeptCover(app: FoldcadeApp, gameId: String): androidx.compos
 /** Covers: four of the most played still fit the page's height. */
 private val TOP_COVER = 44.dp
 private val FACT_COVER = 64.dp
+private val NO_PLAY_COVER = 112.dp
+
+/** A list's fading edge: tall enough that a cut row reads as more below. */
+private val LIST_FADE = 36.dp
+
+/** The Move list's total counts up over this many island spans, slow enough to see. */
+private const val COUNT_SPAN = 2
+
+/** Year's strip: the chips' padding and gap, and the room either side of ‹ and ›. */
+private val YEAR_CHIP_PAD = 10.dp
+private val YEAR_CHIP_GAP = 6.dp
+private val CHEVRON_GAP = 8.dp
 private val SESSION_COVER = 28.dp
 
 /** How much of a cover's box a mark or an icon fills, so it does not touch the corners. */
@@ -1010,7 +1180,8 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
                                 )
                             },
                     )
-                    BasicText(day.label.take(1), style = playText(theme.muted, theme, theme.style.type.hint))
+                    // Today's initial is lit, as the calendar marks today.
+                    BasicText(day.label.take(1), style = playText(if (day.date == today) theme.onBackground else theme.muted, theme, theme.style.type.hint, bold = day.date == today))
                 }
             }
         }
