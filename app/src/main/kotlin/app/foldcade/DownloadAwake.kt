@@ -2,6 +2,8 @@ package app.foldcade
 
 import android.content.Context
 import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 
 /**
@@ -21,11 +23,17 @@ internal class DownloadAwake(context: Context) {
         ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "foldcade:download")
         ?.apply { setReferenceCounted(false) }
 
+    private val main = Handler(Looper.getMainLooper())
+
+    // The limit only guards against a download that never says it ended. A Wi-Fi lock takes no timeout.
+    private val expire = Runnable { if (wifi?.isHeld == true) wifi.release() }
+
     fun hold(downloading: Boolean) {
+        main.removeCallbacks(expire)
         if (downloading) {
-            // The limit only guards against a download that never says it ended.
             cpu.acquire(LIMIT_MS)
             wifi?.acquire()
+            main.postDelayed(expire, LIMIT_MS)
         } else {
             if (cpu.isHeld) cpu.release()
             if (wifi?.isHeld == true) wifi.release()
