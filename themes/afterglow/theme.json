@@ -2096,7 +2096,20 @@
       "hourDp": 1,
       "markMinWidthDp": 8,
       "emptyBarAlpha": 0.12,
-      "barCornerDp": 3
+      "barCornerDp": 3,
+      "heat1Alpha": 0.24,
+      "heat2Alpha": 0.46,
+      "heat3Alpha": 0.7,
+      "heat4Alpha": 1,
+      "cellAlpha": 0.05,
+      "cellCornerDp": 8,
+      "futureAlpha": 0.3,
+      "todayDp": 1.5,
+      "todayAlpha": 0.55,
+      "monthBarCornerDp": 6,
+      "shareBarDp": 4,
+      "slideDp": 40,
+      "zoomScale": 0.06
     },
     "collections": {
       "gold": "#FFC15A",

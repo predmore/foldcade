@@ -517,7 +517,7 @@ Set up saves reuses Settings' tiles and badges, the menus' highlight, and the di
 
 ### `play`
 
-Play activity: the week, the days and their sessions. The bars are `colors.progress`.
+Play activity: the week, month, and year, the days and their sessions. The bars and the calendar's heat are `colors.progress`.
 
 | Token | Afterglow | Controls |
 | --- | --- | --- |
@@ -528,6 +528,19 @@ Play activity: the week, the days and their sessions. The bars are `colors.progr
 | `play.markMinWidthDp` | 8 | Minimum width of a played stretch, kept inside the day's track |
 | `play.emptyBarAlpha` | 0.12 | A day of the week with no play |
 | `play.barCornerDp` | 3 | A day's bar's corner |
+| `play.heat1Alpha` | 0.24 | A day's cell on the month calendar at the lightest of four steps: up to a quarter of the player's own played days were this short |
+| `play.heat2Alpha` | 0.46 | The second step, up to half |
+| `play.heat3Alpha` | 0.7 | The third step, up to three quarters |
+| `play.heat4Alpha` | 1 | The deepest step: among the player's longest days |
+| `play.cellAlpha` | 0.05 | A day's cell with no play |
+| `play.cellCornerDp` | 8 | A day's cell's corner |
+| `play.futureAlpha` | 0.3 | Days and months still to come: drawn, never focused |
+| `play.todayDp` | 1.5 | The ring marking today's cell |
+| `play.todayAlpha` | 0.55 | Its strength |
+| `play.monthBarCornerDp` | 6 | A month's bar's corner on the year |
+| `play.shareBarDp` | 4 | The bar under each of the most played: its share of the period |
+| `play.slideDp` | 40 | How far a week, month, or year slides as the next one comes in |
+| `play.zoomScale` | 0.06 | How much the chart grows or shrinks as L2 and R2 zoom: in going closer, out going further |
 
 ### `collections`
 
