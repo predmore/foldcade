@@ -71,7 +71,7 @@ data class PlayActivityPage(
     val moving: Boolean = false,
 ) {
     /** The date in focus, today before the shell has opened the page on one. */
-    val cursor: LocalDate get() = day ?: calendar?.today ?: LocalDate.EPOCH
+    val cursor: LocalDate get() = day ?: calendar?.today ?: LocalDate.ofEpochDay(0)
 }
 
 /**
@@ -95,11 +95,14 @@ fun PlayActivityPage.refreshed(calendar: PlayCalendar, daySessions: (LocalDate) 
     val listed = sessions
     val kept = listed?.let { ids -> daySessions(day).toSet().let { there -> ids.filter { it in there } } }
     if (calendar == this.calendar && kept == listed) return this
+    // The focus stays on the session it was on; only when that one left does it take the row in its place.
+    val focused = listed?.getOrNull(session)
+    val at = kept?.indexOf(focused)?.takeIf { it >= 0 } ?: session
     return copy(
         calendar = calendar,
         day = day,
         sessions = kept?.takeIf { it.isNotEmpty() },
-        session = if (kept.isNullOrEmpty()) 0 else session.coerceIn(0, kept.lastIndex),
+        session = if (kept.isNullOrEmpty()) 0 else at.coerceIn(0, kept.lastIndex),
     )
 }
 

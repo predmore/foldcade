@@ -520,6 +520,11 @@ class PlayHistoryPageTest {
         val kept = open.refreshed(same) { listOf("a", "b") }
         assertEquals(listOf("a", "b"), kept.sessions)
         assertEquals(1, kept.session)
+        // A session above the focus leaves: the focus stays on its own session, so X never aims at the next one.
+        val onB = open.copy(session = 1)
+        val shifted = onB.refreshed(same) { listOf("b", "c") }
+        assertEquals(listOf("b", "c"), shifted.sessions)
+        assertEquals(0, shifted.session)
     }
 
     @Test
