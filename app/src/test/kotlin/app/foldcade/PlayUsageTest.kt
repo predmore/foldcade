@@ -71,8 +71,8 @@ class PlayUsageTest {
         assertEquals(120_000L, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertEquals(plays.shown(game).activeMillis, plays.spans().sumOf { it.endMillis - it.startMillis })
         assertTrue(plays.spans().all { it.sessionId.isEmpty() })
-        val sessions = app.foldcade.language.playDaySessions(plays.spans(), now, java.time.ZoneOffset.UTC, 0,
-            app.foldcade.language.PLAY_WEEK_DAYS - 1)
+        val today = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+        val sessions = app.foldcade.language.PlayHistory(plays.spans(), java.time.ZoneOffset.UTC).daySessions(today)
         assertTrue("Outside-only play has no removable day rows", sessions.isEmpty())
         val model = app.foldcade.language.PickerModel(count = 1, rowsPerPage = 1).copy(playActivity =
             app.foldcade.language.PlayActivityPage(app.foldcade.language.HostScreen.Top))
@@ -142,7 +142,9 @@ class PlayUsageTest {
             UsageSample("com.example.app", UsageMove.Resumed, now - 600_000L),
             UsageSample("com.example.app", UsageMove.Paused, now),
         ), now)
-        val week = app.foldcade.language.playWeek(plays.spans(), now, java.time.ZoneOffset.UTC, app.foldcade.language.DateStyle())
+        val history = app.foldcade.language.PlayHistory(plays.spans(), java.time.ZoneOffset.UTC)
+        val day = java.time.Instant.ofEpochMilli(now).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+        val week = history.week(day.minusDays(app.foldcade.language.PLAY_WEEK_DAYS - 1L), app.foldcade.language.DateStyle())
         assertEquals(120_000L, plays.shown(game).activeMillis)
         assertEquals(plays.shown(game).activeMillis, week.top.single { it.first == game }.second)
         assertEquals(30_000L, plays.shown(utility).activeMillis)

@@ -176,6 +176,7 @@ import app.foldcade.language.ArtKind
 import app.foldcade.BloomFrom
 import app.foldcade.ADD_GAMES_GLYPH
 import app.foldcade.FoldcadeApp
+import app.foldcade.playName
 import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.Surface
@@ -275,6 +276,7 @@ import app.foldcade.language.monogram
 import app.foldcade.language.panelRows
 import app.foldcade.language.panelHints
 import app.foldcade.language.playActivityHints
+import app.foldcade.language.playHoldsKey
 import app.foldcade.language.noticeAge
 import app.foldcade.language.quickTileColumns
 import app.foldcade.language.rowLabel
@@ -930,9 +932,18 @@ private fun pageBeside(
         CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, R.drawable.symbol_art, null, settings = true)
         CompanionPage.Settings ->
             CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
-        CompanionPage.PlayActivity ->
-            // The clock L1's chip and Y › Play time wear.
-            CenterSubject.Page(PlayCopy.activity, R.drawable.ic_status_playtime, null, settings = false)
+        CompanionPage.PlayActivity -> {
+            // A game's page names the game, as its About does, with Play time where About has the platform.
+            val tile = model.playActivity?.game
+            val game = tile?.let(app.shell::aboutGame)
+            if (tile != null) {
+                CenterSubject.Page(game?.title ?: playName(tile, app.shell.playTitle(tile), app.plays.name(tile)), null, game?.mark ?: MARK_CONSOLE,
+                    settings = false, game = tile.takeIf { game != null }, platform = PlayCopy.playTime)
+            } else {
+                // The clock L1's chip and Y › Play time wear.
+                CenterSubject.Page(PlayCopy.activity, R.drawable.ic_status_playtime, null, settings = false)
+            }
+        }
         CompanionPage.About -> {
             val game = about?.let { app.shell.aboutGame(it.game) }
             CenterSubject.Page(game?.title ?: GameAboutCopy.about, null, game?.mark ?: MARK_CONSOLE, settings = false,
@@ -3585,8 +3596,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
     val page = model.playActivity?.takeIf { model.dialog == null }?.let {
-        app.plays.stamp // Usage reconciliation and removals change which days have launch sessions.
-        playActivityHints(model, app.shell.playDaySessions(it.weeksBack, it.day).isNotEmpty())
+        // Read from the history kept for the page, which follows removals and usage changes.
+        playActivityHints(model, app.playHistory(it.game).daySessions(it.cursor).isNotEmpty())
     }
         ?: model.gameAbout?.takeIf { model.dialog == null }?.let { gameAboutHints(model) }
     val find = shell.findHints()
@@ -3620,7 +3631,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
     } else emptyList()
     val destructive = model.panel?.let { panelRows(it, model).getOrNull(it.index) }?.let { it == LanguageRow.RemoveDownload || it == LanguageRow.DeleteShortcut } == true ||
-        model.playActivity?.sessions != null
+        playHoldsKey(model)
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val selecting = gridKeys && shell.homeSelection() != null
     val optionsKey = actionFaces(model.faceMap).optionsGlyph

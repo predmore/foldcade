@@ -10,7 +10,8 @@ import org.junit.Test
 /** Removing a session from Play activity is held, as deleting a download is. */
 class PlaySessionHoldTest {
     private var time = 0L
-    private var days: (Int, Int) -> List<String> = { _, _ -> listOf("s1", "s2") }
+    private var days: (java.time.LocalDate, String?) -> List<String> = { _, _ -> listOf("s1", "s2") }
+    private val today = java.time.LocalDate.of(2026, 11, 9)
 
     @Test
     fun aOnADayListsItsSessionsAndAnEmptyDayStaysOnTheWeek() {
@@ -18,12 +19,13 @@ class PlaySessionHoldTest {
         days = { _, _ -> emptyList() }
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         assertNull(shell.model.playActivity?.sessions)
-        val asked = mutableListOf<Pair<Int, Int>>()
-        days = { weeksBack, day -> asked += weeksBack to day; listOf("s1", "s2") }
+        val asked = mutableListOf<Pair<java.time.LocalDate, String?>>()
+        days = { date, game -> asked += date to game; listOf("s1", "s2") }
+        // A week back, then a day up: the shell is asked for that date, of everything played.
         shell.onMeaning(Meaning.MoveLeft, HostScreen.Top)
         shell.onMeaning(Meaning.MoveUp, HostScreen.Top)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
-        assertEquals(listOf(1 to PLAY_WEEK_DAYS - 2), asked)
+        assertEquals(listOf(today.minusDays(8) to null), asked)
         assertEquals(listOf("s1", "s2"), shell.model.playActivity?.sessions)
     }
 
@@ -75,9 +77,55 @@ class PlaySessionHoldTest {
         assertEquals(listOf("s1", "s2"), shell.model.playActivity?.sessions)
     }
 
+    @Test
+    fun aNewDayWhileThePageIsOpenMovesItsBoundsWithTheClock() {
+        val shell = page()
+        assertEquals(today, shell.model.playActivity?.calendar?.today)
+        // Midnight passes with the page open: the clock tick refreshes today, and the cursor stays put.
+        shell.playCalendar = { PlayCalendar(today.plusDays(1), listOf(today.minusDays(40))) }
+        shell.notePlayClock()
+        assertEquals(today.plusDays(1), shell.model.playActivity?.calendar?.today)
+        assertEquals(today, shell.model.playActivity?.cursor)
+        // A time zone west of here makes today yesterday: the cursor comes back inside.
+        shell.playCalendar = { PlayCalendar(today.minusDays(1), listOf(today.minusDays(40))) }
+        shell.notePlayClock()
+        assertEquals(today.minusDays(1), shell.model.playActivity?.cursor)
+    }
+
+    @Test
+    fun aCopySplittingOffWhileADayIsListedTakesItsSessionOutOfTheList() {
+        val shell = listed()
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Top)
+        // A rescan renames one copy's ROM: its session is another game's now, under the same page.
+        days = { _, _ -> listOf("s1") }
+        shell.noteShelfChanged()
+        assertEquals(listOf("s1"), shell.model.playActivity?.sessions)
+        assertEquals(0, shell.model.playActivity?.session)
+        // A held X can only reach what is still listed.
+        shell.onMeaning(Meaning.ActivateBottom, HostScreen.Top)
+        assertEquals("s1", shell.model.deleteHold?.gameId)
+    }
+
+    @Test
+    fun aHeldBClosesThePageAndItsRepeatsNeverReachTheGrid() {
+        val shell = page()
+        val grid = shell.model.playActivity!!.grid
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertNull(shell.model.playActivity)
+        assertEquals(grid, shell.model.focus)
+        val closed = shell.model
+        // The key is still down: its repeats belong to the press that closed the page.
+        repeat(3) { shell.onMeaning(Meaning.Back, HostScreen.Top, repeatCount = it + 1) }
+        assertEquals(closed, shell.model)
+        // A fresh press is the grid's again.
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Top)
+        assertNotNull(shell.model.panel)
+    }
+
     private fun page(): ShellController {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
-        shell.playDaySessions = { weeksBack, day -> days(weeksBack, day) }
+        shell.playDaySessions = { date, game -> days(date, game) }
+        shell.playCalendar = { PlayCalendar(today, listOf(today.minusDays(40))) }
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Top)
         val rows = panelRows(shell.model.panel!!, shell.model)
         repeat(rows.size) { shell.onMeaning(Meaning.MoveUp, HostScreen.Top) }

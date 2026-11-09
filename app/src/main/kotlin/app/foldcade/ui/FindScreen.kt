@@ -413,7 +413,8 @@ internal fun FindFilters(session: FindSession, style: TextStyle, scale: Float, m
  * A row of pills between L2 and R2's glyphs: Find's filters, or All games' tabs. One highlight
  * glides to the [chosen] pill with the menus' bounce, and the row slides so it stays in view.
  * With [onTap], a tap on a pill chooses it, and a tap on L2's or R2's glyph steps as the
- * trigger would, round the ends.
+ * trigger would, round the ends, or to them and no further without [wraps]. Without [fills],
+ * the row is as wide as its pills, as Play activity's three zooms are.
  */
 @Composable
 internal fun PillCarousel(
@@ -423,19 +424,24 @@ internal fun PillCarousel(
     scale: Float,
     modifier: Modifier = Modifier,
     onTap: ((Int) -> Unit)? = null,
+    fills: Boolean = true,
+    wraps: Boolean = true,
 ) {
     val theme = LocalFoldTheme.current.theme
     val motion = theme.motion
     val density = LocalDensity.current
     val spans = remember { mutableStateMapOf<Int, Rect>() }
     val glyph = with(density) { style.fontSize.toDp() } * GLYPH_SHARE
-    val step = { by: Int -> if (onTap != null && labels.size > 1) onTap(Math.floorMod(chosen + by, labels.size)) }
+    val step = { by: Int ->
+        val to = if (wraps) Math.floorMod(chosen + by, labels.size) else (chosen + by).coerceIn(0, labels.lastIndex)
+        if (onTap != null && labels.size > 1 && to != chosen) onTap(to)
+    }
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         PromptImage(promptGlyph(PromptKey.L2), glyph, if (onTap != null) Modifier.hostPress { step(-1) } else Modifier)
-        BoxWithConstraints(Modifier.weight(1f).clipToBounds()) {
+        BoxWithConstraints((if (fills) Modifier.weight(1f) else Modifier).clipToBounds()) {
             val room = with(density) { maxWidth.toPx() }
             val end = spans.values.maxOfOrNull { it.right } ?: 0f
-            val target = spans[chosen]?.let { span ->
+            val target = if (!fills) 0f else spans[chosen]?.let { span ->
                 // Centred on the chosen pill, as far as the row allows; a short row sits centred.
                 if (end <= room) (end - room) / 2f else (span.center.x - room / 2f).coerceIn(0f, end - room)
             } ?: 0f
@@ -462,10 +468,10 @@ internal fun PillCarousel(
             val ring = remember(theme) { FocusRing(theme) }
             val find = theme.style.find
             val round = theme.style.shape.round
-            Box(Modifier.fillMaxWidth().fadeEnds(spans, { spans[chosen] }, { scroll }, density)) {
+            Box((if (fills) Modifier.fillMaxWidth() else Modifier).fadeEnds(spans, { spans[chosen] }, { scroll }, density)) {
                 Row(
                     Modifier
-                        .wrapContentWidth(Alignment.Start, unbounded = true)
+                        .wrapContentWidth(Alignment.Start, unbounded = fills)
                         .graphicsLayer { translationX = -scroll }
                         .drawWithContent {
                             drawContent()

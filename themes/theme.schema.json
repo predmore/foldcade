@@ -2041,6 +2041,102 @@
                             "minimum": 0.0,
                             "default": 3.0,
                             "description": "dp; follows base.cornerScale"
+                        },
+                        "heat1Alpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.36,
+                            "description": "follows base.fillScale"
+                        },
+                        "heat2Alpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.56,
+                            "description": "follows base.fillScale"
+                        },
+                        "heat3Alpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.76,
+                            "description": "follows base.fillScale"
+                        },
+                        "heat4Alpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 1.0,
+                            "description": "follows base.fillScale"
+                        },
+                        "cellAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.05,
+                            "description": "follows base.fillScale"
+                        },
+                        "cellCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 8.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "futureAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.3
+                        },
+                        "todayDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 1.5,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "todayAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.55
+                        },
+                        "monthBarCornerDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 6.0,
+                            "description": "dp; follows base.cornerScale"
+                        },
+                        "openedAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.9
+                        },
+                        "yearChipAlpha": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.24,
+                            "description": "follows base.fillScale"
+                        },
+                        "shareBarDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 4.0,
+                            "description": "dp; follows base.strokeScale"
+                        },
+                        "slideDp": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "default": 40.0,
+                            "description": "dp"
+                        },
+                        "zoomScale": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "default": 0.06
                         }
                     }
                 },

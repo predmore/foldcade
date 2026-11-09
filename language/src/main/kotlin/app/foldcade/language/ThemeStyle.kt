@@ -686,6 +686,38 @@ class ThemePlay internal constructor(reader: ThemeStyleReader) {
     /** A day of the week with no play. */
     val emptyBarAlpha = reader.fraction("play", "emptyBarAlpha", .12f, TokenRole.Fill)
     val barCornerDp = reader.number("play", "barCornerDp", 3f, role = TokenRole.Corner)
+    /** A day's cell on the month calendar, shaded by its time in four steps of `colors.progress`. */
+    val heat1Alpha = reader.fraction("play", "heat1Alpha", .36f, TokenRole.Fill)
+    val heat2Alpha = reader.fraction("play", "heat2Alpha", .56f, TokenRole.Fill)
+    val heat3Alpha = reader.fraction("play", "heat3Alpha", .76f, TokenRole.Fill)
+    val heat4Alpha = reader.fraction("play", "heat4Alpha", 1f, TokenRole.Fill)
+    fun heatAlpha(level: Int): Float = when (level) {
+        1 -> heat1Alpha
+        2 -> heat2Alpha
+        3 -> heat3Alpha
+        4 -> heat4Alpha
+        else -> 0f
+    }
+    /** A day's cell with no play. */
+    val cellAlpha = reader.fraction("play", "cellAlpha", .05f, TokenRole.Fill)
+    val cellCornerDp = reader.number("play", "cellCornerDp", 8f, role = TokenRole.Corner)
+    /** Days still to come, and their bars: drawn, never focused. */
+    val futureAlpha = reader.fraction("play", "futureAlpha", .3f)
+    /** The ring marking today's cell. */
+    val todayDp = reader.number("play", "todayDp", 1.5f, role = TokenRole.Stroke)
+    val todayAlpha = reader.fraction("play", "todayAlpha", .55f)
+    /** A month's bar on the year. */
+    val monthBarCornerDp = reader.number("play", "monthBarCornerDp", 6f, role = TokenRole.Corner)
+    /** The day a list is open on, while the list has the D-pad: a thin inner line in the focus ring's colours. */
+    val openedAlpha = reader.fraction("play", "openedAlpha", .9f)
+    /** Year's strip: the shown year's chip, in `colors.progress`. */
+    val yearChipAlpha = reader.fraction("play", "yearChipAlpha", .24f, TokenRole.Fill)
+    /** The thin bar under each of the most played: its share of the period. */
+    val shareBarDp = reader.number("play", "shareBarDp", 4f, role = TokenRole.Stroke)
+    /** How far a period slides as the next one comes in. */
+    val slideDp = reader.number("play", "slideDp", 40f, TokenDomain.NonNegative)
+    /** How much a zoom grows or shrinks as it crossfades: in when going closer, out when further. */
+    val zoomScale = reader.fraction("play", "zoomScale", .06f)
 }
 
 /**
