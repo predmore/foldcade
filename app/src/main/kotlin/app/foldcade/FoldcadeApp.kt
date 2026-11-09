@@ -411,10 +411,18 @@ class FoldcadeApp : Application() {
         return true
     }
 
-    /** Puts back the last [movePlay] of [from] onto [to]. */
+    /**
+     * Puts back the last [movePlay] of [from] onto [to]. [to] may have folded into another tile
+     * since, while its page stayed open, so the move is found by the tile it went to now.
+     */
     fun undoPlayMove(from: String, to: String) {
-        playMoves.remove(from to to)?.let(plays::undo)
+        val tile = shell.tileOf(to)
+        val key = playMoves.keys.firstOrNull { it.first == from && (it.second == to || shell.tileOf(it.second) == tile) } ?: return
+        playMoves.remove(key)?.let(plays::undo)
     }
+
+    /** A game's page opened: Undo is for this visit's moves, so nothing from an earlier one is left to put back. */
+    fun startPlayVisit() = playMoves.clear()
 
     /** A tile's play time for its Y menu, read once per change to the log: menus ask on every publish. */
     private fun playTimeOf(tileId: String): Long {
@@ -438,8 +446,6 @@ class FoldcadeApp : Application() {
      * but [tileId] and its copies, by [app.foldcade.language.playSourceOrder].
      */
     fun playSources(tileId: String): List<String> {
-        // A page opening starts with nothing to put back: Undo is for this visit's moves.
-        playMoves.clear()
         val (title, sources) = sourcesFor(tileId)
         return app.foldcade.language.playSourceOrder(title, sources).map { it.id }
     }
@@ -989,6 +995,7 @@ class FoldcadeApp : Application() {
         // A game's cover is kept when it is played, so its history keeps showing it after it leaves.
         plays.onStarted = { tile -> keepPlayArt(tile, again = true) }
         shell.playSources = ::playSources
+        shell.startPlayVisit = ::startPlayVisit
         shell.playTimeOf = ::playTimeOf
         shell.playFoundFor = ::playFoundFor
         shell.anyPlay = plays::hasPlay

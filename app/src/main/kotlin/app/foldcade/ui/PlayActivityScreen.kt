@@ -387,7 +387,8 @@ private fun YearStrip(history: PlayHistory, year: Int, calendar: app.foldcade.la
     val measurer = rememberTextMeasurer()
     val label = playText(theme.muted, theme, type.hint)
     val lit = playText(theme.onBackground, theme, type.hint, bold = true)
-    val texts = remember(history, first, last) { (first..last).associateWith { "$it · ${yearDuration(history.yearTotal(it))}" } }
+    // The shown year says its time exactly, as every total here does; the others stay short.
+    val texts = remember(history, first, last, year) { (first..last).associateWith { "$it · ${yearDuration(history.yearTotal(it), exact = it == year)}" } }
     val density = androidx.compose.ui.platform.LocalDensity.current
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
         val chevrons = with(density) { measurer.measure("‹›", playText(theme.muted, theme, type.heroTitle, bold = true)).size.width.toDp() + CHEVRON_GAP * 2 }
@@ -428,8 +429,12 @@ private fun YearStrip(history: PlayHistory, year: Int, calendar: app.foldcade.la
     }
 }
 
-/** A year's time on its chip: whole hours once there are any, "–" for none. */
-private fun yearDuration(millis: Long): String = if (millis <= 0L) PlayCopy.none else shortDuration(millis)
+/** A year's time on its chip: exactly for the [exact] one, else whole hours once there are any; "–" for none. */
+private fun yearDuration(millis: Long, exact: Boolean): String = when {
+    millis <= 0L -> PlayCopy.none
+    exact -> playDuration(millis)
+    else -> shortDuration(millis)
+}
 
 /**
  * What a hover would say about the cursor: its day or month, the time, and how many sessions or
@@ -875,7 +880,8 @@ private fun DaySessions(app: FoldcadeApp, history: PlayHistory, page: PlayActivi
                             BasicText(
                                 playName(session.gameId, app.shell.playTitle(session.gameId), app.plays.name(session.gameId)),
                                 modifier = Modifier.weight(1f),
-                                maxLines = 1,
+                                // Two lines, as Most played gives the same name, so two games of one series read apart.
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 style = playText(theme.onBackground, theme, type.sideRow, bold = true),
                             )
@@ -930,7 +936,8 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 BasicText(PlayCopy.timePlayed, maxLines = 1, style = playText(theme.muted, theme, type.hint))
                 BasicText(
-                    if (counted.value > 0f) playDuration(counted.value.toLong()) else PlayCopy.nothingYet,
+                    // The count runs on a float; at rest it reads the exact total, never a minute short.
+                    (if (counted.isRunning) counted.value.toLong() else total).let { if (it > 0L) playDuration(it) else PlayCopy.nothingYet },
                     maxLines = 1,
                     style = playText(theme.onBackground, theme, type.heroMeta, bold = true),
                 )

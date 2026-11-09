@@ -2916,7 +2916,8 @@ class ShellController(
 
     /** Where Play activity's cursor may go for one game, or for everything played: today and the days played. */
     var playCalendar: (game: String?) -> app.foldcade.language.PlayCalendar = {
-        app.foldcade.language.PlayCalendar(java.time.Instant.ofEpochMilli(nowMillis()).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
+        val zone = java.time.ZoneId.systemDefault()
+        app.foldcade.language.PlayCalendar(java.time.Instant.ofEpochMilli(nowMillis()).atZone(zone).toLocalDate(), zone = zone)
     }
 
     /**
@@ -2947,6 +2948,9 @@ class ShellController(
     /** The other games with play a game's page can take from, likeliest first. The app reads its play log. */
     var playSources: (tileId: String) -> List<String> = { emptyList() }
 
+    /** A game's page opened: this visit's moves start over. Reading [playSources] again, as a fold does, keeps them. */
+    var startPlayVisit: () -> Unit = {}
+
     /** A game's play time for its Y menu's Play time row. */
     var playTimeOf: (tileId: String) -> Long = { 0L }
 
@@ -2961,6 +2965,7 @@ class ShellController(
         val page = model.playActivity ?: return
         val tile = tileOf(gameId)
         // Its calendar is the tile's, which folds every copy's play.
+        startPlayVisit()
         publish(model.copy(playActivity = page.copy(game = tile, sources = playSources(tile), source = 0, moved = emptySet(), moving = false).opened(playCalendar(tile))))
     }
 

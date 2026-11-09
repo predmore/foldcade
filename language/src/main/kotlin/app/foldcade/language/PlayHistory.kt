@@ -27,7 +27,15 @@ enum class PlayZoom {
  * goes into the future, and with nothing played it stays on today. [played] are the days with
  * any play, as epoch days, oldest first, so Year can land Month on a month's last played day.
  */
-class PlayCalendar(val today: LocalDate, played: List<LocalDate> = emptyList()) {
+class PlayCalendar(
+    val today: LocalDate,
+    played: List<LocalDate> = emptyList(),
+    /**
+     * The time zone the days were counted in. Part of the calendar's identity: a new zone can
+     * keep the same played dates yet put a session on another day.
+     */
+    val zone: ZoneId? = null,
+) {
     private val days: LongArray = played.map { it.toEpochDay() }.distinct().sorted().toLongArray()
 
     /** The earliest day the cursor can reach. */
@@ -58,11 +66,11 @@ class PlayCalendar(val today: LocalDate, played: List<LocalDate> = emptyList()) 
     }
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is PlayCalendar && other.today == today && other.days.contentEquals(days))
+        this === other || (other is PlayCalendar && other.today == today && other.zone == zone && other.days.contentEquals(days))
 
-    override fun hashCode(): Int = 31 * today.hashCode() + days.contentHashCode()
+    override fun hashCode(): Int = 31 * (31 * today.hashCode() + (zone?.hashCode() ?: 0)) + days.contentHashCode()
 
-    override fun toString(): String = "PlayCalendar(today=$today, days=${days.size})"
+    override fun toString(): String = "PlayCalendar(today=$today, zone=$zone, days=${days.size})"
 }
 
 /**
@@ -244,7 +252,7 @@ class PlayHistory(spans: List<PlaySpan>, val zone: ZoneId) {
     }
 
     /** Where the cursor may go while [today] is today. */
-    fun calendar(today: LocalDate): PlayCalendar = PlayCalendar(today, totals.filterValues { it > 0L }.keys.map(LocalDate::ofEpochDay))
+    fun calendar(today: LocalDate): PlayCalendar = PlayCalendar(today, totals.filterValues { it > 0L }.keys.map(LocalDate::ofEpochDay), zone)
 
     /** The seven days from [start], as the week zoom draws them, named in [style]. */
     fun week(start: LocalDate, style: DateStyle): PlayWeek {

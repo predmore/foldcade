@@ -541,6 +541,42 @@ class PlayHistoryPageTest {
     }
 
     @Test
+    fun aNewTimeZoneRefreshesThePageEvenWhenThePlayedDatesStayTheSame() {
+        val la = ZoneId.of("America/Los_Angeles")
+        val ny = ZoneId.of("America/New_York")
+        val played = listOf(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 3))
+        val open = page(PlayZoom.Month, LocalDate.of(2026, 11, 3)).playActivity!!
+            .copy(calendar = PlayCalendar(today, played, la), sessions = listOf("late"), session = 0)
+        // Same dates, another zone: the late session now falls on the next day, so the list lets it go.
+        val moved = open.refreshed(PlayCalendar(today, played, ny)) { listOf("early") }
+        assertEquals(ny, moved.calendar?.zone)
+        assertNull(moved.sessions)
+        assertFalse(PlayCalendar(today, played, la) == PlayCalendar(today, played, ny))
+    }
+
+    @Test
+    fun anOpenListLetsGoOfASessionThatLeftItsDayUnderTheSameCalendar() {
+        val open = page(PlayZoom.Month, LocalDate.of(2026, 11, 3)).playActivity!!.copy(sessions = listOf("a", "b"), session = 1)
+        val same = open.calendar!!
+        assertEquals(listOf("a"), open.refreshed(same) { listOf("a") }.sessions)
+        assertEquals(0, open.refreshed(same) { listOf("a") }.session)
+        // Nothing changed: the same page.
+        assertSame(open, open.refreshed(same) { listOf("a", "b") })
+    }
+
+    @Test
+    fun aFoldKeepsTheRowsMovedThisVisitSoTheyCanStillGoBack() {
+        val open = page(PlayZoom.Month, LocalDate.of(2026, 11, 3), game = "copy", sources = listOf("a", "b")).playActivity!!
+            .copy(moved = setOf("a"), source = 1, moving = true)
+        // "a" gave all its time here, so a fresh read no longer lists it; a new source "c" turned up.
+        val folded = open.folded("tile", listOf("b", "c"), PlayCalendar(today, listOf(LocalDate.of(2026, 10, 1)))) { emptyList() }
+        assertEquals(listOf("a", "b", "c"), folded.sources)
+        assertEquals(setOf("a"), folded.moved)
+        assertEquals(1, folded.source)
+        assertTrue(folded.moving)
+    }
+
+    @Test
     fun theChevronsLightOnlyWhereThereIsAPeriodToReach() {
         val calendar = PlayCalendar(today, listOf(LocalDate.of(2025, 3, 4)))
         // November 2026: earlier months to reach, nothing after today.

@@ -90,16 +90,16 @@ fun PlayActivityPage.opened(calendar: PlayCalendar): PlayActivityPage = copy(
  * cursor's day, and closes when none are left, so a held X never aims at a session gone from it.
  */
 fun PlayActivityPage.refreshed(calendar: PlayCalendar, daySessions: (LocalDate) -> List<String> = { emptyList() }): PlayActivityPage {
-    if (calendar == this.calendar) return this
     val day = calendar.clamp(cursor)
-    val listed = sessions ?: return copy(calendar = calendar, day = day)
-    val there = daySessions(day).toSet()
-    val kept = listed.filter { it in there }
+    // The list first, whether or not the calendar moved: a session can leave the day while its dates stay.
+    val listed = sessions
+    val kept = listed?.let { ids -> daySessions(day).toSet().let { there -> ids.filter { it in there } } }
+    if (calendar == this.calendar && kept == listed) return this
     return copy(
         calendar = calendar,
         day = day,
-        sessions = kept.takeIf { it.isNotEmpty() },
-        session = if (kept.isEmpty()) 0 else session.coerceIn(0, kept.lastIndex),
+        sessions = kept?.takeIf { it.isNotEmpty() },
+        session = if (kept.isNullOrEmpty()) 0 else session.coerceIn(0, kept.lastIndex),
     )
 }
 
@@ -109,7 +109,17 @@ fun PlayActivityPage.refreshed(calendar: PlayCalendar, daySessions: (LocalDate) 
  * nothing is left to move.
  */
 fun PlayActivityPage.folded(tile: String, sources: List<String>, calendar: PlayCalendar, daySessions: (LocalDate) -> List<String>): PlayActivityPage {
-    val moved = copy(game = tile, sources = sources, source = 0, moving = moving && sources.isNotEmpty())
+    // A source moved here this visit has no time left to list, but keeps its row, so A can still put it back.
+    val stillMoved = this.moved.filter { it != tile }.toSet()
+    val merged = this.sources.filter { it in stillMoved || it in sources } + sources.filter { it !in this.sources }
+    val focused = this.sources.getOrNull(source)
+    val moved = copy(
+        game = tile,
+        sources = merged,
+        source = merged.indexOf(focused).coerceAtLeast(0),
+        moved = stillMoved,
+        moving = moving && merged.isNotEmpty(),
+    )
     if (moved.calendar == null) return moved.opened(calendar)
     // Forced through the refresh even with the same calendar: the list's sessions are now the tile's.
     return moved.copy(calendar = null).refreshed(calendar, daySessions)
@@ -148,7 +158,7 @@ object PlayCopy {
     /** Under [nothingYet]: where play comes from. */
     const val playSomething = "Play a game and its time shows here."
     /** A game's own page before any play: what comes next. */
-    const val firstSession = "Your first session starts the story."
+    const val firstSession = "Your story starts here."
     fun empty(hasPlay: Boolean): String = if (hasPlay) nothing else nothingYet
 
     /** A month or a year with no play: "No play in November", "No play in 2024". */
