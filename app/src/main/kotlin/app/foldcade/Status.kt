@@ -149,6 +149,11 @@ internal fun dateStyle(context: Context, locale: Locale = Locale.getDefault()): 
         monthDayYearPattern = DateFormat.getBestDateTimePattern(locale, "yMMMd"),
         is24Hour = is24Hour,
         timePattern = DateFormat.getBestDateTimePattern(locale, if (is24Hour) "Hm" else "hm"),
+        weekdayMonthDayPattern = DateFormat.getBestDateTimePattern(locale, "EEEMMMd"),
+        // "LLLL" is the month's own name, as a heading uses it, in languages that inflect it.
+        monthYearPattern = DateFormat.getBestDateTimePattern(locale, "yMMMM").replace("MMMM", "LLLL"),
+        // ICU's week, which follows the region and the user's own first day where Android offers one.
+        firstDayOfWeek = java.time.DayOfWeek.SUNDAY.plus(android.icu.util.Calendar.getInstance(locale).firstDayOfWeek - 1L),
     )
 }
 

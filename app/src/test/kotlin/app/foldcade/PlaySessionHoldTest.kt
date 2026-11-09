@@ -10,7 +10,8 @@ import org.junit.Test
 /** Removing a session from Play activity is held, as deleting a download is. */
 class PlaySessionHoldTest {
     private var time = 0L
-    private var days: (Int, Int) -> List<String> = { _, _ -> listOf("s1", "s2") }
+    private var days: (java.time.LocalDate, String?) -> List<String> = { _, _ -> listOf("s1", "s2") }
+    private val today = java.time.LocalDate.of(2026, 11, 9)
 
     @Test
     fun aOnADayListsItsSessionsAndAnEmptyDayStaysOnTheWeek() {
@@ -18,12 +19,13 @@ class PlaySessionHoldTest {
         days = { _, _ -> emptyList() }
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
         assertNull(shell.model.playActivity?.sessions)
-        val asked = mutableListOf<Pair<Int, Int>>()
-        days = { weeksBack, day -> asked += weeksBack to day; listOf("s1", "s2") }
+        val asked = mutableListOf<Pair<java.time.LocalDate, String?>>()
+        days = { date, game -> asked += date to game; listOf("s1", "s2") }
+        // A week back, then a day up: the shell is asked for that date, of everything played.
         shell.onMeaning(Meaning.MoveLeft, HostScreen.Top)
         shell.onMeaning(Meaning.MoveUp, HostScreen.Top)
         shell.onMeaning(Meaning.Activate, HostScreen.Top)
-        assertEquals(listOf(1 to PLAY_WEEK_DAYS - 2), asked)
+        assertEquals(listOf(today.minusDays(8) to null), asked)
         assertEquals(listOf("s1", "s2"), shell.model.playActivity?.sessions)
     }
 
@@ -77,7 +79,8 @@ class PlaySessionHoldTest {
 
     private fun page(): ShellController {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
-        shell.playDaySessions = { weeksBack, day -> days(weeksBack, day) }
+        shell.playDaySessions = { date, game -> days(date, game) }
+        shell.playCalendar = { PlayCalendar(today, listOf(today.minusDays(40))) }
         shell.onMeaning(Meaning.LeftPanel, HostScreen.Top)
         val rows = panelRows(shell.model.panel!!, shell.model)
         repeat(rows.size) { shell.onMeaning(Meaning.MoveUp, HostScreen.Top) }

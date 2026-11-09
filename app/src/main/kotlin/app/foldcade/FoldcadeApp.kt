@@ -487,6 +487,29 @@ class FoldcadeApp : Application() {
      * from wherever the grid finds its art. A game's cover is kept once a process unless a
      * session starts, which keeps it again, so new art is what history shows.
      */
+    /** The last histories read, everything played and the game on screen, kept until play or the catalog changes. */
+    private val playHistories = LinkedHashMap<String?, Pair<Triple<Int, Int, java.time.ZoneId>, app.foldcade.language.PlayHistory>>()
+
+    /**
+     * Play activity's history of [game], or of everything played: read once per change of the
+     * play log or of how copies fold into tiles, so a held D-pad never reads the log again.
+     */
+    fun playHistory(game: String?): app.foldcade.language.PlayHistory {
+        val zone = java.time.ZoneId.systemDefault()
+        val key = Triple(plays.stamp, shell.model.shelfEpoch, zone)
+        playHistories[game]?.takeIf { it.first == key }?.let { return it.second }
+        val spans = plays.spans().let { all -> if (game == null) all else all.filter { it.gameId == game } }
+        val history = app.foldcade.language.PlayHistory(spans, zone)
+        playHistories.remove(game)
+        playHistories[game] = key to history
+        // Everything played, and the one or two games last looked at.
+        while (playHistories.size > PLAY_HISTORIES) playHistories.remove(playHistories.keys.first { it != null })
+        return history
+    }
+
+    /** Today's date here, as Play activity counts days. */
+    fun playToday(): java.time.LocalDate = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+
     fun keepPlayArt(tileId: String, uri: String? = null, again: Boolean = false) {
         if (!again && tileId in keptPlayArt) return
         // Marked while it runs, so a page drawing the cover again waits; kept only once written.
@@ -967,10 +990,8 @@ class FoldcadeApp : Application() {
         shell.playTimeOf = ::playTimeOf
         shell.playFoundFor = ::playFoundFor
         shell.anyPlay = plays::hasPlay
-        shell.playDaySessions = { weeksBack, day ->
-            app.foldcade.language.playDaySessions(plays.spans(), System.currentTimeMillis(), java.time.ZoneId.systemDefault(), weeksBack, day)
-                .map { it.sessionId }
-        }
+        shell.playDaySessions = { date, game -> playHistory(game).daySessions(date).map { it.sessionId } }
+        shell.playCalendar = { game -> playHistory(game).calendar(playToday()) }
         // Moving art is saved apart from the tiles, so a stop between the two is put right here.
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
@@ -3121,6 +3142,9 @@ private const val RETROARCH_RETURN_READ_MS = 60_000L
 
 /** A kept cover's size: the grid's own tile size. */
 private const val PLAY_ART_PX = 384
+
+/** Histories kept for Play activity: everything played and two games. */
+private const val PLAY_HISTORIES = 3
 
 /** How long a hosted save folder waits, at most, for the players to load while Foldcade starts. */
 private const val PLAYERS_LOAD_WAIT_MS = 10_000L

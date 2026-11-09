@@ -1,6 +1,8 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
+import app.foldcade.language.opened
+import app.foldcade.language.refreshed
 import app.foldcade.language.SAME_PREFIX
 import app.foldcade.language.SameSource
 import app.foldcade.language.foldSameGames
@@ -509,6 +511,7 @@ class ShellController(
                     app.foldcade.language.retainMenuRows(current, previewed.copy(boardEmulators = boardEmulators)))))
                 // Off the dark screen, and off one a game holds.
                 .onShownScreens { store.session.pageAvailable(it.panel()) }
+                .let(::withPlayCalendar)
             undo = when {
                 stable.panel == null -> undo?.resume(nowMillis())
                 stable.panel?.let { Row.Undo in panelRows(it, stable) } == true -> undo?.pause(nowMillis())
@@ -868,7 +871,7 @@ class ShellController(
             if (page?.sessions?.getOrNull(page.session) != hold.gameId) { cancelDelete(); return null }
         } else if (hold.row == Row.MovePlay) {
             val page = model.playActivity
-            if (page?.game == null || page.sources.getOrNull(page.source) != hold.gameId || hold.gameId in page.moved) { cancelDelete(); return null }
+            if (page?.game == null || !page.moving || page.sources.getOrNull(page.source) != hold.gameId || hold.gameId in page.moved) { cancelDelete(); return null }
         } else if (hold.row is Row.ForgetFolder) {
             if (app.foldcade.language.settingsFocus(model) != hold.row) { cancelDelete(); return null }
         } else {
@@ -1326,7 +1329,7 @@ class ShellController(
                 null
             }
             is Effect.OpenPlayDay -> {
-                openPlayDay(effect.weeksBack, effect.day)
+                openPlayDay(effect.date, effect.game)
                 null
             }
             is Effect.OpenPlayGame -> {
@@ -2903,10 +2906,21 @@ class ShellController(
     }
 
     /**
-     * The session ids Play activity lists for a day of a week, first started first.
-     * The app reads them from its play log; see [app.foldcade.language.playDaySessions].
+     * The session ids Play activity lists for a day, of one game or of everything played,
+     * first started first. The app reads them from its play log; see [app.foldcade.language.PlayHistory].
      */
-    var playDaySessions: (weeksBack: Int, day: Int) -> List<String> = { _, _ -> emptyList() }
+    var playDaySessions: (date: java.time.LocalDate, game: String?) -> List<String> = { _, _ -> emptyList() }
+
+    /** Where Play activity's cursor may go for one game, or for everything played: today and the days played. */
+    var playCalendar: (game: String?) -> app.foldcade.language.PlayCalendar = {
+        app.foldcade.language.PlayCalendar(java.time.Instant.ofEpochMilli(nowMillis()).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
+    }
+
+    /** A page just opened reads its history once, and opens on its date. */
+    private fun withPlayCalendar(next: PickerModel): PickerModel {
+        val page = next.playActivity?.takeIf { it.calendar == null } ?: return next
+        return next.copy(playActivity = page.opened(playCalendar(page.game)))
+    }
 
     /** The other games with play a game's page can take from, likeliest first. The app reads its play log. */
     var playSources: (tileId: String) -> List<String> = { emptyList() }
@@ -2924,7 +2938,8 @@ class ShellController(
     private fun openPlayGame(gameId: String) {
         val page = model.playActivity ?: return
         val tile = tileOf(gameId)
-        publish(model.copy(playActivity = page.copy(game = tile, sources = playSources(tile), source = 0, moved = emptySet())))
+        // Its calendar is the tile's, which folds every copy's play.
+        publish(model.copy(playActivity = page.copy(game = tile, sources = playSources(tile), source = 0, moved = emptySet(), moving = false).opened(playCalendar(tile))))
     }
 
     /** A move on a game's page found nothing finished to move, so its row does not say Moved here. */
@@ -2934,10 +2949,19 @@ class ShellController(
     }
 
     /** A on a day of Play activity lists its sessions. A day without any stays as it is. */
-    private fun openPlayDay(weeksBack: Int, day: Int) {
+    private fun openPlayDay(date: java.time.LocalDate, game: String?) {
         val page = model.playActivity ?: return
-        val ids = playDaySessions(weeksBack, day).takeIf { it.isNotEmpty() } ?: return
+        val ids = playDaySessions(date, game).takeIf { it.isNotEmpty() } ?: return
         publish(model.copy(playActivity = page.copy(sessions = ids, session = 0)))
+    }
+
+    /** A tap on one of Play activity's zoom tabs. An open list keeps the chart where it is. */
+    fun tapPlayZoom(at: Int) {
+        if (modalOpen()) return
+        val page = model.playActivity?.takeIf { it.sessions == null && !it.moving } ?: return
+        val zoom = app.foldcade.language.PlayZoom.entries.getOrNull(at)?.takeIf { it != page.zoom } ?: return
+        cue(model.themeIndex, "move")
+        publish(model.copy(playActivity = app.foldcade.language.playZoomed(page, zoom)))
     }
 
     /** A tap on the Play activity page's back pill. */
@@ -4178,6 +4202,11 @@ class ShellController(
      * last-played times.
      */
     fun notePlayChanged() {
+        // An open page's bounds follow its history: a removed or imported first day moves them.
+        model.playActivity?.let { page ->
+            val fresh = page.refreshed(playCalendar(page.game))
+            if (fresh != page) publish(model.copy(playActivity = fresh))
+        }
         val focusedId = gridFocusId()
         if (homeReturnBlocked()) cancelHomeReturnOnInput()
         // All games' Recent and Most played reorder its rows, which the board does not see.
@@ -4577,8 +4606,14 @@ class ShellController(
                 } else if (meaning == Meaning.Options && panel?.side == Side.Tile && after.panel == null) {
                     // Y closing the menu it opened.
                     cue(after.themeIndex, "close")
+                } else if (meaning == Meaning.Options && before.playActivity != null && before.playActivity?.moving != after.playActivity?.moving) {
+                    // Y on a game's page opens Move time from, and closes it again.
+                    cue(after.themeIndex, if (after.playActivity?.moving == true) "open" else "close")
                 }
             }
+            // L2 and R2 zoom Play activity, and sound as a tab stepping does.
+            Meaning.LetterBackward, Meaning.LetterForward ->
+                if (before.playActivity != null && before.playActivity?.zoom != after.playActivity?.zoom) cue(after.themeIndex, "move")
             Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight -> {
                 val moved = before.focus != after.focus || before.panel?.index != after.panel?.index ||
                     before.playActivity != after.playActivity
