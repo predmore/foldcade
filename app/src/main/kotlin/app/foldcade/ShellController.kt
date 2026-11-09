@@ -363,6 +363,17 @@ class ShellController(
     private var playerPackages: Set<String> = emptySet()
     /** Each copy's id to the tile a game several libraries have is shown as. */
     private var sameAliases: Map<String, String> = store.sameGames()
+        set(value) {
+            field = value
+            foldGeneration++
+        }
+
+    /**
+     * Counts each change to how copies fold into tiles. It moves the moment the aliases do,
+     * before any model is published, so a history read for the new fold is never the old one's.
+     */
+    var foldGeneration = 0
+        private set
 
     /** What [foldSameGames] knows of each library game, by its own home id. */
     private val sameSources = HashMap<String, SameSource>()

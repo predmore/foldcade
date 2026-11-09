@@ -494,7 +494,7 @@ class FoldcadeApp : Application() {
      * session starts, which keeps it again, so new art is what history shows.
      */
     /** The last histories read, everything played and the game on screen, kept until play or the catalog changes. */
-    private val playHistories = LinkedHashMap<String?, Pair<Triple<Int, Int, java.time.ZoneId>, app.foldcade.language.PlayHistory>>()
+    private val playHistories = LinkedHashMap<String?, Pair<List<Any>, app.foldcade.language.PlayHistory>>()
 
     /**
      * Play activity's history of [game], or of everything played: read once per change of the
@@ -504,7 +504,8 @@ class FoldcadeApp : Application() {
         // Spans are kept under the tile a game shows as now, so a copy's old id reads its tile's history.
         val game = id?.let(shell::tileOf)
         val zone = java.time.ZoneId.systemDefault()
-        val key = Triple(plays.stamp, shell.model.shelfEpoch, zone)
+        // The fold's own count moves with the aliases, before the model that shows them is published.
+        val key = listOf(plays.stamp, shell.model.shelfEpoch, shell.foldGeneration, zone)
         playHistories[game]?.takeIf { it.first == key }?.let { return it.second }
         val spans = plays.spans().let { all -> if (game == null) all else all.filter { it.gameId == game } }
         val history = app.foldcade.language.PlayHistory(spans, zone)
