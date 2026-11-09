@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -346,17 +346,18 @@ private fun PeriodLine(history: PlayHistory, key: ChartKey, calendar: app.foldca
     }
     val total = remember(history, key) { history.total(key.start, key.end()) }
     val (earlier, later) = playPeriodReach(calendar, key.start, key.end())
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Chevron("‹", earlier, theme)
-        BasicText(
-            playPeriodLabel(key.zoom, key.start, today, style),
-            modifier = Modifier.weight(1f, fill = false).padding(horizontal = CHEVRON_GAP),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = playText(theme.muted, theme, type.heroMeta),
-        )
-        Chevron("›", later, theme)
-        Spacer(Modifier.weight(1f).widthIn(min = 12.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.weight(1f, fill = false).padding(end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Chevron("‹", earlier, theme)
+            BasicText(
+                playPeriodLabel(key.zoom, key.start, today, style),
+                modifier = Modifier.weight(1f, fill = false).padding(horizontal = CHEVRON_GAP),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = playText(theme.muted, theme, type.heroMeta),
+            )
+            Chevron("›", later, theme)
+        }
         BasicText(playDuration(total), maxLines = 1, style = playText(theme.onBackground, theme, type.heroMeta, bold = true))
     }
 }
@@ -367,7 +368,8 @@ private fun Chevron(glyph: String, lit: Boolean, theme: Theme) {
     BasicText(
         glyph,
         maxLines = 1,
-        style = playText(if (lit) theme.onBackground else theme.muted.copy(alpha = theme.style.play.futureAlpha), theme, theme.style.type.heroMeta, bold = true),
+        // A size up from the label, so the glyph reads as a way to go rather than punctuation.
+        style = playText(if (lit) theme.onBackground else theme.muted.copy(alpha = theme.style.play.futureAlpha), theme, theme.style.type.heroTitle, bold = true),
     )
 }
 
@@ -387,7 +389,7 @@ private fun YearStrip(history: PlayHistory, year: Int, calendar: app.foldcade.la
     val texts = remember(history, first, last) { (first..last).associateWith { "$it · ${yearDuration(history.yearTotal(it))}" } }
     val density = androidx.compose.ui.platform.LocalDensity.current
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val chevrons = with(density) { measurer.measure("‹›", playText(theme.muted, theme, type.heroMeta, bold = true)).size.width.toDp() + CHEVRON_GAP * 2 }
+        val chevrons = with(density) { measurer.measure("‹›", playText(theme.muted, theme, type.heroTitle, bold = true)).size.width.toDp() + CHEVRON_GAP * 2 }
         val padPx = with(density) { YEAR_CHIP_PAD.toPx() }
         val gapPx = with(density) { YEAR_CHIP_GAP.toPx() }
         val room = with(density) { (maxWidth - chevrons).toPx() }
@@ -466,7 +468,7 @@ private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, fi
     ) {
         HourScale(theme)
         // The focus ring's reach, so a larger font's first row never wears its ring across the hours.
-        Spacer(Modifier.height(ringReach() / 2))
+        Spacer(Modifier.height(ringReach()))
         week.days.forEachIndexed { index, row ->
             // Days still to come and days before the first play are drawn dim: the cursor reaches neither.
             val future = row.date > today || row.date < first
@@ -1110,7 +1112,8 @@ private const val BAR_INSET = 0.16f
 private fun HourScale(theme: Theme) {
     Row(Modifier.padding(horizontal = DAY_INSET), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.width(DAY_LABEL))
-        Box(Modifier.weight(1f).height(18.dp)) {
+        // As tall as its labels at any font size, so they never spill into the first day's row.
+        Box(Modifier.weight(1f).heightIn(min = 18.dp)) {
             listOf(6, 12, 18).forEach { hour ->
                 Box(Modifier.fillMaxWidth(hour / 24f), contentAlignment = Alignment.CenterEnd) {
                     BasicText("$hour", style = playText(theme.muted, theme, theme.style.type.hint))
