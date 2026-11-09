@@ -914,8 +914,10 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
     val stamp = app.plays.stamp
     val type = theme.style.type
     val motion = theme.motion
-    val played = remember(stamp) { app.plays.played() }
     val model = app.shell.model
+    // Copies folding or splitting change what each tile holds without new play: the shelf's epoch
+    // recomposes the page, and the fold's count says the totals moved.
+    val played = remember(stamp, model.shelfEpoch, app.shell.foldGeneration) { app.plays.played() }
     val reach = ringReach()
     val slots = rememberSelectionSlots()
     val scroll = rememberScrollState()
