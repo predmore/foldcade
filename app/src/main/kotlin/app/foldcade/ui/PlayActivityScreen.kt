@@ -152,9 +152,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val chart = chartKey(page.zoom, day, style)
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
     val moving = presence(page.takeIf { it.moving && it.sessions == null }, motion.durationIsland, scale)
-    // Each minute, a set clock, or a new time zone: today may be another day, so the bounds follow.
-    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
-    LaunchedEffect(status.minute, status.time) { app.shell.notePlayClock() }
+    PlayClockWatch(app)
     val first = page.calendar?.first ?: today
     Column(
         Modifier
@@ -250,6 +248,16 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
             }
         }
     }
+}
+
+/**
+ * Each minute, a set clock, or a new time zone: today may be another day, so the page's bounds
+ * follow. Its own scope, so the device's other status changes never recompose the page.
+ */
+@Composable
+private fun PlayClockWatch(app: FoldcadeApp) {
+    val status by app.deviceStatus.status.collectAsStateWithLifecycle()
+    LaunchedEffect(status.minute, status.time) { app.shell.notePlayClock() }
 }
 
 /** A swap's first half: what leaves is gone by the middle. */
