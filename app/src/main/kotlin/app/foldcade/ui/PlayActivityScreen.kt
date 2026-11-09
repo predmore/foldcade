@@ -154,8 +154,9 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
     val moving = presence(page.takeIf { it.moving && it.sessions == null }, motion.durationIsland, scale)
     PlayClockWatch(app)
-    // What each source had before it moved here, kept on the page so its row still says so after Move time closes and opens again.
-    val moveAmounts = remember(game) { mutableMapOf<String, Long>() }
+    // What each source had before it moved here, kept for the page's whole visit, so its row still says so after Move time
+    // closes and opens again, or after the game folds under another tile's id. A new visit composes the page afresh.
+    val moveAmounts = remember { mutableMapOf<String, Long>() }
     val first = page.calendar?.first ?: today
     Column(
         Modifier
