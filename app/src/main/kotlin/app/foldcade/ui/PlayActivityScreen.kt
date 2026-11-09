@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -101,7 +102,11 @@ private fun rememberClockFormat(): (Long) -> String {
     }
 }
 
-/** What the chart shows: a zoom and the first day of its period. A change of either slides or zooms it. */
+/**
+ * What the chart shows: a zoom and the first day of its period. A change of either slides or zooms it.
+ * Immutable, so the cards that read it skip while a held D-pad moves the cursor inside one period.
+ */
+@Immutable
 private data class ChartKey(val zoom: PlayZoom, val start: LocalDate)
 
 private fun chartKey(zoom: PlayZoom, day: LocalDate, style: DateStyle): ChartKey = ChartKey(
@@ -147,8 +152,8 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
         Modifier
             .fillMaxSize()
             .background(theme.background)
-            .padding(horizontal = 40.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(horizontal = 40.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // The pill takes what the zooms leave, and a long game name ends in "…".
@@ -178,7 +183,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
             Spacer(Modifier.width(24.dp))
             // All games' tabs, as L2 and R2 step them there.
             PillCarousel(
-                labels = PlayZoom.entries.map(PlayCopy::zoom),
+                labels = remember { PlayZoom.entries.map(PlayCopy::zoom) },
                 chosen = page.zoom.ordinal,
                 style = playText(theme.muted, theme, design.type.sideRow),
                 scale = scale,
@@ -195,7 +200,8 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     .clip(RoundedCornerShape(design.metrics.cardCornerDp.dp))
                     .background(theme.surface)
                     .padding(horizontal = CARD_PAD, vertical = CHART_PAD),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                // Room for the focus ring's glow between the last row and the readout.
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 // The period and its total crossfade as the chart moves.
                 ChartSwap(chart, scale, Modifier.fillMaxWidth(), travel = 0f) { shown ->
@@ -270,7 +276,8 @@ private fun ChartSwap(key: ChartKey, scale: Float, modifier: Modifier, travel: F
         if (old != null) {
             key(old) {
                 Box(
-                    Modifier.fillMaxSize().graphicsLayer {
+                    // The leaving copy takes the room the arriving one sizes.
+                    Modifier.matchParentSize().graphicsLayer {
                         val t = progress.value
                         alpha = (1f - t * 2f).coerceIn(0f, 1f)
                         if (zooming) {
@@ -286,7 +293,7 @@ private fun ChartSwap(key: ChartKey, scale: Float, modifier: Modifier, travel: F
         }
         key(key) {
             Box(
-                Modifier.fillMaxSize().graphicsLayer {
+                Modifier.fillMaxWidth().graphicsLayer {
                     val t = progress.value
                     alpha = t
                     if (zooming) {
@@ -347,13 +354,17 @@ private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, to
         Modifier
             .fillMaxSize()
             .selectionHighlight(slots, week.days.indexOfFirst { it.date == day }.takeIf { it >= 0 }, ring = ring, scale = scale),
-        verticalArrangement = Arrangement.SpaceEvenly,
     ) {
         HourScale(theme)
         week.days.forEachIndexed { index, row ->
             val future = row.date > today
+            // The seven rows share what the card has, so a larger font still fits all of them.
             Row(
-                Modifier.selectionSlot(slots, index).padding(horizontal = DAY_INSET, vertical = 5.dp).graphicsLayer { if (future) alpha = theme.style.play.futureAlpha },
+                Modifier
+                    .weight(1f)
+                    .selectionSlot(slots, index)
+                    .padding(horizontal = DAY_INSET)
+                    .graphicsLayer { if (future) alpha = theme.style.play.futureAlpha },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 BasicText(
@@ -361,7 +372,7 @@ private fun WeekChart(history: PlayHistory, start: LocalDate, day: LocalDate, to
                     modifier = Modifier.width(DAY_LABEL),
                     style = playText(if (row.date == day) theme.onBackground else theme.muted, theme, type.sideRow),
                 )
-                DayTrack(row.blocks, theme, Modifier.weight(1f).height(22.dp), grown)
+                DayTrack(row.blocks, theme, Modifier.weight(1f).height(DAY_TRACK), grown)
                 // Empty days stay quiet beside the days with play.
                 BasicText(
                     playDayTotal(row.totalMillis),
@@ -412,7 +423,6 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, t
     val label = playText(theme.muted, theme, type.hint).copy(textAlign = TextAlign.Center)
     val numeral = playText(theme.onBackground, theme, type.hint)
     val strong = playText(theme.background, theme, type.hint, bold = true)
-    val rows = cells.size / PLAY_WEEK_DAYS
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
             weekdays.forEach { BasicText(it, modifier = Modifier.weight(1f), style = label) }
@@ -428,14 +438,13 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, t
                     // Always six rows tall, so every month's cells are one size and the slide reads as one calendar.
                     val cellW = (size.width - gap * (PLAY_WEEK_DAYS - 1)) / PLAY_WEEK_DAYS
                     val cellH = (size.height - gap * (MONTH_ROWS - 1)) / MONTH_ROWS
-                    val top = (size.height - (cellH * rows + gap * (rows - 1))) / 2f
                     val corner = CornerRadius(play.cellCornerDp.dp.toPx())
                     val t = grown()
                     cells.forEachIndexed { index, cell ->
                         if (!cell.inMonth) return@forEachIndexed
                         val col = index % PLAY_WEEK_DAYS
                         val row = index / PLAY_WEEK_DAYS
-                        val at = Offset(col * (cellW + gap), top + row * (cellH + gap))
+                        val at = Offset(col * (cellW + gap), row * (cellH + gap))
                         val box = Size(cellW, cellH)
                         val future = cell.date > today
                         drawRoundRect(theme.onBackground.copy(alpha = play.cellAlpha * if (future) play.futureAlpha else 1f), at, box, corner)
@@ -463,24 +472,23 @@ private fun MonthChart(history: PlayHistory, start: LocalDate, day: LocalDate, t
         )
     }
     // The highlight finds each day's cell where the canvas puts it.
-    MonthSlots(slots, cells, area, rows)
+    MonthSlots(slots, cells, area)
 }
 
 /** Each in-month day's cell rectangle, for the gliding highlight. */
 @Composable
-private fun MonthSlots(slots: SelectionSlots, cells: List<MonthCell>, size: IntSize, rows: Int) {
+private fun MonthSlots(slots: SelectionSlots, cells: List<MonthCell>, size: IntSize) {
     val gapPx = with(androidx.compose.ui.platform.LocalDensity.current) { CELL_GAP.toPx() }
     LaunchedEffect(size, cells, gapPx) {
         if (size == IntSize.Zero) return@LaunchedEffect
         val cellW = (size.width - gapPx * (PLAY_WEEK_DAYS - 1)) / PLAY_WEEK_DAYS
         val cellH = (size.height - gapPx * (MONTH_ROWS - 1)) / MONTH_ROWS
-        val top = (size.height - (cellH * rows + gapPx * (rows - 1))) / 2f
         slots.rows.clear()
         cells.forEachIndexed { index, cell ->
             if (!cell.inMonth) return@forEachIndexed
             val col = index % PLAY_WEEK_DAYS
             val row = index / PLAY_WEEK_DAYS
-            slots.rows[index] = Rect(Offset(col * (cellW + gapPx), top + row * (cellH + gapPx)), Size(cellW, cellH))
+            slots.rows[index] = Rect(Offset(col * (cellW + gapPx), row * (cellH + gapPx)), Size(cellW, cellH))
         }
     }
 }
@@ -556,10 +564,10 @@ private fun YearChart(history: PlayHistory, year: Int, day: LocalDate, today: Lo
     )
 }
 
-/** A month's time over its bar, short enough for a narrow bar: hours alone once there are any. */
+/** A month's time over its bar, short enough for a narrow bar: whole hours once there are any. The readout has it exactly. */
 private fun shortDuration(millis: Long): String {
     val hours = millis / 3_600_000L
-    return if (hours >= 10L) "${hours}h" else playDuration(millis)
+    return if (hours >= 1L) "${hours}h" else playDuration(millis)
 }
 
 /**
@@ -588,13 +596,15 @@ private fun MostPlayed(app: FoldcadeApp, history: PlayHistory, key: ChartKey, to
             current.forEach { (gameId, title) -> if (title != null) app.plays.rememberName(gameId, title) }
         }
         val fill = theme.style.colors.progress ?: theme.focus
+        // Two lines while the card has room for them, as a game's own page gives a long name; a full four keep to one.
+        val nameLines = if (top.size < PLAY_TOP_GAMES) 2 else 1
         top.forEachIndexed { index, (gameId, millis) ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PlayCover(app, gameId, TOP_COVER)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     BasicText(
                         playName(gameId, current[index].second, app.plays.name(gameId)),
-                        maxLines = 1,
+                        maxLines = nameLines,
                         overflow = TextOverflow.Ellipsis,
                         style = playText(theme.onBackground, theme, type.sideRow, bold = true),
                     )
@@ -636,7 +646,7 @@ private fun GameFacts(app: FoldcadeApp, history: PlayHistory, game: String, toda
         PlayCopy.longest to if (history.longestMillis > 0L) playDuration(history.longestMillis) else PlayCopy.none,
         PlayCopy.bestStreak to playStreak(history.bestStreak),
     )
-    Column(Modifier.fillMaxSize().padding(CARD_PAD), verticalArrangement = Arrangement.SpaceBetween) {
+    Column(Modifier.fillMaxSize().padding(horizontal = FACT_PAD, vertical = CARD_PAD), verticalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             PlayCover(app, game, FACT_COVER)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -649,10 +659,11 @@ private fun GameFacts(app: FoldcadeApp, history: PlayHistory, game: String, toda
                 )
             }
         }
+        // Quiet labels and strong values, so a long date still fits beside its label at a larger font.
         facts.forEach { (name, value) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = playText(theme.muted, theme, type.sideRow))
-                Spacer(Modifier.width(12.dp))
+                BasicText(name, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = playText(theme.muted, theme, type.hint))
+                Spacer(Modifier.width(8.dp))
                 BasicText(value, maxLines = 1, style = playText(theme.onBackground, theme, type.sideRow, bold = true))
             }
         }
@@ -893,14 +904,16 @@ private val SESSION_COVER = 28.dp
 private const val MARK_FILL = 0.8f
 
 /** The chart's share of the page's width; the card beside it has the rest. */
-private const val CHART_SHARE = 0.64f
+private const val CHART_SHARE = 0.62f
 
 /** The cards' margin, and the room around a day's row inside its highlight. */
 private val CARD_PAD = 24.dp
+private val FACT_PAD = 20.dp
 private val CHART_PAD = 18.dp
 private val DAY_INSET = 10.dp
 private val DAY_LABEL = 56.dp
 private val DAY_TOTAL = 88.dp
+private val DAY_TRACK = 20.dp
 
 /** The month calendar: rows it is always sized for, and the gap between cells. */
 private const val MONTH_ROWS = 6

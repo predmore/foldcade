@@ -95,7 +95,7 @@ Press **A** to play on the top screen or **X** on the bottom. Games that need bo
 
 Play activity and the hero use the same optional Android usage-access time for Android games, including play started elsewhere. Usage replaces Foldcade’s launch time for that app, so one launch counts once. ROMs keep their own launch history. Non-game apps and emulators keep their Foldcade launch history in every view. The week includes usage time; A Sessions appears only for days with a Foldcade launch, whose time you can remove.
 
-Empty days show a quiet dash, and short stretches of play stay visible on the week. A fresh profile says **No play yet**; a quiet week says **No play this week**. A game's Play time shows **Move time from** only when another game's time is available. RomM games kept on Home without catalog details show its cloud and **Waiting for RomM**, with a name from play history or cached metadata when available; **A Play** tries the game again.
+Empty days show a quiet dash, and short stretches of play stay visible on the week. A fresh profile says **No play yet**; a quiet period says so, as **No play this week** or **No play in February 2025**. On a game's Play time, **Y** shows **Move time from** only when another game's time is available. RomM games kept on Home without catalog details show its cloud and **Waiting for RomM**, with a name from play history or cached metadata when available; **A Play** tries the game again.
 
 **A** on a paused game brings back its open session, including when usage access is off. **Y › Restart** starts it over. Moving a running game between screens is offered only for an emulator tested to keep its progress; see the [Thor results](docs/integrations/emulators.md#resume-and-move-on-the-thor).
 
@@ -142,7 +142,9 @@ Press **Select** on any grid and start typing on the controller keyboard. Result
 
 ### See where the hours went
 
-Track how long you played and when, see your week in L1, and open All games' **Recent** tab to return to a game: the games you played, the most recent first. **Most played** puts the games you spent longest in first. With **Settings › System › Play time** on **All games**, sessions started outside Foldcade count too.
+Track how long you played and when, see this week in L1, and open All games' **Recent** tab to return to a game: the games you played, the most recent first. **Most played** puts the games you spent longest in first. With **Settings › System › Play time** on **All games**, sessions started outside Foldcade count too.
+
+**L1 › Play activity** shows everything played, and **Y › Play time** on a game shows that game alone. Both have three zooms, stepped with **L2 / R2**: **Week**, a row per day across the hours; **Month**, a calendar shaded by how long you played each day against your own days; and **Year**, twelve monthly bars. The D-pad moves one date across all three, stepping into the next month or year at the edge, back to the first day you played and up to today; a line under the chart says the day's or month's time. **A** lists a day's sessions, or opens a month from the year. A game's page opens on the month it was last played, beside its total, first and last played, days played, sessions, longest session, and best streak. Android apps that Foldcade didn't launch keep only Android's recent usage, about a week, so their older time isn't in the history.
 
 ### Make it yours
 
