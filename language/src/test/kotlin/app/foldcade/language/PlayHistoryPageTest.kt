@@ -525,6 +525,11 @@ class PlayHistoryPageTest {
         val shifted = onB.refreshed(same) { listOf("b", "c") }
         assertEquals(listOf("b", "c"), shifted.sessions)
         assertEquals(0, shifted.session)
+        // The clock or zone clamps the cursor onto another day: the old day's list closes, never shows part of the new one.
+        val later = page(PlayZoom.Month, today, first = LocalDate.of(2026, 10, 1)).playActivity!!.copy(sessions = listOf("night"), session = 0)
+        val zoned = later.refreshed(PlayCalendar(today.minusDays(1), listOf(LocalDate.of(2026, 10, 1)))) { listOf("night", "noon") }
+        assertEquals(today.minusDays(1), zoned.day)
+        assertNull(zoned.sessions)
     }
 
     @Test

@@ -93,7 +93,8 @@ fun PlayActivityPage.refreshed(calendar: PlayCalendar, daySessions: (LocalDate) 
     val day = calendar.clamp(cursor)
     // The list first, whether or not the calendar moved: a session can leave the day while its dates stay.
     val listed = sessions
-    val kept = listed?.let { ids -> daySessions(day).toSet().let { there -> ids.filter { it in there } } }
+    // A list is its day's: when the cursor is clamped onto another day, it closes rather than show part of that one.
+    val kept = listed?.let { ids -> if (day != cursor) emptyList() else daySessions(day).toSet().let { there -> ids.filter { it in there } } }
     if (calendar == this.calendar && kept == listed) return this
     // The focus stays on the session it was on; only when that one left does it take the row in its place.
     val focused = listed?.getOrNull(session)

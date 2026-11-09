@@ -154,6 +154,8 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
     val listing = presence(page.takeIf { it.sessions != null }, motion.durationIsland, scale)
     val moving = presence(page.takeIf { it.moving && it.sessions == null }, motion.durationIsland, scale)
     PlayClockWatch(app)
+    // What each source had before it moved here, kept on the page so its row still says so after Move time closes and opens again.
+    val moveAmounts = remember(game) { mutableMapOf<String, Long>() }
     val first = page.calendar?.first ?: today
     Column(
         Modifier
@@ -244,7 +246,7 @@ internal fun PlayActivityScreen(app: FoldcadeApp, page: PlayActivityPage) {
                     }
                 }
                 moving.shown?.let { shown ->
-                    if (game != null) Box(Modifier.fillMaxSize().rise { secondHalf(moving.progress.value) }) { GameSources(app, shown, game, theme, scale) }
+                    if (game != null) Box(Modifier.fillMaxSize().rise { secondHalf(moving.progress.value) }) { GameSources(app, shown, game, theme, scale, moveAmounts) }
                 }
             }
         }
@@ -910,7 +912,7 @@ private fun DaySessions(app: FoldcadeApp, history: PlayHistory, page: PlayActivi
  * Moved here with what it moved, and A puts it back.
  */
 @Composable
-private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, theme: Theme, scale: Float) {
+private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, theme: Theme, scale: Float, before: MutableMap<String, Long>) {
     val stamp = app.plays.stamp
     val type = theme.style.type
     val motion = theme.motion
@@ -926,7 +928,6 @@ private fun GameSources(app: FoldcadeApp, page: PlayActivityPage, game: String, 
     val counted = remember { Animatable(total.toFloat()) }
     LaunchedEffect(total) { counted.animateTo(total.toFloat(), motion.arrive(motion.durationIsland * COUNT_SPAN, scale)) }
     // What each source had before it moved, so its row can say how much came here.
-    val before = remember { mutableMapOf<String, Long>() }
     page.sources.forEach { source -> if (source !in page.moved) played[source]?.activeMillis?.takeIf { it > 0L }?.let { before[source] = it } }
     Column(Modifier.fillMaxSize().padding(horizontal = (CARD_PAD - reach).coerceAtLeast(0.dp), vertical = CARD_PAD - DAY_INSET)) {
         Row(
@@ -1179,7 +1180,10 @@ internal fun PlayStrip(app: FoldcadeApp, focused: Boolean, chord: PromptKey? = n
     val theme = LocalFoldTheme.current.theme
     val style = rememberDateStyle(app)
     val history = app.playHistory(null)
-    val today = app.playToday()
+    // The same clock the page watches, so today's bar moves at midnight or in a new time zone.
+    val status = app.deviceStatus.status.collectAsStateWithLifecycle()
+    val tick by remember { derivedStateOf { status.value.minute to status.value.time } }
+    val today = remember(tick) { app.playToday() }
     val week: PlayWeek = remember(history, today, style) { history.week(playWeekStart(today, style.firstDayOfWeek), style) }
     val most = week.days.maxOfOrNull { it.totalMillis }?.coerceAtLeast(1L) ?: 1L
     Column(modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
