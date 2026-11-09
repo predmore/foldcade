@@ -84,9 +84,60 @@ fun PlayActivityPage.opened(calendar: PlayCalendar): PlayActivityPage = copy(
     day = if (game != null) calendar.lastPlayed ?: calendar.today else calendar.today,
 )
 
-/** The history changed under the open page: its bounds move and the cursor stays inside them. */
-fun PlayActivityPage.refreshed(calendar: PlayCalendar): PlayActivityPage =
-    if (calendar == this.calendar) this else copy(calendar = calendar, day = calendar.clamp(cursor))
+/**
+ * The history or the clock changed under the open page: its bounds move and the cursor stays
+ * inside them. An open day's list keeps only the sessions [daySessions] still has on the
+ * cursor's day, and closes when none are left, so a held X never aims at a session gone from it.
+ */
+fun PlayActivityPage.refreshed(calendar: PlayCalendar, daySessions: (LocalDate) -> List<String> = { emptyList() }): PlayActivityPage {
+    if (calendar == this.calendar) return this
+    val day = calendar.clamp(cursor)
+    val listed = sessions ?: return copy(calendar = calendar, day = day)
+    val there = daySessions(day).toSet()
+    val kept = listed.filter { it in there }
+    return copy(
+        calendar = calendar,
+        day = day,
+        sessions = kept.takeIf { it.isNotEmpty() },
+        session = if (kept.isEmpty()) 0 else session.coerceIn(0, kept.lastIndex),
+    )
+}
+
+/**
+ * The page's game folded into [tile], as when a library finds another copy of it while the page is
+ * open: from then on it reads the tile's history, sources, and sessions. Move time from closes when
+ * nothing is left to move.
+ */
+fun PlayActivityPage.folded(tile: String, sources: List<String>, calendar: PlayCalendar, daySessions: (LocalDate) -> List<String>): PlayActivityPage {
+    val moved = copy(game = tile, sources = sources, source = 0, moving = moving && sources.isNotEmpty())
+    if (moved.calendar == null) return moved.opened(calendar)
+    // Forced through the refresh even with the same calendar: the list's sessions are now the tile's.
+    return moved.copy(calendar = null).refreshed(calendar, daySessions)
+}
+
+/** Whether the cursor can reach a period before the one starting [start], and one after the one ending [end]. */
+fun playPeriodReach(calendar: PlayCalendar?, start: LocalDate, end: LocalDate): Pair<Boolean, Boolean> =
+    if (calendar == null) false to false else (calendar.first < start) to (end < calendar.today)
+
+/**
+ * The years Year's strip shows around [lit]: as many from [first] to [last] as fit in [room],
+ * each [width] wide and [gap] apart, growing out from [lit] one year each side in turn, the
+ * later side first, so the years nearest the shown one stay in view.
+ */
+fun playYearWindow(first: Int, last: Int, lit: Int, room: Float, gap: Float, width: (Int) -> Float): IntRange {
+    if (last < first) return lit..lit
+    val center = lit.coerceIn(first, last)
+    var from = center
+    var to = center
+    var used = width(center)
+    while (true) {
+        val later = (to + 1).takeIf { it <= last }?.takeIf { used + gap + width(it) <= room }
+        if (later != null) { to = later; used += gap + width(later) }
+        val earlier = (from - 1).takeIf { it >= first }?.takeIf { used + gap + width(it) <= room }
+        if (earlier != null) { from = earlier; used += gap + width(earlier) }
+        if (later == null && earlier == null) return from..to
+    }
+}
 
 object PlayCopy {
     const val activity = "Play activity"
@@ -96,6 +147,8 @@ object PlayCopy {
     const val nothingYet = "No play yet"
     /** Under [nothingYet]: where play comes from. */
     const val playSomething = "Play a game and its time shows here."
+    /** A game's own page before any play: what comes next. */
+    const val firstSession = "Your first session starts the story."
     fun empty(hasPlay: Boolean): String = if (hasPlay) nothing else nothingYet
 
     /** A month or a year with no play: "No play in November", "No play in 2024". */
@@ -143,9 +196,12 @@ object PlayCopy {
     const val moveFrom = "Move time from"
 
     /** Held A on one of them: the hint says to hold, as a tap does nothing. */
-    const val holdToMove = "Hold to move"
+    /** Held A on one of them, after the hint's Hold: the same words as a held X's Remove. */
+    const val move = "Move"
     const val moveHere = "Move here"
     const val moved = "Moved here"
+    /** A source moved here, with how much came: "Moved here · 162h 31m". */
+    fun movedAmount(millis: Long): String = "$moved · ${playDuration(millis)}"
     const val undo = Copy.undo
 
     /** A game with play that no library has any more: its file was renamed, replaced, or removed. */
@@ -179,7 +235,7 @@ object PlayCopy {
 }
 
 /** How many games the page lists beside the chart. */
-const val PLAY_TOP_GAMES = 4
+const val PLAY_TOP_GAMES = 3
 
 /** Days on a week. */
 const val PLAY_WEEK_DAYS = 7
@@ -320,7 +376,8 @@ fun playZoomed(page: PlayActivityPage, zoom: PlayZoom): PlayActivityPage {
     val calendar = page.calendar ?: return page.copy(zoom = zoom)
     val day = if (page.zoom == PlayZoom.Year && zoom != PlayZoom.Year) {
         val month = YearMonth.from(page.cursor)
-        calendar.lastPlayedIn(month) ?: calendar.clamp(month.atDay(1))
+        // Both clamped: play logged ahead of a corrected clock is never a day to stand on.
+        calendar.clamp(calendar.lastPlayedIn(month) ?: month.atDay(1))
     } else page.cursor
     return page.copy(zoom = zoom, day = day)
 }
@@ -406,6 +463,18 @@ private fun applyPlayMoving(model: PickerModel, page: PlayActivityPage, game: St
  * The hint row under the page: an open list's keys, or the chart's in its zoom. [hasSessions]
  * is whether the focused day has sessions A can list.
  */
+/**
+ * The hint row leads with Hold while the focused key acts only when held: X on a day's
+ * session, and A on a game Move time from has not moved yet. A on a moved one is a tap.
+ */
+fun playHoldsKey(model: PickerModel): Boolean {
+    val page = model.playActivity ?: return false
+    if (page.sessions != null) return true
+    if (!page.moving || page.game == null) return false
+    val focused = page.sources.getOrNull(page.source) ?: return false
+    return focused !in page.moved
+}
+
 fun playActivityHints(model: PickerModel, hasSessions: Boolean = true): List<HintKey> {
     val back = HintKey(promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB, Copy.back)
     val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
@@ -415,7 +484,7 @@ fun playActivityHints(model: PickerModel, hasSessions: Boolean = true): List<Hin
     }
     if (page.moving && page.game != null) {
         val focused = page.sources.getOrNull(page.source)
-        return listOfNotNull(focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.holdToMove) }, back)
+        return listOfNotNull(focused?.let { HintKey(confirm, if (it in page.moved) PlayCopy.undo else PlayCopy.move) }, back)
     }
     return listOfNotNull(
         when {
@@ -423,8 +492,6 @@ fun playActivityHints(model: PickerModel, hasSessions: Boolean = true): List<Hin
             hasSessions -> HintKey(confirm, PlayCopy.sessions)
             else -> null
         },
-        // Week's sides step whole weeks while up and down step days, so they are named; Month and Year move as drawn.
-        if (page.zoom == PlayZoom.Week) HintKey(PromptKey.DpadSides, PlayCopy.week) else null,
         if (page.game != null && page.sources.isNotEmpty()) HintKey(actionFaces(model.faceMap).optionsGlyph, PlayCopy.moveTime) else null,
         back,
     )

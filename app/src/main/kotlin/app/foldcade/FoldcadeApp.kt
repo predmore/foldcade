@@ -494,7 +494,9 @@ class FoldcadeApp : Application() {
      * Play activity's history of [game], or of everything played: read once per change of the
      * play log or of how copies fold into tiles, so a held D-pad never reads the log again.
      */
-    fun playHistory(game: String?): app.foldcade.language.PlayHistory {
+    fun playHistory(id: String?): app.foldcade.language.PlayHistory {
+        // Spans are kept under the tile a game shows as now, so a copy's old id reads its tile's history.
+        val game = id?.let(shell::tileOf)
         val zone = java.time.ZoneId.systemDefault()
         val key = Triple(plays.stamp, shell.model.shelfEpoch, zone)
         playHistories[game]?.takeIf { it.first == key }?.let { return it.second }

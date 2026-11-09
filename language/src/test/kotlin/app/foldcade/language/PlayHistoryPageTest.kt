@@ -396,10 +396,12 @@ class PlayHistoryPageTest {
 
     @Test
     fun hintsFollowTheZoomAndWhatTheDayHas() {
+        // The tabs and the readout say how the D-pad moves, so no zoom names it on the hint row.
         val week = page(PlayZoom.Week, LocalDate.of(2026, 11, 3))
-        assertEquals(listOf(PlayCopy.sessions, PlayCopy.week, Copy.back), playActivityHints(week).map { it.label })
-        assertEquals(listOf(PromptKey.FaceA, PromptKey.DpadSides, PromptKey.FaceB), playActivityHints(week).map { it.key })
-        assertEquals(listOf(PlayCopy.week, Copy.back), playActivityHints(week, hasSessions = false).map { it.label })
+        assertEquals(listOf(PlayCopy.sessions, Copy.back), playActivityHints(week).map { it.label })
+        assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceB), playActivityHints(week).map { it.key })
+        assertEquals(listOf(Copy.back), playActivityHints(week, hasSessions = false).map { it.label })
+        assertFalse(playHoldsKey(week))
         val month = page(PlayZoom.Month, LocalDate.of(2026, 11, 3))
         assertEquals(listOf(PlayCopy.sessions, Copy.back), playActivityHints(month).map { it.label })
         assertEquals(listOf(Copy.back), playActivityHints(month, hasSessions = false).map { it.label })
@@ -408,9 +410,16 @@ class PlayHistoryPageTest {
         val game = page(PlayZoom.Month, LocalDate.of(2026, 11, 3), game = "g", sources = listOf("old"))
         assertEquals(listOf(PlayCopy.sessions, PlayCopy.moveTime, Copy.back), playActivityHints(game).map { it.label })
         assertEquals(PromptKey.FaceY, playActivityHints(game)[1].key)
+        // Move and Remove read as one pattern: Hold, then the key and its verb. Undo is a tap.
         val moving = reduce(game, Meaning.Options).first
-        assertEquals(listOf(PlayCopy.holdToMove, Copy.back), playActivityHints(moving).map { it.label })
-        assertEquals(listOf(PlayCopy.undo, Copy.back), playActivityHints(reduce(moving, Meaning.Activate).first).map { it.label })
+        assertEquals(listOf(PlayCopy.move, Copy.back), playActivityHints(moving).map { it.label })
+        assertTrue(playHoldsKey(moving))
+        val moved = reduce(moving, Meaning.Activate).first
+        assertEquals(listOf(PlayCopy.undo, Copy.back), playActivityHints(moved).map { it.label })
+        assertFalse(playHoldsKey(moved))
+        val listed = week.copy(playActivity = week.playActivity!!.copy(sessions = listOf("s1")))
+        assertTrue(playHoldsKey(listed))
+        assertEquals("Moved here · 2h", PlayCopy.movedAmount(2 * HOUR))
     }
 
     // ---- Copy ----
@@ -468,6 +477,94 @@ class PlayHistoryPageTest {
         assertEquals(HOUR, history.dayTotal(LocalDate.of(2026, 11, 1)))
         assertEquals(HOUR, history.dayTotal(LocalDate.of(2026, 11, 2)))
         assertEquals(24f / 25f, history.dayBlocks(LocalDate.of(2026, 11, 1)).single().start, 0.0001f)
+    }
+
+    @Test
+    fun aMonthBarNeverOpensOnADayPastToday() {
+        // Play logged ahead of a clock that was later set back: Nov 20 is in this month but past today.
+        val calendar = PlayCalendar(today, listOf(LocalDate.of(2026, 10, 2), LocalDate.of(2026, 11, 20)))
+        val year = PickerModel(count = 1, rowsPerPage = 1).copy(
+            playActivity = PlayActivityPage(HostScreen.Top, zoom = PlayZoom.Year, day = LocalDate.of(2026, 11, 1), calendar = calendar),
+        )
+        assertEquals(today, cursor(reduce(year, Meaning.Activate).first))
+        assertEquals(today, cursor(reduce(year, Meaning.LetterBackward).first))
+        // Nor does the page open on it.
+        assertEquals(LocalDate.of(2026, 10, 2), PlayActivityPage(HostScreen.Top, game = "g").opened(calendar).day)
+    }
+
+    @Test
+    fun aNewDayOrZoneMovesTheBoundsAndTheCursorWithThem() {
+        val page = page(PlayZoom.Month, today, first = LocalDate.of(2026, 10, 1)).playActivity!!
+        // Midnight passed while the page was open: tomorrow is reachable, and the cursor stays where it was.
+        val tomorrow = PlayCalendar(today.plusDays(1), listOf(LocalDate.of(2026, 10, 1)))
+        val later = page.refreshed(tomorrow)
+        assertEquals(today.plusDays(1), later.calendar?.today)
+        assertEquals(today, later.day)
+        // A zone west of here can make today yesterday: the cursor comes back inside the bounds.
+        val yesterday = PlayCalendar(today.minusDays(1), listOf(LocalDate.of(2026, 10, 1)))
+        assertEquals(today.minusDays(1), page.refreshed(yesterday).day)
+    }
+
+    @Test
+    fun anOpenListKeepsOnlyTheSessionsStillOnItsDayAndClosesWhenNoneAre() {
+        val open = page(PlayZoom.Month, LocalDate.of(2026, 10, 1), first = LocalDate.of(2026, 10, 1)).playActivity!!
+            .copy(sessions = listOf("a", "b", "c"), session = 2)
+        // The first day's sessions went: the cursor moves to the new first day, which has none of them.
+        val moved = PlayCalendar(today, listOf(LocalDate.of(2026, 10, 5)))
+        val closed = open.refreshed(moved) { day -> if (day == LocalDate.of(2026, 10, 5)) listOf("x") else emptyList() }
+        assertEquals(LocalDate.of(2026, 10, 5), closed.day)
+        assertNull(closed.sessions)
+        assertEquals(0, closed.session)
+        // The day stays, one of its sessions went elsewhere: the list keeps the rest and its focus stays on a row.
+        val same = PlayCalendar(today, listOf(LocalDate.of(2026, 9, 1)))
+        val kept = open.refreshed(same) { listOf("a", "b") }
+        assertEquals(listOf("a", "b"), kept.sessions)
+        assertEquals(1, kept.session)
+    }
+
+    @Test
+    fun aGameFoldingIntoATileWhileItsPageIsOpenReadsTheTilesHistory() {
+        val open = page(PlayZoom.Month, LocalDate.of(2026, 10, 3), first = LocalDate.of(2026, 10, 3), game = "copy", sources = listOf("other")).playActivity!!
+            .copy(sessions = listOf("s1", "s2"), session = 1, moving = false)
+        // The tile has older play, so its first day is earlier; only s2 is the tile's on that day.
+        val tile = PlayCalendar(today, listOf(LocalDate.of(2025, 1, 1)))
+        val folded = open.folded("tile", listOf("other"), tile) { listOf("s2") }
+        assertEquals("tile", folded.game)
+        assertEquals(LocalDate.of(2025, 1, 1), folded.calendar?.first)
+        assertEquals(LocalDate.of(2026, 10, 3), folded.day)
+        assertEquals(listOf("s2"), folded.sessions)
+        assertEquals(0, folded.session)
+        // With nothing left to move, Move time from closes.
+        val moving = open.copy(sessions = null, moving = true)
+        assertFalse(moving.folded("tile", emptyList(), tile) { emptyList() }.moving)
+        assertTrue(moving.folded("tile", listOf("other"), tile) { emptyList() }.moving)
+    }
+
+    @Test
+    fun theChevronsLightOnlyWhereThereIsAPeriodToReach() {
+        val calendar = PlayCalendar(today, listOf(LocalDate.of(2025, 3, 4)))
+        // November 2026: earlier months to reach, nothing after today.
+        assertEquals(true to false, playPeriodReach(calendar, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30)))
+        // March 2025 holds the first day played: nothing earlier.
+        assertEquals(false to true, playPeriodReach(calendar, LocalDate.of(2025, 3, 1), LocalDate.of(2025, 3, 31)))
+        assertEquals(false to false, playPeriodReach(PlayCalendar(today), LocalDate.of(2026, 11, 8), LocalDate.of(2026, 11, 14)))
+        assertEquals(false to false, playPeriodReach(null, today, today))
+    }
+
+    @Test
+    fun yearsStripShowsTheYearsAroundTheShownOneThatFit() {
+        val width = { _: Int -> 100f }
+        // Every year fits.
+        assertEquals(2024..2026, playYearWindow(2024, 2026, 2026, room = 400f, gap = 10f, width = width))
+        // Room for three of seven: the shown year and one each side.
+        assertEquals(2019..2021, playYearWindow(2016, 2022, 2020, room = 330f, gap = 10f, width = width))
+        // At an end, the room goes to the other side.
+        assertEquals(2020..2022, playYearWindow(2016, 2022, 2022, room = 330f, gap = 10f, width = width))
+        assertEquals(2016..2018, playYearWindow(2016, 2022, 2016, room = 330f, gap = 10f, width = width))
+        // Room for two: the later side first.
+        assertEquals(2020..2021, playYearWindow(2016, 2022, 2020, room = 215f, gap = 10f, width = width))
+        // Never less than the shown year.
+        assertEquals(2020..2020, playYearWindow(2016, 2022, 2020, room = 50f, gap = 10f, width = width))
     }
 
     private fun page(

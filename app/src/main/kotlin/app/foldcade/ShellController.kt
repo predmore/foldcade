@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
+import app.foldcade.language.folded
 import app.foldcade.language.opened
 import app.foldcade.language.refreshed
 import app.foldcade.language.SAME_PREFIX
@@ -1126,6 +1127,8 @@ class ShellController(
             }
             return null
         }
+        // The press that closes Play activity stays its own until the key comes up, so a held B never reaches the grid.
+        if (current.playActivity != null && next.playActivity == null) heldActions.capture(meaning.ordinal)
         val wasSettings = current.settings
         val nowSettings = next.settings
         if (nowSettings != null && (wasSettings == null || wasSettings.inner != nowSettings.inner ||
@@ -2916,11 +2919,30 @@ class ShellController(
         app.foldcade.language.PlayCalendar(java.time.Instant.ofEpochMilli(nowMillis()).atZone(java.time.ZoneId.systemDefault()).toLocalDate())
     }
 
-    /** A page just opened reads its history once, and opens on its date. */
+    /**
+     * A page just opened reads its history once, and opens on its date. A game's copies folding
+     * into one tile while its page is open give it the tile's id, so its history, sessions, and
+     * sources are the tile's from then on.
+     */
     private fun withPlayCalendar(next: PickerModel): PickerModel {
-        val page = next.playActivity?.takeIf { it.calendar == null } ?: return next
+        val page = next.playActivity ?: return next
+        val tile = page.game?.let(::tileOf)
+        if (tile != null && tile != page.game) {
+            return next.copy(playActivity = page.folded(tile, playSources(tile), playCalendar(tile)) { playDaySessions(it, tile) })
+        }
+        if (page.calendar != null) return next
         return next.copy(playActivity = page.opened(playCalendar(page.game)))
     }
+
+    /** The open page's history or clock moved on: its bounds follow, and an open day's list keeps only what is still there. */
+    private fun refreshPlayPage() {
+        val page = model.playActivity ?: return
+        val fresh = page.refreshed(playCalendar(page.game)) { playDaySessions(it, page.game) }
+        if (fresh != page) publish(model.copy(playActivity = fresh))
+    }
+
+    /** The clock ticked, was set, or moved to another time zone while Play activity is open: today may be another day. */
+    fun notePlayClock() = refreshPlayPage()
 
     /** The other games with play a game's page can take from, likeliest first. The app reads its play log. */
     var playSources: (tileId: String) -> List<String> = { emptyList() }
@@ -4203,10 +4225,7 @@ class ShellController(
      */
     fun notePlayChanged() {
         // An open page's bounds follow its history: a removed or imported first day moves them.
-        model.playActivity?.let { page ->
-            val fresh = page.refreshed(playCalendar(page.game))
-            if (fresh != page) publish(model.copy(playActivity = fresh))
-        }
+        refreshPlayPage()
         val focusedId = gridFocusId()
         if (homeReturnBlocked()) cancelHomeReturnOnInput()
         // All games' Recent and Most played reorder its rows, which the board does not see.

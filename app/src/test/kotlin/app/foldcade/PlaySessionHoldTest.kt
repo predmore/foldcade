@@ -77,6 +77,37 @@ class PlaySessionHoldTest {
         assertEquals(listOf("s1", "s2"), shell.model.playActivity?.sessions)
     }
 
+    @Test
+    fun aNewDayWhileThePageIsOpenMovesItsBoundsWithTheClock() {
+        val shell = page()
+        assertEquals(today, shell.model.playActivity?.calendar?.today)
+        // Midnight passes with the page open: the clock tick refreshes today, and the cursor stays put.
+        shell.playCalendar = { PlayCalendar(today.plusDays(1), listOf(today.minusDays(40))) }
+        shell.notePlayClock()
+        assertEquals(today.plusDays(1), shell.model.playActivity?.calendar?.today)
+        assertEquals(today, shell.model.playActivity?.cursor)
+        // A time zone west of here makes today yesterday: the cursor comes back inside.
+        shell.playCalendar = { PlayCalendar(today.minusDays(1), listOf(today.minusDays(40))) }
+        shell.notePlayClock()
+        assertEquals(today.minusDays(1), shell.model.playActivity?.cursor)
+    }
+
+    @Test
+    fun aHeldBClosesThePageAndItsRepeatsNeverReachTheGrid() {
+        val shell = page()
+        val grid = shell.model.playActivity!!.grid
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertNull(shell.model.playActivity)
+        assertEquals(grid, shell.model.focus)
+        val closed = shell.model
+        // The key is still down: its repeats belong to the press that closed the page.
+        repeat(3) { shell.onMeaning(Meaning.Back, HostScreen.Top, repeatCount = it + 1) }
+        assertEquals(closed, shell.model)
+        // A fresh press is the grid's again.
+        shell.onMeaning(Meaning.LeftPanel, HostScreen.Top)
+        assertNotNull(shell.model.panel)
+    }
+
     private fun page(): ShellController {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()), nowMillis = { time })
         shell.playDaySessions = { date, game -> days(date, game) }

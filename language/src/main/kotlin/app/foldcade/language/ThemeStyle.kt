@@ -687,9 +687,9 @@ class ThemePlay internal constructor(reader: ThemeStyleReader) {
     val emptyBarAlpha = reader.fraction("play", "emptyBarAlpha", .12f, TokenRole.Fill)
     val barCornerDp = reader.number("play", "barCornerDp", 3f, role = TokenRole.Corner)
     /** A day's cell on the month calendar, shaded by its time in four steps of `colors.progress`. */
-    val heat1Alpha = reader.fraction("play", "heat1Alpha", .24f, TokenRole.Fill)
-    val heat2Alpha = reader.fraction("play", "heat2Alpha", .46f, TokenRole.Fill)
-    val heat3Alpha = reader.fraction("play", "heat3Alpha", .7f, TokenRole.Fill)
+    val heat1Alpha = reader.fraction("play", "heat1Alpha", .36f, TokenRole.Fill)
+    val heat2Alpha = reader.fraction("play", "heat2Alpha", .56f, TokenRole.Fill)
+    val heat3Alpha = reader.fraction("play", "heat3Alpha", .76f, TokenRole.Fill)
     val heat4Alpha = reader.fraction("play", "heat4Alpha", 1f, TokenRole.Fill)
     fun heatAlpha(level: Int): Float = when (level) {
         1 -> heat1Alpha
@@ -708,6 +708,10 @@ class ThemePlay internal constructor(reader: ThemeStyleReader) {
     val todayAlpha = reader.fraction("play", "todayAlpha", .55f)
     /** A month's bar on the year. */
     val monthBarCornerDp = reader.number("play", "monthBarCornerDp", 6f, role = TokenRole.Corner)
+    /** The day a list is open on, while the list has the D-pad: a soft ring in the focus colour. */
+    val openedAlpha = reader.fraction("play", "openedAlpha", .55f)
+    /** Year's strip: the shown year's chip, in `colors.progress`. */
+    val yearChipAlpha = reader.fraction("play", "yearChipAlpha", .24f, TokenRole.Fill)
     /** The thin bar under each of the most played: its share of the period. */
     val shareBarDp = reader.number("play", "shareBarDp", 4f, role = TokenRole.Stroke)
     /** How far a period slides as the next one comes in. */

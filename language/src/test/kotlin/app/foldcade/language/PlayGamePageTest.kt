@@ -63,7 +63,7 @@ class PlayGamePageTest {
         val (back, undo) = reduce(moved, Meaning.Activate)
         assertEquals(Effect.UndoPlayMove("old", game), undo)
         assertEquals(emptySet<String>(), back.playActivity?.moved)
-        assertEquals(listOf(PlayCopy.holdToMove, Copy.back), playActivityHints(back).map { it.label })
+        assertEquals(listOf(PlayCopy.move, Copy.back), playActivityHints(back).map { it.label })
         assertEquals(listOf(PromptKey.FaceA, PromptKey.FaceB), playActivityHints(back).map { it.key })
 
         // X does not reach a day's sessions from the list.
