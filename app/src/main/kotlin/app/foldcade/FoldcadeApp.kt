@@ -924,6 +924,11 @@ class FoldcadeApp : Application() {
         themeRollbacks.forEach { postNotice(themeRollbackNotice(it)) }
         // R1's sign-in notice comes and goes with RomM's sign-in.
         scope.launch(Dispatchers.Main.immediate) { snapshotFlow { shell.model.rommSignIn }.collect { publishNotices() } }
+        // A RomM download keeps the CPU and Wi-Fi awake until its tile stops downloading.
+        val downloadAwake = DownloadAwake(this)
+        scope.launch(Dispatchers.Main.immediate) {
+            snapshotFlow { shell.downloading.isNotEmpty() }.collect(downloadAwake::hold)
+        }
         // The SteamGridDB form's phone page listens while that form is open on a shown screen, and not a moment longer.
         scope.launch(Dispatchers.Main.immediate) {
             snapshotFlow { (homeShownNow && shell.model.connectOpen && shell.model.connectKind == app.foldcade.language.ConnectKind.ArtKey) to shell.model.connectBusy }

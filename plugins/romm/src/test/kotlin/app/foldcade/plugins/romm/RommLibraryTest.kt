@@ -114,6 +114,37 @@ class RommLibraryTest {
         }
     }
 
+    @Test fun aLargeDownloadThatKeepsMovingResumesPastEveryStall() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val waits = mutableListOf<Long>()
+        val harness = harness(ops, retry = RommReadRetry(pause = { waits += it }))
+        var attempts = 0
+        // Each try picks up where its partial file ended, gets a little further, then stalls.
+        ops.downloadSteps = listOf(RomProgress.Receiving(100L, 1_000L))
+        ops.onDownload = { _, name, root, ids, _, _ ->
+            if (attempts++ < 8) {
+                ops.downloadSteps = listOf(RomProgress.Receiving((attempts + 1) * 100L, 1_000L))
+                throw RommUnavailable("timeout", java.net.SocketTimeoutException())
+            }
+            RommClient.romCacheFile(root, 1234, name, ids).also {
+                Files.createDirectories(it.parent)
+                Files.writeString(it, "hello-rom")
+            }
+        }
+        try {
+            val game = harness.library.listGames("3ds", GameQuery()).games.single()
+            assertTrue(harness.library.ensureLocal(game) is LaunchTarget.ContentUri)
+            assertEquals(9, attempts)
+            assertTrue(waits.all { it == 1_000L })
+        } finally {
+            harness.library.disconnect()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test fun cancellingServerPreparationDropsTheWaitAndClearsItsTile() = runBlocking {
         val ops = ScriptedOps()
         ops.onPlatforms = { listOf(platform(3, "3ds")) }
