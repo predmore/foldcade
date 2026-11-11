@@ -11,6 +11,7 @@ import app.foldcade.gamestream.brokerAppIds
 import app.foldcade.gamestream.brokerNamesAppOtherwise
 import app.foldcade.net.LanHttpException
 import app.foldcade.net.LanReplyException
+import app.foldcade.language.builtInTheme
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CancellationException
@@ -47,9 +48,17 @@ internal suspend fun callPluginBroker(
     launchAllowed: (String, String, String?, List<String>) -> Boolean = { _, _, _, _ -> false },
     awaitReady: suspend () -> Boolean = { true },
     touchToken: (String, String, String?) -> Boolean = { _, _, _ -> false },
+    appearance: () -> BrokerReply? = { null },
+    fallbackAppearance: () -> BrokerReply? = { null },
 ): BrokerReply {
     val plugin = plugins.firstOrNull { it.packageName == caller }
         ?: return BrokerReply.error("not_granted", "Caller is not a discovered plugin")
+    if (method == "appearance") return try {
+        val selected = if (awaitReady()) appearance() else null
+        selected ?: fallbackAppearance() ?: BrokerReply.error("internal", "Theme unavailable")
+    } catch (_: Exception) {
+        BrokerReply.error("internal", "Theme unavailable")
+    }
     val scopes = plugin.scopes.filter { granted(plugin, it) }.sorted()
     if (method == "hello") return BrokerReply.success(
         "protocol" to ApkPluginProtocol.VERSION, "granted" to scopes.toTypedArray(), "hostPackage" to hostPackage,
@@ -100,6 +109,10 @@ internal suspend fun callPluginBroker(
 }
 
 class ApkPluginBroker : ContentProvider() {
+    private val defaultAppearance by lazy {
+        context?.assets?.open("themes/afterglow.zip")?.let(::readApkPluginAppearance)
+    }
+
     override fun onCreate(): Boolean = true
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
@@ -117,6 +130,11 @@ class ApkPluginBroker : ContentProvider() {
                     token = extras?.getString("token"), launchAllowed = app.apkPluginLaunchTokens::allows,
                     awaitReady = { awaitApkPluginBrokerReady(app.apkPluginBrokerReady) },
                     touchToken = app.apkPluginLaunchTokens::touch,
+                    appearance = {
+                        val theme = app.themePacks.getOrNull(app.shell.model.themeIndex - 1)?.paint?.theme ?: builtInTheme()
+                        apkPluginAppearance(theme)
+                    },
+                    fallbackAppearance = { defaultAppearance },
                 )
             }.bundle()
         } catch (_: SecurityException) {
@@ -139,6 +157,7 @@ private fun BrokerReply.bundle(): Bundle = Bundle().apply {
     for ((key, value) in values) when (value) {
         is Boolean -> putBoolean(key, value)
         is Int -> putInt(key, value)
+        is Float -> putFloat(key, value)
         is String -> putString(key, value)
         is Array<*> -> putStringArray(key, value.filterIsInstance<String>().toTypedArray())
         is List<*> -> putParcelableArrayList(key, ArrayList(value.filterIsInstance<BrokerHost>().map { host ->

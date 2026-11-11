@@ -58,8 +58,11 @@ Caller check: `getCallingPackage()` (the `ContentProvider` method, which Android
 | Method | Scope | Arguments | Reply when `ok` |
 | --- | --- | --- | --- |
 | `hello` | none | none | `protocol` (int, host's), `granted` (String[] of the caller's granted scopes; empty if none), `hostPackage` |
+| `appearance` | none | none | the current Foldcade theme's tokens, so a plugin can match it: ARGB ints `background`, `surface`, `onBackground`, `muted`, `focus`, `focusRingStart`, `focusRingEnd`, `attention`; floats `round` (0–0.5, the theme's corner roundness) and `cardCornerDp` (0–64). A plugin uses its own defaults for anything missing, and for an older host that replies `bad_request`. |
 | `gamestream.hosts` | `gamestream` | none | `hosts`: `ArrayList<Bundle>`, one for each computer **Foldcade paired with itself**, with `uuid`, `name`, `address` (the host or IP Foldcade last reached it at), `httpPort` (int), `httpsPort` (int, 0 when unknown), and optional `mac` |
 | `gamestream.request` | `gamestream` | `arg` = host uuid; extras `path` (String), `query` (String, optional, without a leading `?`), `token` (String, optional on any path, required for `launch` and `resume`) | `status` (int HTTP status), `body` (String, UTF-8 XML) |
+
+`appearance` requires discovery only. Each call reads the selected theme's palette, `style.colors.attention`, `style.shape.round` and `style.metrics.cardCornerDp` (capped at 64). Ring ends use `style.focusRing.start` and `end`, each falling back to `focus`, as Foldcade's focus ring does. Cold calls use the same bounded startup wait as `gamestream.hosts`, then fall back to the bundled Afterglow paint if the selected theme is unavailable. Replies contain only tokens, never theme files or paths.
 
 `gamestream.request` rules:
 
