@@ -34,7 +34,7 @@ class ApkPluginBrokerTest {
         ): BrokerReply = callPluginBroker(
             caller, "gamestream.request", host, path, query, "test.host", listOf(plugin, other), { _, _ -> true }, { emptyList() },
             request = { _, _, _ -> requested++; 200 to "<root/>".toByteArray() },
-            token = provided, launchAllowed = tokens::allows,
+            token = provided, launchAllowed = tokens::allows, touchToken = tokens::touch,
         )
         assertEquals("not_launched", play(caller = other.packageName).values["error"])
         assertEquals("not_launched", play(host = "another-host").values["error"])
@@ -54,9 +54,70 @@ class ApkPluginBrokerTest {
         assertEquals(true, play(path = "resume", query = "APPID=42&appid=42").values["ok"])
         now += ApkPluginLaunchTokens.WINDOW_MS - 1
         assertEquals(true, play().values["ok"])
-        now++
+        now += ApkPluginLaunchTokens.WINDOW_MS
         assertEquals("not_launched", play().values["error"])
         assertEquals(4, requested)
+    }
+
+    @Test fun serverInfoRefreshKeepsTheStartAlivePastItsOriginalWindow() = runBlocking {
+        var now = 0L
+        val tokens = ApkPluginLaunchTokens { now }
+        val token = tokens.issue(plugin.packageName, "host-uuid", "42")
+        suspend fun request(path: String, query: String? = null): BrokerReply = callPluginBroker(
+            plugin.packageName, "gamestream.request", "host-uuid", path, query, "test.host", listOf(plugin), { _, _ -> true },
+            hosts = { emptyList() }, request = { _, _, _ -> 200 to "<root/>".toByteArray() },
+            token = token, launchAllowed = tokens::allows, touchToken = tokens::touch,
+        )
+        // The plugin's two-minute heartbeat can keep a long-running session authorized.
+        repeat(6) {
+            now += 2 * 60 * 1000L
+            assertEquals(true, request("serverinfo").values["ok"])
+        }
+        assertTrue(now > ApkPluginLaunchTokens.WINDOW_MS)
+        assertEquals(true, request("resume", "appid=42").values["ok"])
+        assertEquals("not_launched", request("resume", "appid=43").values["error"])
+        assertEquals("not_launched", request("resume", "appid=42&appuuid=other").values["error"])
+        now += ApkPluginLaunchTokens.WINDOW_MS
+        assertEquals("not_launched", request("resume", "appid=42").values["error"])
+    }
+
+    @Test fun aWrongCallerOrHostCannotExtendTheWindow() = runBlocking {
+        val other = plugin.copy(packageName = "other.plugin")
+        for ((caller, host) in listOf(other.packageName to "host-uuid", plugin.packageName to "other-host")) {
+            var now = 0L
+            val tokens = ApkPluginLaunchTokens { now }
+            val token = tokens.issue(plugin.packageName, "host-uuid", "42")
+            now = ApkPluginLaunchTokens.WINDOW_MS - 1
+            val reply = callPluginBroker(
+                caller, "gamestream.request", host, "serverinfo", null, "test.host", listOf(plugin, other), { _, _ -> true },
+                hosts = { emptyList() }, request = { _, _, _ -> 200 to "<root/>".toByteArray() },
+                token = token, launchAllowed = tokens::allows, touchToken = tokens::touch,
+            )
+            assertEquals(true, reply.values["ok"])
+            now++
+            assertFalse(tokens.allows(plugin.packageName, "host-uuid", token, listOf("42")))
+        }
+    }
+
+    @Test fun optionalInvalidTokensAreIgnoredAndCannotReviveAnExpiredStart() = runBlocking {
+        var now = 0L
+        val tokens = ApkPluginLaunchTokens { now }
+        val expired = tokens.issue(plugin.packageName, "host-uuid", "42")
+        now = ApkPluginLaunchTokens.WINDOW_MS
+        var requested = 0
+        for (path in listOf("serverinfo", "applist", "cancel")) {
+            for (token in listOf(expired, "unknown", null)) {
+                val reply = callPluginBroker(
+                    plugin.packageName, "gamestream.request", "host-uuid", path, null, "test.host", listOf(plugin), { _, _ -> true },
+                    hosts = { emptyList() }, request = { _, _, _ -> requested++; 200 to "<root/>".toByteArray() },
+                    token = token, launchAllowed = tokens::allows, touchToken = tokens::touch,
+                )
+                assertEquals(true, reply.values["ok"])
+            }
+        }
+        assertEquals(9, requested)
+        assertFalse(tokens.touch(plugin.packageName, "host-uuid", expired))
+        assertFalse(tokens.allows(plugin.packageName, "host-uuid", expired, listOf("42")))
     }
 
     @Test fun metadataAndCancelRequestsDoNotRequireAToken() {

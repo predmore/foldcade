@@ -30,6 +30,18 @@ internal class ApkPluginLaunchTokens(private val nowMillis: () -> Long = android
             appIds.isNotEmpty() && appIds.all { it == start.appId }
     }
 
+    /** Only the same caller and computer can extend a live token; expired tokens stay expired. */
+    @Synchronized
+    fun touch(packageName: String, hostUuid: String, token: String?): Boolean {
+        val now = nowMillis()
+        prune(now)
+        val key = token ?: return false
+        val start = starts[key] ?: return false
+        if (start.packageName != packageName || !start.hostUuid.equals(hostUuid, ignoreCase = true)) return false
+        starts[key] = start.copy(at = now)
+        return true
+    }
+
     private fun prune(now: Long) {
         starts.entries.removeAll { now - it.value.at !in 0 until WINDOW_MS }
     }

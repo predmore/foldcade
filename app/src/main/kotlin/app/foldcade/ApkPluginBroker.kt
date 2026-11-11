@@ -46,6 +46,7 @@ internal suspend fun callPluginBroker(
     token: String? = null,
     launchAllowed: (String, String, String?, List<String>) -> Boolean = { _, _, _, _ -> false },
     awaitReady: suspend () -> Boolean = { true },
+    touchToken: (String, String, String?) -> Boolean = { _, _, _ -> false },
 ): BrokerReply {
     val plugin = plugins.firstOrNull { it.packageName == caller }
         ?: return BrokerReply.error("not_granted", "Caller is not a discovered plugin")
@@ -65,6 +66,8 @@ internal suspend fun callPluginBroker(
                 try { brokerQuery(query, "0000000000000000") } catch (_: IllegalArgumentException) {
                     return BrokerReply.error("bad_request", "Invalid query")
                 }
+                // Optional on metadata/cancel calls; only a matching live token is refreshed.
+                touchToken(plugin.packageName, arg, token)
                 if ((path == "launch" || path == "resume") && (brokerNamesAppOtherwise(query) || !launchAllowed(plugin.packageName, arg, token, brokerAppIds(query)))) {
                     return BrokerReply.error("not_launched", "No matching Foldcade play start")
                 }
@@ -113,6 +116,7 @@ class ApkPluginBroker : ContentProvider() {
                     request = { uuid, path, query -> app.moonlightStreams.brokerCall(uuid, path, query) },
                     token = extras?.getString("token"), launchAllowed = app.apkPluginLaunchTokens::allows,
                     awaitReady = { awaitApkPluginBrokerReady(app.apkPluginBrokerReady) },
+                    touchToken = app.apkPluginLaunchTokens::touch,
                 )
             }.bundle()
         } catch (_: SecurityException) {
