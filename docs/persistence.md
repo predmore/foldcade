@@ -47,6 +47,10 @@ RomM and SteamGridDB credentials use the existing encrypted DataStore, with encr
 
 Local media uses the same picked library trees, including separate ES-DE folders. Images and gamelists stay in those trees; the media/facts index and the art-and-info source label are rebuilt in memory after a granted scan. The existing Game art choice is portable; local media works even when public Game art is off. RomM summaries and facts extend its existing server catalog, which stays device-owned with the other caches.
 
+APK plugin consent and the per-plugin Moonlight routing choice use host-owned `apk_plugins.xml` preferences, separate from `foldcade.xml`. Each key binds the package, sorted current signer SHA-256 set, and scope. Consent commits before the switch is published. Revocation applies on the next broker call; full package removal drops its entries, including while Home is stopped. Android cloud backup and device transfer include only `foldcade.xml`, so this preferences file never travels, and the setup backup exporter never reads it. A signer change has no matching grant. Downloaded APKs are temporary files under `cache/apk-plugins`, removed after verification or session staging; install state is transient.
+
+`moonlight_addresses` in `SessionStore` keeps each computer's last reached LAN address, HTTPS port and optional MAC for cold broker calls. It is classified DeviceOnly beside the existing pairings. Before this record exists, a paired computer must be located once before the broker can report its address. Pairings still require the same keystore identity fingerprint.
+
 ## Backup and restore
 
 Settings › System › Backup keeps Home, collections, hidden games, settings, chosen art, added themes and play history in one zip, wherever the player picks. Restore previews what it replaces and what is missing here. Play history only adds; importing the same backup twice adds nothing. Games, saves, sign-ins, pairing keys and Android permissions do not travel.

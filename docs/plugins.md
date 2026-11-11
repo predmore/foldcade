@@ -1,13 +1,15 @@
 # Plugins
 
-The contract lives in `:api` ([MIT](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
+The bundled, in-process contract lives in `:api` ([MIT](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
+
+Installed apps use the separate [APK plugin protocol](apk-plugins.md). Settings › Plugins discovers them, requests consent, and installs catalog releases. No code from another APK is loaded into Foldcade.
 
 ## Stability
 
 `:api` is unstable. Any release may change it without a major bump. It stays unstable until a plugin outside this repository depends on it.
 
 - The versioning rules below are the intended contract. No tool checks them yet. There is no binary-compatibility dump.
-- Only the plugins in this repository are loaded on a device. `:samples:out-of-tree` is loaded from a jar in a JVM test. Android has no path that loads a plugin from another package.
+- Only the in-process plugins in this repository are loaded into Foldcade. `:samples:out-of-tree` is loaded from a jar in a JVM test. APK plugins are discovered separately and run in their own process; this loader never loads their code.
 - `Session`, `Panel`, `DisplayAssignment`, and the RomM credential ids live in `:app`. A plugin that depends on `:api` does not depend on them.
 
 A change to `:api` should still keep the in-tree plugins and both samples compiling, and keep `PLUGIN_API_VERSION` and `PLUGIN_API_MINOR` honest.
@@ -149,6 +151,8 @@ The host stores an entry whole or not at all. One bad row in the table drops eve
 
 ## Moonlight
 
+An installed APK plugin declaring `PLATFORM=moonlight` receives Foldcade-paired games when its `gamestream` consent and **Use for Moonlight games** switches are on in Settings › Plugins. A `SCREENS=both` plugin starts on the assigned top display and owns both panels through the existing external-play session. The broker lends five pinned HTTPS requests; Foldcade's pairing key stays in its keystore. Official-client-only computers and games without an enabled, granted plugin retain the official client route below. Foldcade-paired games work without official Moonlight installed. The [APK protocol](apk-plugins.md) specifies discovery, identity, broker errors, extras and catalog installs.
+
 `:plugins:moonlight` (`MoonlightEntry`) is the official Moonlight client, `com.limelight`. The player starts `com.limelight.ShortcutTrampoline` with the host UUID and a string `AppId`. The plugin does not pair, and it does not open Moonlight's database; the app pairs on its own behalf (below). Moonlight does the rest of a start itself: it wakes a sleeping computer it knows the MAC address of, asks before quitting a different running game, and resumes the same one. The UUID must be sent in the case Moonlight stored it, since its lookup is case-sensitive.
 
 Moonlight puts a game on the home screen by asking Android to pin a shortcut. Android sends that request to the default home app only, and it tells Moonlight pinning is unsupported unless the home app handles `CONFIRM_PIN_SHORTCUT`. `PinShortcutActivity` handles it. It accepts a Moonlight game shortcut without asking, because the user just chose Create shortcut, and it leaves every other request unanswered. After accepting, Foldcade reads the game back from Android's pinned shortcuts, not from the request, and places it in the Moonlight folder, even with Add new games off.
@@ -161,11 +165,11 @@ The last read is saved, so Moonlight tiles keep their names at start. Their tile
 
 `MoonlightArt`, the entry's metadata provider, gives each game the box art Moonlight already keeps. Moonlight's exported `PosterContentProvider` serves it read-only at `content://poster.com.limelight/boxart/<host UUID>/<app id>` once Moonlight's game list has shown the game. A launcher cannot list that provider, so the app checks each address once (`moonlightPosterExists`) and loads only addresses of that exact shape. A game Moonlight has no poster for falls through to the public sources.
 
-`MoonlightHosts` in the app watches Moonlight's computers while a Home screen is shown and Moonlight is installed. Moonlight's dynamic computer shortcuts name each one when Foldcade is the home app. It finds them, and computers no shortcut names, by mDNS (`_nvstream._tcp`, which Sunshine and Apollo advertise), or a named one by its name in DNS, then asks `/serverinfo` over plain http through `:gamestream` and `LanHttp`, which reach LAN addresses only. That needs no pairing. An answer counts only when its `uniqueid` is the host's UUID. Sunshine names the app it is streaming there, so that tile reads **Running on** the computer, with the paused badge; Apollo does not say over http. The top screen's line names the computer, or says it is offline once a computer that answered stops.
+`MoonlightHosts` in the app watches Moonlight's computers while a Home screen is shown and official Moonlight, a supported APK plugin, or a Foldcade pairing is present. Moonlight's dynamic computer shortcuts name each one when Foldcade is the home app. It finds them, and computers no shortcut names, by mDNS (`_nvstream._tcp`, which Sunshine and Apollo advertise), or a named one by its name in DNS, then asks `/serverinfo` over plain http through `:gamestream` and `LanHttp`, which reach LAN addresses only. That needs no pairing. An answer counts only when its `uniqueid` is the host's UUID. Sunshine names the app it is streaming there, so that tile reads **Running on** the computer, with the paused badge; Apollo does not say over http. The top screen's line names the computer, or says it is offline once a computer that answered stops.
 
 ### Pairing
 
-Settings › Library has a tile for each computer the watcher knows, and its page a **Games** switch: Moonlight's, the ones mDNS finds while Moonlight is installed, and the ones already paired. Turning it on pairs Foldcade as a GameStream client of its own (`:gamestream`'s `GameStreamPairing`, the steps Moonlight's `PairingManager` takes and Sunshine's `nvhttp.cpp` checks). Foldcade shows a four-digit code; the user types it into Sunshine's or Apollo's PIN page. A host whose answer does not match the code, or whose secret is not signed by the certificate it sent, is refused. Each attempt uses a fresh `uniqueid`, because Sunshine holds an abandoned one for five minutes and knows a paired client by its certificate.
+Settings › Library has a tile for each computer the watcher knows, and its page a **Games** switch: Moonlight's, the ones mDNS finds while a Moonlight client or a Foldcade pairing is present, and the ones already paired. Turning it on pairs Foldcade as a GameStream client of its own (`:gamestream`'s `GameStreamPairing`, the steps Moonlight's `PairingManager` takes and Sunshine's `nvhttp.cpp` checks). Foldcade shows a four-digit code; the user types it into Sunshine's or Apollo's PIN page. A host whose answer does not match the code, or whose secret is not signed by the certificate it sent, is refused. Each attempt uses a fresh `uniqueid`, because Sunshine holds an abandoned one for five minutes and knows a paired client by its certificate.
 
 `GameStreamIdentity` keeps the client key in Android's keystore with a self-signed certificate, as GameStream clients use. Besides signing, the key allows raw RSA decryption with no padding: Conscrypt signs a TLS 1.3 handshake with a keystore RSA key that way, and without it the handshake fails with `INCOMPATIBLE_PADDING_MODE`. Settings move to a new device and keys do not, so saved pairings carry the fingerprint of the key they were made with and are dropped when it differs.
 
