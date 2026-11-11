@@ -136,6 +136,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 class FoldcadeApp : Application() {
+    internal val apkPluginBrokerReady = CompletableDeferred<Unit>()
+    internal val apkPluginLaunchTokens = ApkPluginLaunchTokens()
     lateinit var store: SessionStore
         private set
 
@@ -699,35 +701,49 @@ class FoldcadeApp : Application() {
     /** Battery, network, Bluetooth, and the clock. Both screens show the same reading. */
     val deviceStatus: DeviceStatusWatcher by lazy { DeviceStatusWatcher(this, scope) }
 
+    private val apkPluginChanges = Mutex()
+    private val apkPluginRefreshVersion = AtomicInteger()
     @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
     internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
     internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) { shell.setPluginCatalog(it) } }
 
     internal fun refreshApkPlugins() {
+        val version = apkPluginRefreshVersion.incrementAndGet()
         scope.launch {
-            val plugins = discoverApkPlugins(packageManager)
-            installedApkPlugins = plugins
-            val rows = plugins.map { plugin ->
-                app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
-                    plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin))
+            apkPluginChanges.withLock {
+                if (version != apkPluginRefreshVersion.get()) return@withLock
+                val plugins = discoverApkPlugins(packageManager)
+                val rows = plugins.map { plugin ->
+                    app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
+                        plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin))
+                }
+                withContext(Dispatchers.Main.immediate) {
+                    if (version == apkPluginRefreshVersion.get()) {
+                        installedApkPlugins = plugins
+                        shell.setApkPlugins(rows)
+                    }
+                }
             }
-            withContext(Dispatchers.Main.immediate) { shell.setApkPlugins(rows) }
         }
     }
 
     internal fun setPluginGrant(packageName: String, scopeName: String, on: Boolean) {
         scope.launch {
-            discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let {
-                apkPluginGrants.setGranted(it, scopeName, on)
+            apkPluginChanges.withLock {
+                discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let {
+                    apkPluginGrants.setGranted(it, scopeName, on)
+                }
+                refreshApkPlugins()
             }
-            refreshApkPlugins()
         }
     }
 
     internal fun setPluginRouting(packageName: String, on: Boolean) {
         scope.launch {
-            discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let { apkPluginGrants.setRouting(it, on) }
-            refreshApkPlugins()
+            apkPluginChanges.withLock {
+                discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let { apkPluginGrants.setRouting(it, on) }
+                refreshApkPlugins()
+            }
         }
     }
 
@@ -736,8 +752,7 @@ class FoldcadeApp : Application() {
         val game = (plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary)?.app(remoteKey) ?: return null
         val host = moonlightStreams.pairedHost(game.hostUuid) ?: return null
         val plugin = installedApkPlugins.firstOrNull { it.supported && apkPluginGrants.routes(it) } ?: return null
-        val appName = store.listedStreamApps().firstOrNull { it.remoteKey == game.remoteKey }?.label ?: game.label
-        return ApkMoonlightPlayer(plugin, packageName, host.uuid, host.name, appName)
+        return ApkMoonlightPlayer(plugin, packageName, host.uuid, host.name, game.label)
     }
 
     /** Moonlight's computers: how each is, the ones Foldcade paired with, and their apps. */
@@ -1216,6 +1231,7 @@ class FoldcadeApp : Application() {
             }
             withContext(Dispatchers.Main.immediate) { onSaveConflicts?.invoke() }
         }
+        apkPluginBrokerReady.complete(Unit)
     }
 
     /** The activity refreshes the bottom screen when a library kept both saves. */

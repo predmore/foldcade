@@ -59,16 +59,17 @@ Caller check: `getCallingPackage()` (the `ContentProvider` method, which Android
 | --- | --- | --- | --- |
 | `hello` | none | none | `protocol` (int, host's), `granted` (String[] of the caller's granted scopes; empty if none), `hostPackage` |
 | `gamestream.hosts` | `gamestream` | none | `hosts`: `ArrayList<Bundle>`, one for each computer **Foldcade paired with itself**, with `uuid`, `name`, `address` (the host or IP Foldcade last reached it at), `httpPort` (int), `httpsPort` (int, 0 when unknown), and optional `mac` |
-| `gamestream.request` | `gamestream` | `arg` = host uuid; extras `path` (String), `query` (String, optional, without a leading `?`) | `status` (int HTTP status), `body` (String, UTF-8 XML) |
+| `gamestream.request` | `gamestream` | `arg` = host uuid; extras `path` (String), `query` (String, optional, without a leading `?`), `token` (String, required for `launch` and `resume`) | `status` (int HTTP status), `body` (String, UTF-8 XML) |
 
 `gamestream.request` rules:
 
 - `path` must be one of `serverinfo`, `applist`, `launch`, `resume`, or `cancel`. Anything else is `bad_request`. Pairing and unpairing are never brokered.
 - The host makes the request over HTTPS to that paired host. It presents its keystore identity and pins the certificate it recorded when pairing, the same as `:gamestream` does today. It drops any `uniqueid` or `uuid` parameter in `query` and adds its own. Every other parameter passes through unchanged: `appid`, `mode`, `additionalStates`, `sops`, `rikey`, `rikeyid`, `localAudioPlayMode`, `surroundAudioInfo`, `remoteControllersBitmap`, `gcmap`, `gcpersist`, `hdrMode`, `clientHdrCap*`, and so on. `query` is limited to 4096 characters and may not contain `#` or a newline.
+- `launch` and `resume` need `token`: the `LAUNCH_TOKEN` of a play start the host sent **to this caller package, for this host uuid, within the last 10 minutes**. If `query` has an `appid`, it must equal that start's `APP_ID`. Otherwise the reply is `not_launched`. A token can be used more than once in its window, so retries work. The host keeps tokens only in memory. `serverinfo`, `applist` and `cancel` need no token. This means only a game Foldcade chose to start can be started. Any app can send the plugin a PLAY intent, but it can't make the plugin start a game on the user's PC.
 - Timeouts: `launch` and `resume` allow 60 s to read. The rest use the usual LAN timeouts.
 - The reply body is capped at 1 MiB. A larger reply is `host_error`.
 
-Error codes: `not_granted`, `unknown_host` (no Foldcade pairing has that uuid), `bad_request`, `unreachable` (connect or TLS failure, or a timeout), `host_error` (HTTP failure, or an oversized or unreadable reply), `internal`.
+Error codes: `not_granted`, `not_launched` (a missing, expired, or mismatched launch token), `unknown_host` (no Foldcade pairing has that uuid), `bad_request`, `unreachable` (connect or TLS failure, or a timeout), `host_error` (HTTP failure, or an oversized or unreadable reply), `internal`.
 
 Host implementation limit: Android Binder has a shared 1 MiB transaction buffer and parcels strings as UTF-16. The host also returns `host_error` for decoded XML over 384 Ki characters, reserving room for the reply parcel. The network body cap remains 1 MiB. This transport limit is stricter than the protocol's byte cap; a larger-body transport would require a later protocol.
 
@@ -85,6 +86,7 @@ Extras, all prefixed `app.foldcade.plugin.extra.`:
 | `PROTOCOL` | int | The protocol in use: min(host, plugin). |
 | `BROKER_AUTHORITY` | String | The broker's authority. |
 | `TITLE` | String | The game's title as Foldcade shows it. |
+| `LAUNCH_TOKEN` | String | An opaque random value, at least 128 bits, new for every play start. See `gamestream.request`. |
 | `TOP_DISPLAY` | int | Display id of the top panel. |
 | `BOTTOM_DISPLAY` | int | Display id of the bottom panel, or -1 when there isn't one. |
 
@@ -96,6 +98,8 @@ For the `moonlight` platform, the extras are prefixed `app.foldcade.gamestream.e
 | `HOST_NAME` | String | The computer's name. |
 | `APP_ID` | String | The decimal GameStream app id. |
 | `APP_NAME` | String | The app's name on the host. |
+
+Fresh starts and resume starts each receive a new token. Tokens expire after ten minutes of elapsed time and never travel in saved state or backups.
 
 The plugin checks that `BROKER_AUTHORITY` resolves (`resolveContentProvider`) to a package it trusts as a host. Foldcade Moonlight trusts `app.foldcade` and `app.foldcade.debug`. Otherwise it refuses to start.
 

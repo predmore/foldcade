@@ -44,6 +44,7 @@ fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean
     if (bloom) bloomStart(intent)
     val options = ActivityOptions.makeBasic()
     options.launchDisplayId = displayId
+    (applicationContext as? FoldcadeApp)?.authorizeApkPluginStart(intent)
     startActivity(intent, options.toBundle())
 }
 

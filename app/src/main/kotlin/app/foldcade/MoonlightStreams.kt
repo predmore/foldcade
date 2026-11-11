@@ -182,6 +182,7 @@ internal class MoonlightStreams(
                 listedOnce.remove(key)
                 File(artDir, key).deleteRecursively()
             }
+            hosts.forget(key)
             withContext(Dispatchers.Main.immediate) { refreshArt(key) }
             refreshShelf(null)
         }
@@ -235,13 +236,15 @@ internal class MoonlightStreams(
 
     internal suspend fun brokerCall(uuid: String, path: String, query: String?): Pair<Int, ByteArray> {
         val me = GameStreamIdentity.existing() ?: throw BrokerFailure("unknown_host", "No Foldcade pairing")
-        val host = store.pairedStreamHosts(me.fingerprint).firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
+        val pairings = store.pairedStreamHosts(me.fingerprint)
+        val host = pairings.firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
             ?: throw BrokerFailure("unknown_host", "No Foldcade pairing has this UUID")
-        val at = hosts.lastAt(host.key) ?: hosts.locate(host.key)
-            ?: throw BrokerFailure("unreachable", "Paired computer could not be reached")
-        val response = app.foldcade.gamestream.brokerRequest(
-            PairedHost(at.address, host.httpsPort, host.certificate), me, store.gameStreamClientId(), path, query,
-        )
+        hosts.knowPaired(pairings)
+        val response = requestLocatedStreamHost(hosts.lastAt(host.key), locate = { hosts.locate(host.key) }) { at ->
+            app.foldcade.gamestream.brokerRequest(
+                PairedHost(at.address, host.httpsPort, host.certificate), me, store.gameStreamClientId(), path, query,
+            )
+        }
         return response.status to response.body
     }
 

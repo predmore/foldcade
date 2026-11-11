@@ -17,15 +17,24 @@ const val BROKER_MAX_REPLY_BYTES: Int = 1024 * 1024
  * client identity, including escaped names and repeats. Refuse ambiguous malformed escapes.
  */
 fun brokerQuery(query: String?, clientId: String, requestId: String = UUID.randomUUID().toString()): String {
+    val kept = brokerParameters(query).filter {
+        !it.name.equals("uniqueid", ignoreCase = true) && !it.name.equals("uuid", ignoreCase = true)
+    }.map { it.encoded }
+    return (kept + "uniqueid=${URLEncoder.encode(clientId, "UTF-8")}" + "uuid=${URLEncoder.encode(requestId, "UTF-8")}").joinToString("&")
+}
+
+/** Every app id, including repeated and escaped names, decoded exactly as the sanitiser. */
+fun brokerAppIds(query: String?): List<String> = brokerParameters(query)
+    .filter { it.name.equals("appid", ignoreCase = true) }.map { it.value }
+
+private data class BrokerParameter(val encoded: String, val name: String, val value: String)
+
+private fun brokerParameters(query: String?): List<BrokerParameter> {
     val raw = query.orEmpty()
     require(raw.length <= 4096 && raw.none { it == '#' || it == '\n' || it == '\r' } && !raw.startsWith('?')) { "Invalid query" }
-    val kept = raw.split('&').filter { part ->
-        val name = URLDecoder.decode(part.substringBefore('='), "UTF-8")
-        // Validate values too, without changing their encoded bytes.
-        URLDecoder.decode(part.substringAfter('=', ""), "UTF-8")
-        !name.equals("uniqueid", ignoreCase = true) && !name.equals("uuid", ignoreCase = true) && part.isNotEmpty()
+    return raw.split('&').filter { it.isNotEmpty() }.map { part ->
+        BrokerParameter(part, URLDecoder.decode(part.substringBefore('='), "UTF-8"), URLDecoder.decode(part.substringAfter('=', ""), "UTF-8"))
     }
-    return (kept + "uniqueid=${URLEncoder.encode(clientId, "UTF-8")}" + "uuid=${URLEncoder.encode(requestId, "UTF-8")}").joinToString("&")
 }
 
 /** Uses the same LAN guard, keystore key manager and paired certificate as ordinary GameStream. */

@@ -1833,14 +1833,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
+        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
         val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in launchFlags
-        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags
+        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags || player is ApkMoonlightPlayer
         val resumeStart = if (sameStartResumes) Intent(intent).apply {
             flags = resumeStartFlags(flags, launchFlags)
         } else null
@@ -2462,6 +2462,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     getSystemService(android.content.pm.LauncherApps::class.java)
                         .startShortcut(intent.packageName, shortcutId, null, options.toBundle(), android.os.Process.myUserHandle())
                 } else {
+                    foldcade.authorizeApkPluginStart(start)
                     startActivity(start, options.toBundle())
                     if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
                 }

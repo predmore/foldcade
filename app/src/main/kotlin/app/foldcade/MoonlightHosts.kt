@@ -133,7 +133,15 @@ internal class MoonlightHosts(
         if (keyed == paired) return
         (keyed.keys - paired.keys).forEach(listedAt::remove)
         paired = keyed
+        persistLocations()
         wake.trySend(Unit)
+    }
+
+    /** Wait for an in-flight discovery before dropping the forgotten computer's location. */
+    suspend fun forget(key: String) = asking.withLock {
+        found.remove(key)
+        listedAt.remove(key)
+        persistLocations()
     }
 
     /** Main thread. Asks while [shown], and once more at once when shown again. */
@@ -253,9 +261,11 @@ internal class MoonlightHosts(
 
     private fun remember(info: ServerInfo, address: String, key: String) {
         val at = LocatedHost(uuid = info.uniqueId, address = address, httpsPort = info.httpsPort ?: GAMESTREAM_HTTPS_PORT, mac = info.mac)
-        if (found.put(key, at) != at) onLocated(found.toMap())
+        if (found.put(key, at) != at) persistLocations()
         if (key !in names && key !in paired) discovered[key] = info.hostname
     }
+
+    private fun persistLocations() = onLocated(found.filterKeys { it in paired })
 
     /** Addresses of the GameStream hosts mDNS finds in [DISCOVER_MS]. */
     private suspend fun discover(): List<String> {

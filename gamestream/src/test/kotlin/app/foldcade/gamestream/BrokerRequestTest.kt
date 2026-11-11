@@ -23,4 +23,9 @@ class BrokerRequestTest {
         assertEquals(setOf("serverinfo", "applist", "launch", "resume", "cancel"), BROKER_PATHS)
         for (path in listOf("pair", "unpair", "/launch", "../launch", "launch?appid=1", "Launch")) assertFalse(path in BROKER_PATHS)
     }
+
+    @Test fun appIdsUseTheSameDecodedNamesAndValuesAsQuerySanitising() {
+        assertEquals(listOf("42", "43", "4 2"), brokerAppIds("%61pp%69d=%34%32&APPID=43&appid=4+2&mode=x"))
+        assertEquals(emptyList<String>(), brokerAppIds(null))
+    }
 }

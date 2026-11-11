@@ -7,12 +7,15 @@ import android.net.Uri
 import android.os.Bundle
 import app.foldcade.gamestream.BROKER_PATHS
 import app.foldcade.gamestream.brokerQuery
+import app.foldcade.gamestream.brokerAppIds
 import app.foldcade.net.LanHttpException
 import app.foldcade.net.LanReplyException
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class BrokerHost(
     val uuid: String, val name: String, val address: String,
@@ -31,11 +34,17 @@ internal class BrokerFailure(val code: String, message: String) : Exception(mess
 /** Binder's shared 1 MiB transaction buffer carries UTF-16 strings plus the reply parcel. */
 internal const val BROKER_MAX_STRING_CHARS = 384 * 1024
 
+internal suspend fun awaitApkPluginBrokerReady(ready: Deferred<Unit>, timeoutMillis: Long = 10_000): Boolean =
+    withTimeoutOrNull(timeoutMillis) { ready.await(); true } ?: false
+
 /** Android supplies the caller package; discovery and grants are read again for every call. */
 internal suspend fun callPluginBroker(
     caller: String?, method: String, arg: String?, path: String?, query: String?, hostPackage: String,
     plugins: List<ApkPlugin>, granted: (ApkPlugin, String) -> Boolean,
     hosts: suspend () -> List<BrokerHost>, request: suspend (String, String, String?) -> Pair<Int, ByteArray>,
+    token: String? = null,
+    launchAllowed: (String, String, String?, List<String>) -> Boolean = { _, _, _, _ -> false },
+    awaitReady: suspend () -> Boolean = { true },
 ): BrokerReply {
     val plugin = plugins.firstOrNull { it.packageName == caller }
         ?: return BrokerReply.error("not_granted", "Caller is not a discovered plugin")
@@ -46,12 +55,19 @@ internal suspend fun callPluginBroker(
     if (ApkPluginProtocol.GAMESTREAM !in scopes) return BrokerReply.error("not_granted", "GameStream access is not granted")
     return try {
         when (method) {
-            "gamestream.hosts" -> BrokerReply.success("hosts" to hosts())
+            "gamestream.hosts" -> {
+                if (!awaitReady()) return BrokerReply.error("internal", "Host initialization timed out")
+                BrokerReply.success("hosts" to hosts())
+            }
             "gamestream.request" -> {
                 if (arg.isNullOrEmpty() || path !in BROKER_PATHS) return BrokerReply.error("bad_request", "Invalid host or path")
                 try { brokerQuery(query, "0000000000000000") } catch (_: IllegalArgumentException) {
                     return BrokerReply.error("bad_request", "Invalid query")
                 }
+                if ((path == "launch" || path == "resume") && !launchAllowed(plugin.packageName, arg, token, brokerAppIds(query))) {
+                    return BrokerReply.error("not_launched", "No matching Foldcade play start")
+                }
+                if (!awaitReady()) return BrokerReply.error("internal", "Host initialization timed out")
                 val (status, bytes) = request(arg, path!!, query)
                 if (status !in 200..299) return BrokerReply.error("host_error", "Host returned HTTP $status")
                 if (bytes.size > app.foldcade.gamestream.BROKER_MAX_REPLY_BYTES) return BrokerReply.error("host_error", "Host reply is too large")
@@ -92,7 +108,10 @@ class ApkPluginBroker : ContentProvider() {
                 callPluginBroker(
                     caller, method, arg, extras?.getString("path"), extras?.getString("query"), context.packageName,
                     discoverApkPlugins(context.packageManager), grants::granted,
-                    hosts = app.moonlightStreams::brokerHosts, request = app.moonlightStreams::brokerCall,
+                    hosts = { app.moonlightStreams.brokerHosts() },
+                    request = { uuid, path, query -> app.moonlightStreams.brokerCall(uuid, path, query) },
+                    token = extras?.getString("token"), launchAllowed = app.apkPluginLaunchTokens::allows,
+                    awaitReady = { awaitApkPluginBrokerReady(app.apkPluginBrokerReady) },
                 )
             }.bundle()
         } catch (_: SecurityException) {

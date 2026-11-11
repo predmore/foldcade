@@ -3,6 +3,8 @@ package app.foldcade
 import app.foldcade.net.LanHttpException
 import app.foldcade.net.LanReplyException
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CoroutineStart
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -14,10 +16,78 @@ class ApkPluginBrokerTest {
     private val plugin = testApkPlugin()
 
     private fun call(
-        caller: String? = plugin.packageName, method: String = "gamestream.request", path: String = "launch", query: String? = null,
+        caller: String? = plugin.packageName, method: String = "gamestream.request", path: String = "serverinfo", query: String? = null,
         granted: Boolean = true, request: suspend (String, String, String?) -> Pair<Int, ByteArray> = { _, _, _ -> 200 to "<root/>".toByteArray() },
     ): BrokerReply = runBlocking {
         callPluginBroker(caller, method, "host-uuid", path, query, "test.host", listOf(plugin), { _, _ -> granted }, { emptyList() }, request)
+    }
+
+    @Test fun launchAndResumeRequireTheMatchingRecentHostChosenStart() = runBlocking {
+        var now = 100L
+        val tokens = ApkPluginLaunchTokens { now }
+        val token = tokens.issue(plugin.packageName, "host-uuid", "42")
+        val other = plugin.copy(packageName = "other.plugin")
+        var requested = 0
+        suspend fun play(
+            caller: String = plugin.packageName, host: String = "host-uuid", query: String? = "appid=42",
+            provided: String? = token, path: String = "launch",
+        ): BrokerReply = callPluginBroker(
+            caller, "gamestream.request", host, path, query, "test.host", listOf(plugin, other), { _, _ -> true }, { emptyList() },
+            request = { _, _, _ -> requested++; 200 to "<root/>".toByteArray() },
+            token = provided, launchAllowed = tokens::allows,
+        )
+        assertEquals("not_launched", play(caller = other.packageName).values["error"])
+        assertEquals("not_launched", play(host = "another-host").values["error"])
+        assertEquals("not_launched", play(query = "appid=43").values["error"])
+        assertEquals("not_launched", play(query = "appid=42&%61ppid=43").values["error"])
+        assertEquals("not_launched", play(query = "appid=").values["error"])
+        assertEquals("not_launched", play(provided = null).values["error"])
+        assertEquals("not_launched", play(provided = "unknown").values["error"])
+        assertEquals(0, requested)
+        // Query names and values use the sanitiser's URL decoding; retries do not consume the token.
+        assertEquals(true, play(query = "%61pp%69d=%34%32").values["ok"])
+        assertEquals(true, play(path = "resume", query = null).values["ok"])
+        assertEquals(true, play(path = "resume", query = "APPID=42&appid=42").values["ok"])
+        now += ApkPluginLaunchTokens.WINDOW_MS - 1
+        assertEquals(true, play().values["ok"])
+        now++
+        assertEquals("not_launched", play().values["error"])
+        assertEquals(4, requested)
+    }
+
+    @Test fun metadataAndCancelRequestsDoNotRequireAToken() {
+        for (path in listOf("serverinfo", "applist", "cancel")) assertEquals(true, call(path = path).values["ok"])
+    }
+
+    @Test fun eachPlayStartGetsAnIndependentRandomMemoryOnlyToken() {
+        val tokens = ApkPluginLaunchTokens { 1L }
+        val first = tokens.issue(plugin.packageName, "host-uuid", "42")
+        val resumed = tokens.issue(plugin.packageName, "host-uuid", "42")
+        assertNotEquals(first, resumed)
+        assertTrue(java.util.Base64.getUrlDecoder().decode(first).size >= 16)
+        assertTrue(tokens.allows(plugin.packageName, "host-uuid", first, listOf("42")))
+        assertTrue(tokens.allows(plugin.packageName, "host-uuid", resumed, listOf("42")))
+        assertFalse(ApkPluginLaunchTokens { 1L }.allows(plugin.packageName, "host-uuid", first, listOf("42")))
+    }
+
+    @Test fun helloDoesNotWaitForApplicationInitializationAndDataCallsWaitBeforeAccess() = runBlocking {
+        val ready = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val plugins = listOf(plugin)
+        suspend fun ask(method: String, wait: suspend () -> Boolean): BrokerReply = callPluginBroker(
+            plugin.packageName, method, "host-uuid", "serverinfo", null, "test.host", plugins, { _, _ -> true },
+            hosts = { check(ready.isCompleted); emptyList() },
+            request = { _, _, _ -> check(ready.isCompleted); 200 to "<root/>".toByteArray() },
+            awaitReady = wait,
+        )
+        assertEquals(true, ask("hello") { error("hello touched startup state") }.values["ok"])
+        assertEquals("internal", ask("gamestream.hosts") { awaitApkPluginBrokerReady(ready, 1) }.values["error"])
+        val waiting = async(start = CoroutineStart.UNDISPATCHED) {
+            ask("gamestream.hosts") { awaitApkPluginBrokerReady(ready) }
+        }
+        assertFalse(waiting.isCompleted)
+        ready.complete(Unit)
+        assertEquals(true, waiting.await().values["ok"])
+        assertEquals(true, ask("gamestream.request") { awaitApkPluginBrokerReady(ready) }.values["ok"])
     }
 
     @Test fun callerMustBeDiscoveredAndGrantedOnEveryCall() {
