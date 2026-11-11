@@ -323,7 +323,8 @@ private fun CardRows(
                 }
                 val explanation = when (row) {
                     is Row.PluginGrant -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { ApkPluginCopy.consent(it.label) }
-                    Row.PluginInstall -> ApkPluginCopy.status(model.pluginCatalog)
+                    is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
+                    Row.PluginInstall -> ApkPluginCopy.status(model.pluginCatalog).takeIf { model.pluginCatalog.canInstall }
                     else -> null
                 }
                 explanation?.let {
@@ -666,7 +667,10 @@ private fun TileArt(art: ShelfArt, lit: Float, off: Boolean) {
                 }
             }.value
             if (icon != null) Image(icon.asImageBitmap(), null, Modifier.fillMaxSize(ART_FILL).graphicsLayer { this.alpha = alpha })
-            else SymbolIcon("emulators", ART_FILL * SYMBOL_FILL, theme.onBackground) { alpha }
+            else {
+                val art = themeIcon(R.drawable.ic_status_plugins)
+                Image(art.painter, null, Modifier.fillMaxSize(ART_FILL * SYMBOL_FILL).graphicsLayer { this.alpha = alpha }, colorFilter = art.tint(theme.onBackground))
+            }
         }
         is ShelfArt.Mark -> MarkIcon(markGlyph(art.mark) ?: return, ART_FILL) { alpha }
         is ShelfArt.App -> {
@@ -747,7 +751,7 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Library -> R.drawable.symbol_library
     SettingsCategory.Players -> R.drawable.symbol_emulators
     SettingsCategory.Screens -> R.drawable.ic_status_settings
-    SettingsCategory.Plugins -> R.drawable.symbol_emulators
+    SettingsCategory.Plugins -> R.drawable.ic_status_plugins
     SettingsCategory.About -> R.drawable.ic_status_info
 }
 

@@ -43,7 +43,7 @@ The host finds plugins with `PackageManager.queryIntentActivities(Intent(ACTION_
 A plugin is identified by **package name plus its current signing certificates** (`GET_SIGNING_CERTIFICATES`, SHA-256 of each signer, using `signingInfo.apkContentsSigners`, or the current signer when there's signing history).
 
 - Settings › Plugins lists every discovered plugin: its label, version, package, and a short signer fingerprint (the first 4 bytes of the SHA-256, written as hex pairs).
-- For each scope a plugin asks for, the user can turn on a switch with consent copy. For `gamestream` the switch reads roughly: "Use your paired computers. Foldcade Moonlight can start, resume and quit games on the computers you paired in Foldcade. Your pairing key stays in Foldcade."
+- For each scope a plugin asks for, the user can turn on a switch with consent copy. For `gamestream` the switch reads roughly: "Share paired computers". Its consent text reads: "Foldcade Moonlight can see your paired computers and stream the games you start in Foldcade. It can also quit games on them. Your pairing key stays in Foldcade."
 - A grant is stored as `(package, sorted signer SHA-256 set, scope)`. If the signer set changes, the plugin counts as new and has no grant. Uninstalling drops its grants. Grants are excluded from backup and device transfer.
 - Turning a grant off takes effect on the next broker call.
 

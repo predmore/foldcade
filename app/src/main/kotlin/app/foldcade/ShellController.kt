@@ -2603,12 +2603,13 @@ class ShellController(
     }
 
     internal fun setApkPlugins(plugins: List<app.foldcade.language.ApkPluginSetting>) {
-        publish(model.copy(apkPlugins = plugins, pluginCatalog = model.pluginCatalog.copy(installed = plugins.any { it.packageName == app.foldcade.language.ApkPluginCopy.catalogPackage })))
+        val next = model.copy(apkPlugins = plugins, pluginCatalog = model.pluginCatalog.copy(installed = plugins.any { it.packageName == app.foldcade.language.ApkPluginCopy.catalogPackage }))
+        publish(app.foldcade.language.afterApkPluginInstall(model, next))
         noteShelfChanged()
     }
 
     internal fun setPluginCatalog(catalog: app.foldcade.language.PluginCatalogSetting) {
-        publish(model.copy(pluginCatalog = catalog))
+        publish(app.foldcade.language.afterApkPluginInstall(model, model.copy(pluginCatalog = catalog)))
     }
 
     fun setLibrarySyncing(syncing: Boolean) {

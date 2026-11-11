@@ -705,7 +705,10 @@ class FoldcadeApp : Application() {
     private val apkPluginRefreshVersion = AtomicInteger()
     @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
     internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
-    internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) { shell.setPluginCatalog(it) } }
+    internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) {
+        shell.setPluginCatalog(it)
+        if (it.status == app.foldcade.language.PluginCatalogStatus.Installed) refreshApkPlugins()
+    } }
 
     internal fun refreshApkPlugins() {
         val version = apkPluginRefreshVersion.incrementAndGet()

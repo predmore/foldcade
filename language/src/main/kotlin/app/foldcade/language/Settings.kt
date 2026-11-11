@@ -308,12 +308,12 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.PluginCatalog -> listOf(Row.PluginInstall, Row.PluginCheck)
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
             if (plugin.packageName == ApkPluginCopy.catalogPackage) addAll(listOf(Row.PluginInstall, Row.PluginCheck))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
         }
     }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
@@ -327,6 +327,12 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     is SettingsInner.Backend -> model.signedIn.filter { it.pluginId == inner.pluginId }.take(1).map { Row.SignOut(it.pluginId, it.label) }
     // One RomM server at a time: once one is saved, its own tile edits it or signs out.
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
+}
+
+/** The catalog's unavailable Install is a status, so opening the page starts on Check again. */
+fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
+    val rows = settingsInnerRows(inner, model)
+    return if (rows.firstOrNull() == Row.PluginInstall && !model.pluginCatalog.canInstall) rows.indexOf(Row.PluginCheck).coerceAtLeast(0) else 0
 }
 
 /**
@@ -598,7 +604,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
     Row.PluginCheck -> RowControl.Opens
-    Row.PluginInstall -> if (model.pluginCatalog.canInstall) RowControl.Opens else RowControl.None
+    Row.PluginInstall -> if (model.pluginCatalog.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(model.pluginCatalog))
     is Row.PluginInfo -> value?.let { RowControl.Value(it) } ?: RowControl.None
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.
@@ -679,7 +685,7 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
     SettingsInner.PluginCatalog -> ApkPluginCopy.catalogDetail
-    is SettingsInner.ApkPlugin -> ApkPluginCopy.unsupported.takeIf { model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } }
+    is SettingsInner.ApkPlugin -> if (model.apkPlugins.any { it.packageName == inner.packageName && !it.supported }) ApkPluginCopy.unsupported else ApkPluginCopy.catalogDetail
     SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
     // An unpaired computer's tile is dim; its page says why, and its one row pairs it.

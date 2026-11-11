@@ -1749,14 +1749,15 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
     is Row.PluginInfo -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }.let { plugin -> when (row.field) {
         PluginInfoField.Version -> RowText(ApkPluginCopy.version, plugin?.version)
-        PluginInfoField.Package -> RowText(plugin?.packageName.orEmpty())
+        PluginInfoField.Package -> RowText(ApkPluginCopy.packageName, plugin?.packageName)
         PluginInfoField.Signer -> RowText(ApkPluginCopy.signer, plugin?.fingerprint)
     } }
     is Row.PluginGrant -> RowText(ApkPluginCopy.pairedComputers)
     is Row.PluginRouting -> RowText(ApkPluginCopy.useForMoonlight)
     Row.PluginInstall -> RowText(if (model.pluginCatalog.status == PluginCatalogStatus.NeedsPermission) ApkPluginCopy.allowInstalls
-        else if (model.pluginCatalog.installed) ApkPluginCopy.update else ApkPluginCopy.install)
-    Row.PluginCheck -> RowText(ApkPluginCopy.check)
+        else if (model.pluginCatalog.installed) ApkPluginCopy.update else ApkPluginCopy.install,
+        ApkPluginCopy.installValue(model.pluginCatalog).takeUnless { model.pluginCatalog.canInstall })
+    Row.PluginCheck -> RowText(if (model.pluginCatalog.installed) ApkPluginCopy.check else ApkPluginCopy.checkAgain)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.keySaved else Copy.noKey)
     // Unpaired, the computer's one row pairs it; paired, it is the switch for its games.
     is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
@@ -2955,7 +2956,7 @@ private fun applySettings(
                 val (next, effect) = activateRow(model.copy(panel = standIn), standIn, only, current.screen)
                 return next.copy(panel = null, settings = current, focus = model.focus) to effect
             }
-            if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to null
+            if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = settingsInnerFirstRow(row.page, model))) to null
             if (row is Row.RommConnection) return model.copy(settings = current.copy(inner = SettingsInner.Romm, row = 0)) to null
             // Back from Set up saves returns to this row.
             if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null
