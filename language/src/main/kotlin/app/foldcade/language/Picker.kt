@@ -889,7 +889,14 @@ data class Hold(
     val orderBefore: List<Int>,
 )
 
+enum class PluginInfoField { Version, Package, Signer }
+
 sealed interface Row {
+    data class PluginInfo(val packageName: String, val field: PluginInfoField) : Row
+    data class PluginGrant(val packageName: String, val scope: String) : Row
+    data class PluginRouting(val packageName: String) : Row
+    data object PluginInstall : Row
+    data object PluginCheck : Row
     data object IconTheme : Row
     data object Theme : Row
     data object Background : Row
@@ -1740,6 +1747,16 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
+    is Row.PluginInfo -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }.let { plugin -> when (row.field) {
+        PluginInfoField.Version -> RowText(ApkPluginCopy.version, plugin?.version)
+        PluginInfoField.Package -> RowText(plugin?.packageName.orEmpty())
+        PluginInfoField.Signer -> RowText(ApkPluginCopy.signer, plugin?.fingerprint)
+    } }
+    is Row.PluginGrant -> RowText(ApkPluginCopy.pairedComputers)
+    is Row.PluginRouting -> RowText(ApkPluginCopy.useForMoonlight)
+    Row.PluginInstall -> RowText(if (model.pluginCatalog.status == PluginCatalogStatus.NeedsPermission) ApkPluginCopy.allowInstalls
+        else if (model.pluginCatalog.installed) ApkPluginCopy.update else ApkPluginCopy.install)
+    Row.PluginCheck -> RowText(ApkPluginCopy.check)
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.keySaved else Copy.noKey)
     // Unpaired, the computer's one row pairs it; paired, it is the switch for its games.
     is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
@@ -1832,6 +1849,10 @@ sealed interface Effect {
 
     /** The connect form for a new server. */
     data object OpenAddRomm : Effect
+    data class SetPluginGrant(val packageName: String, val scope: String, val on: Boolean) : Effect
+    data class SetPluginRouting(val packageName: String, val on: Boolean) : Effect
+    data object InstallPlugin : Effect
+    data object CheckPluginRelease : Effect
     data object OpenArtKey : Effect
     data object SaveArtKey : Effect
     data object RetryRommDeviceCode : Effect
@@ -2156,6 +2177,8 @@ data class PickerModel(
     val artKeySaved: Boolean = false,
     /** Moonlight's computers, each with a switch in Settings › Library. */
     val streamHosts: List<StreamHostSetting> = emptyList(),
+    val apkPlugins: List<ApkPluginSetting> = emptyList(),
+    val pluginCatalog: PluginCatalogSetting = PluginCatalogSetting(),
     val connectKind: ConnectKind = ConnectKind.Romm,
     /** Both screens' brightness as a slider position, 0 to 100. See [brightnessLevel]. */
     val brightness: Int = 50,
@@ -3111,6 +3134,15 @@ private fun activateRow(
             ) to Effect.OpenArtKey
         }
         // Pairing is asked on the computer, so A only starts it; forgetting asks here first.
+        is Row.PluginInfo -> model.copy(panel = panel) to null
+        is Row.PluginGrant -> model.copy(panel = panel) to model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let {
+            Effect.SetPluginGrant(row.packageName, row.scope, row.scope !in it.granted)
+        }
+        is Row.PluginRouting -> model.copy(panel = panel) to model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let {
+            Effect.SetPluginRouting(row.packageName, !it.useForMoonlight)
+        }
+        Row.PluginInstall -> model.copy(panel = panel) to Effect.InstallPlugin.takeIf { model.pluginCatalog.canInstall }
+        Row.PluginCheck -> model.copy(panel = panel) to Effect.CheckPluginRelease.takeUnless { model.pluginCatalog.busy }
         is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }?.let { host ->
             if (host.paired) model.copy(panel = panel, dialog = forgetHostDialog(host.name, host.key, screen)) to null
             else model.copy(panel = panel) to Effect.PairStreamHost(host.key)

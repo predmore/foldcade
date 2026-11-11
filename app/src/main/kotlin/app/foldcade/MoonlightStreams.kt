@@ -73,9 +73,11 @@ internal class MoonlightStreams(
         context = context,
         client = { client },
         scope = scope,
-        active = ::moonlightInstalled,
+        active = { paired.isNotEmpty() || moonlightInstalled() || discoverApkPlugins(context.packageManager).any { it.supported } },
         publish = { shell().setMoonlightHosts(it) },
         onApps = ::listed,
+        remembered = store.streamAddresses(),
+        onLocated = store::setStreamAddresses,
     )
 
     /** Box art for tiles: Moonlight's own poster, then what a paired computer keeps. */
@@ -216,6 +218,31 @@ internal class MoonlightStreams(
     private fun use(found: GameStreamIdentity) {
         identity = found
         client = GameStreamClient(LanHttp(), store.gameStreamClientId(), found)
+    }
+
+    internal fun pairedHost(uuid: String): PairedStreamHost? = paired.firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
+
+    /** Reads pairing state directly, so a cold broker call does not depend on library startup. */
+    internal suspend fun brokerHosts(): List<BrokerHost> {
+        val me = GameStreamIdentity.existing() ?: return emptyList()
+        val pairings = store.pairedStreamHosts(me.fingerprint)
+        hosts.knowPaired(pairings)
+        return pairings.mapNotNull { host ->
+            val at = hosts.lastAt(host.key) ?: hosts.locate(host.key) ?: return@mapNotNull null
+            BrokerHost(host.uuid, host.name, at.address, app.foldcade.gamestream.GAMESTREAM_HTTP_PORT, host.httpsPort, at.mac)
+        }
+    }
+
+    internal suspend fun brokerCall(uuid: String, path: String, query: String?): Pair<Int, ByteArray> {
+        val me = GameStreamIdentity.existing() ?: throw BrokerFailure("unknown_host", "No Foldcade pairing")
+        val host = store.pairedStreamHosts(me.fingerprint).firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
+            ?: throw BrokerFailure("unknown_host", "No Foldcade pairing has this UUID")
+        val at = hosts.lastAt(host.key) ?: hosts.locate(host.key)
+            ?: throw BrokerFailure("unreachable", "Paired computer could not be reached")
+        val response = app.foldcade.gamestream.brokerRequest(
+            PairedHost(at.address, host.httpsPort, host.certificate), me, store.gameStreamClientId(), path, query,
+        )
+        return response.status to response.body
     }
 
     private suspend fun keep(next: List<PairedStreamHost>, me: GameStreamIdentity) {

@@ -202,6 +202,7 @@ class ShellController(
     private val playMillis: (String) -> Long? = { null },
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onMoonlightRemoved: (remoteKey: String) -> Unit = {},
+    private val apkMoonlightPlayer: (gameId: String) -> Player? = { null },
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
     private val onDroidDeckRemoved: (remoteKey: String) -> Unit = {},
     private val onGameNativeRemoved: (remoteKey: String) -> Unit = {},
@@ -672,15 +673,22 @@ class ShellController(
     internal fun playerResolution(
         gameId: String?, platformId: String,
         installed: (String) -> Boolean = installedPlayers::contains,
-    ): PlayerResolution = resolvePlayer(
-        plugins.playersFor(platformId),
-        gameChoice = gameId?.let(::gamePlayerChoice),
-        systemChoice = store.systemPlayerChoice(canonicalSystem(platformId)),
-        installed = { it.packageNames.any(installed) },
-        runnable = { runnableWith(it, it.packageNames.firstOrNull(installed)) },
-        rank = ::playerRank,
-        coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(installed)?.let(it.cores::coreFiles) } },
-    )
+    ): PlayerResolution {
+        if (platformId == "moonlight" && gameId != null) {
+            apkMoonlightPlayer(gameId)?.takeIf { it.packageNames.any(installed) }?.let {
+                return PlayerResolution(it, PlayerChoiceSource.Automatic)
+            }
+        }
+        return resolvePlayer(
+            plugins.playersFor(platformId),
+            gameChoice = gameId?.let(::gamePlayerChoice),
+            systemChoice = store.systemPlayerChoice(canonicalSystem(platformId)),
+            installed = { it.packageNames.any(installed) },
+            runnable = { runnableWith(it, it.packageNames.firstOrNull(installed)) },
+            rank = ::playerRank,
+            coreFiles = { player -> (player as? RetroArchPlayer)?.let { it.packageNames.firstOrNull(installed)?.let(it.cores::coreFiles) } },
+        )
+    }
 
     internal fun playerOptionsFor(platformId: String): List<PlayerChoice> = playerOptions(
         plugins.playersFor(platformId),
@@ -2592,6 +2600,15 @@ class ShellController(
 
     fun setArtKeySaved(saved: Boolean) {
         if (model.artKeySaved != saved) model = model.copy(artKeySaved = saved)
+    }
+
+    internal fun setApkPlugins(plugins: List<app.foldcade.language.ApkPluginSetting>) {
+        publish(model.copy(apkPlugins = plugins, pluginCatalog = model.pluginCatalog.copy(installed = plugins.any { it.packageName == app.foldcade.language.ApkPluginCopy.catalogPackage })))
+        noteShelfChanged()
+    }
+
+    internal fun setPluginCatalog(catalog: app.foldcade.language.PluginCatalogSetting) {
+        publish(model.copy(pluginCatalog = catalog))
     }
 
     fun setLibrarySyncing(syncing: Boolean) {

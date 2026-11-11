@@ -699,6 +699,47 @@ class FoldcadeApp : Application() {
     /** Battery, network, Bluetooth, and the clock. Both screens show the same reading. */
     val deviceStatus: DeviceStatusWatcher by lazy { DeviceStatusWatcher(this, scope) }
 
+    @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
+    internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
+    internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) { shell.setPluginCatalog(it) } }
+
+    internal fun refreshApkPlugins() {
+        scope.launch {
+            val plugins = discoverApkPlugins(packageManager)
+            installedApkPlugins = plugins
+            val rows = plugins.map { plugin ->
+                app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
+                    plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin))
+            }
+            withContext(Dispatchers.Main.immediate) { shell.setApkPlugins(rows) }
+        }
+    }
+
+    internal fun setPluginGrant(packageName: String, scopeName: String, on: Boolean) {
+        scope.launch {
+            discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let {
+                apkPluginGrants.setGranted(it, scopeName, on)
+            }
+            refreshApkPlugins()
+        }
+    }
+
+    internal fun setPluginRouting(packageName: String, on: Boolean) {
+        scope.launch {
+            discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let { apkPluginGrants.setRouting(it, on) }
+            refreshApkPlugins()
+        }
+    }
+
+    private fun apkMoonlightPlayer(gameId: String): Player? {
+        val remoteKey = gameId.removePrefix("lib:moonlight:")
+        val game = (plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary)?.app(remoteKey) ?: return null
+        val host = moonlightStreams.pairedHost(game.hostUuid) ?: return null
+        val plugin = installedApkPlugins.firstOrNull { it.supported && apkPluginGrants.routes(it) } ?: return null
+        val appName = store.listedStreamApps().firstOrNull { it.remoteKey == game.remoteKey }?.label ?: game.label
+        return ApkMoonlightPlayer(plugin, packageName, host.uuid, host.name, appName)
+    }
+
     /** Moonlight's computers: how each is, the ones Foldcade paired with, and their apps. */
     internal val moonlightStreams: MoonlightStreams by lazy {
         MoonlightStreams(
@@ -804,10 +845,15 @@ class FoldcadeApp : Application() {
                 Intent.ACTION_PACKAGE_ADDED,
                 Intent.ACTION_PACKAGE_REMOVED,
                 Intent.ACTION_PACKAGE_CHANGED,
+                Intent.ACTION_PACKAGE_REPLACED,
                 -> {
                     app.foldcade.ui.LauncherIcons.clear()
                     reloadInstalledApps()
+                    refreshApkPlugins()
                     val changed = intent.data?.schemeSpecificPart
+                    if (intent.action == Intent.ACTION_PACKAGE_REMOVED && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false) && changed != null) {
+                        apkPluginGrants.forget(changed)
+                    }
                     // A game cannot still run in an emulator that is gone, so its tile falls back
                     // to the game's choice, and Close and Move find the run that replaces it.
                     if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) runningGames.forget(changed)
@@ -920,6 +966,7 @@ class FoldcadeApp : Application() {
             playMillis = { plays.shown(it).activeMillis },
             rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,
+            apkMoonlightPlayer = ::apkMoonlightPlayer,
             onDroidDeckRemoved = ::unpinDroidDeckGame,
             onGameNativeRemoved = { key -> pluginLoad.launch {
                 val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()?.firstOrNull { it.remoteKey == key }
@@ -1087,6 +1134,7 @@ class FoldcadeApp : Application() {
                 addAction(Intent.ACTION_PACKAGE_ADDED)
                 addAction(Intent.ACTION_PACKAGE_REMOVED)
                 addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addAction(Intent.ACTION_PACKAGE_REPLACED)
                 addDataScheme("package")
             },
             RECEIVER_EXPORTED,
@@ -1103,6 +1151,8 @@ class FoldcadeApp : Application() {
         getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(rommReconnect)
         refreshCredentials()
         reloadInstalledApps()
+        refreshApkPlugins()
+        apkPluginCatalog.checkRelease()
         // This one read also serves both activities' initial resume.
         val initialSaveRefresh = refreshFoundSaveFolders(changed = false)
         pluginLoad.launch {
@@ -1251,7 +1301,7 @@ class FoldcadeApp : Application() {
     fun reloadInstalledApps() {
         scope.launch {
             val apps = InstalledAppCatalog(packageManager, packageName).list()
-            val players = plugins.playerPackageNames()
+            val players = plugins.playerPackageNames() + discoverApkPlugins(packageManager).map { it.packageName }
             // Checked as a launch checks them: an emulator may hide its launcher entry.
             val installedPlayers = players.filterTo(HashSet(), ::packageInstalled)
             withContext(Dispatchers.Main.immediate) {
@@ -1768,7 +1818,7 @@ class FoldcadeApp : Application() {
         // A game noted as running stays with its emulator, through Restart and a picked save too.
         // A changed choice applies once that run is closed, or its emulator is uninstalled.
         val running = runningOn(gameId)?.takeIf { installed(it.packageName) }?.player
-        return if (running == null) resolved else resolved.copy(player = running, skipped = emptyList())
+        return resolved.withRunningPlayer(running)
     }
 
     /**

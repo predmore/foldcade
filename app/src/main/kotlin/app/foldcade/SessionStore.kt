@@ -553,6 +553,26 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         prefs.edit().putString(KEY_PAIRED_HOSTS, raw).apply()
     }
 
+    /** Last reached addresses, device-owned like the paired computers themselves. */
+    internal fun streamAddresses(): Map<String, LocatedHost> = try {
+        val entries = org.json.JSONArray(prefs.getString("moonlight_addresses", "[]"))
+        (0 until entries.length()).mapNotNull { index ->
+            val item = entries.optJSONObject(index) ?: return@mapNotNull null
+            val uuid = item.optString("uuid")
+            val address = item.optString("address").takeIf { app.foldcade.net.isLanHost(it) } ?: return@mapNotNull null
+            val port = item.optInt("httpsPort").takeIf { it in 1..65535 } ?: return@mapNotNull null
+            uuid.lowercase(java.util.Locale.ROOT) to LocatedHost(uuid, address, port, item.optString("mac").ifEmpty { null })
+        }.toMap()
+    } catch (_: org.json.JSONException) { emptyMap() }
+
+    internal fun setStreamAddresses(addresses: Map<String, LocatedHost>) {
+        val entries = org.json.JSONArray()
+        addresses.toSortedMap().values.forEach { at ->
+            entries.put(org.json.JSONObject().put("uuid", at.uuid).put("address", at.address).put("httpsPort", at.httpsPort).put("mac", at.mac))
+        }
+        prefs.edit().putString("moonlight_addresses", entries.toString()).apply()
+    }
+
     /** The apps each paired computer last listed. They fill the shelf at start, before it answers again. */
     fun listedStreamApps(): List<MoonlightApp> {
         val raw = prefs.getString(KEY_LISTED_APPS, null)

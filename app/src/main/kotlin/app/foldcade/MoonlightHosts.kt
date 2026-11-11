@@ -61,7 +61,7 @@ internal data class PairedStreamHost(
 }
 
 /** Where a computer answered, for a pairing to start there. */
-internal data class LocatedHost(val uuid: String, val address: String, val httpsPort: Int)
+internal data class LocatedHost(val uuid: String, val address: String, val httpsPort: Int, val mac: String? = null)
 
 /**
  * Which of Moonlight's computers answer on the local network, and what each streams.
@@ -87,6 +87,8 @@ internal class MoonlightHosts(
     private val publish: (Map<String, MoonlightHost>) -> Unit,
     /** Called off the main thread. */
     private val onApps: suspend (PairedStreamHost, List<HostApp>) -> Unit = { _, _ -> },
+    private val remembered: Map<String, LocatedHost> = emptyMap(),
+    private val onLocated: (Map<String, LocatedHost>) -> Unit = {},
 ) {
     /** Hosts mDNS found that no Moonlight shortcut names, with the name each gave. */
     private val discovered = ConcurrentHashMap<String, String>()
@@ -99,7 +101,7 @@ internal class MoonlightHosts(
     private var paired: Map<String, PairedStreamHost> = emptyMap()
 
     /** Where each host last answered, by host key. */
-    private val found = ConcurrentHashMap<String, LocatedHost>()
+    private val found = ConcurrentHashMap<String, LocatedHost>(remembered)
 
     /** When each paired host last listed its apps, by host key. */
     private val listedAt = ConcurrentHashMap<String, Long>()
@@ -250,7 +252,8 @@ internal class MoonlightHosts(
     }
 
     private fun remember(info: ServerInfo, address: String, key: String) {
-        found[key] = LocatedHost(uuid = info.uniqueId, address = address, httpsPort = info.httpsPort ?: GAMESTREAM_HTTPS_PORT)
+        val at = LocatedHost(uuid = info.uniqueId, address = address, httpsPort = info.httpsPort ?: GAMESTREAM_HTTPS_PORT, mac = info.mac)
+        if (found.put(key, at) != at) onLocated(found.toMap())
         if (key !in names && key !in paired) discovered[key] = info.hostname
     }
 

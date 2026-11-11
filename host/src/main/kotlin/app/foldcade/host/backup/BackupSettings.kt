@@ -37,7 +37,7 @@ object BackupSettings {
             "player_save_folder:", "player_save_found:", "player_firmware_folder:", "player_save_mark:", "pending_save_return:", "last_player_start:",
             "players_holding_games", "save_awaits_load:", "retroarch_cores_folder:", "retroarch_cores_offered",
             "eden_folder:", "eden_restart_package", "eden_restart_boot", "refused_eden_firmware",
-            "moonlight_pins", "moonlight_hosts", "moonlight_listed_apps", "moonlight_paired_hosts", "gamestream_client_id",
+            "moonlight_pins", "moonlight_hosts", "moonlight_listed_apps", "moonlight_paired_hosts", "moonlight_addresses", "gamestream_client_id",
             "droiddeck_pins", "home_return_game", "home_board_before_collections", "restore_holds", "restore_folders", "restore_romm_sign_in", "restore_committed",
             // Retired keys are still classified: startup migrations must never become a transfer path.
             "game_screens", "platform_screens", "android_shelf_games", "android_shelf_apps", "android_shelf_hidden",
