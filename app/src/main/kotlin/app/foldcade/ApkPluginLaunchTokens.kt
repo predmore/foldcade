@@ -25,7 +25,9 @@ internal class ApkPluginLaunchTokens(private val nowMillis: () -> Long = android
     fun allows(packageName: String, hostUuid: String, token: String?, appIds: List<String>): Boolean {
         prune(nowMillis())
         val start = starts[token] ?: return false
-        return start.packageName == packageName && start.hostUuid.equals(hostUuid, ignoreCase = true) && appIds.all { it == start.appId }
+        // Moonlight always names the app; a start with no app id cannot be tied to the one Foldcade chose.
+        return start.packageName == packageName && start.hostUuid.equals(hostUuid, ignoreCase = true) &&
+            appIds.isNotEmpty() && appIds.all { it == start.appId }
     }
 
     private fun prune(now: Long) {

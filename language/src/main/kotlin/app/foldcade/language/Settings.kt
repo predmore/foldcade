@@ -685,7 +685,12 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
     SettingsInner.PluginCatalog -> ApkPluginCopy.catalogDetail
-    is SettingsInner.ApkPlugin -> if (model.apkPlugins.any { it.packageName == inner.packageName && !it.supported }) ApkPluginCopy.unsupported else ApkPluginCopy.catalogDetail
+    is SettingsInner.ApkPlugin -> when {
+        model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } -> ApkPluginCopy.unsupported
+        // Only Foldcade Moonlight is known to stream on both screens; another plugin says nothing it may not do.
+        inner.packageName == ApkPluginCopy.catalogPackage || inner.packageName == ApkPluginCopy.catalogPackage + ".debug" -> ApkPluginCopy.catalogDetail
+        else -> null
+    }
     SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
     // An unpaired computer's tile is dim; its page says why, and its one row pairs it.

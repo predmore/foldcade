@@ -14,7 +14,9 @@ data class PluginCatalogSetting(
     val progress: Int? = null,
     val detail: String? = null,
 ) {
-    val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable, PluginCatalogStatus.Installed, PluginCatalogStatus.Current)
+    // Installed and Current only hold while the package is there; after an uninstall, Install works again.
+    val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable) &&
+        !(installed && status in setOf(PluginCatalogStatus.Installed, PluginCatalogStatus.Current))
     val busy: Boolean get() = status in setOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)
 }
 

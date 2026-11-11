@@ -27,6 +27,13 @@ fun brokerQuery(query: String?, clientId: String, requestId: String = UUID.rando
 fun brokerAppIds(query: String?): List<String> = brokerParameters(query)
     .filter { it.name.equals("appid", ignoreCase = true) }.map { it.value }
 
+/**
+ * True when a start names its app some way other than `appid`. Apollo can pick an app by
+ * `appuuid`, which would let a token for one game start another.
+ */
+fun brokerNamesAppOtherwise(query: String?): Boolean = brokerParameters(query)
+    .any { it.name.equals("appuuid", ignoreCase = true) }
+
 private data class BrokerParameter(val encoded: String, val name: String, val value: String)
 
 private fun brokerParameters(query: String?): List<BrokerParameter> {

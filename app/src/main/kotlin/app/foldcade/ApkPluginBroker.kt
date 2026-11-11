@@ -8,6 +8,7 @@ import android.os.Bundle
 import app.foldcade.gamestream.BROKER_PATHS
 import app.foldcade.gamestream.brokerQuery
 import app.foldcade.gamestream.brokerAppIds
+import app.foldcade.gamestream.brokerNamesAppOtherwise
 import app.foldcade.net.LanHttpException
 import app.foldcade.net.LanReplyException
 import java.nio.ByteBuffer
@@ -64,7 +65,7 @@ internal suspend fun callPluginBroker(
                 try { brokerQuery(query, "0000000000000000") } catch (_: IllegalArgumentException) {
                     return BrokerReply.error("bad_request", "Invalid query")
                 }
-                if ((path == "launch" || path == "resume") && !launchAllowed(plugin.packageName, arg, token, brokerAppIds(query))) {
+                if ((path == "launch" || path == "resume") && (brokerNamesAppOtherwise(query) || !launchAllowed(plugin.packageName, arg, token, brokerAppIds(query)))) {
                     return BrokerReply.error("not_launched", "No matching Foldcade play start")
                 }
                 if (!awaitReady()) return BrokerReply.error("internal", "Host initialization timed out")

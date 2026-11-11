@@ -77,4 +77,16 @@ class ApkPluginSettingsTest {
             assertNull(afterApkPluginInstall(elsewhere, both.copy(settings = null)).settings)
         }
     }
+
+    @Test fun installReturnsOnceTheInstalledPluginIsGone() {
+        assertFalse(PluginCatalogSetting(PluginCatalogStatus.Installed, installed = true).canInstall)
+        assertTrue(PluginCatalogSetting(PluginCatalogStatus.Installed, installed = false).canInstall)
+        assertTrue(PluginCatalogSetting(PluginCatalogStatus.Current, installed = false).canInstall)
+    }
+
+    @Test fun onlyFoldcadeMoonlightClaimsBothScreens() {
+        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin))
+        assertNull(settingsInnerDetail(SettingsInner.ApkPlugin(plugin.packageName), model))
+        assertEquals(ApkPluginCopy.catalogDetail, settingsInnerDetail(SettingsInner.ApkPlugin(ApkPluginCopy.catalogPackage), model))
+    }
 }

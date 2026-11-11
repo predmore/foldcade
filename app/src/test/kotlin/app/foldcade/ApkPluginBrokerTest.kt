@@ -43,10 +43,14 @@ class ApkPluginBrokerTest {
         assertEquals("not_launched", play(query = "appid=").values["error"])
         assertEquals("not_launched", play(provided = null).values["error"])
         assertEquals("not_launched", play(provided = "unknown").values["error"])
+        // A start must name its app, and only by appid: Apollo can pick an app by appuuid.
+        assertEquals("not_launched", play(path = "resume", query = null).values["error"])
+        assertEquals("not_launched", play(query = "appid=42&appuuid=other").values["error"])
+        assertEquals("not_launched", play(query = "appid=42&%41PPUUID=other").values["error"])
         assertEquals(0, requested)
         // Query names and values use the sanitiser's URL decoding; retries do not consume the token.
         assertEquals(true, play(query = "%61pp%69d=%34%32").values["ok"])
-        assertEquals(true, play(path = "resume", query = null).values["ok"])
+        assertEquals(true, play(path = "resume", query = "appid=42").values["ok"])
         assertEquals(true, play(path = "resume", query = "APPID=42&appid=42").values["ok"])
         now += ApkPluginLaunchTokens.WINDOW_MS - 1
         assertEquals(true, play().values["ok"])
