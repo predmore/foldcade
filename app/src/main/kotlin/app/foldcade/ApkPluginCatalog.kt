@@ -8,6 +8,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.annotation.MainThread
 import app.foldcade.language.ApkPluginCopy
 import app.foldcade.language.PluginCatalogSetting
 import app.foldcade.language.PluginCatalogStatus
@@ -122,7 +123,11 @@ internal class ApkPluginCatalog(
     } catch (_: PackageManager.NameNotFoundException) { null }
 
     private suspend fun show(status: PluginCatalogStatus, progress: Int? = null, detail: String? = null) = withContext(Dispatchers.Main.immediate) {
-        val code = installedCode()
+        showFor(status, installedCode(), progress, detail)
+    }
+
+    /** Main thread only. [code] is the installed version [status] was worked out against. */
+    private fun showFor(status: PluginCatalogStatus, code: Long?, progress: Int? = null, detail: String? = null) {
         assessedCode = code
         state = PluginCatalogSetting(status, code != null, progress, detail, release?.name)
         publish(state)
@@ -148,17 +153,17 @@ internal class ApkPluginCatalog(
         }
     }
 
-    /** Called on return to Home and after discovery. See [reassessedStatus]. */
+    /**
+     * Called on the main thread on return to Home and after discovery. See [reassessedStatus].
+     * It reads the installed version once and records that same read, so two returns close
+     * together cannot leave a status worked out from an older version.
+     */
+    @MainThread
     fun reassess() {
         if (work?.isActive == true) return
-        scope.launch {
-            val code = installedCode()
-            val allowed = context.packageManager.canRequestPackageInstalls()
-            withContext(Dispatchers.Main.immediate) {
-                if (work?.isActive == true) return@withContext
-                reassessedStatus(state, assessedCode, code, allowed, release)?.let { show(it) }
-            }
-        }
+        val code = installedCode()
+        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release)
+            ?.let { showFor(it, code) }
     }
 
     fun install() {
