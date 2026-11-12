@@ -69,6 +69,26 @@ internal fun releaseStatus(release: PluginRelease?, installedCode: Long?): Plugi
     else -> PluginCatalogStatus.Current
 }
 
+/**
+ * What a status shown earlier should become now, or null to keep it. It changes only for news:
+ * Android allowed installs while the row asked for that, or the installed version is no longer
+ * the one the status was worked out against (installed, updated or removed some other way).
+ * That keeps an install result, Not published, and Installed until discovery has seen the
+ * plugin. A running check, download or install is never interrupted.
+ */
+internal fun reassessedStatus(
+    current: PluginCatalogSetting,
+    assessedCode: Long?,
+    installedCode: Long?,
+    installsAllowed: Boolean,
+    release: PluginRelease?,
+): PluginCatalogStatus? = when {
+    current.busy -> null
+    current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
+    release != null && installedCode != assessedCode -> releaseStatus(release, installedCode)
+    else -> null
+}
+
 internal data class PluginArchive(val packageName: String, val versionCode: Long, val signers: Set<String>)
 internal enum class PluginVerification { Verified, WrongPackage, NotNewer, WrongSigner }
 
@@ -80,8 +100,10 @@ internal fun verifyPluginArchive(archive: PluginArchive, installedCode: Long?, s
     else -> PluginVerification.Verified
 }
 
-/** Catalog downloads are public HTTPS. APK contents, rather than a release tag, decide update and trust. */
-/** One [PluginSource]'s releases: checks, downloads, and user-confirmed installs. One job runs at a time. */
+/**
+ * One [PluginSource]'s releases: checks, downloads, and user-confirmed installs. One job runs at a time.
+ * Catalog downloads are public HTTPS. APK contents, rather than a release tag, decide update and trust.
+ */
 internal class ApkPluginCatalog(
     private val context: Context,
     private val scope: CoroutineScope,
@@ -92,13 +114,17 @@ internal class ApkPluginCatalog(
     private var release: PluginRelease? = null
     private var state = PluginCatalogSetting()
     /** When the last check read GitHub's answer, in [SystemClock.elapsedRealtime] time. */
-    private var checkedAt: Long? = null
+    @Volatile private var checkedAt: Long? = null
+    /** The installed versionCode [state] was worked out against. */
+    private var assessedCode: Long? = null
     private fun installedCode(): Long? = try {
         context.packageManager.getPackageInfo(source.packageName, 0).longVersionCode
     } catch (_: PackageManager.NameNotFoundException) { null }
 
     private suspend fun show(status: PluginCatalogStatus, progress: Int? = null, detail: String? = null) = withContext(Dispatchers.Main.immediate) {
-        state = PluginCatalogSetting(status, installedCode() != null, progress, detail, release?.name)
+        val code = installedCode()
+        assessedCode = code
+        state = PluginCatalogSetting(status, code != null, progress, detail, release?.name)
         publish(state)
     }
 
@@ -122,19 +148,17 @@ internal class ApkPluginCatalog(
         }
     }
 
-    /**
-     * Reads the last check against the APK installed now, after the plugin was installed,
-     * updated or removed some other way, and drops Allow installs once Android allows them.
-     * Installed stays until discovery has seen the plugin, and a running check, download or
-     * install is left alone.
-     */
+    /** Called on return to Home and after discovery. See [reassessedStatus]. */
     fun reassess() {
-        if (work?.isActive == true || state.busy || state.status == PluginCatalogStatus.Installed) return
-        val askedAndroid = state.status == PluginCatalogStatus.NeedsPermission
-        if (askedAndroid && !context.packageManager.canRequestPackageInstalls()) return
-        if (!askedAndroid && checkedAt == null) return
-        // Install fetched the release itself, so it is known even without a check.
-        scope.launch { show(release?.let { releaseStatus(it, installedCode()) } ?: PluginCatalogStatus.Ready) }
+        if (work?.isActive == true) return
+        scope.launch {
+            val code = installedCode()
+            val allowed = context.packageManager.canRequestPackageInstalls()
+            withContext(Dispatchers.Main.immediate) {
+                if (work?.isActive == true) return@withContext
+                reassessedStatus(state, assessedCode, code, allowed, release)?.let { show(it) }
+            }
+        }
     }
 
     fun install() {

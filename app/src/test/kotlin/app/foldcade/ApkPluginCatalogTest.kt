@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.PluginCatalogSetting
 import app.foldcade.language.PluginCatalogStatus
 import app.foldcade.language.PluginRegistry
 import org.junit.Assert.*
@@ -75,6 +76,30 @@ class ApkPluginCatalogTest {
         assertEquals(PluginCatalogStatus.UpdateAvailable, releaseStatus(hinted, 9))
         assertEquals(PluginCatalogStatus.Current, releaseStatus(hinted, 10))
         assertEquals(PluginCatalogStatus.Current, releaseStatus(hinted, 11))
+    }
+
+    @Test fun reassessingChangesAStatusOnlyForNews() {
+        val release = PluginRelease("v2", "https://example", 1, versionCode = 10)
+        fun shown(status: PluginCatalogStatus) = PluginCatalogSetting(status)
+        // Nothing new: an install result, Not published, and a status already current all stay.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Failed), 9, 9, true, release))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.NotPublished), null, null, true, null))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 9, true, release))
+        // Installed after Foldcade's own install was worked out against the new version, so it stays for consent focus.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), 10, 10, true, release))
+        // Installed, then removed some other way.
+        assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installed), 10, null, true, release))
+        // Updated some other way while an update was offered.
+        assertEquals(PluginCatalogStatus.Current, reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 10, true, release))
+        // Android allowed installs while the row asked for that; until then, Allow installs stays.
+        assertEquals(PluginCatalogStatus.UpdateAvailable, reassessedStatus(shown(PluginCatalogStatus.NeedsPermission), 9, 9, true, release))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.NeedsPermission), 9, 9, false, release))
+        // A version change with no release known says nothing new.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Unavailable), 9, 10, true, null))
+        // A running check, download or install is never interrupted.
+        for (busy in listOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)) {
+            assertNull(reassessedStatus(shown(busy), 9, 10, true, release))
+        }
     }
 
     @Test fun refusesMalformedOrUnexpectedDownloadLocationsAndSizes() {
