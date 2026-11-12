@@ -48,7 +48,7 @@ class ApkPluginSettingsTest {
         val debugPage = SettingsInner.ApkPlugin(debug.packageName)
         assertEquals("Moonlight", settingsTileLabel(page, model))
         assertEquals("Foldcade Moonlight", settingsInnerTitle(page, model))
-        assertEquals("Moonlight", settingsTileLabel(debugPage, model))
+        assertEquals("Moonlight Debug", settingsTileLabel(debugPage, model))
         assertEquals("Foldcade Moonlight (Debug)", settingsInnerTitle(debugPage, model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(debugPage, model))
         // A plugin the registry doesn't name is called what Android calls it.

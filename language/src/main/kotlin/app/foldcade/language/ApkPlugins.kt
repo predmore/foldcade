@@ -110,6 +110,9 @@ object ApkPluginCopy {
     const val update = "Update"
     const val allowInstalls = "Allow installs"
     const val unsupported = "Foldcade does not support this plugin’s platform yet."
+
+    /** A debug build's tile, so it reads apart from the release beside it. */
+    fun debugName(name: String) = "$name Debug"
     const val officialMoonlight = "Moonlight games open in Moonlight instead."
     const val unknownSources = "Allow Foldcade to install apps in Android, then come back here."
     const val downloadFailed = "Download failed. Check your connection and try again."
