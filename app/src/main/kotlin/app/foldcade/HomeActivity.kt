@@ -820,6 +820,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshHostedFolders()
         foldcade.shell.setAllFilesGranted(AllFilesAccess(this).granted())
         foldcade.shell.setAllFilesPage(false)
+        // Android's install-unknown-apps page may have been answered, or a plugin installed meanwhile.
+        foldcade.apkPluginCatalogs.values.forEach { it.reassess() }
         // Android's all-files page may have been answered, or a card put in: look for ROM folders again.
         foldcade.refreshRomRoots()
         foldcade.refreshEdenSetting()

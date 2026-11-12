@@ -124,12 +124,17 @@ internal class ApkPluginCatalog(
 
     /**
      * Reads the last check against the APK installed now, after the plugin was installed,
-     * updated or removed some other way. Installed stays until discovery has seen the plugin,
-     * and a running check, download or install is left alone.
+     * updated or removed some other way, and drops Allow installs once Android allows them.
+     * Installed stays until discovery has seen the plugin, and a running check, download or
+     * install is left alone.
      */
     fun reassess() {
-        if (work?.isActive == true || checkedAt == null || state.busy || state.status == PluginCatalogStatus.Installed) return
-        scope.launch { show(releaseStatus(release, installedCode())) }
+        if (work?.isActive == true || state.busy || state.status == PluginCatalogStatus.Installed) return
+        val askedAndroid = state.status == PluginCatalogStatus.NeedsPermission
+        if (askedAndroid && !context.packageManager.canRequestPackageInstalls()) return
+        if (!askedAndroid && checkedAt == null) return
+        // Install fetched the release itself, so it is known even without a check.
+        scope.launch { show(release?.let { releaseStatus(it, installedCode()) } ?: PluginCatalogStatus.Ready) }
     }
 
     fun install() {
