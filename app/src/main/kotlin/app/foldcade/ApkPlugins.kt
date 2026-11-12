@@ -78,8 +78,8 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
         val grants = prefs.getStringSet("grants", emptySet()).orEmpty().toMutableSet()
         if (on) grants.add(key) else grants.remove(key)
         var disabled = prefs.getStringSet("disabled", emptySet()).orEmpty() - key
-        // Granting turns routing on, so it becomes the one plugin Moonlight games open in.
-        if (on && scope == ApkPluginProtocol.GAMESTREAM) disabled = disabled + otherRoutes(grants, plugin)
+        // Granting turns routing on, so a plugin that can play becomes the one Moonlight games open in.
+        if (on && scope == ApkPluginProtocol.GAMESTREAM && plugin.supported) disabled = disabled + otherRoutes(grants, plugin)
         check(prefs.edit().putStringSet("grants", grants).putStringSet("disabled", disabled).commit()) { "Could not save plugin consent" }
     }
 
@@ -90,8 +90,9 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
         if (on) {
             disabled.remove(key)
             // One plugin plays Moonlight games: the one most recently turned on. Every other
-            // switch shows off, so no switch claims a routing it doesn't have.
-            disabled.addAll(otherRoutes(prefs.getStringSet("grants", emptySet()).orEmpty(), plugin))
+            // switch shows off, so no switch claims a routing it doesn't have. A plugin Foldcade
+            // can't play never takes Moonlight games away from one it can.
+            if (plugin.supported) disabled.addAll(otherRoutes(prefs.getStringSet("grants", emptySet()).orEmpty(), plugin))
         } else {
             disabled.add(key)
         }

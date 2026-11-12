@@ -234,6 +234,11 @@ class ApkPluginBrokerTest {
         grants.setRouting(release, true)
         assertTrue(grants.routes(release))
         assertFalse(grants.routes(debug))
+        // A plugin for another platform can be granted without taking Moonlight games away.
+        val other = testApkPlugin(packageName = "example.other").copy(platform = "other")
+        grants.setGranted(other, "gamestream", true)
+        grants.setRouting(other, true)
+        assertTrue(grants.routes(release))
         // Turning one off leaves none routing; nothing else switches on by itself.
         grants.setRouting(release, false)
         assertFalse(grants.routes(release))
