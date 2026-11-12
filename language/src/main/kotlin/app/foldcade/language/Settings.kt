@@ -666,6 +666,12 @@ private fun emulatorRowHealthy(row: Row, model: PickerModel): Boolean {
 /** What the tile that opens an inner page is called: a folder's own name, else the page's title. */
 fun settingsTileLabel(inner: SettingsInner, model: PickerModel): String = when (inner) {
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.label.orEmpty()
+    // A registry plugin's tile says its short name; its page says the full one.
+    is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.name ?: settingsInnerTitle(inner, model)
+    is SettingsInner.ApkPlugin -> PluginRegistry.source(inner.packageName)?.name
+        // Its debug build often sits beside the release, so its tile says which it is.
+        ?: PluginRegistry.sourceOrDebug(inner.packageName)?.name?.let(ApkPluginCopy::debugName)
+        ?: settingsInnerTitle(inner, model)
     else -> settingsInnerTitle(inner, model)
 }
 
@@ -691,7 +697,7 @@ fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = whe
     is SettingsInner.ApkPlugin -> when {
         model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } -> ApkPluginCopy.unsupported
         // A registry plugin, or its own debug build, says what it does; another plugin says nothing it may not do.
-        else -> PluginRegistry.source(inner.packageName.removeSuffix(".debug"))?.detail
+        else -> PluginRegistry.sourceOrDebug(inner.packageName)?.detail
     }
     SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)

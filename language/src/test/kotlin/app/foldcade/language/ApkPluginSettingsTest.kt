@@ -14,6 +14,7 @@ class ApkPluginSettingsTest {
         assertEquals(listOf(Row.SettingsTile(catalogPage)), settingsRows(SettingsCategory.Plugins, model))
         assertEquals(listOf(Row.PluginInstall(moonlight), Row.PluginCheck(moonlight)), settingsInnerRows(catalogPage, model))
         assertEquals("Foldcade Moonlight", settingsInnerTitle(catalogPage, model))
+        assertEquals("Moonlight", settingsTileLabel(catalogPage, model))
         assertEquals("Not published yet", ApkPluginCopy.status(PluginCatalogSetting(PluginCatalogStatus.NotPublished)))
     }
 
@@ -32,10 +33,26 @@ class ApkPluginSettingsTest {
             listOf(source.copy(asset = "../x.apk")), listOf(source.copy(asset = "x.zip")), listOf(source.copy(asset = "dir/x.apk")),
             listOf(source.copy(signers = emptySet())), listOf(source.copy(signers = setOf("AB".repeat(32)))),
             listOf(source.copy(signers = setOf("ab"))), listOf(source.copy(packageName = "nopackage")), listOf(source.copy(label = " ")),
+            listOf(source.copy(name = "")),
         )
         invalid.forEach { sources ->
             try { requireValidRegistry(sources); fail("Accepted $sources") } catch (_: IllegalArgumentException) { }
         }
+    }
+
+    @Test fun aRegistryPluginsTileSaysItsShortNameAndItsPageTheFullOne() {
+        val release = plugin.copy(packageName = moonlight, label = "Foldcade Moonlight")
+        val debug = plugin.copy(packageName = "$moonlight.debug", label = "Foldcade Moonlight (Debug)")
+        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(release, debug, plugin))
+        val page = SettingsInner.ApkPlugin(moonlight)
+        val debugPage = SettingsInner.ApkPlugin(debug.packageName)
+        assertEquals("Moonlight", settingsTileLabel(page, model))
+        assertEquals("Foldcade Moonlight", settingsInnerTitle(page, model))
+        assertEquals("Moonlight Debug", settingsTileLabel(debugPage, model))
+        assertEquals("Foldcade Moonlight (Debug)", settingsInnerTitle(debugPage, model))
+        assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(debugPage, model))
+        // A plugin the registry doesn't name is called what Android calls it.
+        assertEquals("Test plugin", settingsTileLabel(SettingsInner.ApkPlugin(plugin.packageName), model))
     }
 
     @Test fun scopeConsentAndRoutingAreIndependentAndOnlyRequestedScopesAppear() {

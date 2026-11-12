@@ -361,10 +361,11 @@ private fun InnerHeader(model: PickerModel, inner: SettingsInner) {
             TileArt(innerArt(inner, model), lit = 1f, off = off)
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // A long name, such as a plugin's or a folder's, takes a second line rather than losing its end.
             BasicText(
                 settingsInnerTitle(inner, model),
                 style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             // What the page is about, in a word or two each: a folder's path, its games, its art and info.
