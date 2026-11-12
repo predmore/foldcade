@@ -148,6 +148,8 @@ class ApkPluginRemovedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_PACKAGE_FULLY_REMOVED && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
             intent.data?.schemeSpecificPart?.let { ApkPluginGrants.open(context).forget(it) }
+            // A refresh started before this forget ran missed the reroute; repair it now.
+            (context.applicationContext as? FoldcadeApp)?.refreshApkPlugins()
         }
     }
 }

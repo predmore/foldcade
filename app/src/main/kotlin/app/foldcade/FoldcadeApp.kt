@@ -875,11 +875,12 @@ class FoldcadeApp : Application() {
                 -> {
                     app.foldcade.ui.LauncherIcons.clear()
                     reloadInstalledApps()
-                    refreshApkPlugins()
                     val changed = intent.data?.schemeSpecificPart
+                    // Forget first, so the refresh below sees a removed plugin's route and repairs it.
                     if (intent.action == Intent.ACTION_PACKAGE_REMOVED && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false) && changed != null) {
                         apkPluginGrants.forget(changed)
                     }
+                    refreshApkPlugins()
                     // A game cannot still run in an emulator that is gone, so its tile falls back
                     // to the game's choice, and Close and Move find the run that replaces it.
                     if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) runningGames.forget(changed)

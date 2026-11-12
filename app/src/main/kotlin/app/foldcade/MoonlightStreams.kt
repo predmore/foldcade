@@ -228,7 +228,10 @@ internal class MoonlightStreams(
         val me = GameStreamIdentity.existing() ?: return emptyList()
         val pairings = brokerPairings(me)
         return pairings.mapNotNull { host ->
-            val at = hosts.lastAt(host.key) ?: hosts.locate(host.key) ?: return@mapNotNull null
+            // Confirm the saved address still answers before a plugin streams to it: after a DHCP
+            // change the cached one can be stale. A computer that doesn't answer keeps its last
+            // address, so the plugin can still report it as unreachable.
+            val at = hosts.locate(host.key) ?: hosts.lastAt(host.key) ?: return@mapNotNull null
             BrokerHost(host.uuid, host.name, at.address, app.foldcade.gamestream.GAMESTREAM_HTTP_PORT, host.httpsPort, at.mac)
         }
     }
