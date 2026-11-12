@@ -17,7 +17,13 @@ data class ApkPluginSetting(
  */
 data class PluginSource(
     val packageName: String,
+    /** Its full name, as its page and Android call it. */
     val label: String,
+    /**
+     * What its tile says: a word or two that fits a tile on one line. The tile sits under
+     * Plugins and wears [mark], so this leaves out what those already say.
+     */
+    val name: String,
     /** The line under the plugin's page title, for it and its own debug build. */
     val detail: String,
     /** The [ShelfArt] mark its catalog tile wears. */
@@ -35,6 +41,7 @@ object PluginRegistry {
     val moonlight = PluginSource(
         packageName = "app.foldcade.moonlight",
         label = "Foldcade Moonlight",
+        name = "Moonlight",
         detail = "Streams Moonlight games on both screens.",
         mark = "moonlight",
         repository = "predmore/foldcade-moonlight",
@@ -45,6 +52,9 @@ object PluginRegistry {
     val sources: List<PluginSource> = listOf(moonlight).also { requireValidRegistry(it) }
 
     fun source(packageName: String): PluginSource? = sources.firstOrNull { it.packageName == packageName }
+
+    /** [packageName]'s entry, or the entry of the plugin it is the debug build of. */
+    fun sourceOrDebug(packageName: String): PluginSource? = source(packageName) ?: source(packageName.removeSuffix(".debug"))
 }
 
 private val REPOSITORY = Regex("""[A-Za-z0-9-]+/[A-Za-z0-9._-]+""")
@@ -63,6 +73,7 @@ fun requireValidRegistry(sources: List<PluginSource>) {
         require(ASSET.matches(source.asset)) { "Invalid asset for ${source.packageName}" }
         require(source.signers.isNotEmpty() && source.signers.all { SIGNER.matches(it) }) { "Invalid signers for ${source.packageName}" }
         require(source.label.isNotBlank()) { "Missing label for ${source.packageName}" }
+        require(source.name.isNotBlank()) { "Missing name for ${source.packageName}" }
     }
 }
 
