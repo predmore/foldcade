@@ -107,10 +107,27 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
     @Synchronized
     fun forget(packageName: String) {
         val edit = prefs.edit()
+        // Moonlight games opened in this package: the next refresh hands them to another plugin.
+        val disabled = prefs.getStringSet("disabled", emptySet()).orEmpty()
+        if (prefs.getStringSet("grants", emptySet()).orEmpty().any {
+                it.substringBefore('|') == packageName && it.endsWith("|" + ApkPluginProtocol.GAMESTREAM) && it !in disabled
+            }) edit.putBoolean("reroute", true)
         for (name in listOf("grants", "disabled")) {
             edit.putStringSet(name, prefs.getStringSet(name, emptySet()).orEmpty().filterNot { it.substringBefore('|') == packageName }.toSet())
         }
         check(edit.commit()) { "Could not remove plugin consent" }
+    }
+
+    /**
+     * After the plugin Moonlight games opened in is removed, the first remaining granted plugin
+     * that can play takes them, unless one already does. A routing the player turned off stays off.
+     */
+    @Synchronized
+    fun repairRoute(installed: List<ApkPlugin>) {
+        if (!prefs.getBoolean("reroute", false)) return
+        val playable = installed.filter { it.supported && granted(it, ApkPluginProtocol.GAMESTREAM) }
+        if (playable.none(::routes)) playable.firstOrNull()?.let { setRouting(it, true) }
+        check(prefs.edit().remove("reroute").commit()) { "Could not save plugin choice" }
     }
 
     private fun key(plugin: ApkPlugin, scope: String): String = "${plugin.packageName}|${plugin.signers.sorted().joinToString(",")}|$scope"

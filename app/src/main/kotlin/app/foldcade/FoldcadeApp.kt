@@ -704,6 +704,7 @@ class FoldcadeApp : Application() {
     private val apkPluginChanges = Mutex()
     private val apkPluginRefreshVersion = AtomicInteger()
     @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
+    @Volatile private var apkPluginsLoaded = false
     internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
     internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) {
         shell.setPluginCatalog(it)
@@ -716,6 +717,7 @@ class FoldcadeApp : Application() {
             apkPluginChanges.withLock {
                 if (version != apkPluginRefreshVersion.get()) return@withLock
                 val plugins = discoverApkPlugins(packageManager)
+                apkPluginGrants.repairRoute(plugins)
                 val rows = plugins.map { plugin ->
                     app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
                         plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin))
@@ -723,6 +725,7 @@ class FoldcadeApp : Application() {
                 withContext(Dispatchers.Main.immediate) {
                     if (version == apkPluginRefreshVersion.get()) {
                         installedApkPlugins = plugins
+                        apkPluginsLoaded = true
                         shell.setApkPlugins(rows)
                     }
                 }
@@ -754,7 +757,12 @@ class FoldcadeApp : Application() {
         val remoteKey = gameId.removePrefix("lib:moonlight:")
         val game = (plugins.library(MoonlightLibrary.ID) as? MoonlightLibrary)?.app(remoteKey) ?: return null
         val host = moonlightStreams.pairedHost(game.hostUuid) ?: return null
-        val plugin = installedApkPlugins.firstOrNull { it.supported && apkPluginGrants.routes(it) } ?: return null
+        // A launch before the first refresh finishes looks once, rather than settling on official Moonlight.
+        val installed = if (apkPluginsLoaded) installedApkPlugins else discoverApkPlugins(packageManager).also {
+            installedApkPlugins = it
+            apkPluginsLoaded = true
+        }
+        val plugin = installed.firstOrNull { it.supported && apkPluginGrants.routes(it) } ?: return null
         return ApkMoonlightPlayer(plugin, packageName, host.uuid, host.name, game.label)
     }
 

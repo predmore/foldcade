@@ -244,4 +244,23 @@ class ApkPluginBrokerTest {
         assertFalse(grants.routes(release))
         assertFalse(grants.routes(debug))
     }
+
+    @Test fun removingTheRoutedPluginHandsMoonlightGamesToAnother() {
+        val grants = ApkPluginGrants(MemoryPrefs())
+        val release = testApkPlugin(packageName = "app.foldcade.moonlight")
+        val debug = testApkPlugin(packageName = "app.foldcade.moonlight.debug")
+        grants.setGranted(release, "gamestream", true)
+        grants.setGranted(debug, "gamestream", true)
+        assertFalse(grants.routes(release))
+        grants.forget(debug.packageName)
+        grants.repairRoute(listOf(release))
+        assertTrue(grants.routes(release))
+        // A routing turned off on purpose stays off when an unrelated plugin is removed.
+        grants.setRouting(release, false)
+        grants.setGranted(debug, "gamestream", true)
+        grants.setRouting(debug, false)
+        grants.forget(debug.packageName)
+        grants.repairRoute(listOf(release))
+        assertFalse(grants.routes(release))
+    }
 }
