@@ -226,8 +226,7 @@ internal class MoonlightStreams(
     /** Reads pairing state directly, so a cold broker call does not depend on library startup. */
     internal suspend fun brokerHosts(): List<BrokerHost> {
         val me = GameStreamIdentity.existing() ?: return emptyList()
-        val pairings = store.pairedStreamHosts(me.fingerprint)
-        hosts.knowPaired(pairings)
+        val pairings = brokerPairings(me)
         return pairings.mapNotNull { host ->
             val at = hosts.lastAt(host.key) ?: hosts.locate(host.key) ?: return@mapNotNull null
             BrokerHost(host.uuid, host.name, at.address, app.foldcade.gamestream.GAMESTREAM_HTTP_PORT, host.httpsPort, at.mac)
@@ -236,10 +235,9 @@ internal class MoonlightStreams(
 
     internal suspend fun brokerCall(uuid: String, path: String, query: String?): Pair<Int, ByteArray> {
         val me = GameStreamIdentity.existing() ?: throw BrokerFailure("unknown_host", "No Foldcade pairing")
-        val pairings = store.pairedStreamHosts(me.fingerprint)
+        val pairings = brokerPairings(me)
         val host = pairings.firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
             ?: throw BrokerFailure("unknown_host", "No Foldcade pairing has this UUID")
-        hosts.knowPaired(pairings)
         val response = requestLocatedStreamHost(hosts.lastAt(host.key), locate = { hosts.locate(host.key) }) { at ->
             app.foldcade.gamestream.brokerRequest(
                 PairedHost(at.address, host.httpsPort, host.certificate), me, store.gameStreamClientId(), path, query,
@@ -248,10 +246,21 @@ internal class MoonlightStreams(
         return response.status to response.body
     }
 
+    /**
+     * The saved pairings, told to the watcher in the same step. Pairing and forgetting take the
+     * same lock, so a broker call can't hand the watcher a computer that was just forgotten.
+     */
+    private suspend fun brokerPairings(me: GameStreamIdentity): List<PairedStreamHost> = pairingWrite.withLock {
+        store.pairedStreamHosts(me.fingerprint).also(hosts::knowPaired)
+    }
+    private val pairingWrite = Mutex()
+
     private suspend fun keep(next: List<PairedStreamHost>, me: GameStreamIdentity) {
-        paired = next
-        store.setPairedStreamHosts(me.fingerprint, next)
-        hosts.knowPaired(next)
+        pairingWrite.withLock {
+            paired = next
+            store.setPairedStreamHosts(me.fingerprint, next)
+            hosts.knowPaired(next)
+        }
         val keys = next.map { it.key }.toSet()
         withContext(Dispatchers.Main.immediate) { shell().setPairedHosts(keys) }
     }
