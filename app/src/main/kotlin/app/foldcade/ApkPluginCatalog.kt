@@ -106,7 +106,7 @@ internal class ApkPluginCatalog(
     fun checkRelease(onlyIfStale: Boolean = false) {
         if (work?.isActive == true) return
         val last = checkedAt
-        if (onlyIfStale && last != null && SystemClock.elapsedRealtime() - last < PLUGIN_CHECK_FRESH_MS) return
+        if (onlyIfStale && last != null && SystemClock.elapsedRealtime() - last < PLUGIN_CHECK_FRESH_MS) { reassess(); return }
         work = scope.launch {
             show(PluginCatalogStatus.Checking)
             try {
@@ -120,6 +120,16 @@ internal class ApkPluginCatalog(
                 show(PluginCatalogStatus.Unavailable)
             }
         }
+    }
+
+    /**
+     * Reads the last check against the APK installed now, after the plugin was installed,
+     * updated or removed some other way. Installed stays until discovery has seen the plugin,
+     * and a running check, download or install is left alone.
+     */
+    fun reassess() {
+        if (work?.isActive == true || checkedAt == null || state.busy || state.status == PluginCatalogStatus.Installed) return
+        scope.launch { show(releaseStatus(release, installedCode())) }
     }
 
     fun install() {

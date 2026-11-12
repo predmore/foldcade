@@ -732,6 +732,7 @@ class FoldcadeApp : Application() {
                         installedApkPlugins = plugins
                         apkPluginsLoaded = true
                         shell.setApkPlugins(rows)
+                        apkPluginCatalogs.values.forEach { it.reassess() }
                     }
                 }
             }
