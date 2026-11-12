@@ -239,6 +239,7 @@ class ApkPluginBrokerTest {
         grants.setGranted(other, "gamestream", true)
         grants.setRouting(other, true)
         assertTrue(grants.routes(release))
+        assertFalse(grants.routes(other))
         // Turning one off leaves none routing; nothing else switches on by itself.
         grants.setRouting(release, false)
         assertFalse(grants.routes(release))
@@ -260,6 +261,18 @@ class ApkPluginBrokerTest {
         grants.setGranted(debug, "gamestream", true)
         grants.setRouting(debug, false)
         grants.forget(debug.packageName)
+        grants.repairRoute(listOf(release))
+        assertFalse(grants.routes(release))
+    }
+
+    @Test fun removingAnUnplayablePluginNeverRevivesAnOffRoute() {
+        val grants = ApkPluginGrants(MemoryPrefs())
+        val release = testApkPlugin(packageName = "app.foldcade.moonlight")
+        val other = testApkPlugin(packageName = "example.other").copy(platform = "other")
+        grants.setGranted(release, "gamestream", true)
+        grants.setRouting(release, false)
+        grants.setGranted(other, "gamestream", true)
+        grants.forget(other.packageName)
         grants.repairRoute(listOf(release))
         assertFalse(grants.routes(release))
     }

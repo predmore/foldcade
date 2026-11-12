@@ -227,11 +227,16 @@ internal class MoonlightStreams(
     internal suspend fun brokerHosts(): List<BrokerHost> {
         val me = GameStreamIdentity.existing() ?: return emptyList()
         val pairings = brokerPairings(me)
+        // Confirm saved addresses still answer before a plugin streams to one: after a DHCP change
+        // a cached address can be stale. The whole check gets one short budget, so an offline
+        // computer can't hold the binder thread. Anything not confirmed in time, or not answering,
+        // keeps its last address, and the plugin can still report it as unreachable.
+        val confirmed = java.util.concurrent.ConcurrentHashMap<String, LocatedHost>()
+        kotlinx.coroutines.withTimeoutOrNull(BROKER_LOCATE_BUDGET_MS) {
+            for (host in pairings) hosts.locate(host.key)?.let { confirmed[host.key] = it }
+        }
         return pairings.mapNotNull { host ->
-            // Confirm the saved address still answers before a plugin streams to it: after a DHCP
-            // change the cached one can be stale. A computer that doesn't answer keeps its last
-            // address, so the plugin can still report it as unreachable.
-            val at = hosts.locate(host.key) ?: hosts.lastAt(host.key) ?: return@mapNotNull null
+            val at = confirmed[host.key] ?: hosts.lastAt(host.key) ?: return@mapNotNull null
             BrokerHost(host.uuid, host.name, at.address, app.foldcade.gamestream.GAMESTREAM_HTTP_PORT, host.httpsPort, at.mac)
         }
     }
@@ -296,3 +301,6 @@ internal class MoonlightStreams(
         false
     }
 }
+
+/** How long a plugin's computer list may spend confirming addresses before using saved ones. */
+private const val BROKER_LOCATE_BUDGET_MS = 2_000L

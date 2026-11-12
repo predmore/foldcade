@@ -265,7 +265,9 @@ internal class MoonlightHosts(
         if (key !in names && key !in paired) discovered[key] = info.hostname
     }
 
-    private fun persistLocations() = onLocated(found.filterKeys { it in paired })
+    /** Snapshot and write under one lock, so an older snapshot can't land after a newer one. */
+    private fun persistLocations() = synchronized(persistLock) { onLocated(found.filterKeys { it in paired }) }
+    private val persistLock = Any()
 
     /** Addresses of the GameStream hosts mDNS finds in [DISCOVER_MS]. */
     private suspend fun discover(): List<String> {
