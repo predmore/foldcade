@@ -89,6 +89,9 @@ class ApkPluginCatalogTest {
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), 10, 10, true, release))
         // Installed, then removed some other way.
         assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installed), 10, null, true, release))
+        // Installed was recorded before Android reported the package; it stays so discovery can move on to consent.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), null, 10, true, release))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), 9, 11, true, release))
         // Updated some other way while an update was offered.
         assertEquals(PluginCatalogStatus.Current, reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 10, true, release))
         // Android allowed installs while the row asked for that; until then, Allow installs stays.

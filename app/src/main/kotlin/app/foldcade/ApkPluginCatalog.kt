@@ -74,8 +74,9 @@ internal fun releaseStatus(release: PluginRelease?, installedCode: Long?): Plugi
  * What a status shown earlier should become now, or null to keep it. It changes only for news:
  * Android allowed installs while the row asked for that, or the installed version is no longer
  * the one the status was worked out against (installed, updated or removed some other way).
- * That keeps an install result, Not published, and Installed until discovery has seen the
- * plugin. A running check, download or install is never interrupted.
+ * That keeps an install result and Not published. Installed stays while the plugin is there,
+ * so discovery can still move on to its consent, however late Android reports the package.
+ * A running check, download or install is never interrupted.
  */
 internal fun reassessedStatus(
     current: PluginCatalogSetting,
@@ -85,6 +86,7 @@ internal fun reassessedStatus(
     release: PluginRelease?,
 ): PluginCatalogStatus? = when {
     current.busy -> null
+    current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
     release != null && installedCode != assessedCode -> releaseStatus(release, installedCode)
     else -> null
@@ -126,6 +128,11 @@ internal class ApkPluginCatalog(
         showFor(status, installedCode(), progress, detail)
     }
 
+    /** A status chosen from the installed version [code], recorded with that same reading. */
+    private suspend fun showChosen(status: PluginCatalogStatus, code: Long?) = withContext(Dispatchers.Main.immediate) {
+        showFor(status, code)
+    }
+
     /** Main thread only. [code] is the installed version [status] was worked out against. */
     private fun showFor(status: PluginCatalogStatus, code: Long?, progress: Int? = null, detail: String? = null) {
         assessedCode = code
@@ -143,7 +150,8 @@ internal class ApkPluginCatalog(
             try {
                 release = fetchRelease()
                 checkedAt = SystemClock.elapsedRealtime()
-                show(releaseStatus(release, installedCode()))
+                val code = installedCode()
+                showChosen(releaseStatus(release, code), code)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 release = null
@@ -190,8 +198,9 @@ internal class ApkPluginCatalog(
                 val info = pm.getPackageArchiveInfo(staged.path, PackageManager.GET_SIGNING_CERTIFICATES)
                 val archive = info?.let { PluginArchive(it.packageName, it.longVersionCode, it.signerDigests()) }
                 if (archive == null) { show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
-                when (verifyPluginArchive(archive, installedCode(), source)) {
-                    PluginVerification.NotNewer -> { show(PluginCatalogStatus.Current); return@launch }
+                val code = installedCode()
+                when (verifyPluginArchive(archive, code, source)) {
+                    PluginVerification.NotNewer -> { showChosen(PluginCatalogStatus.Current, code); return@launch }
                     PluginVerification.Verified -> Unit
                     else -> { show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
                 }
