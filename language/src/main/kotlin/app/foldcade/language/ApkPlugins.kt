@@ -100,7 +100,7 @@ object ApkPluginCopy {
     const val allowInstalls = "Allow installs"
     const val unsupported = "Foldcade does not support this plugin’s platform yet."
     const val officialMoonlight = "Moonlight games open in Moonlight instead."
-    const val unknownSources = "Allow Foldcade to install apps in Android, then return here to install."
+    const val unknownSources = "Allow Foldcade to install apps in Android, then come back here."
     const val downloadFailed = "Download failed. Check your connection and try again."
     const val verificationFailed = "This APK could not be verified. It was not installed."
     const val installFailed = "Installation did not finish. Try again."
@@ -116,20 +116,25 @@ object ApkPluginCopy {
 
     fun status(catalog: PluginCatalogSetting): String = catalog.detail ?: when (catalog.status) {
         PluginCatalogStatus.Checking -> "Checking release…"
-        PluginCatalogStatus.Ready -> "Ready to install"
+        // Installed, with a release that does not say its version: only the download can tell whether it is newer.
+        PluginCatalogStatus.Ready -> if (catalog.installed) catalog.latest?.let { "Latest release · $it" } ?: "Latest release available" else "Ready to install"
         PluginCatalogStatus.UpdateAvailable -> catalog.latest?.let { "Update available · $it" } ?: "Update available"
         PluginCatalogStatus.NotPublished -> "Not published yet"
         PluginCatalogStatus.Unavailable -> "Release unavailable. Try again later."
         PluginCatalogStatus.Downloading -> catalog.progress?.let { "Downloading · $it%" } ?: "Downloading…"
         PluginCatalogStatus.Installing -> "Waiting for Android…"
         PluginCatalogStatus.Installed -> "Installed"
-        PluginCatalogStatus.Current -> "Already up to date"
+        PluginCatalogStatus.Current -> "Up to date"
         PluginCatalogStatus.NeedsPermission -> unknownSources
         PluginCatalogStatus.Failed -> installFailed
     }
 }
 
-/** Installation and discovery can report in either order. Focus consent once both have arrived. */
+/**
+ * Installation and discovery can report in either order. Once both have arrived, a first install,
+ * made from the catalog page, moves on to the plugin's page and its consent. An update leaves the
+ * player where they are: the page's first row is a switch one more A would flip.
+ */
 fun afterApkPluginInstall(previous: PickerModel, next: PickerModel): PickerModel {
     fun arrived(model: PickerModel, packageName: String) =
         model.pluginCatalog(packageName).status == PluginCatalogStatus.Installed && model.apkPlugins.any { it.packageName == packageName }
@@ -137,7 +142,7 @@ fun afterApkPluginInstall(previous: PickerModel, next: PickerModel): PickerModel
     val page = next.settings ?: return next
     if (settingsCategories(next).getOrNull(page.category) != SettingsCategory.Plugins) return next
     val inner = SettingsInner.ApkPlugin(source.packageName)
-    if (page.inner != SettingsInner.PluginCatalog(source.packageName) && page.inner != inner) return next
+    if (page.inner != SettingsInner.PluginCatalog(source.packageName)) return next
     return next.copy(settings = page.copy(inner = inner, row = settingsInnerFirstRow(inner, next), onRows = true))
 }
 

@@ -89,7 +89,12 @@ class ApkPluginSettingsTest {
         assertEquals(RowText("Update", null), rowText(Row.PluginInstall(moonlight), model))
         assertEquals(RowControl.Opens, rowControl(Row.PluginInstall(moonlight), model))
         val current = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Current, installed = true)))
-        assertEquals(RowControl.Value("Already up to date"), rowControl(Row.PluginInstall(moonlight), current))
+        assertEquals(RowControl.Value("Up to date"), rowControl(Row.PluginInstall(moonlight), current))
+        // Installed, and the release does not state its versionCode: offer it without claiming it is newer.
+        val unhinted = PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true, latest = "12.2-foldcade.2")
+        assertEquals("Latest release · 12.2-foldcade.2", ApkPluginCopy.status(unhinted))
+        assertEquals("Latest release available", ApkPluginCopy.status(unhinted.copy(latest = null)))
+        assertEquals("Ready to install", ApkPluginCopy.status(unhinted.copy(installed = false)))
     }
 
     @Test fun anUnavailableInstallShowsItsStateAndOpeningTheCatalogFocusesCheckAgain() {
@@ -145,6 +150,20 @@ class ApkPluginSettingsTest {
             val elsewhere = first.copy(settings = null)
             assertNull(afterApkPluginInstall(elsewhere, both.copy(settings = null)).settings)
         }
+    }
+
+    @Test fun anUpdateLeavesFocusOnTheUpdateRowNotTheSharingSwitch() {
+        val installed = plugin.copy(packageName = moonlight)
+        val page = SettingsInner.ApkPlugin(moonlight)
+        val updating = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(installed),
+            pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.UpdateAvailable, installed = true)))
+        val opened = reduce(updating.onSetting(Row.SettingsTile(page)), Meaning.Activate).first
+        val onUpdate = opened.copy(settings = opened.settings!!.copy(row = settingsInnerRows(page, opened).indexOf(Row.PluginInstall(moonlight))),
+            pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Installing, installed = true)))
+        val done = onUpdate.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Installed, installed = true)))
+        val after = afterApkPluginInstall(onUpdate, done)
+        assertEquals(page, after.settings?.inner)
+        assertEquals(Row.PluginInstall(moonlight), settingsFocus(after))
     }
 
     @Test fun installReturnsOnceTheInstalledPluginIsGone() {
