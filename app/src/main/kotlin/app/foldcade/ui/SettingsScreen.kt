@@ -75,6 +75,8 @@ import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
 import app.foldcade.language.PickerModel
+import app.foldcade.language.PluginRegistry
+import app.foldcade.language.pluginCatalog
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Row
 import app.foldcade.language.SettingsCategory
@@ -324,7 +326,7 @@ private fun CardRows(
                 val explanation = when (row) {
                     is Row.PluginGrant -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { ApkPluginCopy.consent(it.label) }
                     is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
-                    Row.PluginInstall -> ApkPluginCopy.status(model.pluginCatalog).takeIf { model.pluginCatalog.canInstall }
+                    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { catalog -> ApkPluginCopy.status(catalog).takeIf { catalog.canInstall } }
                     else -> null
                 }
                 explanation?.let {
@@ -644,7 +646,7 @@ private fun innerArt(inner: SettingsInner, model: PickerModel): ShelfArt = when 
     SettingsInner.Romm -> ShelfArt.Mark("cloud")
     is SettingsInner.Emulator -> ShelfArt.App(emulatorShelf(model).firstOrNull { it.key == inner.key }?.packageName)
     is SettingsInner.Folder -> ShelfArt.Mark("folder")
-    SettingsInner.PluginCatalog -> ShelfArt.Mark("moonlight")
+    is SettingsInner.PluginCatalog -> ShelfArt.Mark(PluginRegistry.source(inner.packageName)?.mark ?: "cloud")
     is SettingsInner.ApkPlugin -> ShelfArt.Plugin(inner.packageName, model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.activity)
     is SettingsInner.Host -> ShelfArt.Mark("moonlight")
     is SettingsInner.Backend -> ShelfArt.Mark("cloud")

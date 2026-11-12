@@ -706,10 +706,15 @@ class FoldcadeApp : Application() {
     @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
     @Volatile private var apkPluginsLoaded = false
     internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
-    internal val apkPluginCatalog by lazy { ApkPluginCatalog(this, scope) {
-        shell.setPluginCatalog(it)
-        if (it.status == app.foldcade.language.PluginCatalogStatus.Installed) refreshApkPlugins()
-    } }
+    /** One catalog per [app.foldcade.language.PluginRegistry] plugin, by package. */
+    internal val apkPluginCatalogs: Map<String, ApkPluginCatalog> by lazy {
+        app.foldcade.language.PluginRegistry.sources.associate { source ->
+            source.packageName to ApkPluginCatalog(this, scope, source) {
+                shell.setPluginCatalog(source.packageName, it)
+                if (it.status == app.foldcade.language.PluginCatalogStatus.Installed) refreshApkPlugins()
+            }
+        }
+    }
 
     internal fun refreshApkPlugins() {
         val version = apkPluginRefreshVersion.incrementAndGet()
@@ -727,6 +732,7 @@ class FoldcadeApp : Application() {
                         installedApkPlugins = plugins
                         apkPluginsLoaded = true
                         shell.setApkPlugins(rows)
+                        apkPluginCatalogs.values.forEach { it.reassess() }
                     }
                 }
             }
@@ -1179,7 +1185,7 @@ class FoldcadeApp : Application() {
         refreshCredentials()
         reloadInstalledApps()
         refreshApkPlugins()
-        apkPluginCatalog.checkRelease()
+        apkPluginCatalogs.values.forEach { it.checkRelease() }
         // This one read also serves both activities' initial resume.
         val initialSaveRefresh = refreshFoundSaveFolders(changed = false)
         pluginLoad.launch {
