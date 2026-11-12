@@ -30,7 +30,8 @@ sealed interface SettingsInner {
     /** The saved RomM source's connection actions, inside Settings › Library. */
     data object Romm : SettingsInner
     /** Each system's emulator, Automatic first. Settings › Emulators › Systems opens it. */
-    data object PluginCatalog : SettingsInner
+    /** A [PluginRegistry] plugin that isn't installed: install it from its latest release. */
+    data class PluginCatalog(val packageName: String) : SettingsInner
     data class ApkPlugin(val packageName: String) : SettingsInner
 
     data object Systems : SettingsInner
@@ -171,7 +172,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.AndroidSettings)
     }
     SettingsCategory.Plugins -> model.apkPlugins.map { Row.SettingsTile(SettingsInner.ApkPlugin(it.packageName)) } +
-        listOfNotNull(Row.SettingsTile(SettingsInner.PluginCatalog).takeIf { model.apkPlugins.none { it.packageName == ApkPluginCopy.catalogPackage } })
+        PluginRegistry.sources.filter { source -> model.apkPlugins.none { it.packageName == source.packageName } }
+            .map { Row.SettingsTile(SettingsInner.PluginCatalog(it.packageName)) }
     SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
 }
 
@@ -305,12 +307,12 @@ private fun folderEmpty(folder: LibraryFolder): Boolean = folder.empty && !folde
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
         listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
-    SettingsInner.PluginCatalog -> listOf(Row.PluginInstall, Row.PluginCheck)
+    is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName), Row.PluginCheck(inner.packageName))
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
-            if (plugin.packageName == ApkPluginCopy.catalogPackage) addAll(listOf(Row.PluginInstall, Row.PluginCheck))
+            if (PluginRegistry.source(plugin.packageName) != null) addAll(listOf(Row.PluginInstall(plugin.packageName), Row.PluginCheck(plugin.packageName)))
             add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
             add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
             add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
@@ -332,7 +334,8 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
 /** The catalog's unavailable Install is a status, so opening the page starts on Check again. */
 fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
     val rows = settingsInnerRows(inner, model)
-    return if (rows.firstOrNull() == Row.PluginInstall && !model.pluginCatalog.canInstall) rows.indexOf(Row.PluginCheck).coerceAtLeast(0) else 0
+    val first = rows.firstOrNull()
+    return if (first is Row.PluginInstall && !model.pluginCatalog(first.packageName).canInstall) rows.indexOfFirst { it is Row.PluginCheck }.coerceAtLeast(0) else 0
 }
 
 /**
@@ -341,7 +344,7 @@ fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
  */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     SettingsInner.Romm -> model.signedIn.firstOrNull { it.pluginId == "romm" }?.label ?: "RomM"
-    SettingsInner.PluginCatalog -> ApkPluginCopy.moonlight
+    is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.label.orEmpty()
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
     SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
@@ -603,8 +606,8 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     // Paired, a switch A turns off; unpaired, a way in to the pairing code.
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
-    Row.PluginCheck -> RowControl.Opens
-    Row.PluginInstall -> if (model.pluginCatalog.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(model.pluginCatalog))
+    is Row.PluginCheck -> RowControl.Opens
+    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { if (it.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(it)) }
     is Row.PluginInfo -> value?.let { RowControl.Value(it) } ?: RowControl.None
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.
@@ -684,12 +687,11 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
-    SettingsInner.PluginCatalog -> ApkPluginCopy.catalogDetail
+    is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.detail
     is SettingsInner.ApkPlugin -> when {
         model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } -> ApkPluginCopy.unsupported
-        // Only Foldcade Moonlight is known to stream on both screens; another plugin says nothing it may not do.
-        inner.packageName == ApkPluginCopy.catalogPackage || inner.packageName == ApkPluginCopy.catalogPackage + ".debug" -> ApkPluginCopy.catalogDetail
-        else -> null
+        // A registry plugin, or its own debug build, says what it does; another plugin says nothing it may not do.
+        else -> PluginRegistry.source(inner.packageName.removeSuffix(".debug"))?.detail
     }
     SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)

@@ -488,9 +488,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.SetPluginGrant -> foldcade.setPluginGrant(effect.packageName, effect.scope, effect.on)
             is Effect.SetPluginRouting -> foldcade.setPluginRouting(effect.packageName, effect.on)
-            Effect.CheckPluginRelease -> foldcade.apkPluginCatalog.checkRelease()
-            Effect.InstallPlugin -> {
-                if (foldcade.shell.model.pluginCatalog.status == app.foldcade.language.PluginCatalogStatus.NeedsPermission &&
+            is Effect.CheckPluginRelease -> foldcade.apkPluginCatalogs[effect.packageName]?.checkRelease(effect.onlyIfStale)
+            is Effect.InstallPlugin -> {
+                if (foldcade.shell.model.pluginCatalog(effect.packageName).status == app.foldcade.language.PluginCatalogStatus.NeedsPermission &&
                     !packageManager.canRequestPackageInstalls()) {
                     val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
                     foldcade.store.handoffAndroidSetting(panel) {
@@ -499,7 +499,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             true
                         } catch (_: ActivityNotFoundException) { false }
                     }
-                } else foldcade.apkPluginCatalog.install()
+                } else foldcade.apkPluginCatalogs[effect.packageName]?.install()
             }
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> foldcade.saveArtKey()

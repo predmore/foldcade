@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.HomeUndo
+import app.foldcade.language.pluginCatalog
 import app.foldcade.language.folded
 import app.foldcade.language.opened
 import app.foldcade.language.refreshed
@@ -2603,13 +2604,16 @@ class ShellController(
     }
 
     internal fun setApkPlugins(plugins: List<app.foldcade.language.ApkPluginSetting>) {
-        val next = model.copy(apkPlugins = plugins, pluginCatalog = model.pluginCatalog.copy(installed = plugins.any { it.packageName == app.foldcade.language.ApkPluginCopy.catalogPackage }))
+        val catalogs = app.foldcade.language.PluginRegistry.sources.associate { source ->
+            source.packageName to model.pluginCatalog(source.packageName).copy(installed = plugins.any { it.packageName == source.packageName })
+        }
+        val next = model.copy(apkPlugins = plugins, pluginCatalogs = catalogs)
         publish(app.foldcade.language.afterApkPluginInstall(model, next))
         noteShelfChanged()
     }
 
-    internal fun setPluginCatalog(catalog: app.foldcade.language.PluginCatalogSetting) {
-        publish(app.foldcade.language.afterApkPluginInstall(model, model.copy(pluginCatalog = catalog)))
+    internal fun setPluginCatalog(packageName: String, catalog: app.foldcade.language.PluginCatalogSetting) {
+        publish(app.foldcade.language.afterApkPluginInstall(model, model.copy(pluginCatalogs = model.pluginCatalogs + (packageName to catalog))))
     }
 
     fun setLibrarySyncing(syncing: Boolean) {

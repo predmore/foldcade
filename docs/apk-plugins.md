@@ -125,14 +125,41 @@ Otherwise the game goes to the official Moonlight app exactly as before. That co
 
 ## 7. Installing a plugin from Foldcade
 
-Settings › Plugins also lists the host's **catalog** of known plugins that aren't installed yet, and offers updates for installed ones. Protocol 1's catalog has one entry:
+Settings › Plugins also lists the plugins in Foldcade's **registry** that aren't installed yet, and offers updates for installed ones. The registry is `PluginRegistry` in `:language`. It names trusted repositories, never versions: a plugin releases on its own schedule, so pinning a version in Foldcade would hold it back or fall out of step. Foldcade asks each repository for its latest release when it checks.
+
+Each entry has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| Package | The application id the APK must have. |
+| Label, detail, mark | The catalog tile's name, the line under its page title, and its icon. |
+| Repository | GitHub `owner/name`. Foldcade reads `https://api.github.com/repos/<owner>/<name>/releases/latest`. |
+| Asset | The one release file Foldcade downloads. Other assets, such as a source archive, are ignored. |
+| Signers | The SHA-256 of each signing certificate, as lowercase hex. The APK's current signer set must equal it exactly. |
+
+Protocol 1's registry has one entry:
 
 | Field | Value |
 | --- | --- |
 | Package | `app.foldcade.moonlight` |
-| Source | GitHub releases of `predmore/foldcade-moonlight`, `releases/latest`, asset `foldcade-moonlight.apk` |
-| Trust | The APK's signer set must equal **Foldcade's own** signer set (first-party plugins are signed with Foldcade's release key). |
+| Repository | `predmore/foldcade-moonlight` |
+| Asset | `foldcade-moonlight.apk` |
+| Signers | `36f68830…e6581ff`, Foldcade's release certificate. First-party plugins are signed with Foldcade's own key. |
 
-Install flow: fetch the release JSON and the asset through `:net` `PublicHttps` (with the GitHub API, github.com, and the release-asset download hosts added to its list). Stage the APK in the cache. Check it with `getPackageArchiveInfo(GET_SIGNING_CERTIFICATES)`: the package name, a `versionCode` above what's installed, and the trusted signer set. Install it with a `PackageInstaller` session (`REQUEST_INSTALL_PACKAGES`). When Android says Foldcade can't request installs, the page explains that and opens `ACTION_MANAGE_UNKNOWN_APP_SOURCES` for Foldcade. Once the package arrives, its row asks for the scopes it wants.
+Trust is pinned in the entry. It doesn't depend on how this copy of Foldcade is signed, so a debug Foldcade installs the same release a signed one does. Registry entries are checked when the registry loads: a plain `owner/name`, a plain `.apk` file name, a package name, at least one signer, and no package twice.
+
+### What a plugin repository publishes
+
+- Its newest full release (not a draft or pre-release) is `releases/latest`.
+- That release has exactly one asset with the registered name, at `https://github.com/<owner>/<name>/releases/download/<tag>/<asset>`, no larger than 128 MiB.
+- The APK has the registered package and is signed with the pinned certificates.
+- Each release's `versionCode` is higher than the last.
+- Optionally, a line `versionCode: N` in the release notes, with the APK's `versionCode`. Foldcade's and Foldcade Moonlight's release scripts write it. With it, a check can say **Update available · <version>** or **Already up to date** without downloading anything. The version shown is the tag without its leading `v`. The line is only a hint: the downloaded APK still decides.
+
+### Checking and installing
+
+Foldcade checks every registry plugin when it starts. Opening a registry plugin's page, in the catalog or once it's installed, checks again, unless a check read GitHub in the last 10 minutes. **Check for updates** (or **Check again**) always checks. Nothing installs on its own: Install and Update start only when the user chooses them, and Android asks the user to confirm.
+
+Install flow: fetch the release JSON and the asset through `:net` `PublicHttps` (with the GitHub API, github.com, and the release-asset download hosts added to its list). Stage the APK in the cache. Check it with `getPackageArchiveInfo(GET_SIGNING_CERTIFICATES)`: the registered package, a `versionCode` above what's installed, and the pinned signer set. An APK that isn't newer reads **Already up to date** and isn't installed. Install it with a `PackageInstaller` session (`REQUEST_INSTALL_PACKAGES`) that requires the user's confirmation. When Android says Foldcade can't request installs, the page explains that and opens `ACTION_MANAGE_UNKNOWN_APP_SOURCES` for Foldcade. Once the package arrives, its row asks for the scopes it wants.
 
 A plugin installed another way, such as with `adb`, a debug build, or a third party, is discovered the same way and needs the same consent. The catalog's trust check applies only to installs Foldcade downloads itself.
