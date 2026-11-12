@@ -39,8 +39,9 @@ internal fun PackageInfo.signerDigests(): Set<String> = signingInfo?.apkContents
     MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { byte -> "%02x".format(byte) }
 }.toSet()
 
-internal fun discoverApkPlugins(pm: PackageManager): List<ApkPlugin> =
-    pm.queryIntentActivities(Intent(ApkPluginProtocol.PLAY), PackageManager.GET_META_DATA).mapNotNull { resolved ->
+/** Every installed plugin, or only [packageName]'s when given, so a broker caller costs one package. */
+internal fun discoverApkPlugins(pm: PackageManager, packageName: String? = null): List<ApkPlugin> =
+    pm.queryIntentActivities(Intent(ApkPluginProtocol.PLAY).setPackage(packageName), PackageManager.GET_META_DATA).mapNotNull { resolved ->
         val activity = resolved.activityInfo ?: return@mapNotNull null
         if (!activity.exported || !activity.enabled || !activity.applicationInfo.enabled) return@mapNotNull null
         val meta = activity.metaData ?: return@mapNotNull null

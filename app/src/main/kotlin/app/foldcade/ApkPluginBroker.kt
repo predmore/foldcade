@@ -118,13 +118,15 @@ class ApkPluginBroker : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val context = context ?: return BrokerReply.error("internal", "Host unavailable").bundle()
         return try {
-            val caller = callingPackage
+            val caller = callingPackage ?: return BrokerReply.error("not_granted", "Caller is not a discovered plugin").bundle()
+            // Only the caller's own package is looked up, so an app that isn't a plugin costs one small query.
+            val callerPlugins = discoverApkPlugins(context.packageManager, caller)
             val grants = ApkPluginGrants.open(context)
             val app = context.applicationContext as FoldcadeApp
             runBlocking {
                 callPluginBroker(
                     caller, method, arg, extras?.getString("path"), extras?.getString("query"), context.packageName,
-                    discoverApkPlugins(context.packageManager), grants::granted,
+                    callerPlugins, grants::granted,
                     hosts = { app.moonlightStreams.brokerHosts() },
                     request = { uuid, path, query -> app.moonlightStreams.brokerCall(uuid, path, query) },
                     token = extras?.getString("token"), launchAllowed = app.apkPluginLaunchTokens::allows,
