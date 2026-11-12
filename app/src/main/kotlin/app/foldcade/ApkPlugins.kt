@@ -76,7 +76,9 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
         val key = key(plugin, scope)
         val grants = prefs.getStringSet("grants", emptySet()).orEmpty().toMutableSet()
         if (on) grants.add(key) else grants.remove(key)
-        val disabled = prefs.getStringSet("disabled", emptySet()).orEmpty() - key
+        var disabled = prefs.getStringSet("disabled", emptySet()).orEmpty() - key
+        // Granting turns routing on, so it becomes the one plugin Moonlight games open in.
+        if (on && scope == ApkPluginProtocol.GAMESTREAM) disabled = disabled + otherRoutes(grants, plugin)
         check(prefs.edit().putStringSet("grants", grants).putStringSet("disabled", disabled).commit()) { "Could not save plugin consent" }
     }
 
@@ -84,9 +86,21 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
     fun setRouting(plugin: ApkPlugin, on: Boolean) {
         val key = key(plugin, ApkPluginProtocol.GAMESTREAM)
         val disabled = prefs.getStringSet("disabled", emptySet()).orEmpty().toMutableSet()
-        if (on) disabled.remove(key) else disabled.add(key)
+        if (on) {
+            disabled.remove(key)
+            // One plugin plays Moonlight games: the one most recently turned on. Every other
+            // switch shows off, so no switch claims a routing it doesn't have.
+            disabled.addAll(otherRoutes(prefs.getStringSet("grants", emptySet()).orEmpty(), plugin))
+        } else {
+            disabled.add(key)
+        }
         check(prefs.edit().putStringSet("disabled", disabled).commit()) { "Could not save plugin choice" }
     }
+
+    /** GameStream grants held by other packages. */
+    private fun otherRoutes(grants: Set<String>, plugin: ApkPlugin): Set<String> = grants.filter {
+        it.endsWith("|" + ApkPluginProtocol.GAMESTREAM) && it.substringBefore('|') != plugin.packageName
+    }.toSet()
 
     @Synchronized
     fun forget(packageName: String) {

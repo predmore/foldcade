@@ -112,7 +112,7 @@ A Moonlight game goes to the plugin when **all** of these hold:
 
 - an installed plugin declares `PLATFORM=moonlight`,
 - that plugin holds the `gamestream` grant,
-- its "Use for Moonlight games" setting is on (default on once the grant is given),
+- its "Use for Moonlight games" setting is on (default on once the grant is given). One plugin at a time has it on: granting a plugin, or turning its setting on, turns it off for every other plugin, so the most recent choice wins,
 - and the game's host uuid is one Foldcade paired with itself.
 
 Otherwise the game goes to the official Moonlight app exactly as before. That covers pins of computers only official Moonlight paired, and the case where no plugin is installed. Foldcade-paired games launch through the plugin even when official Moonlight isn't installed.

@@ -218,4 +218,25 @@ class ApkPluginBrokerTest {
         grants.forget(plugin.packageName)
         assertFalse(ApkPluginGrants(prefs).granted(twoSigners, "gamestream"))
     }
+
+    @Test fun moonlightGamesRouteToTheOnePluginMostRecentlyChosen() {
+        val grants = ApkPluginGrants(MemoryPrefs())
+        val release = testApkPlugin(packageName = "app.foldcade.moonlight")
+        val debug = testApkPlugin(packageName = "app.foldcade.moonlight.debug")
+        grants.setGranted(release, "gamestream", true)
+        assertTrue(grants.routes(release))
+        // Granting a second plugin makes it the one, and the first switch reads off.
+        grants.setGranted(debug, "gamestream", true)
+        assertTrue(grants.routes(debug))
+        assertFalse(grants.routes(release))
+        assertTrue(grants.granted(release, "gamestream"))
+        // Turning the first back on takes routing back.
+        grants.setRouting(release, true)
+        assertTrue(grants.routes(release))
+        assertFalse(grants.routes(debug))
+        // Turning one off leaves none routing; nothing else switches on by itself.
+        grants.setRouting(release, false)
+        assertFalse(grants.routes(release))
+        assertFalse(grants.routes(debug))
+    }
 }
