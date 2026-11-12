@@ -3,11 +3,13 @@
     <!-- The manifest disables cloud backup. Device transfer retains settings and Home edits;
          credentials remain excluded in both modes. Includes omit all other domains. -->
     <cloud-backup>
+        <!-- Only foldcade.xml travels. apk_plugins.xml consent stays on this device. -->
         <include domain="sharedpref" path="foldcade.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="datastore" />
     </cloud-backup>
     <device-transfer>
+        <!-- Only foldcade.xml travels. apk_plugins.xml consent stays on this device. -->
         <include domain="sharedpref" path="foldcade.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="datastore" />

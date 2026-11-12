@@ -65,10 +65,16 @@ class LanHttp(
         try {
             client.newCall(request).readResponse { open ->
                 val body = open.body ?: return@readResponse LanResponse(open.code, ByteArray(0))
-                if (body.contentLength() > maxBytes) throw LanHttpException("Body is over $maxBytes bytes")
+                if (body.contentLength() > maxBytes) throw LanReplyException("Body is over $maxBytes bytes")
                 val bytes = body.byteStream().use { stream ->
-                    val read = stream.readNBytes(maxBytes + 1)
-                    if (read.size > maxBytes) throw LanHttpException("Body is over $maxBytes bytes")
+                    val read = try {
+                        stream.readNBytes(maxBytes + 1)
+                    } catch (timeout: java.net.SocketTimeoutException) {
+                        throw timeout
+                    } catch (failure: IOException) {
+                        throw LanReplyException("Unreadable reply", failure)
+                    }
+                    if (read.size > maxBytes) throw LanReplyException("Body is over $maxBytes bytes")
                     read
                 }
                 LanResponse(open.code, bytes)
@@ -124,7 +130,10 @@ private class PinnedTrust(private val server: X509Certificate) : X509TrustManage
     override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
 }
 
-class LanHttpException(message: String, cause: Throwable? = null) : IOException(message, cause)
+open class LanHttpException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+/** A host answered, but its response body could not be read within the limit. */
+class LanReplyException(message: String, cause: Throwable? = null) : LanHttpException(message, cause)
 
 /** Refuses every hop that is not to a LAN host. */
 private object LanGuard : Interceptor {

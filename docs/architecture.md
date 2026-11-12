@@ -12,7 +12,7 @@ Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins 
 | `:host` | `PluginHost`. Loads entries and calls library and metadata I/O off the main thread. |
 | `:net` | The only HTTP stack. Builds every OkHttp client; `PublicHttps` reaches a fixed list of public hosts over HTTPS only; `LanHttp` reaches computers on the local network. `LanDrop` is the only listener: a one-time page on a LAN address, with a random token in its path, that takes one POST and closes. The SteamGridDB form uses it so a phone can send the key. `HttpStackGuardTest` fails a client or a server socket made anywhere else. |
 | `:romm` | RomM HTTP client, on a client from `:net`. |
-| `:gamestream` | The parts of the GameStream protocol Sunshine and Apollo hosts speak that Foldcade uses: host status, pairing, app lists, and box art. On `LanHttp` from `:net`, which reaches LAN hosts only and pins a paired host's certificate. |
+| `:gamestream` | The parts of the GameStream protocol Sunshine and Apollo hosts speak that Foldcade uses: host status, pairing, app lists, box art, and the APK broker’s five paired HTTPS requests. On `LanHttp` from `:net`, which reaches LAN hosts only and pins a paired host's certificate. |
 | `:artwork` | Artwork lookup and caching. The app tries Steam's CDN, libretro's thumbnails, the connected RomM server's cover search, then SteamGridDB with the user's key. Covers for tiles, and for the focused game a scene: wide art, a logo, and a title screen. Keeps what it found, and its misses, on disk. The Game art setting turns it off. |
 | `:plugins:droiddeck` | DroidDeck player and library: Steam on the device. Games from DroidDeck's Add to home screen and synced `.steam` files. |
 | `:plugins:emulators` | Launch-only standalone emulators for the other catalog platforms. One screen. Saves stay in the emulator. |
@@ -64,7 +64,11 @@ Resource themes supply icons, styling, and animated scenes through a versioned Z
 
 ## Plugins
 
-The shell does not scan for installed plugin packages. `PluginHost.load` reads `ServiceLoader` entries from a class loader. The contract, the reserved RomM ids, and the minify keep rules are in [plugins.md](plugins.md).
+`PluginHost.load` reads bundled `ServiceLoader` entries from a class loader. That contract, the reserved RomM ids, and the minify keep rules are in [plugins.md](plugins.md).
+
+Installed APK plugins use the separate [protocol 1](apk-plugins.md). `ApkPlugins` discovers exported play activities and refreshes on package changes. Settings › Plugins uses the ordinary Settings shelf, rows, focus, page screen and companion. Consent binds a package, its current signer set and a scope. `ApkPluginBroker` at `<applicationId>.plugins` rechecks discovery on every call and consent for scoped calls. Its discovery-only `appearance` method shares the selected theme's paint and corners, with Afterglow as the startup fallback. It never exports the GameStream key or brokers pairing. Requests use `:gamestream`, `LanHttp` and `LanTls` with Foldcade's keystore identity and the paired host certificate. `ApkMoonlightPlayer` adapts eligible Foldcade-paired games into the existing player launch and external-play paths. Both-screen plugins start on the top display, receive both assigned display ids, and occupy both session panels until return Home.
+
+`ApkPluginCatalog` reads the known GitHub release through `PublicHttps`, stages a bounded APK in cache, verifies package, increasing version code and Foldcade's exact current signer set, and commits a user-confirmed `PackageInstaller` session. Unknown-source access belongs to Android. No APK code is loaded into the launcher.
 
 ## CI
 

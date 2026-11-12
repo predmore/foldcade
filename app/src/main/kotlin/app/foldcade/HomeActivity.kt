@@ -486,6 +486,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.UseFoundRomm -> foldcade.shell.model.connectFoundOrigin?.let {
                 beginRommFromPhone(it)
             }
+            is Effect.SetPluginGrant -> foldcade.setPluginGrant(effect.packageName, effect.scope, effect.on)
+            is Effect.SetPluginRouting -> foldcade.setPluginRouting(effect.packageName, effect.on)
+            Effect.CheckPluginRelease -> foldcade.apkPluginCatalog.checkRelease()
+            Effect.InstallPlugin -> {
+                if (foldcade.shell.model.pluginCatalog.status == app.foldcade.language.PluginCatalogStatus.NeedsPermission &&
+                    !packageManager.canRequestPackageInstalls()) {
+                    val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
+                    foldcade.store.handoffAndroidSetting(panel) {
+                        try {
+                            startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                            true
+                        } catch (_: ActivityNotFoundException) { false }
+                    }
+                } else foldcade.apkPluginCatalog.install()
+            }
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> foldcade.saveArtKey()
             is Effect.ForgetCredentials -> forget(effect.pluginId)
@@ -1818,14 +1833,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        if (!resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
+        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
         val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in launchFlags
-        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags
+        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags || player is ApkMoonlightPlayer
         val resumeStart = if (sameStartResumes) Intent(intent).apply {
             flags = resumeStartFlags(flags, launchFlags)
         } else null
@@ -2327,6 +2342,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 Panel.Bottom -> assignment.bottomDisplayId ?: return false
             }
         }
+        if (intent.action == ApkPluginProtocol.PLAY) {
+            intent.putExtra(ApkPluginProtocol.EXTRA + "TITLE", title)
+            intent.putExtra(ApkPluginProtocol.EXTRA + "TOP_DISPLAY", assignment.topDisplayId)
+            intent.putExtra(ApkPluginProtocol.EXTRA + "BOTTOM_DISPLAY", assignment.bottomDisplayId ?: -1)
+        }
         val playerPackage = intent.component?.packageName
         val replacing = !resume && foldcade.runningGames.mayHold(playerPackage)
         if (replacing) intent.flags = replaceFlags(intent.flags)
@@ -2430,10 +2450,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val gameNativePin = player.id == app.foldcade.plugins.gamenative.GameNativePlayer.ID &&
             ready.intent.extras.any { it.key == app.foldcade.plugins.gamenative.GameNativePlayer.EXTRA_SHORTCUT_ID }
         try {
-            val intent = foldcade.startIntent(player, ready.intent)
+            val intent = foldcade.startIntent(player, ready.intent).withApkPluginDisplays(assignment.topDisplayId, assignment.bottomDisplayId)
             foldcade.externalPlay.open(foldcade.plays, game.id, game.title, displayId, intent.packageName) {
                 val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
                 val start = intent.toAndroidIntent(foldcade.rommFolderAuthority)
+                if (start.action == ApkPluginProtocol.PLAY) start.putExtra(ApkPluginProtocol.EXTRA + "TITLE", game.title)
                 if (still) bloomStart(start)
                 val shortcutId = intent.extras.filterIsInstance<app.foldcade.api.plugin.PlayerExtra.Text>()
                     .firstOrNull { it.key == app.foldcade.plugins.gamenative.GameNativePlayer.EXTRA_SHORTCUT_ID }?.value
@@ -2441,6 +2462,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     getSystemService(android.content.pm.LauncherApps::class.java)
                         .startShortcut(intent.packageName, shortcutId, null, options.toBundle(), android.os.Process.myUserHandle())
                 } else {
+                    foldcade.authorizeApkPluginStart(start)
                     startActivity(start, options.toBundle())
                     if (foldcade.noteStarted(player, intent)) armRestart(start, displayId)
                 }

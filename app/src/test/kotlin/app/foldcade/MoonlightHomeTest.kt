@@ -258,6 +258,32 @@ class MoonlightHomeTest {
     }
 
     @Test
+    fun onlyPairedLocationsLoadOrSaveAndForgettingPrunesTheSavedAddress() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        val pc = PairedStreamHost(host, "Computer", 47984, HOST_CERT)
+        val address = LocatedHost(host, "localhost", 47984)
+        val other = address.copy(uuid = "b0000000-0000-0000-0000-000000000000")
+        store.setPairedStreamHosts("identity", listOf(pc))
+        store.setStreamAddresses(mapOf(pc.key to address, other.uuid to other))
+        assertEquals(mapOf(pc.key to address), SessionStore(prefs).streamAddresses())
+        assertEquals(1, org.json.JSONArray(prefs.getString("moonlight_addresses", null)).length())
+
+        // An old version saved arbitrary mDNS hosts. They must never seed the polling list.
+        val legacy = org.json.JSONArray()
+        for (at in listOf(address, other)) legacy.put(org.json.JSONObject()
+            .put("uuid", at.uuid).put("address", at.address).put("httpsPort", at.httpsPort))
+        prefs.edit().putString("moonlight_addresses", legacy.toString()).apply()
+        assertEquals(mapOf(pc.key to address), SessionStore(prefs).streamAddresses())
+
+        store.setPairedStreamHosts("identity", emptyList())
+        assertTrue(store.streamAddresses().isEmpty())
+        assertEquals("[]", prefs.getString("moonlight_addresses", null))
+        store.setStreamAddresses(mapOf(pc.key to address))
+        assertEquals("[]", prefs.getString("moonlight_addresses", null))
+    }
+
+    @Test
     fun settingsListsEachComputerWithWhetherItIsPaired() {
         val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
         shell.setMoonlightHosts(

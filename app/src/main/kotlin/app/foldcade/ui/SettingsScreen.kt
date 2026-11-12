@@ -46,6 +46,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -68,6 +70,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
+import app.foldcade.language.ApkPluginCopy
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
@@ -317,6 +320,16 @@ private fun CardRows(
                         labelStyle = labelStyle,
                         height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
                     )
+                }
+                val explanation = when (row) {
+                    is Row.PluginGrant -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { ApkPluginCopy.consent(it.label) }
+                    is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
+                    Row.PluginInstall -> ApkPluginCopy.status(model.pluginCatalog).takeIf { model.pluginCatalog.canInstall }
+                    else -> null
+                }
+                explanation?.let {
+                    BasicText(it, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        style = style(theme.muted, theme.style.type.hint, theme))
                 }
             }
             // Calibrating Confirm: what to press, under the row that asked.
@@ -621,6 +634,7 @@ private sealed interface ShelfArt {
 
     /** An installed app's object, or its launcher icon when no pack draws one. */
     data class App(val packageName: String?) : ShelfArt
+    data class Plugin(val packageName: String, val activity: String?) : ShelfArt
 
     /** A one-ink control glyph, by its slot. */
     data class Control(val slot: String) : ShelfArt
@@ -630,6 +644,8 @@ private fun innerArt(inner: SettingsInner, model: PickerModel): ShelfArt = when 
     SettingsInner.Romm -> ShelfArt.Mark("cloud")
     is SettingsInner.Emulator -> ShelfArt.App(emulatorShelf(model).firstOrNull { it.key == inner.key }?.packageName)
     is SettingsInner.Folder -> ShelfArt.Mark("folder")
+    SettingsInner.PluginCatalog -> ShelfArt.Mark("moonlight")
+    is SettingsInner.ApkPlugin -> ShelfArt.Plugin(inner.packageName, model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.activity)
     is SettingsInner.Host -> ShelfArt.Mark("moonlight")
     is SettingsInner.Backend -> ShelfArt.Mark("cloud")
     SettingsInner.Systems -> ShelfArt.Mark("emulators")
@@ -642,6 +658,20 @@ private fun TileArt(art: ShelfArt, lit: Float, off: Boolean) {
     val theme = LocalFoldTheme.current.theme
     val alpha = lit * if (off) theme.style.settings.tileOffAlpha else 1f
     when (art) {
+        is ShelfArt.Plugin -> {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val icon = androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, art) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { context.packageManager.getActivityIcon(android.content.ComponentName(art.packageName, art.activity ?: ""))
+                        .let { it.toBitmap(128, 128) } }.getOrNull()
+                }
+            }.value
+            if (icon != null) Image(icon.asImageBitmap(), null, Modifier.fillMaxSize(ART_FILL).graphicsLayer { this.alpha = alpha })
+            else {
+                val art = themeIcon(R.drawable.ic_status_plugins)
+                Image(art.painter, null, Modifier.fillMaxSize(ART_FILL * SYMBOL_FILL).graphicsLayer { this.alpha = alpha }, colorFilter = art.tint(theme.onBackground))
+            }
+        }
         is ShelfArt.Mark -> MarkIcon(markGlyph(art.mark) ?: return, ART_FILL) { alpha }
         is ShelfArt.App -> {
             val themed = appGlyph(art.packageName)
@@ -721,6 +751,7 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Library -> R.drawable.symbol_library
     SettingsCategory.Players -> R.drawable.symbol_emulators
     SettingsCategory.Screens -> R.drawable.ic_status_settings
+    SettingsCategory.Plugins -> R.drawable.ic_status_plugins
     SettingsCategory.About -> R.drawable.ic_status_info
 }
 

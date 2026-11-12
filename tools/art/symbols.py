@@ -274,6 +274,15 @@ def display():
                    for a in (math.pi / 4 * i for i in range(8)))
     return [solid(circle(12, 12, 4.2)), ink(rays)]
 
+def plugins():
+    """A jigsaw piece: two round tabs and one cut, each with a 3-unit neck."""
+    # The tab undercuts have 3 units of clear space too, so they hold up beside the ink.
+    d = ("M4,9 H8.5 V5.5 A2.5,2.5 0 1 1 11.5,5.5 V9 H13.5 "
+         "Q15,9 15,10.5 V13.5 H18.5 A2.5,2.5 0 1 1 18.5,16.5 H15 "
+         "V19.5 Q15,21 13.5,21 H4 Q2.5,21 2.5,19.5 V16.5 H4 "
+         "A2.5,2.5 0 1 0 4,13.5 H2.5 V10.5 Q2.5,9 4,9 Z")
+    return [solid(d)]
+
 def status_assets():
     A = [Asset("ic_status_bell", 24, 24, bell(), note="Notifications"),
          Asset("ic_status_bell_dot", 24, 24, bell("dot"), note="Notifications, something unread")]
@@ -290,6 +299,7 @@ def status_assets():
     for v in range(4):
         A.append(Asset(f"ic_status_volume_{v}" if v else "ic_status_volume_mute", 24, 24, volume(v), note=f"Volume level {v}"))
     A += [Asset("ic_status_settings", 24, 24, gear(), note="Settings"),
+          Asset("ic_status_plugins", 24, 24, plugins(), note="Plugins: a jigsaw piece"),
           Asset("ic_status_wrench", 24, 24, wrench(), note="Wrench"),
           Asset("ic_status_tools", 24, 24, sliders(), note="Tools: three sliders"),
           Asset("ic_status_power", 24, 24, power(), note="Power"),

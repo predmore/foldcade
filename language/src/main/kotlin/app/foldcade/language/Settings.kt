@@ -30,6 +30,9 @@ sealed interface SettingsInner {
     /** The saved RomM source's connection actions, inside Settings › Library. */
     data object Romm : SettingsInner
     /** Each system's emulator, Automatic first. Settings › Emulators › Systems opens it. */
+    data object PluginCatalog : SettingsInner
+    data class ApkPlugin(val packageName: String) : SettingsInner
+
     data object Systems : SettingsInner
 
     /** One emulator's rows. [key] is its [EmulatorShelfEntry.key]. */
@@ -54,6 +57,7 @@ enum class SettingsCategory {
     Library,
     Players,
     Screens,
+    Plugins,
     About,
 }
 
@@ -96,6 +100,7 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Library -> SettingsCopy.library
     SettingsCategory.Players -> SettingsCopy.players
     SettingsCategory.Screens -> SettingsCopy.screens
+    SettingsCategory.Plugins -> ApkPluginCopy.title
     SettingsCategory.About -> SettingsCopy.about
 }
 
@@ -165,6 +170,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         add(Row.Backup)
         add(Row.AndroidSettings)
     }
+    SettingsCategory.Plugins -> model.apkPlugins.map { Row.SettingsTile(SettingsInner.ApkPlugin(it.packageName)) } +
+        listOfNotNull(Row.SettingsTile(SettingsInner.PluginCatalog).takeIf { model.apkPlugins.none { it.packageName == ApkPluginCopy.catalogPackage } })
     SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
 }
 
@@ -298,6 +305,17 @@ private fun folderEmpty(folder: LibraryFolder): Boolean = folder.empty && !folde
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
         listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
+    SettingsInner.PluginCatalog -> listOf(Row.PluginInstall, Row.PluginCheck)
+    is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
+        buildList {
+            plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
+            if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
+            if (plugin.packageName == ApkPluginCopy.catalogPackage) addAll(listOf(Row.PluginInstall, Row.PluginCheck))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
+            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
+        }
+    }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.rows.orEmpty()
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -311,12 +329,20 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
 }
 
+/** The catalog's unavailable Install is a status, so opening the page starts on Check again. */
+fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
+    val rows = settingsInnerRows(inner, model)
+    return if (rows.firstOrNull() == Row.PluginInstall && !model.pluginCatalog.canInstall) rows.indexOf(Row.PluginCheck).coerceAtLeast(0) else 0
+}
+
 /**
  * What an inner page is called. A media folder's page says what it is for; its tile, with
  * less room, says only [settingsTileLabel].
  */
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     SettingsInner.Romm -> model.signedIn.firstOrNull { it.pluginId == "romm" }?.label ?: "RomM"
+    SettingsInner.PluginCatalog -> ApkPluginCopy.moonlight
+    is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
     SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -575,6 +601,11 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.FolderOnHome -> RowControl.Toggle(model.tileActions?.folderOnHome?.on == true)
     Row.Artwork -> RowControl.Toggle(model.artwork)
     // Paired, a switch A turns off; unpaired, a way in to the pairing code.
+    is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
+    is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
+    Row.PluginCheck -> RowControl.Opens
+    Row.PluginInstall -> if (model.pluginCatalog.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(model.pluginCatalog))
+    is Row.PluginInfo -> value?.let { RowControl.Value(it) } ?: RowControl.None
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.
     Row.SyncLibrary -> librarySyncValue(model)?.let { RowControl.Value(it, attention = it == Copy.rommUnreachable) } ?: RowControl.None
@@ -653,6 +684,13 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 
 /** The line under an inner page's name, or null for a page that has none. */
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
+    SettingsInner.PluginCatalog -> ApkPluginCopy.catalogDetail
+    is SettingsInner.ApkPlugin -> when {
+        model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } -> ApkPluginCopy.unsupported
+        // Only Foldcade Moonlight is known to stream on both screens; another plugin says nothing it may not do.
+        inner.packageName == ApkPluginCopy.catalogPackage || inner.packageName == ApkPluginCopy.catalogPackage + ".debug" -> ApkPluginCopy.catalogDetail
+        else -> null
+    }
     SettingsInner.Romm -> rommPageDetail(model)
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let(::libraryFolderDetail)
     // An unpaired computer's tile is dim; its page says why, and its one row pairs it.

@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
@@ -23,6 +24,10 @@
     <!-- Package visibility for the bundled players. Each plugin owns its ids. -->
     <!-- Launcher visibility uses the same MAIN / LAUNCHER filter as queryIntentActivities. -->
     <queries>
+        <package android:name="app.foldcade.moonlight" />
+        <intent>
+            <action android:name="app.foldcade.plugin.action.PLAY" />
+        </intent>
         <package android:name="org.azahar_emu.azahar" />
         <package android:name="io.github.lime3ds.android" />
         <package android:name="me.magnum.melonds" />
@@ -93,6 +98,24 @@
         android:resizeableActivity="true"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+
+        <provider
+            android:name=".ApkPluginBroker"
+            android:authorities="${applicationId}.plugins"
+            android:exported="true" />
+
+        <activity
+            android:name=".ApkPluginInstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <receiver android:name=".ApkPluginRemovedReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".PrimaryHomeActivity"

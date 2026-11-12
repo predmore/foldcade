@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <!-- Include settings, Home edits, and ordinary files; exclude device-bound credentials. -->
+    <!-- Only foldcade.xml travels. apk_plugins.xml consent stays on this device. -->
     <include domain="sharedpref" path="foldcade.xml" />
     <include domain="file" path="." />
     <exclude domain="file" path="datastore" />

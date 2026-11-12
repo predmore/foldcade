@@ -551,7 +551,36 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
                 .joinToString(PIN_FIELD) { it.replace(PIN_FIELD, " ").replace(PIN_RECORD, " ") }
         }).joinToString(PIN_RECORD)
         prefs.edit().putString(KEY_PAIRED_HOSTS, raw).apply()
+        // Pairing removal also prunes its durable location before another broker call.
+        setStreamAddresses(streamAddresses())
     }
+
+    /** Last reached addresses, device-owned like the paired computers themselves. */
+    internal fun streamAddresses(): Map<String, LocatedHost> = try {
+        val paired = pairedStreamKeys()
+        val entries = org.json.JSONArray(prefs.getString("moonlight_addresses", "[]"))
+        (0 until entries.length()).mapNotNull { index ->
+            val item = entries.optJSONObject(index) ?: return@mapNotNull null
+            val uuid = item.optString("uuid")
+            if (uuid.lowercase(java.util.Locale.ROOT) !in paired) return@mapNotNull null
+            val address = item.optString("address").takeIf { app.foldcade.net.isLanHost(it) } ?: return@mapNotNull null
+            val port = item.optInt("httpsPort").takeIf { it in 1..65535 } ?: return@mapNotNull null
+            uuid.lowercase(java.util.Locale.ROOT) to LocatedHost(uuid, address, port, item.optString("mac").ifEmpty { null })
+        }.toMap()
+    } catch (_: org.json.JSONException) { emptyMap() }
+
+    internal fun setStreamAddresses(addresses: Map<String, LocatedHost>) {
+        val entries = org.json.JSONArray()
+        val paired = pairedStreamKeys()
+        addresses.filterKeys { it in paired }.toSortedMap().values.forEach { at ->
+            entries.put(org.json.JSONObject().put("uuid", at.uuid).put("address", at.address).put("httpsPort", at.httpsPort).put("mac", at.mac))
+        }
+        val raw = entries.toString()
+        if (raw != prefs.getString("moonlight_addresses", null)) prefs.edit().putString("moonlight_addresses", raw).apply()
+    }
+
+    private fun pairedStreamKeys(): Set<String> = prefs.getString(KEY_PAIRED_HOSTS, null).orEmpty().split(PIN_RECORD)
+        .drop(1).map { it.substringBefore(PIN_FIELD).lowercase(java.util.Locale.ROOT) }.toSet()
 
     /** The apps each paired computer last listed. They fill the shelf at start, before it answers again. */
     fun listedStreamApps(): List<MoonlightApp> {

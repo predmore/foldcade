@@ -73,9 +73,11 @@ internal class MoonlightStreams(
         context = context,
         client = { client },
         scope = scope,
-        active = ::moonlightInstalled,
+        active = { paired.isNotEmpty() || moonlightInstalled() || discoverApkPlugins(context.packageManager).any { it.supported } },
         publish = { shell().setMoonlightHosts(it) },
         onApps = ::listed,
+        remembered = store.streamAddresses(),
+        onLocated = store::setStreamAddresses,
     )
 
     /** Box art for tiles: Moonlight's own poster, then what a paired computer keeps. */
@@ -180,6 +182,7 @@ internal class MoonlightStreams(
                 listedOnce.remove(key)
                 File(artDir, key).deleteRecursively()
             }
+            hosts.forget(key)
             withContext(Dispatchers.Main.immediate) { refreshArt(key) }
             refreshShelf(null)
         }
@@ -218,10 +221,54 @@ internal class MoonlightStreams(
         client = GameStreamClient(LanHttp(), store.gameStreamClientId(), found)
     }
 
+    internal fun pairedHost(uuid: String): PairedStreamHost? = paired.firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
+
+    /** Reads pairing state directly, so a cold broker call does not depend on library startup. */
+    internal suspend fun brokerHosts(): List<BrokerHost> {
+        val me = GameStreamIdentity.existing() ?: return emptyList()
+        val pairings = brokerPairings(me)
+        // Confirm saved addresses still answer before a plugin streams to one: after a DHCP change
+        // a cached address can be stale. The whole check gets one short budget, so an offline
+        // computer can't hold the binder thread. Anything not confirmed in time, or not answering,
+        // keeps its last address, and the plugin can still report it as unreachable.
+        val confirmed = java.util.concurrent.ConcurrentHashMap<String, LocatedHost>()
+        kotlinx.coroutines.withTimeoutOrNull(BROKER_LOCATE_BUDGET_MS) {
+            for (host in pairings) hosts.locate(host.key)?.let { confirmed[host.key] = it }
+        }
+        return pairings.mapNotNull { host ->
+            val at = confirmed[host.key] ?: hosts.lastAt(host.key) ?: return@mapNotNull null
+            BrokerHost(host.uuid, host.name, at.address, app.foldcade.gamestream.GAMESTREAM_HTTP_PORT, host.httpsPort, at.mac)
+        }
+    }
+
+    internal suspend fun brokerCall(uuid: String, path: String, query: String?): Pair<Int, ByteArray> {
+        val me = GameStreamIdentity.existing() ?: throw BrokerFailure("unknown_host", "No Foldcade pairing")
+        val pairings = brokerPairings(me)
+        val host = pairings.firstOrNull { it.uuid.equals(uuid, ignoreCase = true) }
+            ?: throw BrokerFailure("unknown_host", "No Foldcade pairing has this UUID")
+        val response = requestLocatedStreamHost(hosts.lastAt(host.key), locate = { hosts.locate(host.key) }) { at ->
+            app.foldcade.gamestream.brokerRequest(
+                PairedHost(at.address, host.httpsPort, host.certificate), me, store.gameStreamClientId(), path, query,
+            )
+        }
+        return response.status to response.body
+    }
+
+    /**
+     * The saved pairings, told to the watcher in the same step. Pairing and forgetting take the
+     * same lock, so a broker call can't hand the watcher a computer that was just forgotten.
+     */
+    private suspend fun brokerPairings(me: GameStreamIdentity): List<PairedStreamHost> = pairingWrite.withLock {
+        store.pairedStreamHosts(me.fingerprint).also(hosts::knowPaired)
+    }
+    private val pairingWrite = Mutex()
+
     private suspend fun keep(next: List<PairedStreamHost>, me: GameStreamIdentity) {
-        paired = next
-        store.setPairedStreamHosts(me.fingerprint, next)
-        hosts.knowPaired(next)
+        pairingWrite.withLock {
+            paired = next
+            store.setPairedStreamHosts(me.fingerprint, next)
+            hosts.knowPaired(next)
+        }
         val keys = next.map { it.key }.toSet()
         withContext(Dispatchers.Main.immediate) { shell().setPairedHosts(keys) }
     }
@@ -254,3 +301,6 @@ internal class MoonlightStreams(
         false
     }
 }
+
+/** How long a plugin's computer list may spend confirming addresses before using saved ones. */
+private const val BROKER_LOCATE_BUDGET_MS = 2_000L

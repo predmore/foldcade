@@ -501,6 +501,7 @@
     "status.display",
     "status.info",
     "status.playtime",
+    "status.plugins",
     "status.power",
     "status.settings",
     "status.tools",
