@@ -235,7 +235,8 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
     }
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         val name = settingsTileLabel(inner, model)
-        val line = plugin.version
+        // The version's name alone; its build number is in the page's facts.
+        val line = plugin.version.substringBefore(" (")
         when {
             !plugin.supported -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.notSupported, attention = true)
             // A release waiting is the news; then a plugin with nothing shared, which can do nothing yet.

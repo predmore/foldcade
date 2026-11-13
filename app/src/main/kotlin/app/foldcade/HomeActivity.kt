@@ -133,6 +133,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private companion object {
         const val EXTRA_DIALOG = "foldcade.dialog"
         const val EXTRA_SHELF_PREVIEW = "foldcade.shelfPreview"
+        const val EXTRA_SETTINGS_PREVIEW = "foldcade.settings"
         const val EXTRA_DIALOG_INDEX = "foldcade.dialogIndex"
         const val EXTRA_DIALOG_SCREEN = "foldcade.dialogScreen"
         const val EXTRA_SAVE_CONFLICT = "foldcade.saveConflict"
@@ -765,6 +766,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
         applyShelfPreview(intent)
+        applySettingsPreview(intent)
         applyIslandPreview(intent)
         if (launchesCompanion) {
             val manager = getSystemService(DisplayManager::class.java)
@@ -974,6 +976,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
         applyShelfPreview(intent)
+        applySettingsPreview(intent)
         // Home relaunches this activity before a debug capture intent arrives.
         applyIslandPreview(intent, replace = true)
     }
@@ -996,6 +999,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
         if (!intent.hasExtra(EXTRA_SHELF_PREVIEW)) return
         foldcade.shell.previewShelf(intent.getIntExtra(EXTRA_SHELF_PREVIEW, 0))
+    }
+
+    /**
+     * Debug builds: `--es foldcade.settings plugins` opens Settings at a category, by its title or
+     * name, and `plugins/<package>` at that plugin's page, so a device check needs no key path.
+     */
+    private fun applySettingsPreview(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        val target = intent.getStringExtra(EXTRA_SETTINGS_PREVIEW) ?: return
+        foldcade.shell.previewSettings(target.substringBefore('/'), target.substringAfter('/', "").ifEmpty { null })?.let(::dispatch)
     }
 
     private fun applySaveConflictPreview(intent: Intent) {

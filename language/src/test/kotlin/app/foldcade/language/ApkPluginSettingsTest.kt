@@ -236,7 +236,7 @@ class ApkPluginSettingsTest {
 
     @Test fun pluginsAreListedAsCardsThatSayWhatNeedsDoing() {
         val signer = PluginRegistry.moonlight.signers.single()
-        val release = plugin.copy(packageName = moonlight, version = "12.2-foldcade.3", signers = setOf(signer), granted = setOf("gamestream"))
+        val release = plugin.copy(packageName = moonlight, version = "12.2-foldcade.3 (3267)", signers = setOf(signer), granted = setOf("gamestream"))
         val debug = plugin.copy(packageName = "$moonlight.debug", version = "12.2-foldcade.2")
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(release, debug),
             pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Current, installed = true)))
