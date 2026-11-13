@@ -86,6 +86,10 @@ class ApkPluginCatalogTest {
         assertEquals(PluginCatalogStatus.UpdateAvailable, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release, sessionGone = true))
         assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 10, true, release, sessionGone = true))
         assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installing), null, null, true, release, sessionGone = true))
+        // Settled as declined, then Android reports the new package late: that is this install arriving.
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 10, true, release, quietAttempt = true))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Ready), null, 10, true, null, quietAttempt = true))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 9, true, release, quietAttempt = true))
         // While the session is there, the player is still deciding.
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release))
         // Nothing new: an install result, Not published, and a status already current all stay.

@@ -232,9 +232,11 @@ data class PluginListing(
 
 fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = when (inner) {
     is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.let { source ->
-        val action = ApkPluginCopy.action(model.pluginCatalog(inner.packageName))
+        val catalog = model.pluginCatalog(inner.packageName)
+        val action = ApkPluginCopy.action(catalog)
         // Named as its page and Android's install dialog name it, so the card and what it opens agree.
-        val offer = action.label == ApkPluginCopy.install
+        // A failed attempt says so; only a release waiting to be taken is an offer.
+        val offer = action.label == ApkPluginCopy.install && catalog.status != PluginCatalogStatus.Failed
         PluginListing(source.label, source.detail, if (offer) ApkPluginCopy.install else action.value, attention = action.attention, offer = offer)
     }
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
@@ -245,9 +247,15 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
         val line = listOfNotNull(plugin.version.substringBefore(" ("), ApkPluginCopy.debug.takeIf { debug }).joinToString(" · ")
         when {
             !plugin.supported -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.notSupported, attention = true)
-            // A release waiting is the news; then a plugin with nothing shared, which can do nothing yet.
+            // A release waiting is the news; then one under way or that failed, as its page's release row says;
+            // then a plugin with nothing shared, which can do nothing yet.
             PluginRegistry.source(plugin.packageName) != null && ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).fresh ->
                 PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.updateAvailable, fresh = true)
+            PluginRegistry.source(plugin.packageName) != null && model.pluginCatalog(plugin.packageName).status in
+                setOf(PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing, PluginCatalogStatus.Failed) ->
+                ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
+                    PluginListing(name, line, verified = plugin.verified, value = action.value, attention = action.attention)
+                }
             plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.off)
             PluginRegistry.source(plugin.packageName) != null -> ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
                 when {

@@ -87,10 +87,17 @@ internal fun reassessedStatus(
     installsAllowed: Boolean,
     release: PluginRelease?,
     sessionGone: Boolean = false,
+    /**
+     * An attempt was settled as declined because its session went quietly. Android may report
+     * the new package a little after the session goes, so a version change seen later is that
+     * install arriving, not an update made some other way.
+     */
+    quietAttempt: Boolean = false,
 ): PluginCatalogStatus? = when {
     current.status == PluginCatalogStatus.Installing && sessionGone ->
         if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else releaseStatus(release, installedCode)
     current.busy -> null
+    quietAttempt && installedCode != null && installedCode != assessedCode -> PluginCatalogStatus.Installed
     current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
     release != null && installedCode != assessedCode -> releaseStatus(release, installedCode)
@@ -127,6 +134,9 @@ internal class ApkPluginCatalog(
     private var assessedCode: Long? = null
     /** The Android install session waiting on the player's confirmation, until it reports or goes. */
     @Volatile private var session: Int? = null
+
+    /** The last attempt's session went without a report; see [reassessedStatus]'s quietAttempt. */
+    private var quietAttempt = false
     private fun installedCode(): Long? = try {
         context.packageManager.getPackageInfo(source.packageName, 0).longVersionCode
     } catch (_: PackageManager.NameNotFoundException) { null }
@@ -152,6 +162,7 @@ internal class ApkPluginCatalog(
         if (work?.isActive == true) return
         val last = checkedAt
         if (onlyIfStale && last != null && SystemClock.elapsedRealtime() - last < PLUGIN_CHECK_FRESH_MS) { reassess(); return }
+        quietAttempt = false
         work = scope.launch {
             show(PluginCatalogStatus.Checking)
             try {
@@ -180,14 +191,17 @@ internal class ApkPluginCatalog(
         val pending = session
         val gone = state.status == PluginCatalogStatus.Installing && pending != null &&
             context.packageManager.packageInstaller.getSessionInfo(pending) == null
-        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release, gone)?.let {
+        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release, gone, quietAttempt)?.let {
             if (gone) session = null
+            // Settled as declined: a version change still to come is this install's. Anything else ends the attempt.
+            quietAttempt = gone && it != PluginCatalogStatus.Installed
             showFor(it, code)
         }
     }
 
     fun install() {
         if (work?.isActive == true) return
+        quietAttempt = false
         work = scope.launch {
             val staged = File(context.cacheDir, "apk-plugins/${source.packageName}.apk")
             var failureMessage = ApkPluginCopy.downloadFailed
@@ -246,6 +260,7 @@ internal class ApkPluginCatalog(
 
     fun completed(status: Int) {
         session = null
+        quietAttempt = false
         scope.launch {
             when (status) {
                 PackageInstaller.STATUS_SUCCESS -> show(PluginCatalogStatus.Installed)

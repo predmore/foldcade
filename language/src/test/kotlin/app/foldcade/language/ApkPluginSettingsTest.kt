@@ -254,6 +254,15 @@ class ApkPluginSettingsTest {
         // An update outranks Off: it is the news, and installing it keeps the switch as it was.
         val offWithUpdate = update.copy(apkPlugins = listOf(release.copy(granted = emptySet()), debug))
         assertTrue(pluginListing(SettingsInner.ApkPlugin(moonlight), offWithUpdate)!!.fresh)
+        // Under way or failed reads as the page's release row does, even before sharing is on.
+        val off = model.copy(apkPlugins = listOf(release.copy(granted = emptySet()), debug))
+        val downloading = off.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Downloading, installed = true, progress = 40)))
+        assertEquals("40%", pluginListing(SettingsInner.ApkPlugin(moonlight), downloading)!!.value)
+        val failed = off.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed, installed = true)))
+        assertEquals(PluginListing("Foldcade Moonlight", "12.2-foldcade.3", "Didn’t finish", attention = true, verified = true), pluginListing(SettingsInner.ApkPlugin(moonlight), failed))
+        // A failed first install is no fresh offer.
+        val failedCatalog = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed)))
+        assertEquals(PluginListing("Foldcade Moonlight", PluginRegistry.moonlight.detail, "Didn’t finish", attention = true), pluginListing(catalogPage, failedCatalog))
         val uninstalled = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready)))
         assertEquals(PluginListing("Foldcade Moonlight", PluginRegistry.moonlight.detail, "Install", offer = true), pluginListing(catalogPage, uninstalled))
         val opened = reduce(uninstalled.copy(settings = SettingsPage(HostScreen.Top, category = settingsCategories(uninstalled).indexOf(SettingsCategory.Plugins), onRows = true)), Meaning.Activate).first
