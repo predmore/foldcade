@@ -98,7 +98,8 @@ internal fun reassessedStatus(
         if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else releaseStatus(release, installedCode)
     current.busy -> null
     quietAttempt && installedCode != null && installedCode != assessedCode -> PluginCatalogStatus.Installed
-    current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
+    // Removed only once a version it was recorded with has gone; a first install Android has not reported yet is still Installed.
+    current.status == PluginCatalogStatus.Installed -> if (installedCode == null && assessedCode != null) releaseStatus(release, null) else null
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
     release != null && installedCode != assessedCode -> releaseStatus(release, installedCode)
     else -> null
