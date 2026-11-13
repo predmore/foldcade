@@ -265,6 +265,9 @@ class ApkPluginSettingsTest {
         assertEquals("Allow installs", pluginListing(SettingsInner.ApkPlugin(moonlight), asking)!!.value)
         val checking = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true)))
         assertEquals("Checking…", pluginListing(SettingsInner.ApkPlugin(moonlight), checking)!!.value)
+        // Before sharing is on too: a check under way is not idle.
+        assertEquals("Checking…", pluginListing(SettingsInner.ApkPlugin(moonlight),
+            off.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true))))!!.value)
         assertEquals("Allow installs", pluginListing(catalogPage, PickerModel(count = 4, rowsPerPage = 1,
             pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.NeedsPermission))))!!.value)
         // A failed first install is no fresh offer.

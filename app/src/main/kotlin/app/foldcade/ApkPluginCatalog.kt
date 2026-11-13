@@ -258,22 +258,23 @@ internal class ApkPluginCatalog(
         }
     }
 
-    /** [sessionId] is the attempt Android reports on; a late report on an older attempt changes nothing. */
+    /**
+     * Main thread, from [ApkPluginInstallActivity]. [sessionId] is the attempt Android reports on:
+     * only the session still waiting on the player counts, so a late report on an older attempt,
+     * or on one already settled as quietly declined, changes nothing. The status is written here
+     * at once, so no later attempt can start in between.
+     */
+    @MainThread
     fun completed(status: Int, sessionId: Int) {
-        val current = session
-        if (current != null && current != sessionId) return
+        if (session != sessionId) return
         session = null
         quietAttempt = false
-        scope.launch {
-            when (status) {
-                PackageInstaller.STATUS_SUCCESS -> show(PluginCatalogStatus.Installed)
-                // Declined in Android's dialog: the player said no to the dialog, not to the release, so it is offered again.
-                PackageInstaller.STATUS_FAILURE_ABORTED -> withContext(Dispatchers.Main.immediate) {
-                    val code = installedCode()
-                    showFor(releaseStatus(release, code), code)
-                }
-                else -> show(PluginCatalogStatus.Failed)
-            }
+        val code = installedCode()
+        when (status) {
+            PackageInstaller.STATUS_SUCCESS -> showFor(PluginCatalogStatus.Installed, code)
+            // Declined in Android's dialog: the player said no to the dialog, not to the release, so it is offered again.
+            PackageInstaller.STATUS_FAILURE_ABORTED -> showFor(releaseStatus(release, code), code)
+            else -> showFor(PluginCatalogStatus.Failed, code)
         }
     }
 

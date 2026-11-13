@@ -247,12 +247,12 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
         val line = listOfNotNull(plugin.version.substringBefore(" ("), ApkPluginCopy.debug.takeIf { debug }).joinToString(" · ")
         when {
             !plugin.supported -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.notSupported, attention = true)
-            // A release waiting is the news; then one under way or that failed, as its page's release row says;
+            // A release waiting is the news; then one under way (a check included) or that failed, as its page's release row says;
             // then a plugin with nothing shared, which can do nothing yet.
             PluginRegistry.source(plugin.packageName) != null && ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).fresh ->
                 PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.updateAvailable, fresh = true)
             PluginRegistry.source(plugin.packageName) != null && model.pluginCatalog(plugin.packageName).status in
-                setOf(PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing, PluginCatalogStatus.Failed, PluginCatalogStatus.NeedsPermission) ->
+                setOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing, PluginCatalogStatus.Failed, PluginCatalogStatus.NeedsPermission) ->
                 ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
                     // Allow installs has no value: the card names the step itself.
                     PluginListing(name, line, verified = plugin.verified, value = action.value ?: action.label, attention = action.attention)
@@ -263,8 +263,6 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
                     action.healthy -> PluginListing(name, line, verified = plugin.verified, value = action.value, healthy = true)
                     // Only a failed install asks for the player; a check that could not reach the release does not.
                     action.attention && model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Failed -> PluginListing(name, line, verified = plugin.verified, value = action.value, attention = true)
-                    // A check under way says so; Ready, Not published and a check that could not reach the release say nothing.
-                    model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Checking -> PluginListing(name, line, verified = plugin.verified, value = action.value)
                     else -> PluginListing(name, line, verified = plugin.verified, value = null)
                 }
             }
