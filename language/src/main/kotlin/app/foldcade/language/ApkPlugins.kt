@@ -92,9 +92,10 @@ data class PluginCatalogSetting(
     /** The latest release's name, such as 12.2-foldcade.2, once a check has read it. */
     val latest: String? = null,
 ) {
-    // Installed and Current only hold while the package is there; after an uninstall, Install works again.
-    val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable) &&
-        !(installed && status in setOf(PluginCatalogStatus.Installed, PluginCatalogStatus.Current))
+    // Current only holds while the package is there; after an uninstall, Install works again. Installed never
+    // installs again: before Android reports the package it is still arriving, and a removal re-offers the release.
+    val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable, PluginCatalogStatus.Installed) &&
+        !(installed && status == PluginCatalogStatus.Current)
     val busy: Boolean get() = status in setOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)
 }
 
@@ -152,8 +153,8 @@ object ApkPluginCopy {
             PluginCatalogStatus.Unavailable -> PluginAction(check, "Unavailable", attention = true)
             PluginCatalogStatus.Downloading -> PluginAction(if (catalog.installed) updating else installing, catalog.progress?.let { "$it%" } ?: "Downloading…")
             PluginCatalogStatus.Installing -> PluginAction(if (catalog.installed) updating else installing, "Waiting for Android…")
-            // Just installed: its installed version is the one this check took.
-            PluginCatalogStatus.Installed -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
+            // Just installed: its installed version is the one this check took, even before Android reports the package.
+            PluginCatalogStatus.Installed -> PluginAction(ApkPluginCopy.check, "Up to date", healthy = true)
             PluginCatalogStatus.Current -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
             PluginCatalogStatus.NeedsPermission -> PluginAction(allowInstalls, null)
             PluginCatalogStatus.Failed -> PluginAction(take, "Didn’t finish", attention = true)

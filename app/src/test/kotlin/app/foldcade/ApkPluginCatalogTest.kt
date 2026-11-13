@@ -101,7 +101,7 @@ class ApkPluginCatalogTest {
         // Installed, then removed some other way.
         assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installed), 10, null, true, release))
         // Installed was recorded before Android reported the package; it stays so discovery can move on to consent.
-        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), null, 10, true, release))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Installed), null, 10, true, release))
         // A first install whose package Android has not reported yet stays Installed rather than offering Install again.
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), null, null, true, release))
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), 9, 11, true, release))

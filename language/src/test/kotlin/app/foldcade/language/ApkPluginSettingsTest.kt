@@ -202,9 +202,13 @@ class ApkPluginSettingsTest {
         assertEquals(Row.PluginInstall(moonlight), settingsFocus(after))
     }
 
-    @Test fun installReturnsOnceTheInstalledPluginIsGone() {
+    @Test fun installReturnsOnceTheInstalledPluginIsGoneButNotWhileItArrives() {
         assertFalse(PluginCatalogSetting(PluginCatalogStatus.Installed, installed = true).canInstall)
-        assertTrue(PluginCatalogSetting(PluginCatalogStatus.Installed, installed = false).canInstall)
+        // Installed before Android reports the package: still arriving, so no second install.
+        val arriving = PluginCatalogSetting(PluginCatalogStatus.Installed, installed = false)
+        assertFalse(arriving.canInstall)
+        assertEquals(PluginAction("Check for updates", "Up to date", healthy = true), ApkPluginCopy.action(arriving))
+        // A removal re-offers the release (the catalog moves Installed to Ready), and Current without the package installs.
         assertTrue(PluginCatalogSetting(PluginCatalogStatus.Current, installed = false).canInstall)
     }
 
