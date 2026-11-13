@@ -1662,7 +1662,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AndroidSettings -> RowText(Copy.androidSettings)
     Row.Licenses -> RowText(LicenseCopy.row)
     is Row.SettingsTile -> RowText(settingsTileLabel(row.page, model))
-    Row.Version -> RowText(AboutCopy.version, if (model.versionCopied) AboutCopy.copied else model.appVersion)
+    Row.Version -> RowText(AboutCopy.copyInfo, AboutCopy.copied.takeIf { model.versionCopied })
     Row.DefaultHomeApp -> RowText(Copy.defaultHomeApp)
     is Row.QuickTile -> RowText(
         when (row.setting) {

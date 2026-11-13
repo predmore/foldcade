@@ -78,7 +78,7 @@ internal fun releaseStatus(release: PluginRelease?, installedCode: Long?): Plugi
  * so discovery can still move on to its consent, however late Android reports the package.
  * A running check, download or install is never interrupted, except an install whose Android
  * session has gone without a word: Android does not always report a declined confirmation, so
- * the version installed then says whether it took.
+ * the version installed then says whether it took. Declined, the release is offered again as before.
  */
 internal fun reassessedStatus(
     current: PluginCatalogSetting,
@@ -89,7 +89,7 @@ internal fun reassessedStatus(
     sessionGone: Boolean = false,
 ): PluginCatalogStatus? = when {
     current.status == PluginCatalogStatus.Installing && sessionGone ->
-        if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else PluginCatalogStatus.Failed
+        if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else releaseStatus(release, installedCode)
     current.busy -> null
     current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
@@ -182,7 +182,7 @@ internal class ApkPluginCatalog(
             context.packageManager.packageInstaller.getSessionInfo(pending) == null
         reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release, gone)?.let {
             if (gone) session = null
-            showFor(it, code, detail = ApkPluginCopy.installDeclined.takeIf { _ -> gone && it == PluginCatalogStatus.Failed })
+            showFor(it, code)
         }
     }
 
@@ -247,10 +247,15 @@ internal class ApkPluginCatalog(
     fun completed(status: Int) {
         session = null
         scope.launch {
-            show(when (status) {
-                PackageInstaller.STATUS_SUCCESS -> PluginCatalogStatus.Installed
-                else -> PluginCatalogStatus.Failed
-            }, detail = if (status == PackageInstaller.STATUS_FAILURE_ABORTED) ApkPluginCopy.installDeclined else null)
+            when (status) {
+                PackageInstaller.STATUS_SUCCESS -> show(PluginCatalogStatus.Installed)
+                // Declined in Android's dialog: the player said no to the dialog, not to the release, so it is offered again.
+                PackageInstaller.STATUS_FAILURE_ABORTED -> withContext(Dispatchers.Main.immediate) {
+                    val code = installedCode()
+                    showFor(releaseStatus(release, code), code)
+                }
+                else -> show(PluginCatalogStatus.Failed)
+            }
         }
     }
 

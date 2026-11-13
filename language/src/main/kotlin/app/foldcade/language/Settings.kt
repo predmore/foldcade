@@ -77,12 +77,59 @@ object SettingsCopy {
     const val accessAsk = "Ask"
     const val screens = "System"
     const val about = "About"
+
+    // What A does, as the other screen names it under the focused row.
+    const val open = "Open"
+    const val turnOn = "Turn on"
+    const val turnOff = "Turn off"
+    const val change = "Change"
+    const val copy = "Copy"
+    const val sync = "Sync"
+}
+
+/**
+ * The keys Settings names on the other screen: what A does to the focused row, then where B
+ * goes. A row whose work is under way names only B. The page's own head already wears B.
+ */
+fun settingsHints(model: PickerModel): List<HintKey> {
+    val page = model.settings ?: return emptyList()
+    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+    val backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
+    if (model.capturingConfirm) return listOf(HintKey(PromptKey.Start, Copy.close))
+    if (!page.onRows) return listOf(HintKey(confirm, SettingsCopy.open), HintKey(backKey, Copy.close))
+    val back = HintKey(backKey, Copy.back)
+    val row = settingsFocus(model) ?: return listOf(back)
+    val action: HintKey? = when {
+        row is Row.PluginInstall -> model.pluginCatalog(row.packageName).takeUnless { it.busy }
+            ?.let { HintKey(confirm, ApkPluginCopy.action(it).label) }
+        row.destructive() -> HintKey(confirm, Copy.hold)
+        row == Row.Version -> HintKey(confirm, SettingsCopy.copy)
+        row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
+        row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
+        row == Row.MusicVolume -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
+        else -> when (val control = rowControl(row, model)) {
+            is RowControl.Toggle -> HintKey(confirm, if (control.on) SettingsCopy.turnOff else SettingsCopy.turnOn)
+            is RowControl.Choice -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
+            is RowControl.Check -> HintKey(confirm, if (control.on) SettingsCopy.turnOff else SettingsCopy.turnOn)
+            RowControl.Opens -> HintKey(confirm, SettingsCopy.open)
+            // A state on the right still leads somewhere on A: Android's page, or a form.
+            is RowControl.Value -> HintKey(confirm, SettingsCopy.open)
+            RowControl.None -> null
+        }
+    }
+    return listOfNotNull(action, back)
 }
 
 /** About's version row, and the one line it copies for a bug report. */
 object AboutCopy {
     const val version = "Version"
     const val copied = "Copied"
+    const val title = "Foldcade"
+    const val android = "Android"
+    const val device = "Device"
+
+    /** About's one action row: the version sits in the page's head, so the row says what A does with it. */
+    const val copyInfo = "Copy version info"
 
     /** "0.1.2 (230)": the name players see, and the build that tells two of them apart. */
     fun version(name: String, code: Long): String = "$name ($code)"
@@ -94,6 +141,12 @@ object AboutCopy {
     fun debugLine(version: String, android: String, device: String, build: String): String =
         listOf("Foldcade $version", "Android $android", device, build).filter { it.isNotBlank() }.joinToString(" · ")
 }
+
+/** About's facts under its head: the Android it runs on and the device. Its version is in the head. */
+fun aboutFacts(android: String, device: String): List<PageFact> = listOfNotNull(
+    PageFact(AboutCopy.android, android).takeIf { android.isNotBlank() },
+    PageFact(AboutCopy.device, device).takeIf { device.isNotBlank() },
+)
 
 fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Personalization -> SettingsCopy.personalization
@@ -606,7 +659,9 @@ sealed interface RowControl {
      */
     data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false,
         /** In focus ink: something new to take, as a plugin's update. */
-        val accent: Boolean = false) : RowControl
+        val accent: Boolean = false,
+        /** In full ink: a state that is under way, read over the fill that shows how far it has got. */
+        val strong: Boolean = false) : RowControl
     data object None : RowControl
 }
 
@@ -622,9 +677,13 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     // Paired, a switch A turns off; unpaired, a way in to the pairing code.
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
-    is Row.PluginInstall -> ApkPluginCopy.action(model.pluginCatalog(row.packageName)).let { action ->
-        action.value?.let { RowControl.Value(it, attention = action.attention, opens = !model.pluginCatalog(row.packageName).busy, healthy = action.healthy, accent = action.fresh) }
-            ?: RowControl.Opens
+    // A does the row's own action, so it takes no way-in mark: nothing opens, and the value never shifts.
+    // A copies the line for a bug report; the check says it took.
+    Row.Version -> if (model.versionCopied) RowControl.Value(AboutCopy.copied, healthy = true) else RowControl.None
+    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { catalog ->
+        val action = ApkPluginCopy.action(catalog)
+        action.value?.let { RowControl.Value(it, attention = action.attention, healthy = action.healthy, accent = action.fresh, strong = catalog.busy) }
+            ?: RowControl.None
     }
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.

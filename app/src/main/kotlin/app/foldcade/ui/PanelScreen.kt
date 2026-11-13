@@ -167,6 +167,7 @@ import app.foldcade.language.heroFacts
 import app.foldcade.language.heroGameFacts
 import app.foldcade.language.GameAboutCopy
 import app.foldcade.language.gameAboutHints
+import app.foldcade.language.settingsHints
 import app.foldcade.R
 import app.foldcade.language.QuickSetting
 import app.foldcade.DeviceStatus
@@ -666,9 +667,9 @@ private fun PanelBody(
     }
     beside.shown?.let { subject ->
         // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
-        // Play activity names its keys here; Settings shows its own on the page.
+        // Play activity and Settings name their keys here, for the row in focus; a connect form shows its own.
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
-            CommandCenterScreen(app, subject, hints = !subject.settings) {
+            CommandCenterScreen(app, subject, hints = !subject.settings || (model.settings != null && !model.connectOpen)) {
                 when {
                     model.connectOpen -> app.shell.closeConnect(returnToPage = false)
                     subject.settings -> {
@@ -3600,6 +3601,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         playActivityHints(model, app.playHistory(it.game).daySessions(it.cursor).isNotEmpty())
     }
         ?: model.gameAbout?.takeIf { model.dialog == null }?.let { gameAboutHints(model) }
+        ?: model.settings?.takeIf { model.dialog == null && !model.connectOpen }?.let { settingsHints(model) }
     val find = shell.findHints()
     val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(
         actions,

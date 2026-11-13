@@ -132,7 +132,6 @@ object ApkPluginCopy {
     const val downloadFailed = "Download failed. Check your connection and try again."
     const val verificationFailed = "This APK could not be verified. It was not installed."
     const val installFailed = "Installation did not finish. Try again."
-    const val installDeclined = "Installation canceled."
 
     /** Under the sharing switch: everything the switch allows, in one breath. */
     const val consent = "It can stream and quit games on your paired computers. Your pairing key stays in Foldcade."
@@ -157,16 +156,14 @@ object ApkPluginCopy {
             PluginCatalogStatus.Installed -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
             PluginCatalogStatus.Current -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
             PluginCatalogStatus.NeedsPermission -> PluginAction(allowInstalls, null)
-            // Declined in Android's dialog is the player's own answer, so it reads plainly, without a why.
-            PluginCatalogStatus.Failed -> if (catalog.detail == installDeclined) PluginAction(take, "Canceled")
-                else PluginAction(take, "Didn’t finish", attention = true)
+            PluginCatalogStatus.Failed -> PluginAction(take, "Didn’t finish", attention = true)
         }
     }
 
     /** Under the action row: why it stopped, or what Android needs first. */
     fun actionCaption(catalog: PluginCatalogSetting): String? = when (catalog.status) {
         PluginCatalogStatus.NeedsPermission -> unknownSources
-        PluginCatalogStatus.Failed -> (catalog.detail ?: installFailed).takeIf { it != installDeclined }
+        PluginCatalogStatus.Failed -> catalog.detail ?: installFailed
         else -> null
     }
 }
@@ -180,16 +177,27 @@ data class PluginAction(
     val fresh: Boolean = false,
 )
 
-/** One of a plugin's facts under its rows: what it is, not something to change. */
-data class PluginFact(val label: String, val value: String, val verified: Boolean = false)
+/** One of a page's facts under its rows, as a plugin's version or the device About describes: read, never changed. */
+data class PageFact(val label: String, val value: String, val verified: Boolean = false)
 
-/** A plugin page's facts: the version installed, its package, and who signed it. */
-fun pluginFacts(packageName: String, model: PickerModel): List<PluginFact> {
+/**
+ * A plugin page's facts: the version installed, its package, and who signed it. Before it is
+ * installed, the release it would install and its package, so the page keeps its frame.
+ */
+fun pluginFacts(inner: SettingsInner, model: PickerModel): List<PageFact> {
+    if (inner is SettingsInner.PluginCatalog) {
+        val source = PluginRegistry.source(inner.packageName) ?: return emptyList()
+        return listOfNotNull(
+            model.pluginCatalog(inner.packageName).latest?.let { PageFact(ApkPluginCopy.version, it) },
+            PageFact(ApkPluginCopy.packageName, source.packageName),
+        )
+    }
+    val packageName = (inner as? SettingsInner.ApkPlugin)?.packageName ?: return emptyList()
     val plugin = model.apkPlugins.firstOrNull { it.packageName == packageName } ?: return emptyList()
     return listOf(
-        PluginFact(ApkPluginCopy.version, plugin.version),
-        PluginFact(ApkPluginCopy.packageName, plugin.packageName),
-        PluginFact(ApkPluginCopy.signer, plugin.fingerprint, verified = plugin.verified),
+        PageFact(ApkPluginCopy.version, plugin.version),
+        PageFact(ApkPluginCopy.packageName, plugin.packageName),
+        PageFact(ApkPluginCopy.signer, plugin.fingerprint, verified = plugin.verified),
     )
 }
 
@@ -216,6 +224,8 @@ data class PluginListing(
     val attention: Boolean = false,
     val fresh: Boolean = false,
     val healthy: Boolean = false,
+    /** Signed as its registry entry pins: the card wears the check its page's chip does. */
+    val verified: Boolean = false,
 )
 
 fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = when (inner) {
@@ -225,22 +235,22 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
     }
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         val name = settingsTileLabel(inner, model)
-        val line = listOfNotNull(plugin.version, ApkPluginCopy.verified.takeIf { plugin.verified }).joinToString(" · ")
+        val line = plugin.version
         when {
-            !plugin.supported -> PluginListing(name, line, ApkPluginCopy.notSupported, attention = true)
+            !plugin.supported -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.notSupported, attention = true)
             // A release waiting is the news; then a plugin with nothing shared, which can do nothing yet.
             PluginRegistry.source(plugin.packageName) != null && ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).fresh ->
-                PluginListing(name, line, ApkPluginCopy.updateAvailable, fresh = true)
-            plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginListing(name, line, ApkPluginCopy.off)
+                PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.updateAvailable, fresh = true)
+            plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.off)
             PluginRegistry.source(plugin.packageName) != null -> ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
                 when {
-                    action.healthy -> PluginListing(name, line, action.value, healthy = true)
+                    action.healthy -> PluginListing(name, line, verified = plugin.verified, value = action.value, healthy = true)
                     // Only a failed install asks for the player; a check that could not reach the release does not.
-                    action.attention && model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Failed -> PluginListing(name, line, action.value, attention = true)
-                    else -> PluginListing(name, line, null)
+                    action.attention && model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Failed -> PluginListing(name, line, verified = plugin.verified, value = action.value, attention = true)
+                    else -> PluginListing(name, line, verified = plugin.verified, value = null)
                 }
             }
-            else -> PluginListing(name, line, null)
+            else -> PluginListing(name, line, verified = plugin.verified, value = null)
         }
     }
     else -> null
