@@ -12,10 +12,10 @@ class ApkPluginSettingsTest {
     @Test fun catalogIsPresentWithoutAnInstalledPlugin() {
         val model = PickerModel(count = 4, rowsPerPage = 1)
         assertEquals(listOf(Row.SettingsTile(catalogPage)), settingsRows(SettingsCategory.Plugins, model))
-        assertEquals(listOf(Row.PluginInstall(moonlight), Row.PluginCheck(moonlight)), settingsInnerRows(catalogPage, model))
+        assertEquals(listOf(Row.PluginInstall(moonlight)), settingsInnerRows(catalogPage, model))
         assertEquals("Foldcade Moonlight", settingsInnerTitle(catalogPage, model))
         assertEquals("Moonlight", settingsTileLabel(catalogPage, model))
-        assertEquals("Not published yet", ApkPluginCopy.status(PluginCatalogSetting(PluginCatalogStatus.NotPublished)))
+        assertEquals(PluginAction("Check again", "Not available yet"), ApkPluginCopy.action(PluginCatalogSetting(PluginCatalogStatus.NotPublished)))
     }
 
     @Test fun theRegistryNamesTrustedRepositoriesAndSignersButNoVersions() {
@@ -69,30 +69,32 @@ class ApkPluginSettingsTest {
         assertFalse(settingsInnerRows(page, model.copy(apkPlugins = listOf(plugin.copy(scopes = emptySet())))).any { it is Row.PluginGrant })
     }
 
-    @Test fun anInstalledPluginLeadsWithSharingThenRoutingAndInstallControlsBeforeIdentity() {
+    @Test fun anInstalledPluginLeadsWithSharingThenRoutingThenOneReleaseRow() {
         val installed = plugin.copy(packageName = moonlight, granted = setOf("gamestream"), useForMoonlight = true)
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(installed),
             pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true)))
         val page = SettingsInner.ApkPlugin(installed.packageName)
         assertEquals(listOf(
-            Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName),
-            Row.PluginInstall(moonlight), Row.PluginCheck(moonlight), Row.PluginInfo(installed.packageName, PluginInfoField.Version),
-            Row.PluginInfo(installed.packageName, PluginInfoField.Package), Row.PluginInfo(installed.packageName, PluginInfoField.Signer),
+            Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName), Row.PluginInstall(moonlight),
         ), settingsInnerRows(page, model))
         val opened = reduce(model.onSetting(Row.SettingsTile(page)), Meaning.Activate).first
         assertEquals(Row.PluginGrant(installed.packageName, "gamestream"), settingsFocus(opened))
-        assertEquals(RowText("Package", installed.packageName), rowText(Row.PluginInfo(installed.packageName, PluginInfoField.Package), model))
+        // What it is reads under the rows, not as rows.
+        assertEquals(listOf(PluginFact("Version", "1"), PluginFact("Package", moonlight), PluginFact("Signer", "ab:cd:ef:01")), pluginFacts(moonlight, model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(page, model))
         assertEquals(ApkPluginCopy.unsupported, settingsInnerDetail(page, model.copy(apkPlugins = listOf(installed.copy(supported = false)))))
         assertEquals("Share paired computers", rowText(Row.PluginGrant(installed.packageName, "gamestream"), model).label)
-        assertEquals("Check for updates", rowText(Row.PluginCheck(moonlight), model).label)
         assertEquals("Update", rowText(Row.PluginInstall(moonlight), model).label)
+        assertEquals(ApkPluginCopy.consent, settingsRowCaption(Row.PluginGrant(installed.packageName, "gamestream"), model))
+        assertNull(settingsRowCaption(Row.PluginRouting(installed.packageName), model))
+        assertEquals(ApkPluginCopy.officialMoonlight,
+            settingsRowCaption(Row.PluginRouting(installed.packageName), model.copy(apkPlugins = listOf(installed.copy(useForMoonlight = false)))))
     }
 
     @Test fun aPluginOutsideTheRegistryHasNoInstallOrUpdateRows() {
         val page = SettingsInner.ApkPlugin(plugin.packageName)
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin))
-        assertFalse(settingsInnerRows(page, model).any { it is Row.PluginInstall || it is Row.PluginCheck })
+        assertFalse(settingsInnerRows(page, model).any { it is Row.PluginInstall })
         assertNull(reduce(model.onSetting(Row.SettingsTile(page)), Meaning.Activate).second)
     }
 
@@ -101,26 +103,32 @@ class ApkPluginSettingsTest {
         val update = PluginCatalogSetting(PluginCatalogStatus.UpdateAvailable, installed = true, latest = "12.2-foldcade.2")
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(installed), pluginCatalogs = catalogs(update))
         assertTrue(update.canInstall)
-        assertEquals("Update available · 12.2-foldcade.2", ApkPluginCopy.status(update))
-        assertEquals("Update available", ApkPluginCopy.status(update.copy(latest = null)))
-        assertEquals(RowText("Update", null), rowText(Row.PluginInstall(moonlight), model))
-        assertEquals(RowControl.Opens, rowControl(Row.PluginInstall(moonlight), model))
+        assertEquals(PluginAction("Update", "12.2-foldcade.2", fresh = true), ApkPluginCopy.action(update))
+        assertEquals(RowText("Update", "12.2-foldcade.2"), rowText(Row.PluginInstall(moonlight), model))
+        assertEquals(RowControl.Value("12.2-foldcade.2", opens = true), rowControl(Row.PluginInstall(moonlight), model))
+        assertEquals(Effect.InstallPlugin(moonlight), reduce(model.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
+        assertTrue(pluginTileFresh(SettingsInner.ApkPlugin(moonlight), model))
+        // Current: the same row checks again, and says so with the check.
         val current = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Current, installed = true)))
-        assertEquals(RowControl.Value("Up to date"), rowControl(Row.PluginInstall(moonlight), current))
+        assertEquals(RowText("Check for updates", "Up to date"), rowText(Row.PluginInstall(moonlight), current))
+        assertEquals(RowControl.Value("Up to date", opens = true, healthy = true), rowControl(Row.PluginInstall(moonlight), current))
+        assertEquals(Effect.CheckPluginRelease(moonlight), reduce(current.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
+        assertFalse(pluginTileFresh(SettingsInner.ApkPlugin(moonlight), current))
         // Installed, and the release does not state its versionCode: offer it without claiming it is newer.
         val unhinted = PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true, latest = "12.2-foldcade.2")
-        assertEquals("Latest release · 12.2-foldcade.2", ApkPluginCopy.status(unhinted))
-        assertEquals("Latest release available", ApkPluginCopy.status(unhinted.copy(latest = null)))
-        assertEquals("Ready to install", ApkPluginCopy.status(unhinted.copy(installed = false)))
+        assertEquals(PluginAction("Update", "12.2-foldcade.2"), ApkPluginCopy.action(unhinted))
+        assertEquals(PluginAction("Install", "12.2-foldcade.2"), ApkPluginCopy.action(unhinted.copy(installed = false)))
     }
 
-    @Test fun anUnavailableInstallShowsItsStateAndOpeningTheCatalogFocusesCheckAgain() {
+    @Test fun anUnavailableInstallShowsItsStateAndTheSameRowChecksAgain() {
         val model = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.NotPublished)))
         val opened = reduce(model.onSetting(Row.SettingsTile(catalogPage)), Meaning.Activate).first
-        assertEquals(Row.PluginCheck(moonlight), settingsFocus(opened))
-        assertEquals(RowText("Install", "Not available yet"), rowText(Row.PluginInstall(moonlight), model))
-        assertEquals(RowControl.Value("Not available yet"), rowControl(Row.PluginInstall(moonlight), model))
-        assertEquals("Check again", rowText(Row.PluginCheck(moonlight), model).label)
+        assertEquals(Row.PluginInstall(moonlight), settingsFocus(opened))
+        assertEquals(RowText("Check again", "Not available yet"), rowText(Row.PluginInstall(moonlight), model))
+        assertEquals(RowControl.Value("Not available yet", opens = true), rowControl(Row.PluginInstall(moonlight), model))
+        assertEquals(Effect.CheckPluginRelease(moonlight), reduce(opened, Meaning.Activate).second)
+        val unavailable = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Unavailable)))
+        assertEquals(RowControl.Value("Unavailable", attention = true, opens = true), rowControl(Row.PluginInstall(moonlight), unavailable))
         val ready = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready)))
         val actionable = reduce(ready.onSetting(Row.SettingsTile(catalogPage)), Meaning.Activate).first
         assertEquals(Row.PluginInstall(moonlight), settingsFocus(actionable))
@@ -145,8 +153,18 @@ class ApkPluginSettingsTest {
         val page = reduce(model, Meaning.Activate).first
         assertEquals(Row.PluginInstall(moonlight), settingsFocus(page))
         assertEquals(Effect.InstallPlugin(moonlight), reduce(page, Meaning.Activate).second)
-        val checking = page.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Checking)))
-        assertNull(reduce(checking, Meaning.Activate).second)
+        // Nothing while a check, download or install is under way, and no way-in mark either.
+        for (busy in listOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)) {
+            val running = page.copy(pluginCatalogs = catalogs(PluginCatalogSetting(busy, progress = 40)))
+            assertNull(reduce(running, Meaning.Activate).second)
+            assertFalse((rowControl(Row.PluginInstall(moonlight), running) as RowControl.Value).opens)
+        }
+        assertEquals(RowText("Installing", "40%"), rowText(Row.PluginInstall(moonlight),
+            page.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Downloading, progress = 40)))))
+        // A failure says why under the row, and A tries again.
+        val failed = page.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed, detail = ApkPluginCopy.downloadFailed)))
+        assertEquals(ApkPluginCopy.downloadFailed, settingsRowCaption(Row.PluginInstall(moonlight), failed))
+        assertEquals(Effect.InstallPlugin(moonlight), reduce(failed, Meaning.Activate).second)
     }
 
     @Test fun successfulInstallAndDiscoveryInEitherOrderOpenSharingWithoutStealingLaterFocus() {
@@ -193,6 +211,18 @@ class ApkPluginSettingsTest {
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin.copy(packageName = moonlight)))
         assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true), model.pluginCatalog(moonlight))
         assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = false), PickerModel(count = 4, rowsPerPage = 1).pluginCatalog(moonlight))
+    }
+
+    @Test fun onlyAPluginSignedAsItsRegistryEntryPinsReadsVerified() {
+        val signer = PluginRegistry.moonlight.signers.single()
+        val release = plugin.copy(packageName = moonlight, fingerprint = "36:f6:88:30", signers = setOf(signer))
+        assertTrue(release.verified)
+        assertEquals(PluginFact("Signer", "Verified · 36:f6:88:30", verified = true),
+            pluginFacts(moonlight, PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(release)))[2])
+        assertFalse(release.copy(signers = setOf(signer, "00".repeat(32))).verified)
+        assertFalse(release.copy(signers = emptySet()).verified)
+        // A debug build has no entry of its own, so it shows its fingerprint alone.
+        assertFalse(release.copy(packageName = "$moonlight.debug").verified)
     }
 
     @Test fun onlyRegistryPluginsAndTheirDebugBuildsSayWhatTheyDo() {

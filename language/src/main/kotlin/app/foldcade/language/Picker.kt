@@ -889,14 +889,10 @@ data class Hold(
     val orderBefore: List<Int>,
 )
 
-enum class PluginInfoField { Version, Package, Signer }
-
 sealed interface Row {
-    data class PluginInfo(val packageName: String, val field: PluginInfoField) : Row
     data class PluginGrant(val packageName: String, val scope: String) : Row
     data class PluginRouting(val packageName: String) : Row
     data class PluginInstall(val packageName: String) : Row
-    data class PluginCheck(val packageName: String) : Row
     data object IconTheme : Row
     data object Theme : Row
     data object Background : Row
@@ -1747,19 +1743,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
-    is Row.PluginInfo -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }.let { plugin -> when (row.field) {
-        PluginInfoField.Version -> RowText(ApkPluginCopy.version, plugin?.version)
-        PluginInfoField.Package -> RowText(ApkPluginCopy.packageName, plugin?.packageName)
-        PluginInfoField.Signer -> RowText(ApkPluginCopy.signer, plugin?.fingerprint)
-    } }
     is Row.PluginGrant -> RowText(ApkPluginCopy.pairedComputers)
     is Row.PluginRouting -> RowText(ApkPluginCopy.useForMoonlight)
-    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { catalog ->
-        RowText(if (catalog.status == PluginCatalogStatus.NeedsPermission) ApkPluginCopy.allowInstalls
-            else if (catalog.installed) ApkPluginCopy.update else ApkPluginCopy.install,
-            ApkPluginCopy.installValue(catalog).takeUnless { catalog.canInstall })
-    }
-    is Row.PluginCheck -> RowText(if (model.pluginCatalog(row.packageName).installed) ApkPluginCopy.check else ApkPluginCopy.checkAgain)
+    is Row.PluginInstall -> ApkPluginCopy.action(model.pluginCatalog(row.packageName)).let { RowText(it.label, it.value) }
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.keySaved else Copy.noKey)
     // Unpaired, the computer's one row pairs it; paired, it is the switch for its games.
     is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }.let { host ->
@@ -2960,7 +2946,7 @@ private fun applySettings(
                 val (next, effect) = activateRow(model.copy(panel = standIn), standIn, only, current.screen)
                 return next.copy(panel = null, settings = current, focus = model.focus) to effect
             }
-            if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = settingsInnerFirstRow(row.page, model))) to pluginPageCheck(row.page, model)
+            if (row is Row.SettingsTile) return model.copy(settings = current.copy(inner = row.page, row = 0)) to pluginPageCheck(row.page, model)
             if (row is Row.RommConnection) return model.copy(settings = current.copy(inner = SettingsInner.Romm, row = 0)) to null
             // Back from Set up saves returns to this row.
             if (row == Row.SaveSetup) return model.openSaveSetup(current.screen, settings = current) to null
@@ -3139,15 +3125,20 @@ private fun activateRow(
             ) to Effect.OpenArtKey
         }
         // Pairing is asked on the computer, so A only starts it; forgetting asks here first.
-        is Row.PluginInfo -> model.copy(panel = panel) to null
         is Row.PluginGrant -> model.copy(panel = panel) to model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let {
             Effect.SetPluginGrant(row.packageName, row.scope, row.scope !in it.granted)
         }
         is Row.PluginRouting -> model.copy(panel = panel) to model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let {
             Effect.SetPluginRouting(row.packageName, !it.useForMoonlight)
         }
-        is Row.PluginInstall -> model.copy(panel = panel) to Effect.InstallPlugin(row.packageName).takeIf { model.pluginCatalog(row.packageName).canInstall }
-        is Row.PluginCheck -> model.copy(panel = panel) to Effect.CheckPluginRelease(row.packageName).takeUnless { model.pluginCatalog(row.packageName).busy }
+        // A release to take installs it; otherwise A asks again. Nothing while one is under way.
+        is Row.PluginInstall -> model.copy(panel = panel) to model.pluginCatalog(row.packageName).let { catalog ->
+            when {
+                catalog.canInstall -> Effect.InstallPlugin(row.packageName)
+                catalog.busy -> null
+                else -> Effect.CheckPluginRelease(row.packageName)
+            }
+        }
         is Row.StreamHost -> model.streamHosts.firstOrNull { it.key == row.key }?.let { host ->
             if (host.paired) model.copy(panel = panel, dialog = forgetHostDialog(host.name, host.key, screen)) to null
             else model.copy(panel = panel) to Effect.PairStreamHost(host.key)

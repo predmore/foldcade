@@ -307,15 +307,14 @@ private fun folderEmpty(folder: LibraryFolder): Boolean = folder.empty && !folde
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
         listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
-    is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName), Row.PluginCheck(inner.packageName))
+    // One row installs, or checks again while there is nothing to take.
+    is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName))
+    // What it may do, then where its games open, then its release. What it is ([pluginFacts]) is no row.
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
-            if (PluginRegistry.source(plugin.packageName) != null) addAll(listOf(Row.PluginInstall(plugin.packageName), Row.PluginCheck(plugin.packageName)))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
+            if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
         }
     }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
@@ -331,11 +330,15 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
 }
 
-/** The catalog's unavailable Install is a status, so opening the page starts on Check again. */
-fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
-    val rows = settingsInnerRows(inner, model)
-    val first = rows.firstOrNull()
-    return if (first is Row.PluginInstall && !model.pluginCatalog(first.packageName).canInstall) rows.indexOfFirst { it is Row.PluginCheck }.coerceAtLeast(0) else 0
+/**
+ * The line a settings row carries under its name, inside its highlight: what a switch allows,
+ * or why an action stopped. Most rows need none.
+ */
+fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
+    is Row.PluginGrant -> ApkPluginCopy.consent.takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
+    is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
+    is Row.PluginInstall -> ApkPluginCopy.actionCaption(model.pluginCatalog(row.packageName))
+    else -> null
 }
 
 /**
@@ -606,9 +609,10 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     // Paired, a switch A turns off; unpaired, a way in to the pairing code.
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
-    is Row.PluginCheck -> RowControl.Opens
-    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { if (it.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(it)) }
-    is Row.PluginInfo -> value?.let { RowControl.Value(it) } ?: RowControl.None
+    is Row.PluginInstall -> ApkPluginCopy.action(model.pluginCatalog(row.packageName)).let { action ->
+        action.value?.let { RowControl.Value(it, attention = action.attention, opens = !model.pluginCatalog(row.packageName).busy, healthy = action.healthy) }
+            ?: RowControl.Opens
+    }
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.
     Row.SyncLibrary -> librarySyncValue(model)?.let { RowControl.Value(it, attention = it == Copy.rommUnreachable) } ?: RowControl.None

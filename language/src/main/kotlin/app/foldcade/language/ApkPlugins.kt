@@ -4,7 +4,12 @@ package app.foldcade.language
 data class ApkPluginSetting(
     val packageName: String, val activity: String, val label: String, val version: String, val fingerprint: String,
     val supported: Boolean, val scopes: Set<String>, val granted: Set<String>, val useForMoonlight: Boolean,
-)
+    /** The SHA-256 of each certificate the installed APK is signed with. */
+    val signers: Set<String> = emptySet(),
+) {
+    /** Signed exactly as its [PluginRegistry] entry pins, as an install from the registry is. */
+    val verified: Boolean get() = signers.isNotEmpty() && PluginRegistry.source(packageName)?.signers == signers
+}
 
 /**
  * A plugin Foldcade can install and update from its GitHub releases. The registry names trusted
@@ -108,8 +113,13 @@ object ApkPluginCopy {
     const val check = "Check for updates"
     const val install = "Install"
     const val update = "Update"
+    const val installing = "Installing"
+    const val updating = "Updating"
     const val allowInstalls = "Allow installs"
     const val unsupported = "Foldcade does not support this plugin’s platform yet."
+
+    /** The signer of a plugin signed as its registry entry pins. */
+    const val verified = "Verified"
 
     /** A debug build's tile, so it reads apart from the release beside it. */
     fun debugName(name: String) = "$name Debug"
@@ -120,28 +130,68 @@ object ApkPluginCopy {
     const val installFailed = "Installation did not finish. Try again."
     const val installDeclined = "Installation canceled."
 
-    fun consent(label: String): String = "$label can see your paired computers and stream the games you start in Foldcade. It can also quit games on them. Your pairing key stays in Foldcade."
+    /** Under the sharing switch: everything the switch allows, in one breath. */
+    const val consent = "It can stream and quit games on your paired computers. Your pairing key stays in Foldcade."
 
-    fun installValue(catalog: PluginCatalogSetting): String = when (catalog.status) {
-        PluginCatalogStatus.NotPublished -> "Not available yet"
-        PluginCatalogStatus.Unavailable -> "Unavailable"
-        else -> status(catalog)
+    /**
+     * The one row that installs, updates, or checks: what A does, and the state on its right.
+     * A plugin that is current offers the check; one with a release to take offers that.
+     */
+    fun action(catalog: PluginCatalogSetting): PluginAction {
+        val take = if (catalog.installed) update else install
+        val check = if (catalog.installed) check else checkAgain
+        return when (catalog.status) {
+            PluginCatalogStatus.Checking -> PluginAction(check, "Checking…")
+            // Installed, with a release that does not say its version: only the download can tell whether it is newer.
+            PluginCatalogStatus.Ready -> PluginAction(take, catalog.latest)
+            PluginCatalogStatus.UpdateAvailable -> PluginAction(update, catalog.latest, fresh = true)
+            PluginCatalogStatus.NotPublished -> PluginAction(check, "Not available yet")
+            PluginCatalogStatus.Unavailable -> PluginAction(check, "Unavailable", attention = true)
+            PluginCatalogStatus.Downloading -> PluginAction(if (catalog.installed) updating else installing, catalog.progress?.let { "$it%" } ?: "Downloading…")
+            PluginCatalogStatus.Installing -> PluginAction(if (catalog.installed) updating else installing, "Waiting for Android…")
+            // Just installed: its installed version is the one this check took.
+            PluginCatalogStatus.Installed -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
+            PluginCatalogStatus.Current -> if (catalog.installed) PluginAction(check, "Up to date", healthy = true) else PluginAction(install, catalog.latest)
+            PluginCatalogStatus.NeedsPermission -> PluginAction(allowInstalls, null)
+            PluginCatalogStatus.Failed -> PluginAction(take, "Didn’t finish", attention = true)
+        }
     }
 
-    fun status(catalog: PluginCatalogSetting): String = catalog.detail ?: when (catalog.status) {
-        PluginCatalogStatus.Checking -> "Checking release…"
-        // Installed, with a release that does not say its version: only the download can tell whether it is newer.
-        PluginCatalogStatus.Ready -> if (catalog.installed) catalog.latest?.let { "Latest release · $it" } ?: "Latest release available" else "Ready to install"
-        PluginCatalogStatus.UpdateAvailable -> catalog.latest?.let { "Update available · $it" } ?: "Update available"
-        PluginCatalogStatus.NotPublished -> "Not published yet"
-        PluginCatalogStatus.Unavailable -> "Release unavailable. Try again later."
-        PluginCatalogStatus.Downloading -> catalog.progress?.let { "Downloading · $it%" } ?: "Downloading…"
-        PluginCatalogStatus.Installing -> "Waiting for Android…"
-        PluginCatalogStatus.Installed -> "Installed"
-        PluginCatalogStatus.Current -> "Up to date"
+    /** Under the action row: why it stopped, or what Android needs first. */
+    fun actionCaption(catalog: PluginCatalogSetting): String? = when (catalog.status) {
         PluginCatalogStatus.NeedsPermission -> unknownSources
-        PluginCatalogStatus.Failed -> installFailed
+        PluginCatalogStatus.Failed -> catalog.detail ?: installFailed
+        else -> null
     }
+}
+
+/** [label] says what A does; [value] is the state on the right. [fresh] marks a release newer than the one installed. */
+data class PluginAction(
+    val label: String,
+    val value: String?,
+    val attention: Boolean = false,
+    val healthy: Boolean = false,
+    val fresh: Boolean = false,
+)
+
+/** One of a plugin's facts under its rows: what it is, not something to change. */
+data class PluginFact(val label: String, val value: String, val verified: Boolean = false)
+
+/** A plugin page's facts: the version installed, its package, and who signed it. */
+fun pluginFacts(packageName: String, model: PickerModel): List<PluginFact> {
+    val plugin = model.apkPlugins.firstOrNull { it.packageName == packageName } ?: return emptyList()
+    return listOf(
+        PluginFact(ApkPluginCopy.version, plugin.version),
+        PluginFact(ApkPluginCopy.packageName, plugin.packageName),
+        if (plugin.verified) PluginFact(ApkPluginCopy.signer, "${ApkPluginCopy.verified} · ${plugin.fingerprint}", verified = true)
+        else PluginFact(ApkPluginCopy.signer, plugin.fingerprint),
+    )
+}
+
+/** A plugin tile's badge: an update waiting, or nothing. */
+fun pluginTileFresh(inner: SettingsInner, model: PickerModel): Boolean {
+    val packageName = (inner as? SettingsInner.ApkPlugin)?.packageName ?: return false
+    return PluginRegistry.source(packageName) != null && model.pluginCatalog(packageName).status == PluginCatalogStatus.UpdateAvailable
 }
 
 /**
@@ -157,7 +207,7 @@ fun afterApkPluginInstall(previous: PickerModel, next: PickerModel): PickerModel
     if (settingsCategories(next).getOrNull(page.category) != SettingsCategory.Plugins) return next
     val inner = SettingsInner.ApkPlugin(source.packageName)
     if (page.inner != SettingsInner.PluginCatalog(source.packageName)) return next
-    return next.copy(settings = page.copy(inner = inner, row = settingsInnerFirstRow(inner, next), onRows = true))
+    return next.copy(settings = page.copy(inner = inner, row = 0, onRows = true))
 }
 
 /** Opening a registry plugin's page asks for its latest release, unless a check is already under way. */

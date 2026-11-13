@@ -6,6 +6,8 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -731,6 +733,9 @@ private val VALUE_CHECK = 22.dp
 /** Height of one menu row, the same for every row so the highlight keeps one size. */
 private val MENU_ROW_HEIGHT = 52.dp
 
+/** Above and below a captioned row's two lines. */
+private val CAPTION_PAD = 10.dp
+
 /**
  * One menu row: its art, its words, and on the right what it does. That is a switch,
  * a choice, a way in, a value, or the key that runs it. The words brighten and the
@@ -752,12 +757,18 @@ internal fun MenuRow(
     height: Dp = MENU_ROW_HEIGHT,
     /** A place's own symbol, as a collection's glyph in its colour, in place of [icon]. */
     place: PlaceSymbol? = null,
+    /**
+     * A line or two under the words, inside the row and its highlight: what a switch allows,
+     * or why an action stopped. The row grows to hold it. Not for a choice row.
+     */
+    caption: String? = null,
 ) {
     val theme = LocalFoldTheme.current.theme
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val lift = bouncy(if (focused) 1f else 0f, scale)
     Row(
-        modifier.height(height).padding(start = 14.dp, end = 14.dp),
+        (if (caption == null) modifier.height(height) else modifier.heightIn(min = height).padding(vertical = CAPTION_PAD))
+            .padding(start = 14.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -787,7 +798,18 @@ internal fun MenuRow(
             )
         }
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
-        if (control !is RowControl.Choice) labelText(Modifier.weight(1f))
+        if (control !is RowControl.Choice) {
+            if (caption == null) labelText(Modifier.weight(1f))
+            else Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                labelText(Modifier)
+                BasicText(
+                    caption,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = labelStyle.copy(color = theme.muted, fontSize = theme.style.type.hint, fontWeight = theme.style.type.bodyWeight),
+                )
+            }
+        }
         when (control) {
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
             is RowControl.Check -> CheckMark(control.on, focused, scale, control.some)
