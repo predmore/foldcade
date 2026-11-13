@@ -106,6 +106,8 @@ fun settingsHints(model: PickerModel): List<HintKey> {
         row == Row.Version -> HintKey(confirm, SettingsCopy.copy)
         row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
         row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
+        // Android owns these switches: A opens its access page, it does not flip them here.
+        row == Row.FindGames || row == Row.FindSaves -> HintKey(confirm, SettingsCopy.open)
         row == Row.MusicVolume -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
         else -> when (val control = rowControl(row, model)) {
             is RowControl.Toggle -> HintKey(confirm, if (control.on) SettingsCopy.turnOff else SettingsCopy.turnOn)
@@ -434,7 +436,8 @@ fun settingsShown(page: SettingsPage, model: PickerModel): Pair<SettingsPage, Li
     val category = categories[page.category.coerceIn(0, categories.lastIndex)]
     page.inner?.let { inner ->
         val rows = settingsInnerRows(inner, model)
-        if (rows.isNotEmpty()) return page to rows
+        // An installed plugin with nothing to switch still has its page: its head and its facts.
+        if (rows.isNotEmpty() || (inner is SettingsInner.ApkPlugin && model.apkPlugins.any { it.packageName == inner.packageName })) return page to rows
     }
     return page.copy(inner = null) to settingsRows(category, model)
 }
@@ -585,7 +588,8 @@ fun retainSettingsShelf(previous: PickerModel, next: PickerModel): PickerModel {
     if (was != null && was.onRows && page.onRows && was.inner == null && page.inner == null &&
         was.category == page.category && was.row == page.row
     ) {
-        val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() }
+        // A tile, or a plugin's card: either keeps the focus when the list changes around it.
+        val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() || it is Row.SettingsTile }
         val rows = settingsShown(page, next).second
         // A folder just added takes the focus on purpose ([withFolders]), even where its tile lands on the old tile's place.
         val added = (rows.getOrNull(page.row) as? Row.SettingsTile)?.page.let { it is SettingsInner.Folder && previous.folders.none { folder -> folder.uri == it.uri } }

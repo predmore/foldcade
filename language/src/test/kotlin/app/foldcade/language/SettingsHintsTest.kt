@@ -31,6 +31,9 @@ class SettingsHintsTest {
         assertEquals(listOf(HintKey(PromptKey.DpadSides, "Change"), HintKey(b, "Back")), settingsHints(look))
         val labels = on(base, SettingsCategory.Personalization, row = settingsRows(SettingsCategory.Personalization, base).indexOf(Row.ButtonLabels))
         assertEquals(listOf(HintKey(a, "Set up"), HintKey(b, "Back")), settingsHints(labels))
+        // Android owns the all-files switch: A opens its page, so the legend says Open, not Turn on.
+        val library = on(base, SettingsCategory.Library, row = settingsRows(SettingsCategory.Library, base).indexOf(Row.FindGames))
+        assertEquals(listOf(HintKey(a, "Open"), HintKey(b, "Back")), settingsHints(library))
         val plugins = on(base, SettingsCategory.Plugins, row = 0)
         assertEquals(listOf(HintKey(a, "Open"), HintKey(b, "Back")), settingsHints(plugins))
     }

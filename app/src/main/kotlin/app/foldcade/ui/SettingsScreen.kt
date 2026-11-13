@@ -484,7 +484,16 @@ private fun PluginListingRow(entry: PluginListing, art: ShelfArt, focused: Boole
                         val check = themeIcon("badge.check", R.drawable.ic_badge_check)
                         Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(22.dp))
                     }
-                    BasicText(value, style = style(if (entry.attention) theme.style.colors.attention else theme.muted, theme.style.type.menuRow, theme), maxLines = 1)
+                    // A release to install wears the cloud its page's Install row does, so it reads as an action.
+                    if (entry.offer) {
+                        val cloud = themeIcon(R.drawable.symbol_cloud)
+                        Image(cloud.painter, contentDescription = null, colorFilter = cloud.tint(theme.onBackground), modifier = Modifier.size(24.dp))
+                    }
+                    BasicText(value, style = style(when {
+                        entry.attention -> theme.style.colors.attention
+                        entry.offer -> theme.onBackground
+                        else -> theme.muted
+                    }, theme.style.type.menuRow, theme), maxLines = 1)
                 }
             }
         }

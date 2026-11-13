@@ -226,17 +226,23 @@ data class PluginListing(
     val healthy: Boolean = false,
     /** Signed as its registry entry pins: the card wears the check its page's chip does. */
     val verified: Boolean = false,
+    /** A release it can install: the value wears the download's cloud, as an action rather than a state. */
+    val offer: Boolean = false,
 )
 
 fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = when (inner) {
     is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.let { source ->
         val action = ApkPluginCopy.action(model.pluginCatalog(inner.packageName))
-        PluginListing(source.name, source.detail, if (action.label == ApkPluginCopy.install) ApkPluginCopy.install else action.value, attention = action.attention)
+        // Named as its page and Android's install dialog name it, so the card and what it opens agree.
+        val offer = action.label == ApkPluginCopy.install
+        PluginListing(source.label, source.detail, if (offer) ApkPluginCopy.install else action.value, attention = action.attention, offer = offer)
     }
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
-        val name = settingsTileLabel(inner, model)
+        // Named as its page is; a debug build says so beside its version, as its page's chip does.
+        val name = settingsInnerTitle(inner, model)
+        val debug = PluginRegistry.source(plugin.packageName) == null && PluginRegistry.sourceOrDebug(plugin.packageName) != null
         // The version's name alone; its build number is in the page's facts.
-        val line = plugin.version.substringBefore(" (")
+        val line = listOfNotNull(plugin.version.substringBefore(" ("), ApkPluginCopy.debug.takeIf { debug }).joinToString(" · ")
         when {
             !plugin.supported -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.notSupported, attention = true)
             // A release waiting is the news; then a plugin with nothing shared, which can do nothing yet.
