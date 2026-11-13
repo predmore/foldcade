@@ -237,7 +237,7 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
         // Named as its page and Android's install dialog name it, so the card and what it opens agree.
         // A failed attempt says so; only a release waiting to be taken is an offer.
         val offer = action.label == ApkPluginCopy.install && catalog.status != PluginCatalogStatus.Failed
-        PluginListing(source.label, source.detail, if (offer) ApkPluginCopy.install else action.value, attention = action.attention, offer = offer)
+        PluginListing(source.label, source.detail, if (offer) ApkPluginCopy.install else action.value ?: action.label, attention = action.attention, offer = offer)
     }
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         // Named as its page is; a debug build says so beside its version, as its page's chip does.
@@ -252,9 +252,10 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
             PluginRegistry.source(plugin.packageName) != null && ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).fresh ->
                 PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.updateAvailable, fresh = true)
             PluginRegistry.source(plugin.packageName) != null && model.pluginCatalog(plugin.packageName).status in
-                setOf(PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing, PluginCatalogStatus.Failed) ->
+                setOf(PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing, PluginCatalogStatus.Failed, PluginCatalogStatus.NeedsPermission) ->
                 ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
-                    PluginListing(name, line, verified = plugin.verified, value = action.value, attention = action.attention)
+                    // Allow installs has no value: the card names the step itself.
+                    PluginListing(name, line, verified = plugin.verified, value = action.value ?: action.label, attention = action.attention)
                 }
             plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.off)
             PluginRegistry.source(plugin.packageName) != null -> ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
@@ -262,6 +263,8 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
                     action.healthy -> PluginListing(name, line, verified = plugin.verified, value = action.value, healthy = true)
                     // Only a failed install asks for the player; a check that could not reach the release does not.
                     action.attention && model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Failed -> PluginListing(name, line, verified = plugin.verified, value = action.value, attention = true)
+                    // A check under way says so; Ready, Not published and a check that could not reach the release say nothing.
+                    model.pluginCatalog(plugin.packageName).status == PluginCatalogStatus.Checking -> PluginListing(name, line, verified = plugin.verified, value = action.value)
                     else -> PluginListing(name, line, verified = plugin.verified, value = null)
                 }
             }

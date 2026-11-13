@@ -260,6 +260,13 @@ class ApkPluginSettingsTest {
         assertEquals("40%", pluginListing(SettingsInner.ApkPlugin(moonlight), downloading)!!.value)
         val failed = off.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed, installed = true)))
         assertEquals(PluginListing("Foldcade Moonlight", "12.2-foldcade.3", "Didn’t finish", attention = true, verified = true), pluginListing(SettingsInner.ApkPlugin(moonlight), failed))
+        // Android's permission step and a check under way are named, never left blank or read as Off.
+        val asking = off.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.NeedsPermission, installed = true)))
+        assertEquals("Allow installs", pluginListing(SettingsInner.ApkPlugin(moonlight), asking)!!.value)
+        val checking = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true)))
+        assertEquals("Checking…", pluginListing(SettingsInner.ApkPlugin(moonlight), checking)!!.value)
+        assertEquals("Allow installs", pluginListing(catalogPage, PickerModel(count = 4, rowsPerPage = 1,
+            pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.NeedsPermission))))!!.value)
         // A failed first install is no fresh offer.
         val failedCatalog = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed)))
         assertEquals(PluginListing("Foldcade Moonlight", PluginRegistry.moonlight.detail, "Didn’t finish", attention = true), pluginListing(catalogPage, failedCatalog))

@@ -258,7 +258,10 @@ internal class ApkPluginCatalog(
         }
     }
 
-    fun completed(status: Int) {
+    /** [sessionId] is the attempt Android reports on; a late report on an older attempt changes nothing. */
+    fun completed(status: Int, sessionId: Int) {
+        val current = session
+        if (current != null && current != sessionId) return
         session = null
         quietAttempt = false
         scope.launch {
@@ -324,15 +327,16 @@ class ApkPluginInstallActivity : Activity() {
         super.onCreate(savedInstanceState)
         val catalog = (application as FoldcadeApp).apkPluginCatalogs[intent.getStringExtra(EXTRA_PLUGIN_PACKAGE)]
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val sessionId = intent.getIntExtra("session", -1)
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             val confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
             if (confirmation != null) {
                 try { startActivity(confirmation) } catch (_: RuntimeException) {
-                    catalog?.completed(PackageInstaller.STATUS_FAILURE)
+                    catalog?.completed(PackageInstaller.STATUS_FAILURE, sessionId)
                 }
-            } else catalog?.completed(PackageInstaller.STATUS_FAILURE)
+            } else catalog?.completed(PackageInstaller.STATUS_FAILURE, sessionId)
         } else {
-            catalog?.completed(status)
+            catalog?.completed(status, sessionId)
         }
         finish()
     }
