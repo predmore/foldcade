@@ -208,6 +208,13 @@ class ApkPluginSettingsTest {
         val arriving = PluginCatalogSetting(PluginCatalogStatus.Installed, installed = false)
         assertFalse(arriving.canInstall)
         assertEquals(PluginAction("Check for updates", "Up to date", healthy = true), ApkPluginCopy.action(arriving))
+        // A on the row, and opening the page, wait for the package rather than checking and re-offering it.
+        val moonlightArriving = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(arriving))
+            .onSetting(Row.SettingsTile(catalogPage))
+        val page = reduce(moonlightArriving, Meaning.Activate)
+        assertNull(page.second)
+        assertNull(reduce(page.first, Meaning.Activate).second)
+        assertEquals(listOf(HintKey(PromptKey.FaceB, "Back")), settingsHints(page.first))
         // A removal re-offers the release (the catalog moves Installed to Ready), and Current without the package installs.
         assertTrue(PluginCatalogSetting(PluginCatalogStatus.Current, installed = false).canInstall)
     }

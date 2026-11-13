@@ -100,7 +100,7 @@ fun settingsHints(model: PickerModel): List<HintKey> {
     val back = HintKey(backKey, Copy.back)
     val row = settingsFocus(model) ?: return listOf(back)
     val action: HintKey? = when {
-        row is Row.PluginInstall -> model.pluginCatalog(row.packageName).takeUnless { it.busy }
+        row is Row.PluginInstall -> model.pluginCatalog(row.packageName).takeUnless { it.busy || it.arriving }
             ?.let { HintKey(confirm, ApkPluginCopy.action(it).label) }
         row.destructive() -> HintKey(confirm, Copy.hold)
         row == Row.Version -> HintKey(confirm, SettingsCopy.copy)

@@ -97,6 +97,12 @@ data class PluginCatalogSetting(
     val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable, PluginCatalogStatus.Installed) &&
         !(installed && status == PluginCatalogStatus.Current)
     val busy: Boolean get() = status in setOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)
+
+    /**
+     * Installed, but Android has not reported the package yet. A check now would read it as missing and
+     * offer it again, so the release row waits, as it does while busy, until discovery sees it.
+     */
+    val arriving: Boolean get() = status == PluginCatalogStatus.Installed && !installed
 }
 
 /** [packageName]'s catalog state. A registry plugin no check has reported on yet is still checking. */
@@ -298,6 +304,6 @@ fun pluginPageCheck(inner: SettingsInner, model: PickerModel): Effect? {
         is SettingsInner.ApkPlugin -> inner.packageName
         else -> return null
     }
-    if (PluginRegistry.source(packageName) == null || model.pluginCatalog(packageName).busy) return null
+    if (PluginRegistry.source(packageName) == null || model.pluginCatalog(packageName).let { it.busy || it.arriving }) return null
     return Effect.CheckPluginRelease(packageName, onlyIfStale = true)
 }

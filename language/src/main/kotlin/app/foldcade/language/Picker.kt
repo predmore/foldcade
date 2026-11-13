@@ -3135,7 +3135,7 @@ private fun activateRow(
         is Row.PluginInstall -> model.copy(panel = panel) to model.pluginCatalog(row.packageName).let { catalog ->
             when {
                 catalog.canInstall -> Effect.InstallPlugin(row.packageName)
-                catalog.busy -> null
+                catalog.busy || catalog.arriving -> null
                 else -> Effect.CheckPluginRelease(row.packageName)
             }
         }

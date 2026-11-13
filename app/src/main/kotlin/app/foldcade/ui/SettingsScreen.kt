@@ -397,7 +397,8 @@ private fun PageHead(art: ShelfArt, title: String, detail: String?, chips: List<
         Box(Modifier.size(HEADER_ART), contentAlignment = Alignment.Center) {
             TileArt(art, lit = 1f, off = off)
         }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // The width beside the art, so a long name wraps there and its chip stays inside the card.
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // A long name, such as a plugin's or a folder's, takes a second line rather than losing its end.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 BasicText(
