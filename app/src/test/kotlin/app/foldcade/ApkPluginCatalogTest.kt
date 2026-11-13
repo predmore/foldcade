@@ -81,6 +81,12 @@ class ApkPluginCatalogTest {
     @Test fun reassessingChangesAStatusOnlyForNews() {
         val release = PluginRelease("v2", "https://example", 1, versionCode = 10)
         fun shown(status: PluginCatalogStatus) = PluginCatalogSetting(status)
+        // An install whose Android session went without a report: the version installed says whether it took.
+        assertEquals(PluginCatalogStatus.Failed, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release, sessionGone = true))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 10, true, release, sessionGone = true))
+        assertEquals(PluginCatalogStatus.Failed, reassessedStatus(shown(PluginCatalogStatus.Installing), null, null, true, release, sessionGone = true))
+        // While the session is there, the player is still deciding.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release))
         // Nothing new: an install result, Not published, and a status already current all stay.
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Failed), 9, 9, true, release))
         assertNull(reassessedStatus(shown(PluginCatalogStatus.NotPublished), null, null, true, null))

@@ -76,7 +76,9 @@ internal fun releaseStatus(release: PluginRelease?, installedCode: Long?): Plugi
  * the one the status was worked out against (installed, updated or removed some other way).
  * That keeps an install result and Not published. Installed stays while the plugin is there,
  * so discovery can still move on to its consent, however late Android reports the package.
- * A running check, download or install is never interrupted.
+ * A running check, download or install is never interrupted, except an install whose Android
+ * session has gone without a word: Android does not always report a declined confirmation, so
+ * the version installed then says whether it took.
  */
 internal fun reassessedStatus(
     current: PluginCatalogSetting,
@@ -84,7 +86,10 @@ internal fun reassessedStatus(
     installedCode: Long?,
     installsAllowed: Boolean,
     release: PluginRelease?,
+    sessionGone: Boolean = false,
 ): PluginCatalogStatus? = when {
+    current.status == PluginCatalogStatus.Installing && sessionGone ->
+        if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else PluginCatalogStatus.Failed
     current.busy -> null
     current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
@@ -120,6 +125,8 @@ internal class ApkPluginCatalog(
     @Volatile private var checkedAt: Long? = null
     /** The installed versionCode [state] was worked out against. */
     private var assessedCode: Long? = null
+    /** The Android install session waiting on the player's confirmation, until it reports or goes. */
+    @Volatile private var session: Int? = null
     private fun installedCode(): Long? = try {
         context.packageManager.getPackageInfo(source.packageName, 0).longVersionCode
     } catch (_: PackageManager.NameNotFoundException) { null }
@@ -170,8 +177,13 @@ internal class ApkPluginCatalog(
     fun reassess() {
         if (work?.isActive == true) return
         val code = installedCode()
-        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release)
-            ?.let { showFor(it, code) }
+        val pending = session
+        val gone = state.status == PluginCatalogStatus.Installing && pending != null &&
+            context.packageManager.packageInstaller.getSessionInfo(pending) == null
+        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release, gone)?.let {
+            if (gone) session = null
+            showFor(it, code, detail = ApkPluginCopy.installDeclined.takeIf { _ -> gone && it == PluginCatalogStatus.Failed })
+        }
     }
 
     fun install() {
@@ -189,8 +201,22 @@ internal class ApkPluginCatalog(
                 }
                 staged.parentFile?.mkdirs()
                 show(PluginCatalogStatus.Downloading)
+                // Each whole percent fills the row a little more; the release's own size stands in for a missing length.
+                var shown = -1
                 publicClient().use { http ->
-                    http.download(latest.url, staged, MAX_PLUGIN_APK_BYTES) { _, _ -> }
+                    http.download(latest.url, staged, MAX_PLUGIN_APK_BYTES) { read, total ->
+                        val size = total ?: latest.bytes
+                        val percent = if (size > 0) (read * 100 / size).toInt().coerceIn(0, 100) else return@download
+                        if (percent != shown) {
+                            shown = percent
+                            scope.launch(Dispatchers.Main.immediate) {
+                                if (state.status == PluginCatalogStatus.Downloading) {
+                                    state = state.copy(progress = percent)
+                                    publish(state)
+                                }
+                            }
+                        }
+                    }
                 }
                 require(staged.length() == latest.bytes) { "Incomplete release asset" }
                 failureMessage = ApkPluginCopy.verificationFailed
@@ -219,6 +245,7 @@ internal class ApkPluginCatalog(
     }
 
     fun completed(status: Int) {
+        session = null
         scope.launch {
             show(when (status) {
                 PackageInstaller.STATUS_SUCCESS -> PluginCatalogStatus.Installed
@@ -255,6 +282,7 @@ internal class ApkPluginCatalog(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 val result = PendingIntent.getActivity(context, id, callback, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+                this.session = id
                 session.commit(result.intentSender)
             }
         } catch (failure: Exception) {

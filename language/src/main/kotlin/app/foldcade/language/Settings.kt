@@ -207,7 +207,7 @@ private fun needsYouFirst(tiles: List<Row>, model: PickerModel): List<Row> {
 /**
  * True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). A plugin is
  * no tile: there are few, and each has a version and a state worth reading, so Plugins lists
- * them as cards ([pluginEntry]), one under another.
+ * them as cards ([pluginListing]), one under another.
  */
 fun Row.settingsTile(): Boolean = (this is Row.SettingsTile && !page.isPlugin()) || this is Row.RommConnection
 

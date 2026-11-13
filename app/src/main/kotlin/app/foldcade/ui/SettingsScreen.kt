@@ -98,11 +98,10 @@ import app.foldcade.language.settingsInnerTitle
 import app.foldcade.language.settingsRows
 import app.foldcade.language.settingsRowCaption
 import app.foldcade.language.pluginFacts
-import app.foldcade.language.pluginTileFresh
 import app.foldcade.language.PluginFact
-import app.foldcade.language.PluginEntry
+import app.foldcade.language.PluginListing
 import app.foldcade.language.PageChip
-import app.foldcade.language.pluginEntry
+import app.foldcade.language.pluginListing
 import app.foldcade.language.settingsInnerChips
 import app.foldcade.language.settingsShown
 import app.foldcade.language.shownShelfFirst
@@ -309,9 +308,9 @@ private fun CardRows(
                     .selectionSlot(slots, index)
                     .keepInView(focused)
                 val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
-                val entry = (row as? Row.SettingsTile)?.page?.let { pluginEntry(it, model) }
+                val entry = (row as? Row.SettingsTile)?.page?.let { pluginListing(it, model) }
                 if (entry != null) {
-                    PluginEntryRow(
+                    PluginListingRow(
                         entry = entry,
                         art = innerArt((row as Row.SettingsTile).page, model),
                         focused = focused,
@@ -344,7 +343,8 @@ private fun CardRows(
                         scale = scale,
                         // Remove fills while held, and shakes when let go early, as a download's does.
                         modifier = (if (!interactive) place else if (row.destructive()) place.holdPress(app, index, screen, onEffect) else place.press(tap))
-                            .then(holdFeedback(model, row, scale)),
+                            .then(holdFeedback(model, row, scale))
+                            .then(downloadFill(model, row, scale)),
                         labelStyle = labelStyle,
                         height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
                         caption = settingsRowCaption(row, model),
@@ -425,7 +425,7 @@ private fun Chip(chip: PageChip) {
  * what needs doing. An update waiting is the one value in focus ink, on a pill, so it reads first.
  */
 @Composable
-private fun PluginEntryRow(entry: PluginEntry, art: ShelfArt, focused: Boolean, scale: Float, modifier: Modifier) {
+private fun PluginListingRow(entry: PluginListing, art: ShelfArt, focused: Boolean, scale: Float, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
     val lift = bouncy(if (focused) 1f else 0f, scale)
@@ -478,7 +478,7 @@ private fun PluginFacts(facts: List<PluginFact>, modifier: Modifier) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(theme.onBackground.copy(alpha = theme.style.settings.borderAlpha)))
         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             facts.forEach { fact ->
-                Column(Modifier.weight(if (fact.label == app.foldcade.language.ApkPluginCopy.packageName) 1.5f else 1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(Modifier.weight(factWeight(fact)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     BasicText(
                         fact.label.uppercase(),
                         style = style(theme.muted, theme.style.type.hint * FACT_LABEL, theme, bold = true).copy(letterSpacing = FACT_TRACKING),
@@ -491,6 +491,13 @@ private fun PluginFacts(facts: List<PluginFact>, modifier: Modifier) {
             }
         }
     }
+}
+
+/** The package is the longest fact and the signer the shortest, so each keeps one line on the Thor's top screen. */
+private fun factWeight(fact: PluginFact): Float = when (fact.label) {
+    app.foldcade.language.ApkPluginCopy.packageName -> 1.5f
+    app.foldcade.language.ApkPluginCopy.version -> 1.4f
+    else -> 0.9f
 }
 
 /** A fact's label is smaller than its value, and tracked out, as a spec sheet's are. */
@@ -539,8 +546,6 @@ private fun ShelfTile(
                 TileArt(inner?.let { innerArt(it, model) } ?: ShelfArt.Mark("cloud"), lit = 1f, off = off)
             }
             settingsTileStatus(row, model)?.let { status -> TileBadge(status, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp)) }
-            // A plugin with a release waiting wears the arrows its update row does.
-            if (inner != null && pluginTileFresh(inner, model)) UpdateBadge(Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp))
         }
         BasicText(
             label,
@@ -754,19 +759,6 @@ private fun TileBadge(status: TileStatus, modifier: Modifier) {
     }
 }
 
-/** An update waiting: the sync arrows in the attention colour, on the same dark disc. */
-@Composable
-private fun UpdateBadge(modifier: Modifier) {
-    val theme = LocalFoldTheme.current.theme
-    val badge = themeIcon(R.drawable.ic_badge_sync)
-    Box(
-        modifier.size(BADGE_SIZE).clip(theme.style.shape.control()).background(theme.background.copy(alpha = theme.style.tile.statusBackingAlpha)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(painter = badge.painter, contentDescription = null, colorFilter = badge.tint(theme.style.colors.attention), modifier = Modifier.size(BADGE_SIZE - 6.dp))
-    }
-}
-
 /** What a tile or a page's head wears. */
 private sealed interface ShelfArt {
     /** A place's lit object, by its `mark.` slot. */
@@ -922,7 +914,7 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     Row.ArtKey -> R.drawable.symbol_art
     is Row.StreamHost -> R.drawable.symbol_pc
     // A plugin's page: its release, the computers it may use, and the games it opens.
-    is Row.PluginInstall -> R.drawable.ic_badge_sync
+    is Row.PluginInstall -> R.drawable.symbol_restart
     is Row.PluginGrant -> R.drawable.symbol_pc
     is Row.PluginRouting -> R.drawable.symbol_moonlight
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
@@ -1041,6 +1033,30 @@ private fun Modifier.holdPress(app: FoldcadeApp, index: Int, screen: HostScreen,
         // A release after the hold is done, before the next tick, completes it here: its effect must run.
         try { tryAwaitRelease() } finally { onEffect(app.shell.setPromptHeld(key, false, app.shell.inputWindow(screen))) }
     })
+}
+
+/**
+ * A plugin's release row fills as its download does, in the hold's ink, and stays full while
+ * Android installs it. The fill drains once the row has its answer.
+ */
+@Composable
+private fun downloadFill(model: PickerModel, row: Row, scale: Float): Modifier {
+    val packageName = (row as? Row.PluginInstall)?.packageName ?: return Modifier
+    val theme = LocalFoldTheme.current.theme
+    val catalog = model.pluginCatalog(packageName)
+    val target = when (catalog.status) {
+        app.foldcade.language.PluginCatalogStatus.Downloading -> (catalog.progress ?: 0) / 100f
+        app.foldcade.language.PluginCatalogStatus.Installing -> 1f
+        else -> 0f
+    }
+    val shown = eased(target, theme.motion.durationFocus, scale)
+    return Modifier.drawBehind {
+        if (shown.value > 0f) drawRoundRect(
+            theme.focus.copy(alpha = theme.style.menu.holdAlpha),
+            size = Size(size.width * shown.value, size.height),
+            cornerRadius = CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()),
+        )
+    }
 }
 
 /** The fill a held row grows while it is held, and the shake when it is let go early. */

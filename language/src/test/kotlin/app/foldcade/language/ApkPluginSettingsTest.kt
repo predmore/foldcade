@@ -110,13 +110,11 @@ class ApkPluginSettingsTest {
         assertEquals(RowText("Update", "12.2-foldcade.2"), rowText(Row.PluginInstall(moonlight), model))
         assertEquals(RowControl.Value("12.2-foldcade.2", opens = true, accent = true), rowControl(Row.PluginInstall(moonlight), model))
         assertEquals(Effect.InstallPlugin(moonlight), reduce(model.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
-        assertTrue(pluginTileFresh(SettingsInner.ApkPlugin(moonlight), model))
         // Current: the same row checks again, and says so with the check.
         val current = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Current, installed = true)))
         assertEquals(RowText("Check for updates", "Up to date"), rowText(Row.PluginInstall(moonlight), current))
         assertEquals(RowControl.Value("Up to date", opens = true, healthy = true), rowControl(Row.PluginInstall(moonlight), current))
         assertEquals(Effect.CheckPluginRelease(moonlight), reduce(current.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
-        assertFalse(pluginTileFresh(SettingsInner.ApkPlugin(moonlight), current))
         // Installed, and the release does not state its versionCode: offer it without claiming it is newer.
         val unhinted = PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true, latest = "12.2-foldcade.2")
         assertEquals(PluginAction("Update", "12.2-foldcade.2"), ApkPluginCopy.action(unhinted))
@@ -168,6 +166,10 @@ class ApkPluginSettingsTest {
         val failed = page.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Failed, detail = ApkPluginCopy.downloadFailed)))
         assertEquals(ApkPluginCopy.downloadFailed, settingsRowCaption(Row.PluginInstall(moonlight), failed))
         assertEquals(Effect.InstallPlugin(moonlight), reduce(failed, Meaning.Activate).second)
+        // Declining Android's dialog is no failure to explain.
+        val declined = PluginCatalogSetting(PluginCatalogStatus.Failed, installed = true, detail = ApkPluginCopy.installDeclined)
+        assertEquals(PluginAction("Update", "Canceled"), ApkPluginCopy.action(declined))
+        assertNull(ApkPluginCopy.actionCaption(declined))
     }
 
     @Test fun successfulInstallAndDiscoveryInEitherOrderOpenSharingWithoutStealingLaterFocus() {
@@ -245,13 +247,19 @@ class ApkPluginSettingsTest {
         val rows = settingsRows(SettingsCategory.Plugins, model)
         // Rows, not tiles: Up and Down walk them, and A opens one.
         assertTrue(rows.none { it.settingsTile() })
-        assertEquals(PluginEntry("Moonlight", "12.2-foldcade.3 · Verified", "Up to date", healthy = true), pluginEntry(SettingsInner.ApkPlugin(moonlight), model))
+        assertEquals(PluginListing("Moonlight", "12.2-foldcade.3 · Verified", "Up to date", healthy = true), pluginListing(SettingsInner.ApkPlugin(moonlight), model))
         // Nothing shared: it can do nothing yet, which is what its card says.
-        assertEquals(PluginEntry("Moonlight Debug", "12.2-foldcade.2", "Off"), pluginEntry(SettingsInner.ApkPlugin(debug.packageName), model))
+        assertEquals(PluginListing("Moonlight Debug", "12.2-foldcade.2", "Off"), pluginListing(SettingsInner.ApkPlugin(debug.packageName), model))
         val update = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.UpdateAvailable, installed = true, latest = "12.3")))
-        assertEquals(PluginEntry("Moonlight", "12.2-foldcade.3 · Verified", "Update available", fresh = true), pluginEntry(SettingsInner.ApkPlugin(moonlight), update))
+        assertEquals(PluginListing("Moonlight", "12.2-foldcade.3 · Verified", "Update available", fresh = true), pluginListing(SettingsInner.ApkPlugin(moonlight), update))
+        // A check that could not reach the release is no news on the card.
+        val unreachable = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Unavailable, installed = true)))
+        assertEquals(PluginListing("Moonlight", "12.2-foldcade.3 · Verified", null), pluginListing(SettingsInner.ApkPlugin(moonlight), unreachable))
+        // An update outranks Off: it is the news, and installing it keeps the switch as it was.
+        val offWithUpdate = update.copy(apkPlugins = listOf(release.copy(granted = emptySet()), debug))
+        assertTrue(pluginListing(SettingsInner.ApkPlugin(moonlight), offWithUpdate)!!.fresh)
         val uninstalled = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready)))
-        assertEquals(PluginEntry("Moonlight", PluginRegistry.moonlight.detail, "Install"), pluginEntry(catalogPage, uninstalled))
+        assertEquals(PluginListing("Moonlight", PluginRegistry.moonlight.detail, "Install"), pluginListing(catalogPage, uninstalled))
         val opened = reduce(uninstalled.copy(settings = SettingsPage(HostScreen.Top, category = settingsCategories(uninstalled).indexOf(SettingsCategory.Plugins), onRows = true)), Meaning.Activate).first
         assertEquals(catalogPage, opened.settings?.inner)
         // Back returns to the card that opened it.
