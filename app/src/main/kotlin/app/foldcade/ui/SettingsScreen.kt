@@ -501,9 +501,15 @@ private fun PluginFacts(facts: List<PageFact>, modifier: Modifier) {
     val theme = LocalFoldTheme.current.theme
     Column(modifier.fillMaxWidth().padding(top = 10.dp, start = 14.dp, end = 14.dp)) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(theme.onBackground.copy(alpha = theme.style.settings.borderAlpha)))
-        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            facts.forEach { fact ->
-                Column(Modifier.weight(factWeight(fact)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // Side by side while they fit; on a narrower card, as the bottom screen's, a fact that
+        // would break moves to the next line whole, so no value is cut mid-word.
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth().padding(top = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            facts.forEachIndexed { index, fact ->
+                Column(Modifier.padding(end = if (index < facts.lastIndex) FACT_GAP else 0.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     BasicText(
                         fact.label.uppercase(),
                         style = style(theme.muted, theme.style.type.hint * FACT_LABEL, theme, bold = true).copy(letterSpacing = FACT_TRACKING),
@@ -511,19 +517,15 @@ private fun PluginFacts(facts: List<PageFact>, modifier: Modifier) {
                     )
                     // Who signed it reads as Verified beside the title; here it is the fingerprint, for the curious.
                     BasicText(fact.value, style = style(theme.onBackground.copy(alpha = FACT_VALUE_ALPHA), theme.style.type.hint, theme),
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
     }
 }
 
-/** The package is the longest fact and the signer the shortest, so each keeps one line on the Thor's top screen. */
-private fun factWeight(fact: PageFact): Float = when (fact.label) {
-    app.foldcade.language.ApkPluginCopy.packageName -> 1.5f
-    app.foldcade.language.ApkPluginCopy.version -> 1.4f
-    else -> 0.9f
-}
+/** At least this between two facts on one line. */
+private val FACT_GAP = 20.dp
 
 /** A fact's label is smaller than its value, and tracked out, as a spec sheet's are. */
 private const val FACT_LABEL = 0.78f

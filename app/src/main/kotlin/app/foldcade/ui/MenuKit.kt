@@ -827,7 +827,8 @@ internal fun MenuRow(
                 labelText(Modifier)
                 BasicText(
                     caption,
-                    maxLines = 2,
+                    // Three lines at most, for the bottom screen's narrower card; a top-screen caption takes one or two.
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                     style = labelStyle.copy(color = theme.muted, fontSize = theme.style.type.hint, fontWeight = theme.style.type.bodyWeight),
                 )
