@@ -147,7 +147,7 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                 // Every category fits at rest: the rows give up padding first, as System's do. Should
                 // they still not, as at a large font size, the edge with more beyond it fades.
                 val categoryScroll = rememberScrollState()
-                BoxWithConstraints(Modifier.padding(top = 12.dp).fillMaxSize()) {
+                BoxWithConstraints(Modifier.padding(top = 12.dp).weight(1f).fillMaxWidth()) {
                     val density = LocalDensity.current
                     val fit = with(density) {
                         menuFit(categories.size, constraints.maxHeight - ringReach().roundToPx() * 2, density.density, ROW_GAP.roundToPx())
