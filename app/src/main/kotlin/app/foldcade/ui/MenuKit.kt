@@ -833,7 +833,11 @@ internal fun MenuRow(
                     Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(VALUE_CHECK))
                 }
                 BasicText(control.text,
-                    style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
+                    style = when {
+                        control.attention -> valueStyle.copy(color = theme.style.colors.attention)
+                        control.accent -> valueStyle.copy(color = theme.focus)
+                        else -> valueStyle
+                    },
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (control.opens && chord == null) OpensChevron(focused, labelStyle, scale)
             }

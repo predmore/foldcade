@@ -120,6 +120,10 @@ object ApkPluginCopy {
 
     /** The signer of a plugin signed as its registry entry pins. */
     const val verified = "Verified"
+    const val debug = "Debug"
+    const val off = "Off"
+    const val notSupported = "Not supported"
+    const val updateAvailable = "Update available"
 
     /** A debug build's tile, so it reads apart from the release beside it. */
     fun debugName(name: String) = "$name Debug"
@@ -183,9 +187,59 @@ fun pluginFacts(packageName: String, model: PickerModel): List<PluginFact> {
     return listOf(
         PluginFact(ApkPluginCopy.version, plugin.version),
         PluginFact(ApkPluginCopy.packageName, plugin.packageName),
-        if (plugin.verified) PluginFact(ApkPluginCopy.signer, "${ApkPluginCopy.verified} · ${plugin.fingerprint}", verified = true)
-        else PluginFact(ApkPluginCopy.signer, plugin.fingerprint),
+        PluginFact(ApkPluginCopy.signer, plugin.fingerprint, verified = plugin.verified),
     )
+}
+
+/** A word beside a page's title: who signed it, or that it is a debug build. */
+data class PageChip(val text: String, val verified: Boolean = false)
+
+/** The chips beside [inner]'s title. Only plugins wear any. */
+fun settingsInnerChips(inner: SettingsInner, model: PickerModel): List<PageChip> {
+    val plugin = (inner as? SettingsInner.ApkPlugin)?.let { page -> model.apkPlugins.firstOrNull { it.packageName == page.packageName } } ?: return emptyList()
+    return listOfNotNull(
+        PageChip(ApkPluginCopy.verified, verified = true).takeIf { plugin.verified },
+        PageChip(ApkPluginCopy.debug).takeIf { PluginRegistry.source(plugin.packageName) == null && PluginRegistry.sourceOrDebug(plugin.packageName) != null },
+    )
+}
+
+/**
+ * One plugin's card on Settings › Plugins: its name, a line of what it is (its version, or what
+ * it does before it is installed), and on the right what needs doing, if anything.
+ */
+data class PluginEntry(
+    val name: String,
+    val line: String?,
+    val value: String?,
+    val attention: Boolean = false,
+    val fresh: Boolean = false,
+    val healthy: Boolean = false,
+)
+
+fun pluginEntry(inner: SettingsInner, model: PickerModel): PluginEntry? = when (inner) {
+    is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.let { source ->
+        val action = ApkPluginCopy.action(model.pluginCatalog(inner.packageName))
+        PluginEntry(source.name, source.detail, if (action.label == ApkPluginCopy.install) ApkPluginCopy.install else action.value, attention = action.attention)
+    }
+    is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
+        val name = settingsTileLabel(inner, model)
+        val line = listOfNotNull(plugin.version, ApkPluginCopy.verified.takeIf { plugin.verified }).joinToString(" · ")
+        when {
+            !plugin.supported -> PluginEntry(name, line, ApkPluginCopy.notSupported, attention = true)
+            // Nothing shared, nothing it can do: say so before anything else.
+            plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginEntry(name, line, ApkPluginCopy.off)
+            PluginRegistry.source(plugin.packageName) != null -> ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
+                when {
+                    action.fresh -> PluginEntry(name, line, ApkPluginCopy.updateAvailable, fresh = true)
+                    action.healthy -> PluginEntry(name, line, action.value, healthy = true)
+                    action.attention -> PluginEntry(name, line, action.value, attention = true)
+                    else -> PluginEntry(name, line, null)
+                }
+            }
+            else -> PluginEntry(name, line, null)
+        }
+    }
+    else -> null
 }
 
 /** A plugin tile's badge: an update waiting, or nothing. */
@@ -207,7 +261,9 @@ fun afterApkPluginInstall(previous: PickerModel, next: PickerModel): PickerModel
     if (settingsCategories(next).getOrNull(page.category) != SettingsCategory.Plugins) return next
     val inner = SettingsInner.ApkPlugin(source.packageName)
     if (page.inner != SettingsInner.PluginCatalog(source.packageName)) return next
-    return next.copy(settings = page.copy(inner = inner, row = 0, onRows = true))
+    // Its consent is what a first install needs next.
+    val consent = settingsInnerRows(inner, next).indexOfFirst { it is Row.PluginGrant }.coerceAtLeast(0)
+    return next.copy(settings = page.copy(inner = inner, row = consent, onRows = true))
 }
 
 /** Opening a registry plugin's page asks for its latest release, unless a check is already under way. */

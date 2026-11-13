@@ -49,7 +49,10 @@ class ApkPluginSettingsTest {
         assertEquals("Moonlight", settingsTileLabel(page, model))
         assertEquals("Foldcade Moonlight", settingsInnerTitle(page, model))
         assertEquals("Moonlight Debug", settingsTileLabel(debugPage, model))
-        assertEquals("Foldcade Moonlight (Debug)", settingsInnerTitle(debugPage, model))
+        // Its page is titled as the release is, and wears Debug beside the name.
+        assertEquals("Foldcade Moonlight", settingsInnerTitle(debugPage, model))
+        assertEquals(listOf(PageChip("Debug")), settingsInnerChips(debugPage, model))
+        assertEquals(emptyList<PageChip>(), settingsInnerChips(page, model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(debugPage, model))
         // A plugin the registry doesn't name is called what Android calls it.
         assertEquals("Test plugin", settingsTileLabel(SettingsInner.ApkPlugin(plugin.packageName), model))
@@ -69,16 +72,16 @@ class ApkPluginSettingsTest {
         assertFalse(settingsInnerRows(page, model.copy(apkPlugins = listOf(plugin.copy(scopes = emptySet())))).any { it is Row.PluginGrant })
     }
 
-    @Test fun anInstalledPluginLeadsWithSharingThenRoutingThenOneReleaseRow() {
+    @Test fun anInstalledPluginLeadsWithItsReleaseThenSharingThenRouting() {
         val installed = plugin.copy(packageName = moonlight, granted = setOf("gamestream"), useForMoonlight = true)
         val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(installed),
             pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true)))
         val page = SettingsInner.ApkPlugin(installed.packageName)
         assertEquals(listOf(
-            Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName), Row.PluginInstall(moonlight),
+            Row.PluginInstall(moonlight), Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName),
         ), settingsInnerRows(page, model))
         val opened = reduce(model.onSetting(Row.SettingsTile(page)), Meaning.Activate).first
-        assertEquals(Row.PluginGrant(installed.packageName, "gamestream"), settingsFocus(opened))
+        assertEquals(Row.PluginInstall(moonlight), settingsFocus(opened))
         // What it is reads under the rows, not as rows.
         assertEquals(listOf(PluginFact("Version", "1"), PluginFact("Package", moonlight), PluginFact("Signer", "ab:cd:ef:01")), pluginFacts(moonlight, model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(page, model))
@@ -105,7 +108,7 @@ class ApkPluginSettingsTest {
         assertTrue(update.canInstall)
         assertEquals(PluginAction("Update", "12.2-foldcade.2", fresh = true), ApkPluginCopy.action(update))
         assertEquals(RowText("Update", "12.2-foldcade.2"), rowText(Row.PluginInstall(moonlight), model))
-        assertEquals(RowControl.Value("12.2-foldcade.2", opens = true), rowControl(Row.PluginInstall(moonlight), model))
+        assertEquals(RowControl.Value("12.2-foldcade.2", opens = true, accent = true), rowControl(Row.PluginInstall(moonlight), model))
         assertEquals(Effect.InstallPlugin(moonlight), reduce(model.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
         assertTrue(pluginTileFresh(SettingsInner.ApkPlugin(moonlight), model))
         // Current: the same row checks again, and says so with the check.
@@ -217,7 +220,7 @@ class ApkPluginSettingsTest {
         val signer = PluginRegistry.moonlight.signers.single()
         val release = plugin.copy(packageName = moonlight, fingerprint = "36:f6:88:30", signers = setOf(signer))
         assertTrue(release.verified)
-        assertEquals(PluginFact("Signer", "Verified · 36:f6:88:30", verified = true),
+        assertEquals(PluginFact("Signer", "36:f6:88:30", verified = true),
             pluginFacts(moonlight, PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(release)))[2])
         assertFalse(release.copy(signers = setOf(signer, "00".repeat(32))).verified)
         assertFalse(release.copy(signers = emptySet()).verified)
@@ -231,5 +234,27 @@ class ApkPluginSettingsTest {
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(SettingsInner.ApkPlugin(moonlight), model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(SettingsInner.ApkPlugin("$moonlight.debug"), model))
         assertEquals(PluginRegistry.moonlight.detail, settingsInnerDetail(catalogPage, model))
+    }
+
+    @Test fun pluginsAreListedAsCardsThatSayWhatNeedsDoing() {
+        val signer = PluginRegistry.moonlight.signers.single()
+        val release = plugin.copy(packageName = moonlight, version = "12.2-foldcade.3", signers = setOf(signer), granted = setOf("gamestream"))
+        val debug = plugin.copy(packageName = "$moonlight.debug", version = "12.2-foldcade.2")
+        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(release, debug),
+            pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Current, installed = true)))
+        val rows = settingsRows(SettingsCategory.Plugins, model)
+        // Rows, not tiles: Up and Down walk them, and A opens one.
+        assertTrue(rows.none { it.settingsTile() })
+        assertEquals(PluginEntry("Moonlight", "12.2-foldcade.3 · Verified", "Up to date", healthy = true), pluginEntry(SettingsInner.ApkPlugin(moonlight), model))
+        // Nothing shared: it can do nothing yet, which is what its card says.
+        assertEquals(PluginEntry("Moonlight Debug", "12.2-foldcade.2", "Off"), pluginEntry(SettingsInner.ApkPlugin(debug.packageName), model))
+        val update = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.UpdateAvailable, installed = true, latest = "12.3")))
+        assertEquals(PluginEntry("Moonlight", "12.2-foldcade.3 · Verified", "Update available", fresh = true), pluginEntry(SettingsInner.ApkPlugin(moonlight), update))
+        val uninstalled = PickerModel(count = 4, rowsPerPage = 1, pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready)))
+        assertEquals(PluginEntry("Moonlight", PluginRegistry.moonlight.detail, "Install"), pluginEntry(catalogPage, uninstalled))
+        val opened = reduce(uninstalled.copy(settings = SettingsPage(HostScreen.Top, category = settingsCategories(uninstalled).indexOf(SettingsCategory.Plugins), onRows = true)), Meaning.Activate).first
+        assertEquals(catalogPage, opened.settings?.inner)
+        // Back returns to the card that opened it.
+        assertEquals(0, reduce(opened, Meaning.Back).first.settings?.row)
     }
 }

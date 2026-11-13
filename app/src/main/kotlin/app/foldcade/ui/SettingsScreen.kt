@@ -100,6 +100,10 @@ import app.foldcade.language.settingsRowCaption
 import app.foldcade.language.pluginFacts
 import app.foldcade.language.pluginTileFresh
 import app.foldcade.language.PluginFact
+import app.foldcade.language.PluginEntry
+import app.foldcade.language.PageChip
+import app.foldcade.language.pluginEntry
+import app.foldcade.language.settingsInnerChips
 import app.foldcade.language.settingsShown
 import app.foldcade.language.shownShelfFirst
 import app.foldcade.language.settingsTile
@@ -256,7 +260,12 @@ private fun CardRows(
     val iconSlot = rows.any { !it.settingsTile() && settingsRowIcon(it) != null }
     val labelStyle = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true)
     val tiles = rows.takeWhile { it.settingsTile() }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val reach = ringReach()
+    // A page's head and a plugin's facts are pinned: only the rows between them scroll, so neither is ever cut off.
+    val facts = (inner as? SettingsInner.ApkPlugin)?.let { pluginFacts(it.packageName, model) }.orEmpty()
+    Column(Modifier.fillMaxSize()) {
+    if (inner != null) InnerHeader(model, inner, Modifier.padding(start = reach + HEADER_INSET, end = reach, top = reach))
+    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
         val density = LocalDensity.current
         // System contracts row padding like the island menus, keeping Layout, Play on and
         // every pending Android permission visible without consuming the focus ring's room.
@@ -275,8 +284,6 @@ private fun CardRows(
                 .selectionHighlight(slots, focus, ring = true, scale = scale),
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
-            // The head is no row, so the first row brings it back into view with itself.
-            if (inner != null) InnerHeader(model, inner, Modifier.keepInView(focus == 0))
             // The tiles are one strip, a child of this column, which tells the one highlight where each rests.
             if (tiles.isNotEmpty()) {
                 ShelfStrip(
@@ -302,7 +309,16 @@ private fun CardRows(
                     .selectionSlot(slots, index)
                     .keepInView(focused)
                 val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
-                if (row == Row.MusicVolume) {
+                val entry = (row as? Row.SettingsTile)?.page?.let { pluginEntry(it, model) }
+                if (entry != null) {
+                    PluginEntryRow(
+                        entry = entry,
+                        art = innerArt((row as Row.SettingsTile).page, model),
+                        focused = focused,
+                        scale = scale,
+                        modifier = if (interactive) place.press(tap) else place,
+                    )
+                } else if (row == Row.MusicVolume) {
                     SliderRow(
                         label = parts.label,
                         value = parts.value.orEmpty(),
@@ -335,11 +351,6 @@ private fun CardRows(
                     )
                 }
             }
-            // What a plugin is, under what it does: facts to read, not rows to pass through.
-            (inner as? SettingsInner.ApkPlugin)?.let { plugin ->
-                val facts = pluginFacts(plugin.packageName, model)
-                if (facts.isNotEmpty()) PluginFacts(facts, Modifier.keepInView(focus == rows.lastIndex))
-            }
             // Calibrating Confirm: what to press, under the row that asked.
             val help = presence(Copy.buttonCalibrationHelp.takeIf { hint }, theme.motion.durationFocus, scale)
             help.shown?.let {
@@ -351,6 +362,9 @@ private fun CardRows(
             }
         }
     }
+    // What a plugin is, under what it does: facts to read, not rows to pass through.
+    if (facts.isNotEmpty()) PluginFacts(facts, Modifier.padding(start = reach, end = reach, bottom = reach))
+    }
 }
 
 /** A page's head: what it is about, its art larger, and its name. Not a row: the D-pad passes it by. */
@@ -359,7 +373,7 @@ private fun InnerHeader(model: PickerModel, inner: SettingsInner, modifier: Modi
     val theme = LocalFoldTheme.current.theme
     val off = inner is SettingsInner.Host && model.streamHosts.none { it.key == inner.key && it.paired }
     Row(
-        modifier.fillMaxWidth().padding(start = 6.dp, bottom = 8.dp),
+        modifier.fillMaxWidth().padding(bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -368,17 +382,88 @@ private fun InnerHeader(model: PickerModel, inner: SettingsInner, modifier: Modi
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // A long name, such as a plugin's or a folder's, takes a second line rather than losing its end.
-            BasicText(
-                settingsInnerTitle(inner, model),
-                style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BasicText(
+                    settingsInnerTitle(inner, model),
+                    modifier = Modifier.weight(1f, fill = false),
+                    style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                settingsInnerChips(inner, model).forEach { Chip(it) }
+            }
             // What the page is about, in a word or two each: a folder's path, its games, its art and info.
             settingsInnerDetail(inner, model)?.let {
                 BasicText(it, style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+/** A word beside a page's title: Verified with the check in focus ink, or Debug, on a soft pill. */
+@Composable
+private fun Chip(chip: PageChip) {
+    val theme = LocalFoldTheme.current.theme
+    Row(
+        Modifier
+            .clip(theme.style.shape.control())
+            .background(theme.onBackground.copy(alpha = theme.style.menu.quickTileAlpha))
+            .padding(start = if (chip.verified) 8.dp else 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (chip.verified) {
+            val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+            Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(18.dp))
+        }
+        BasicText(chip.text, style = style(if (chip.verified) theme.onBackground else theme.muted, theme.style.type.hint, theme, bold = true), maxLines = 1)
+    }
+}
+
+/**
+ * A plugin's card on Settings › Plugins: its art, its name over its version, and on the right
+ * what needs doing. An update waiting is the one value in focus ink, on a pill, so it reads first.
+ */
+@Composable
+private fun PluginEntryRow(entry: PluginEntry, art: ShelfArt, focused: Boolean, scale: Float, modifier: Modifier) {
+    val theme = LocalFoldTheme.current.theme
+    val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
+    val lift = bouncy(if (focused) 1f else 0f, scale)
+    Row(
+        modifier.height(ENTRY_HEIGHT).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(Modifier.size(ENTRY_ART).lifted(lit, lift, grow = theme.style.settings.artGrow, rest = theme.style.settings.artRestAlpha), contentAlignment = Alignment.Center) {
+            TileArt(art, lit = 1f, off = false)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            BasicText(
+                entry.name,
+                modifier = Modifier.graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit.value } },
+                style = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true),
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            entry.line?.let { BasicText(it, style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+        entry.value?.let { value ->
+            when {
+                entry.fresh -> BasicText(
+                    value,
+                    modifier = Modifier.clip(theme.style.shape.control()).background(theme.focus).padding(horizontal = 14.dp, vertical = 6.dp),
+                    style = style(theme.background, theme.style.type.hint, theme, bold = true),
+                    maxLines = 1,
+                )
+                else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (entry.healthy) {
+                        val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+                        Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(22.dp))
+                    }
+                    BasicText(value, style = style(if (entry.attention) theme.style.colors.attention else theme.muted, theme.style.type.menuRow, theme), maxLines = 1)
+                }
+            }
+        }
+        OpensChevron(focused, style(theme.onBackground, theme.style.type.menuRow, theme, bold = true), scale)
     }
 }
 
@@ -399,14 +484,9 @@ private fun PluginFacts(facts: List<PluginFact>, modifier: Modifier) {
                         style = style(theme.muted, theme.style.type.hint * FACT_LABEL, theme, bold = true).copy(letterSpacing = FACT_TRACKING),
                         maxLines = 1,
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (fact.verified) {
-                            val check = themeIcon("badge.check", R.drawable.ic_badge_check)
-                            Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(16.dp))
-                        }
-                        BasicText(fact.value, style = style(theme.onBackground.copy(alpha = FACT_VALUE_ALPHA), theme.style.type.hint, theme),
-                            maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
+                    // Who signed it reads as Verified beside the title; here it is the fingerprint, for the curious.
+                    BasicText(fact.value, style = style(theme.onBackground.copy(alpha = FACT_VALUE_ALPHA), theme.style.type.hint, theme),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -795,7 +875,14 @@ private const val SHELF_FLICK_SECONDS = 0.15f
 
 /** How far past either end a finger can pull the strip, in columns. */
 private const val SHELF_GIVE = 0.3f
-private val HEADER_ART = 56.dp
+private val HEADER_ART = 64.dp
+
+/** A page's head starts where the rows' art does. */
+private val HEADER_INSET = 14.dp
+
+/** A plugin's card on Settings › Plugins: taller than a row, for its name over its version. */
+private val ENTRY_HEIGHT = 76.dp
+private val ENTRY_ART = 52.dp
 
 /** Beyond the ring's reach inside the card's scroll. */
 private val CARD_EXTRA = 0.dp
@@ -834,6 +921,10 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     // SteamGridDB is where art comes from: the row wears the picture its page does (review-A 08).
     Row.ArtKey -> R.drawable.symbol_art
     is Row.StreamHost -> R.drawable.symbol_pc
+    // A plugin's page: its release, the computers it may use, and the games it opens.
+    is Row.PluginInstall -> R.drawable.ic_badge_sync
+    is Row.PluginGrant -> R.drawable.symbol_pc
+    is Row.PluginRouting -> R.drawable.symbol_moonlight
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
     Row.Theme -> R.drawable.symbol_gem
     Row.IconTheme -> R.drawable.symbol_icon

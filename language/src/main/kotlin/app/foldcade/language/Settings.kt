@@ -204,8 +204,15 @@ private fun needsYouFirst(tiles: List<Row>, model: PickerModel): List<Row> {
     return needsYou + fine
 }
 
-/** True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). */
-fun Row.settingsTile(): Boolean = this is Row.SettingsTile || this is Row.RommConnection
+/**
+ * True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). A plugin is
+ * no tile: there are few, and each has a version and a state worth reading, so Plugins lists
+ * them as cards ([pluginEntry]), one under another.
+ */
+fun Row.settingsTile(): Boolean = (this is Row.SettingsTile && !page.isPlugin()) || this is Row.RommConnection
+
+/** A plugin's page, installed or not. */
+fun SettingsInner.isPlugin(): Boolean = this is SettingsInner.ApkPlugin || this is SettingsInner.PluginCatalog
 
 /**
  * A category's shelf of tiles is one strip, as the grid is: tiles fill a column top to
@@ -309,12 +316,14 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
         listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
     // One row installs, or checks again while there is nothing to take.
     is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName))
-    // What it may do, then where its games open, then its release. What it is ([pluginFacts]) is no row.
+    // Its release first, as a store page leads with its button, then what it may do, then where its
+    // games open. The release row never moves, so a finished update can't slide a switch under the
+    // focus. What the plugin is ([pluginFacts]) is no row.
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
+            if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
-            if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
         }
     }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
@@ -348,7 +357,9 @@ fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     SettingsInner.Romm -> model.signedIn.firstOrNull { it.pluginId == "romm" }?.label ?: "RomM"
     is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.label.orEmpty()
-    is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
+    // A debug build is titled as its release is; its page wears Debug beside the name ([settingsInnerChips]).
+    is SettingsInner.ApkPlugin -> PluginRegistry.sourceOrDebug(inner.packageName)?.label
+        ?: model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
     SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -593,7 +604,9 @@ sealed interface RowControl {
      * A state on the right. [opens] adds the way-in mark, for a row A takes somewhere, and
      * [healthy] leads it with the check, for a row that is as it should be.
      */
-    data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false) : RowControl
+    data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false,
+        /** In focus ink: something new to take, as a plugin's update. */
+        val accent: Boolean = false) : RowControl
     data object None : RowControl
 }
 
@@ -610,7 +623,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
     is Row.PluginInstall -> ApkPluginCopy.action(model.pluginCatalog(row.packageName)).let { action ->
-        action.value?.let { RowControl.Value(it, attention = action.attention, opens = !model.pluginCatalog(row.packageName).busy, healthy = action.healthy) }
+        action.value?.let { RowControl.Value(it, attention = action.attention, opens = !model.pluginCatalog(row.packageName).busy, healthy = action.healthy, accent = action.fresh) }
             ?: RowControl.Opens
     }
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
