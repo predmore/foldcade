@@ -202,6 +202,8 @@ internal class ApkPluginCatalog(
     fun install() {
         if (work?.isActive == true) return
         quietAttempt = false
+        // A new attempt: only the session it commits is waiting on the player.
+        session = null
         work = scope.launch {
             val staged = File(context.cacheDir, "apk-plugins/${source.packageName}.apk")
             var failureMessage = ApkPluginCopy.downloadFailed
@@ -310,6 +312,8 @@ internal class ApkPluginCatalog(
                 session.commit(result.intentSender)
             }
         } catch (failure: Exception) {
+            // Abandoned: its late report must not count as the attempt still waiting.
+            session = null
             installer.abandonSession(id)
             throw failure
         }
