@@ -76,7 +76,9 @@ internal fun releaseStatus(release: PluginRelease?, installedCode: Long?): Plugi
  * the one the status was worked out against (installed, updated or removed some other way).
  * That keeps an install result and Not published. Installed stays while the plugin is there,
  * so discovery can still move on to its consent, however late Android reports the package.
- * A running check, download or install is never interrupted.
+ * A running check, download or install is never interrupted, except an install whose Android
+ * session has gone without a word: Android does not always report a declined confirmation, so
+ * the version installed then says whether it took. Declined, the release is offered again as before.
  */
 internal fun reassessedStatus(
     current: PluginCatalogSetting,
@@ -84,9 +86,25 @@ internal fun reassessedStatus(
     installedCode: Long?,
     installsAllowed: Boolean,
     release: PluginRelease?,
+    sessionGone: Boolean = false,
+    /**
+     * An attempt was settled as declined because its session went quietly. Android may report
+     * the new package a little after the session goes, so a version change seen later is that
+     * install arriving, not an update made some other way.
+     */
+    quietAttempt: Boolean = false,
 ): PluginCatalogStatus? = when {
+    current.status == PluginCatalogStatus.Installing && sessionGone ->
+        if (installedCode != null && installedCode != assessedCode) PluginCatalogStatus.Installed else releaseStatus(release, installedCode)
     current.busy -> null
-    current.status == PluginCatalogStatus.Installed -> if (installedCode == null) releaseStatus(release, null) else null
+    quietAttempt && installedCode != null && installedCode != assessedCode -> PluginCatalogStatus.Installed
+    // Removed only once a version it was recorded with has gone; a first install Android has not reported yet is still Installed.
+    current.status == PluginCatalogStatus.Installed -> when {
+        installedCode == null && assessedCode != null -> releaseStatus(release, null)
+        // Android has now reported the package: record its version, still Installed.
+        installedCode != null && assessedCode == null -> PluginCatalogStatus.Installed
+        else -> null
+    }
     current.status == PluginCatalogStatus.NeedsPermission && installsAllowed -> releaseStatus(release, installedCode)
     release != null && installedCode != assessedCode -> releaseStatus(release, installedCode)
     else -> null
@@ -120,6 +138,11 @@ internal class ApkPluginCatalog(
     @Volatile private var checkedAt: Long? = null
     /** The installed versionCode [state] was worked out against. */
     private var assessedCode: Long? = null
+    /** The Android install session waiting on the player's confirmation, until it reports or goes. */
+    @Volatile private var session: Int? = null
+
+    /** The last attempt's session went without a report; see [reassessedStatus]'s quietAttempt. */
+    private var quietAttempt = false
     private fun installedCode(): Long? = try {
         context.packageManager.getPackageInfo(source.packageName, 0).longVersionCode
     } catch (_: PackageManager.NameNotFoundException) { null }
@@ -145,6 +168,7 @@ internal class ApkPluginCatalog(
         if (work?.isActive == true) return
         val last = checkedAt
         if (onlyIfStale && last != null && SystemClock.elapsedRealtime() - last < PLUGIN_CHECK_FRESH_MS) { reassess(); return }
+        quietAttempt = false
         work = scope.launch {
             show(PluginCatalogStatus.Checking)
             try {
@@ -170,12 +194,22 @@ internal class ApkPluginCatalog(
     fun reassess() {
         if (work?.isActive == true) return
         val code = installedCode()
-        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release)
-            ?.let { showFor(it, code) }
+        val pending = session
+        val gone = state.status == PluginCatalogStatus.Installing && pending != null &&
+            context.packageManager.packageInstaller.getSessionInfo(pending) == null
+        reassessedStatus(state, assessedCode, code, context.packageManager.canRequestPackageInstalls(), release, gone, quietAttempt)?.let {
+            if (gone) session = null
+            // Settled as declined: a version change still to come is this install's. Anything else ends the attempt.
+            quietAttempt = gone && it != PluginCatalogStatus.Installed
+            showFor(it, code)
+        }
     }
 
     fun install() {
         if (work?.isActive == true) return
+        quietAttempt = false
+        // A new attempt: only the session it commits is waiting on the player.
+        session = null
         work = scope.launch {
             val staged = File(context.cacheDir, "apk-plugins/${source.packageName}.apk")
             var failureMessage = ApkPluginCopy.downloadFailed
@@ -189,8 +223,22 @@ internal class ApkPluginCatalog(
                 }
                 staged.parentFile?.mkdirs()
                 show(PluginCatalogStatus.Downloading)
+                // Each whole percent fills the row a little more; the release's own size stands in for a missing length.
+                var shown = -1
                 publicClient().use { http ->
-                    http.download(latest.url, staged, MAX_PLUGIN_APK_BYTES) { _, _ -> }
+                    http.download(latest.url, staged, MAX_PLUGIN_APK_BYTES) { read, total ->
+                        val size = total ?: latest.bytes
+                        val percent = if (size > 0) (read * 100 / size).toInt().coerceIn(0, 100) else return@download
+                        if (percent != shown) {
+                            shown = percent
+                            scope.launch(Dispatchers.Main.immediate) {
+                                if (state.status == PluginCatalogStatus.Downloading) {
+                                    state = state.copy(progress = percent)
+                                    publish(state)
+                                }
+                            }
+                        }
+                    }
                 }
                 require(staged.length() == latest.bytes) { "Incomplete release asset" }
                 failureMessage = ApkPluginCopy.verificationFailed
@@ -218,12 +266,23 @@ internal class ApkPluginCatalog(
         }
     }
 
-    fun completed(status: Int) {
-        scope.launch {
-            show(when (status) {
-                PackageInstaller.STATUS_SUCCESS -> PluginCatalogStatus.Installed
-                else -> PluginCatalogStatus.Failed
-            }, detail = if (status == PackageInstaller.STATUS_FAILURE_ABORTED) ApkPluginCopy.installDeclined else null)
+    /**
+     * Main thread, from [ApkPluginInstallActivity]. [sessionId] is the attempt Android reports on:
+     * only the session still waiting on the player counts, so a late report on an older attempt,
+     * or on one already settled as quietly declined, changes nothing. The status is written here
+     * at once, so no later attempt can start in between.
+     */
+    @MainThread
+    fun completed(status: Int, sessionId: Int) {
+        if (session != sessionId) return
+        session = null
+        quietAttempt = false
+        val code = installedCode()
+        when (status) {
+            PackageInstaller.STATUS_SUCCESS -> showFor(PluginCatalogStatus.Installed, code)
+            // Declined in Android's dialog: the player said no to the dialog, not to the release, so it is offered again.
+            PackageInstaller.STATUS_FAILURE_ABORTED -> showFor(releaseStatus(release, code), code)
+            else -> showFor(PluginCatalogStatus.Failed, code)
         }
     }
 
@@ -255,9 +314,12 @@ internal class ApkPluginCatalog(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 val result = PendingIntent.getActivity(context, id, callback, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+                this.session = id
                 session.commit(result.intentSender)
             }
         } catch (failure: Exception) {
+            // Abandoned: its late report must not count as the attempt still waiting.
+            session = null
             installer.abandonSession(id)
             throw failure
         }
@@ -276,15 +338,16 @@ class ApkPluginInstallActivity : Activity() {
         super.onCreate(savedInstanceState)
         val catalog = (application as FoldcadeApp).apkPluginCatalogs[intent.getStringExtra(EXTRA_PLUGIN_PACKAGE)]
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val sessionId = intent.getIntExtra("session", -1)
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             val confirmation = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
             if (confirmation != null) {
                 try { startActivity(confirmation) } catch (_: RuntimeException) {
-                    catalog?.completed(PackageInstaller.STATUS_FAILURE)
+                    catalog?.completed(PackageInstaller.STATUS_FAILURE, sessionId)
                 }
-            } else catalog?.completed(PackageInstaller.STATUS_FAILURE)
+            } else catalog?.completed(PackageInstaller.STATUS_FAILURE, sessionId)
         } else {
-            catalog?.completed(status)
+            catalog?.completed(status, sessionId)
         }
         finish()
     }

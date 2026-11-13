@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.language.HomeUndo
 import app.foldcade.language.pluginCatalog
+import app.foldcade.language.openSettings
 import app.foldcade.language.folded
 import app.foldcade.language.opened
 import app.foldcade.language.refreshed
@@ -553,6 +554,21 @@ class ShellController(
     fun previewShelf(count: Int) {
         shelfPreview = count.coerceIn(0, 32)
         model = model
+    }
+
+    /** Debug builds: Settings at [category], and at [plugin]'s page when it names one. Returns the page's release check. */
+    fun previewSettings(category: String, plugin: String?): Effect? {
+        val wanted = app.foldcade.language.SettingsCategory.entries.firstOrNull {
+            it.name.equals(category, ignoreCase = true) || app.foldcade.language.settingsTitle(it).equals(category, ignoreCase = true)
+        } ?: return null
+        val opened = model.openSettings(model.layout.pageScreen, wanted)
+        val page = opened.settings ?: return null
+        val inner = plugin?.let { name ->
+            if (model.apkPlugins.any { it.packageName == name }) app.foldcade.language.SettingsInner.ApkPlugin(name)
+            else app.foldcade.language.SettingsInner.PluginCatalog(name)
+        }
+        model = opened.copy(settings = page.copy(inner = inner, row = 0, onRows = inner != null))
+        return inner?.let { app.foldcade.language.pluginPageCheck(it, model) }
     }
 
     /** Set up saves has been open in this process, so a saved one is from a Home that outlived it. */

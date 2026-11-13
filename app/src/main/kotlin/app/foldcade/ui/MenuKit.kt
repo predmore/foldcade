@@ -1,11 +1,15 @@
 package app.foldcade.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -427,6 +431,18 @@ internal fun ToggleSwitch(on: Boolean, focused: Boolean, scale: Float) {
                     color = theme.onBackground.copy(alpha = if (focused) controls.trackFocusAlpha else controls.trackAlpha),
                     cornerRadius = CornerRadius(radius, radius),
                 )
+                // Off, a hairline traces the track, so an off switch still reads as a switch on a dark card.
+                val off = 1f - lit.coerceIn(0f, 1f)
+                if (off > 0f) {
+                    val stroke = SWITCH_OUTLINE.toPx()
+                    drawRoundRect(
+                        color = theme.onBackground.copy(alpha = SWITCH_OUTLINE_ALPHA * off),
+                        topLeft = Offset(stroke / 2f, stroke / 2f),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        cornerRadius = CornerRadius(radius - stroke / 2f, radius - stroke / 2f),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+                    )
+                }
                 if (lit > 0f) {
                     drawRoundRect(
                         brush = Brush.horizontalGradient(listOf(start, end)),
@@ -731,6 +747,13 @@ private val VALUE_CHECK = 22.dp
 /** Height of one menu row, the same for every row so the highlight keeps one size. */
 private val MENU_ROW_HEIGHT = 52.dp
 
+/** Above and below a captioned row's two lines. */
+private val CAPTION_PAD = 10.dp
+
+/** The off switch's hairline. */
+private val SWITCH_OUTLINE = 1.5.dp
+private const val SWITCH_OUTLINE_ALPHA = 0.28f
+
 /**
  * One menu row: its art, its words, and on the right what it does. That is a switch,
  * a choice, a way in, a value, or the key that runs it. The words brighten and the
@@ -752,12 +775,22 @@ internal fun MenuRow(
     height: Dp = MENU_ROW_HEIGHT,
     /** A place's own symbol, as a collection's glyph in its colour, in place of [icon]. */
     place: PlaceSymbol? = null,
+    /**
+     * A line or two under the words, inside the row and its highlight: what a switch allows,
+     * or why an action stopped. The row grows to hold it. Not for a choice row.
+     */
+    caption: String? = null,
+    /** Breathes [icon] as a downloading tile's cloud does, for a row whose work is under way. */
+    iconBusy: Boolean = false,
 ) {
     val theme = LocalFoldTheme.current.theme
     val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
+    val breath = if (iconBusy) rememberInfiniteTransition(label = "busy")
+        .animateFloat(theme.style.menu.labelRestAlpha, 1f, theme.motion.pulse(scale), label = "busy") else null
     val lift = bouncy(if (focused) 1f else 0f, scale)
     Row(
-        modifier.height(height).padding(start = 14.dp, end = 14.dp),
+        (if (caption == null) modifier.height(height) else modifier.heightIn(min = height).padding(vertical = CAPTION_PAD))
+            .padding(start = 14.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -772,7 +805,8 @@ internal fun MenuRow(
                         painter = art.painter,
                         contentDescription = null,
                         colorFilter = art.tint(theme.onBackground),
-                        modifier = Modifier.fillMaxSize().lifted(lit, lift, grow = theme.style.menu.artGrow, rest = theme.style.menu.artRestAlpha),
+                        modifier = Modifier.fillMaxSize().lifted(lit, lift, grow = theme.style.menu.artGrow, rest = theme.style.menu.artRestAlpha)
+                            .then(if (breath != null) Modifier.graphicsLayer { alpha = breath.value } else Modifier),
                     )
                 }
             }
@@ -787,7 +821,19 @@ internal fun MenuRow(
             )
         }
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
-        if (control !is RowControl.Choice) labelText(Modifier.weight(1f))
+        if (control !is RowControl.Choice) {
+            if (caption == null) labelText(Modifier.weight(1f))
+            else Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                labelText(Modifier)
+                BasicText(
+                    caption,
+                    // Three lines at most, for the bottom screen's narrower card; a top-screen caption takes one or two.
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    style = labelStyle.copy(color = theme.muted, fontSize = theme.style.type.hint, fontWeight = theme.style.type.bodyWeight),
+                )
+            }
+        }
         when (control) {
             is RowControl.Toggle -> ToggleSwitch(control.on, focused, scale)
             is RowControl.Check -> CheckMark(control.on, focused, scale, control.some)
@@ -811,7 +857,12 @@ internal fun MenuRow(
                     Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(VALUE_CHECK))
                 }
                 BasicText(control.text,
-                    style = if (control.attention) valueStyle.copy(color = theme.style.colors.attention) else valueStyle,
+                    style = when {
+                        control.attention -> valueStyle.copy(color = theme.style.colors.attention)
+                        control.accent -> valueStyle.copy(color = theme.focus)
+                        control.strong -> valueStyle.copy(color = theme.onBackground)
+                        else -> valueStyle
+                    },
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (control.opens && chord == null) OpensChevron(focused, labelStyle, scale)
             }

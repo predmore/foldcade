@@ -725,7 +725,8 @@ class FoldcadeApp : Application() {
                 apkPluginGrants.repairRoute(plugins)
                 val rows = plugins.map { plugin ->
                     app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
-                        plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin))
+                        plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin),
+                        signers = plugin.signers)
                 }
                 withContext(Dispatchers.Main.immediate) {
                     if (version == apkPluginRefreshVersion.get()) {

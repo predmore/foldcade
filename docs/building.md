@@ -74,6 +74,17 @@ That prints `versionCode`, `versionName`, and the debug and release application 
 
 `:api`, `:host`, `:romm`, and every `:plugins:*` module apply `foldcade.jvm-api33`. Animal Sniffer fails the build when those modules call an Android API above 33. `testDebugUnitTest` depends on that check.
 
+## Opening a page directly
+
+Debug builds open Settings at a category, or at a plugin's page, from an intent, so a device check needs no key path:
+
+```sh
+adb shell am start -n app.foldcade.debug/app.foldcade.PrimaryHomeActivity --es foldcade.settings plugins
+adb shell am start -n app.foldcade.debug/app.foldcade.PrimaryHomeActivity --es foldcade.settings plugins/app.foldcade.moonlight
+```
+
+The category is its title or its name. Release builds ignore the extra.
+
 ## Lint
 
 ```sh

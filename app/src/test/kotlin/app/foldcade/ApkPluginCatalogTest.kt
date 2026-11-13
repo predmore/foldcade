@@ -81,6 +81,17 @@ class ApkPluginCatalogTest {
     @Test fun reassessingChangesAStatusOnlyForNews() {
         val release = PluginRelease("v2", "https://example", 1, versionCode = 10)
         fun shown(status: PluginCatalogStatus) = PluginCatalogSetting(status)
+        // An install whose Android session went without a report: the version installed says whether it took.
+        // Declined: the release is offered again, as it was before the attempt.
+        assertEquals(PluginCatalogStatus.UpdateAvailable, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release, sessionGone = true))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 10, true, release, sessionGone = true))
+        assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installing), null, null, true, release, sessionGone = true))
+        // Settled as declined, then Android reports the new package late: that is this install arriving.
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 10, true, release, quietAttempt = true))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Ready), null, 10, true, null, quietAttempt = true))
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 9, true, release, quietAttempt = true))
+        // While the session is there, the player is still deciding.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installing), 9, 9, true, release))
         // Nothing new: an install result, Not published, and a status already current all stay.
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Failed), 9, 9, true, release))
         assertNull(reassessedStatus(shown(PluginCatalogStatus.NotPublished), null, null, true, null))
@@ -90,7 +101,9 @@ class ApkPluginCatalogTest {
         // Installed, then removed some other way.
         assertEquals(PluginCatalogStatus.Ready, reassessedStatus(shown(PluginCatalogStatus.Installed), 10, null, true, release))
         // Installed was recorded before Android reported the package; it stays so discovery can move on to consent.
-        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), null, 10, true, release))
+        assertEquals(PluginCatalogStatus.Installed, reassessedStatus(shown(PluginCatalogStatus.Installed), null, 10, true, release))
+        // A first install whose package Android has not reported yet stays Installed rather than offering Install again.
+        assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), null, null, true, release))
         assertNull(reassessedStatus(shown(PluginCatalogStatus.Installed), 9, 11, true, release))
         // Updated some other way while an update was offered.
         assertEquals(PluginCatalogStatus.Current, reassessedStatus(shown(PluginCatalogStatus.UpdateAvailable), 9, 10, true, release))

@@ -77,12 +77,61 @@ object SettingsCopy {
     const val accessAsk = "Ask"
     const val screens = "System"
     const val about = "About"
+
+    // What A does, as the other screen names it under the focused row.
+    const val open = "Open"
+    const val turnOn = "Turn on"
+    const val turnOff = "Turn off"
+    const val change = "Change"
+    const val copy = "Copy"
+    const val sync = "Sync"
+}
+
+/**
+ * The keys Settings names on the other screen: what A does to the focused row, then where B
+ * goes. A row whose work is under way names only B. The page's own head already wears B.
+ */
+fun settingsHints(model: PickerModel): List<HintKey> {
+    val page = model.settings ?: return emptyList()
+    val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+    val backKey = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
+    if (model.capturingConfirm) return listOf(HintKey(PromptKey.Start, Copy.close))
+    if (!page.onRows) return listOf(HintKey(confirm, SettingsCopy.open), HintKey(backKey, Copy.close))
+    val back = HintKey(backKey, Copy.back)
+    val row = settingsFocus(model) ?: return listOf(back)
+    val action: HintKey? = when {
+        row is Row.PluginInstall -> model.pluginCatalog(row.packageName).takeUnless { it.busy || it.arriving }
+            ?.let { HintKey(confirm, ApkPluginCopy.action(it).label) }
+        row.destructive() -> HintKey(confirm, Copy.hold)
+        row == Row.Version -> HintKey(confirm, SettingsCopy.copy)
+        row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
+        row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
+        // Android owns these switches: A opens its access page, it does not flip them here.
+        row == Row.FindGames || row == Row.FindSaves -> HintKey(confirm, SettingsCopy.open)
+        row == Row.MusicVolume -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
+        else -> when (val control = rowControl(row, model)) {
+            is RowControl.Toggle -> HintKey(confirm, if (control.on) SettingsCopy.turnOff else SettingsCopy.turnOn)
+            is RowControl.Choice -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
+            is RowControl.Check -> HintKey(confirm, if (control.on) SettingsCopy.turnOff else SettingsCopy.turnOn)
+            RowControl.Opens -> HintKey(confirm, SettingsCopy.open)
+            // A state on the right still leads somewhere on A: Android's page, or a form.
+            is RowControl.Value -> HintKey(confirm, SettingsCopy.open)
+            RowControl.None -> null
+        }
+    }
+    return listOfNotNull(action, back)
 }
 
 /** About's version row, and the one line it copies for a bug report. */
 object AboutCopy {
     const val version = "Version"
     const val copied = "Copied"
+    const val title = "Foldcade"
+    const val android = "Android"
+    const val device = "Device"
+
+    /** About's one action row: the version sits in the page's head, so the row says what A does with it. */
+    const val copyInfo = "Copy version info"
 
     /** "0.1.2 (230)": the name players see, and the build that tells two of them apart. */
     fun version(name: String, code: Long): String = "$name ($code)"
@@ -94,6 +143,12 @@ object AboutCopy {
     fun debugLine(version: String, android: String, device: String, build: String): String =
         listOf("Foldcade $version", "Android $android", device, build).filter { it.isNotBlank() }.joinToString(" · ")
 }
+
+/** About's facts under its head: the Android it runs on and the device. Its version is in the head. */
+fun aboutFacts(android: String, device: String): List<PageFact> = listOfNotNull(
+    PageFact(AboutCopy.android, android).takeIf { android.isNotBlank() },
+    PageFact(AboutCopy.device, device).takeIf { device.isNotBlank() },
+)
 
 fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Personalization -> SettingsCopy.personalization
@@ -204,8 +259,15 @@ private fun needsYouFirst(tiles: List<Row>, model: PickerModel): List<Row> {
     return needsYou + fine
 }
 
-/** True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). */
-fun Row.settingsTile(): Boolean = this is Row.SettingsTile || this is Row.RommConnection
+/**
+ * True for a row Settings draws as a tile on a category's shelf ([SettingsShelf]). A plugin is
+ * no tile: there are few, and each has a version and a state worth reading, so Plugins lists
+ * them as cards ([pluginListing]), one under another.
+ */
+fun Row.settingsTile(): Boolean = (this is Row.SettingsTile && !page.isPlugin()) || this is Row.RommConnection
+
+/** A plugin's page, installed or not. */
+fun SettingsInner.isPlugin(): Boolean = this is SettingsInner.ApkPlugin || this is SettingsInner.PluginCatalog
 
 /**
  * A category's shelf of tiles is one strip, as the grid is: tiles fill a column top to
@@ -307,15 +369,16 @@ private fun folderEmpty(folder: LibraryFolder): Boolean = folder.empty && !folde
 fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = when (inner) {
     SettingsInner.Romm -> if (model.rommSaved || model.signedIn.any { it.pluginId == "romm" })
         listOf(Row.EditRomm("romm"), Row.SignOut("romm", settingsInnerTitle(inner, model))) else emptyList()
-    is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName), Row.PluginCheck(inner.packageName))
+    // One row installs, or checks again while there is nothing to take.
+    is SettingsInner.PluginCatalog -> listOf(Row.PluginInstall(inner.packageName))
+    // Its release first, as a store page leads with its button, then what it may do, then where its
+    // games open. The release row never moves, so a finished update can't slide a switch under the
+    // focus. What the plugin is ([pluginFacts]) is no row.
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
+            if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
-            if (PluginRegistry.source(plugin.packageName) != null) addAll(listOf(Row.PluginInstall(plugin.packageName), Row.PluginCheck(plugin.packageName)))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Version))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Package))
-            add(Row.PluginInfo(plugin.packageName, PluginInfoField.Signer))
         }
     }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
@@ -331,11 +394,15 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
 }
 
-/** The catalog's unavailable Install is a status, so opening the page starts on Check again. */
-fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
-    val rows = settingsInnerRows(inner, model)
-    val first = rows.firstOrNull()
-    return if (first is Row.PluginInstall && !model.pluginCatalog(first.packageName).canInstall) rows.indexOfFirst { it is Row.PluginCheck }.coerceAtLeast(0) else 0
+/**
+ * The line a settings row carries under its name, inside its highlight: what a switch allows,
+ * or why an action stopped. Most rows need none.
+ */
+fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
+    is Row.PluginGrant -> ApkPluginCopy.consent.takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
+    is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
+    is Row.PluginInstall -> ApkPluginCopy.actionCaption(model.pluginCatalog(row.packageName))
+    else -> null
 }
 
 /**
@@ -345,7 +412,9 @@ fun settingsInnerFirstRow(inner: SettingsInner, model: PickerModel): Int {
 fun settingsInnerTitle(inner: SettingsInner, model: PickerModel): String = when (inner) {
     SettingsInner.Romm -> model.signedIn.firstOrNull { it.pluginId == "romm" }?.label ?: "RomM"
     is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.label.orEmpty()
-    is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
+    // A debug build is titled as its release is; its page wears Debug beside the name ([settingsInnerChips]).
+    is SettingsInner.ApkPlugin -> PluginRegistry.sourceOrDebug(inner.packageName)?.label
+        ?: model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.label.orEmpty()
     SettingsInner.Systems -> PlayerChoiceCopy.systems
     is SettingsInner.Emulator -> emulatorShelf(model).firstOrNull { it.key == inner.key }?.label ?: inner.key
     is SettingsInner.Folder -> model.folders.firstOrNull { it.uri == inner.uri }?.let {
@@ -367,7 +436,8 @@ fun settingsShown(page: SettingsPage, model: PickerModel): Pair<SettingsPage, Li
     val category = categories[page.category.coerceIn(0, categories.lastIndex)]
     page.inner?.let { inner ->
         val rows = settingsInnerRows(inner, model)
-        if (rows.isNotEmpty()) return page to rows
+        // An installed plugin with nothing to switch still has its page: its head and its facts.
+        if (rows.isNotEmpty() || (inner is SettingsInner.ApkPlugin && model.apkPlugins.any { it.packageName == inner.packageName })) return page to rows
     }
     return page.copy(inner = null) to settingsRows(category, model)
 }
@@ -518,7 +588,8 @@ fun retainSettingsShelf(previous: PickerModel, next: PickerModel): PickerModel {
     if (was != null && was.onRows && page.onRows && was.inner == null && page.inner == null &&
         was.category == page.category && was.row == page.row
     ) {
-        val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() }
+        // A tile, or a plugin's card: either keeps the focus when the list changes around it.
+        val held = settingsShown(was, previous).second.getOrNull(was.row)?.takeIf { it.settingsTile() || it is Row.SettingsTile }
         val rows = settingsShown(page, next).second
         // A folder just added takes the focus on purpose ([withFolders]), even where its tile lands on the old tile's place.
         val added = (rows.getOrNull(page.row) as? Row.SettingsTile)?.page.let { it is SettingsInner.Folder && previous.folders.none { folder -> folder.uri == it.uri } }
@@ -590,7 +661,11 @@ sealed interface RowControl {
      * A state on the right. [opens] adds the way-in mark, for a row A takes somewhere, and
      * [healthy] leads it with the check, for a row that is as it should be.
      */
-    data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false) : RowControl
+    data class Value(val text: String, val attention: Boolean = false, val opens: Boolean = false, val healthy: Boolean = false,
+        /** In focus ink: something new to take, as a plugin's update. */
+        val accent: Boolean = false,
+        /** In full ink: a state that is under way, read over the fill that shows how far it has got. */
+        val strong: Boolean = false) : RowControl
     data object None : RowControl
 }
 
@@ -606,9 +681,14 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     // Paired, a switch A turns off; unpaired, a way in to the pairing code.
     is Row.PluginGrant -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && row.scope in it.granted })
     is Row.PluginRouting -> RowControl.Toggle(model.apkPlugins.any { it.packageName == row.packageName && it.useForMoonlight })
-    is Row.PluginCheck -> RowControl.Opens
-    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { if (it.canInstall) RowControl.Opens else RowControl.Value(ApkPluginCopy.installValue(it)) }
-    is Row.PluginInfo -> value?.let { RowControl.Value(it) } ?: RowControl.None
+    // A does the row's own action, so it takes no way-in mark: nothing opens, and the value never shifts.
+    // A copies the line for a bug report; the check says it took.
+    Row.Version -> if (model.versionCopied) RowControl.Value(AboutCopy.copied, healthy = true) else RowControl.None
+    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { catalog ->
+        val action = ApkPluginCopy.action(catalog)
+        action.value?.let { RowControl.Value(it, attention = action.attention, healthy = action.healthy, accent = action.fresh, strong = catalog.busy) }
+            ?: RowControl.None
+    }
     is Row.StreamHost -> if (model.streamHosts.any { it.key == row.key && it.paired }) RowControl.Toggle(true) else RowControl.Opens
     // RomM out of reach reads in the attention colour until a sync gets through.
     Row.SyncLibrary -> librarySyncValue(model)?.let { RowControl.Value(it, attention = it == Copy.rommUnreachable) } ?: RowControl.None

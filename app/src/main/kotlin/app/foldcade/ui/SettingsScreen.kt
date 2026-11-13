@@ -70,7 +70,6 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.foldcade.FoldcadeApp
 import app.foldcade.R
-import app.foldcade.language.ApkPluginCopy
 import app.foldcade.language.Copy
 import app.foldcade.language.Effect
 import app.foldcade.language.HostScreen
@@ -97,6 +96,15 @@ import app.foldcade.language.settingsInnerDetail
 import app.foldcade.language.settingsInnerRows
 import app.foldcade.language.settingsInnerTitle
 import app.foldcade.language.settingsRows
+import app.foldcade.language.settingsRowCaption
+import app.foldcade.language.pluginFacts
+import app.foldcade.language.PageFact
+import app.foldcade.language.aboutFacts
+import app.foldcade.language.AboutCopy
+import app.foldcade.language.PluginListing
+import app.foldcade.language.PageChip
+import app.foldcade.language.pluginListing
+import app.foldcade.language.settingsInnerChips
 import app.foldcade.language.settingsShown
 import app.foldcade.language.shownShelfFirst
 import app.foldcade.language.settingsTile
@@ -136,30 +144,36 @@ internal fun SettingsScreen(app: FoldcadeApp, screen: HostScreen, page: Settings
                 val back = if (model.capturingConfirm) PromptKey.Start else promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
                 Header(theme, back, titled = !compact) { onEffect(app.shell.backSettings(screen)) }
                 val master = rememberSelectionSlots()
-                // All six fit at rest on the Thor's top screen. Should they not, as at a large font
-                // size, the edge with more beyond it fades, so a hidden category still shows.
+                // Every category fits at rest: the rows give up padding first, as System's do. Should
+                // they still not, as at a large font size, the edge with more beyond it fades.
                 val categoryScroll = rememberScrollState()
-                Column(
-                    Modifier
-                        .padding(top = 20.dp)
-                        .fillMaxSize()
-                        .menuFade(categoryScroll)
-                        .ringScroll(state = categoryScroll)
-                        .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
-                    verticalArrangement = Arrangement.spacedBy(ROW_GAP),
-                ) {
-                    categories.forEachIndexed { index, category ->
-                        val selected = index == categoryIndex
-                        CategoryRow(
-                            title = settingsTitle(category),
-                            icon = categoryIcon(category),
-                            labelled = !compact,
-                            selected = selected,
-                            focused = selected && !page.onRows,
-                            scale = scale,
-                            modifier = Modifier.selectionSlot(master, index),
-                            onClick = { onEffect(app.shell.touchSettingsCategory(index, screen)) },
-                        )
+                BoxWithConstraints(Modifier.padding(top = 12.dp).weight(1f).fillMaxWidth()) {
+                    val density = LocalDensity.current
+                    val fit = with(density) {
+                        menuFit(categories.size, constraints.maxHeight - ringReach().roundToPx() * 2, density.density, ROW_GAP.roundToPx())
+                    }
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .menuFade(categoryScroll)
+                            .ringScroll(state = categoryScroll)
+                            .selectionHighlight(master, categoryIndex, ring = !page.onRows, scale = scale),
+                        verticalArrangement = Arrangement.spacedBy(ROW_GAP),
+                    ) {
+                        categories.forEachIndexed { index, category ->
+                            val selected = index == categoryIndex
+                            CategoryRow(
+                                title = settingsTitle(category),
+                                icon = categoryIcon(category),
+                                labelled = !compact,
+                                selected = selected,
+                                focused = selected && !page.onRows,
+                                scale = scale,
+                                height = fit.rowHeights.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
+                                modifier = Modifier.selectionSlot(master, index),
+                                onClick = { onEffect(app.shell.touchSettingsCategory(index, screen)) },
+                            )
+                        }
                     }
                 }
             }
@@ -215,6 +229,7 @@ private fun CategoryCard(
             rows = rows,
             inner = shownInner,
             fitRows = category == SettingsCategory.Screens && shownInner == null,
+            about = category == SettingsCategory.About && shownInner == null,
             focus = page.row.takeIf { live && page.onRows && it in rows.indices },
             // A card on its way out keeps the strip where it was.
             shelfFirst = if (live) shownShelfFirst(page, model) else 0,
@@ -234,6 +249,7 @@ private fun CardRows(
     rows: List<Row>,
     inner: SettingsInner?,
     fitRows: Boolean,
+    about: Boolean,
     focus: Int?,
     shelfFirst: Int,
     interactive: Boolean,
@@ -247,7 +263,16 @@ private fun CardRows(
     val iconSlot = rows.any { !it.settingsTile() && settingsRowIcon(it) != null }
     val labelStyle = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true)
     val tiles = rows.takeWhile { it.settingsTile() }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val reach = ringReach()
+    // A page's head and its facts are pinned: only the rows between them scroll, so neither is ever cut off.
+    // About wears the same frame as a plugin's page: what it is on top, the facts below, its actions between.
+    val facts = if (about) aboutFacts(android.os.Build.VERSION.RELEASE.orEmpty(), AboutCopy.device(android.os.Build.MANUFACTURER.orEmpty(), android.os.Build.MODEL.orEmpty()))
+        else inner?.let { pluginFacts(it, model) }.orEmpty()
+    val headPad = Modifier.padding(start = reach + HEADER_INSET, end = reach, top = reach)
+    Column(Modifier.fillMaxSize()) {
+    if (inner != null) InnerHeader(model, inner, headPad)
+    else if (about) PageHead(ShelfArt.App(androidx.compose.ui.platform.LocalContext.current.packageName), AboutCopy.title, model.appVersion, emptyList(), off = false, modifier = headPad)
+    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
         val density = LocalDensity.current
         // System contracts row padding like the island menus, keeping Layout, Play on and
         // every pending Android permission visible without consuming the focus ring's room.
@@ -266,7 +291,6 @@ private fun CardRows(
                 .selectionHighlight(slots, focus, ring = true, scale = scale),
             verticalArrangement = Arrangement.spacedBy(ROW_GAP),
         ) {
-            if (inner != null) InnerHeader(model, inner)
             // The tiles are one strip, a child of this column, which tells the one highlight where each rests.
             if (tiles.isNotEmpty()) {
                 ShelfStrip(
@@ -292,7 +316,16 @@ private fun CardRows(
                     .selectionSlot(slots, index)
                     .keepInView(focused)
                 val tap = { onEffect(app.shell.touchSettingsRow(index, screen)) }
-                if (row == Row.MusicVolume) {
+                val entry = (row as? Row.SettingsTile)?.page?.let { pluginListing(it, model) }
+                if (entry != null) {
+                    PluginListingRow(
+                        entry = entry,
+                        art = innerArt((row as Row.SettingsTile).page, model),
+                        focused = focused,
+                        scale = scale,
+                        modifier = if (interactive) place.press(tap) else place,
+                    )
+                } else if (row == Row.MusicVolume) {
                     SliderRow(
                         label = parts.label,
                         value = parts.value.orEmpty(),
@@ -307,9 +340,12 @@ private fun CardRows(
                         icon = settingsRowIcon(row),
                     )
                 } else {
+                    val release = (row as? Row.PluginInstall)?.let { model.pluginCatalog(it.packageName) }
                     MenuRow(
                         label = parts.label,
-                        icon = settingsRowIcon(row),
+                        icon = release?.let(::releaseIcon) ?: settingsRowIcon(row),
+                        // A check, download or install under way breathes the row's art, so the row never looks stuck.
+                        iconBusy = release?.busy == true,
                         iconSlot = iconSlot,
                         focused = focused,
                         control = rowControl(row, model, parts.value),
@@ -318,20 +354,12 @@ private fun CardRows(
                         scale = scale,
                         // Remove fills while held, and shakes when let go early, as a download's does.
                         modifier = (if (!interactive) place else if (row.destructive()) place.holdPress(app, index, screen, onEffect) else place.press(tap))
-                            .then(holdFeedback(model, row, scale)),
+                            .then(holdFeedback(model, row, scale))
+                            .then(downloadFill(model, row, scale)),
                         labelStyle = labelStyle,
                         height = fit?.rowHeights?.getOrNull(index)?.let { with(density) { it.toDp() } } ?: ROW_HEIGHT,
+                        caption = settingsRowCaption(row, model),
                     )
-                }
-                val explanation = when (row) {
-                    is Row.PluginGrant -> model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { ApkPluginCopy.consent(it.label) }
-                    is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
-                    is Row.PluginInstall -> model.pluginCatalog(row.packageName).let { catalog -> ApkPluginCopy.status(catalog).takeIf { catalog.canInstall } }
-                    else -> null
-                }
-                explanation?.let {
-                    BasicText(it, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        style = style(theme.muted, theme.style.type.hint, theme))
                 }
             }
             // Calibrating Confirm: what to press, under the row that asked.
@@ -345,36 +373,174 @@ private fun CardRows(
             }
         }
     }
+    // What a plugin is, under what it does: facts to read, not rows to pass through.
+    if (facts.isNotEmpty()) PluginFacts(facts, Modifier.padding(start = reach, end = reach, bottom = reach))
+    }
 }
 
 /** A page's head: what it is about, its art larger, and its name. Not a row: the D-pad passes it by. */
 @Composable
-private fun InnerHeader(model: PickerModel, inner: SettingsInner) {
-    val theme = LocalFoldTheme.current.theme
+private fun InnerHeader(model: PickerModel, inner: SettingsInner, modifier: Modifier = Modifier) {
     val off = inner is SettingsInner.Host && model.streamHosts.none { it.key == inner.key && it.paired }
+    PageHead(innerArt(inner, model), settingsInnerTitle(inner, model), settingsInnerDetail(inner, model), settingsInnerChips(inner, model), off, modifier)
+}
+
+/** A detail page's head, pinned over its rows: its art larger, its name with any chips, and a line about it. */
+@Composable
+private fun PageHead(art: ShelfArt, title: String, detail: String?, chips: List<PageChip>, off: Boolean, modifier: Modifier = Modifier) {
+    val theme = LocalFoldTheme.current.theme
     Row(
-        Modifier.fillMaxWidth().padding(start = 6.dp, bottom = 8.dp),
+        modifier.fillMaxWidth().padding(bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Box(Modifier.size(HEADER_ART), contentAlignment = Alignment.Center) {
-            TileArt(innerArt(inner, model), lit = 1f, off = off)
+            TileArt(art, lit = 1f, off = off)
         }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // The width beside the art, so a long name wraps there and its chip stays inside the card.
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             // A long name, such as a plugin's or a folder's, takes a second line rather than losing its end.
-            BasicText(
-                settingsInnerTitle(inner, model),
-                style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BasicText(
+                    title,
+                    modifier = Modifier.weight(1f, fill = false),
+                    style = style(theme.onBackground, theme.style.type.dialogTitle, theme, bold = true),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                chips.forEach { Chip(it) }
+            }
             // What the page is about, in a word or two each: a folder's path, its games, its art and info.
-            settingsInnerDetail(inner, model)?.let {
+            detail?.let {
                 BasicText(it, style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
 }
+
+/** A word beside a page's title: Verified with the check in focus ink, or Debug, on a soft pill. */
+@Composable
+private fun Chip(chip: PageChip) {
+    val theme = LocalFoldTheme.current.theme
+    Row(
+        Modifier
+            .clip(theme.style.shape.control())
+            .background(theme.onBackground.copy(alpha = theme.style.menu.quickTileAlpha))
+            .padding(start = if (chip.verified) 8.dp else 12.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (chip.verified) {
+            val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+            Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(18.dp))
+        }
+        BasicText(chip.text, style = style(if (chip.verified) theme.onBackground else theme.muted, theme.style.type.hint, theme, bold = true), maxLines = 1)
+    }
+}
+
+/**
+ * A plugin's card on Settings › Plugins: its art, its name over its version, and on the right
+ * what needs doing. An update waiting is the one value in focus ink, on a pill, so it reads first.
+ */
+@Composable
+private fun PluginListingRow(entry: PluginListing, art: ShelfArt, focused: Boolean, scale: Float, modifier: Modifier) {
+    val theme = LocalFoldTheme.current.theme
+    val lit = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
+    val lift = bouncy(if (focused) 1f else 0f, scale)
+    Row(
+        modifier.height(ENTRY_HEIGHT).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(Modifier.size(ENTRY_ART).lifted(lit, lift, grow = theme.style.settings.artGrow, rest = theme.style.settings.artRestAlpha), contentAlignment = Alignment.Center) {
+            TileArt(art, lit = 1f, off = false)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            BasicText(
+                entry.name,
+                modifier = Modifier.graphicsLayer { alpha = theme.style.menu.labelRestAlpha.let { it + (1f - it) * lit.value } },
+                style = style(theme.onBackground, theme.style.type.menuRow, theme, bold = true),
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                entry.line?.let { BasicText(it, modifier = Modifier.weight(1f, fill = false), style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // The check its page's chip wears, in the same ink.
+                if (entry.verified) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+                    Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(16.dp))
+                    BasicText(app.foldcade.language.ApkPluginCopy.verified, style = style(theme.muted, theme.style.type.hint, theme), maxLines = 1)
+                }
+            }
+        }
+        entry.value?.let { value ->
+            when {
+                entry.fresh -> BasicText(
+                    value,
+                    modifier = Modifier.clip(theme.style.shape.control()).background(theme.focus).padding(horizontal = 14.dp, vertical = 6.dp),
+                    style = style(theme.background, theme.style.type.hint, theme, bold = true),
+                    maxLines = 1,
+                )
+                else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (entry.healthy) {
+                        val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+                        Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(22.dp))
+                    }
+                    // A release to install wears the cloud its page's Install row does, so it reads as an action.
+                    if (entry.offer) {
+                        val cloud = themeIcon(R.drawable.symbol_cloud)
+                        Image(cloud.painter, contentDescription = null, colorFilter = cloud.tint(theme.onBackground), modifier = Modifier.size(24.dp))
+                    }
+                    BasicText(value, style = style(when {
+                        entry.attention -> theme.style.colors.attention
+                        entry.offer -> theme.onBackground
+                        else -> theme.muted
+                    }, theme.style.type.menuRow, theme), maxLines = 1)
+                }
+            }
+        }
+        OpensChevron(focused, style(theme.onBackground, theme.style.type.menuRow, theme, bold = true), scale)
+    }
+}
+
+/**
+ * A plugin's facts under its rows, side by side over a hairline: each a small label over its
+ * value. They are read, never changed, so the D-pad passes them by; the last row keeps them in view.
+ */
+@Composable
+private fun PluginFacts(facts: List<PageFact>, modifier: Modifier) {
+    val theme = LocalFoldTheme.current.theme
+    Column(modifier.fillMaxWidth().padding(top = 10.dp, start = 14.dp, end = 14.dp)) {
+        Box(Modifier.fillMaxWidth().height(1.dp).background(theme.onBackground.copy(alpha = theme.style.settings.borderAlpha)))
+        // Side by side while they fit; on a narrower card, as the bottom screen's, a fact that
+        // would break moves to the next line whole, so no value is cut mid-word.
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth().padding(top = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            facts.forEachIndexed { index, fact ->
+                Column(Modifier.padding(end = if (index < facts.lastIndex) FACT_GAP else 0.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    BasicText(
+                        fact.label.uppercase(),
+                        style = style(theme.muted, theme.style.type.hint * FACT_LABEL, theme, bold = true).copy(letterSpacing = FACT_TRACKING),
+                        maxLines = 1,
+                    )
+                    // Who signed it reads as Verified beside the title; here it is the fingerprint, for the curious.
+                    BasicText(fact.value, style = style(theme.onBackground.copy(alpha = FACT_VALUE_ALPHA), theme.style.type.hint, theme),
+                        maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** At least this between two facts on one line. */
+private val FACT_GAP = 20.dp
+
+/** A fact's label is smaller than its value, and tracked out, as a spec sheet's are. */
+private const val FACT_LABEL = 0.78f
+private val FACT_TRACKING = androidx.compose.ui.unit.TextUnit(0.08f, androidx.compose.ui.unit.TextUnitType.Em)
+private const val FACT_VALUE_ALPHA = 0.82f
 
 /**
  * One of a shelf's tiles: its art on a soft square, its name under it, and a badge when it
@@ -648,7 +814,9 @@ private fun innerArt(inner: SettingsInner, model: PickerModel): ShelfArt = when 
     is SettingsInner.Emulator -> ShelfArt.App(emulatorShelf(model).firstOrNull { it.key == inner.key }?.packageName)
     is SettingsInner.Folder -> ShelfArt.Mark("folder")
     is SettingsInner.PluginCatalog -> ShelfArt.Mark(PluginRegistry.source(inner.packageName)?.mark ?: "cloud")
-    is SettingsInner.ApkPlugin -> ShelfArt.Plugin(inner.packageName, model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.activity)
+    // A registry plugin, and its debug build, keep the mark its catalog card wore before it was installed.
+    is SettingsInner.ApkPlugin -> PluginRegistry.sourceOrDebug(inner.packageName)?.let { ShelfArt.Mark(it.mark) }
+        ?: ShelfArt.Plugin(inner.packageName, model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.activity)
     is SettingsInner.Host -> ShelfArt.Mark("moonlight")
     is SettingsInner.Backend -> ShelfArt.Mark("cloud")
     SettingsInner.Systems -> ShelfArt.Mark("emulators")
@@ -738,7 +906,14 @@ private const val SHELF_FLICK_SECONDS = 0.15f
 
 /** How far past either end a finger can pull the strip, in columns. */
 private const val SHELF_GIVE = 0.3f
-private val HEADER_ART = 56.dp
+private val HEADER_ART = 64.dp
+
+/** A page's head starts where the rows' art does. */
+private val HEADER_INSET = 14.dp
+
+/** A plugin's card on Settings › Plugins: taller than a row, for its name over its version. */
+private val ENTRY_HEIGHT = 76.dp
+private val ENTRY_ART = 52.dp
 
 /** Beyond the ring's reach inside the card's scroll. */
 private val CARD_EXTRA = 0.dp
@@ -756,6 +931,15 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Screens -> R.drawable.ic_status_settings
     SettingsCategory.Plugins -> R.drawable.ic_status_plugins
     SettingsCategory.About -> R.drawable.ic_status_info
+}
+
+/** A plugin's release row says what A does with its art: take the release, check again, or ask Android. */
+private fun releaseIcon(catalog: app.foldcade.language.PluginCatalogSetting): Int = when (catalog.status) {
+    app.foldcade.language.PluginCatalogStatus.NeedsPermission -> R.drawable.symbol_shield
+    app.foldcade.language.PluginCatalogStatus.Ready, app.foldcade.language.PluginCatalogStatus.UpdateAvailable,
+    app.foldcade.language.PluginCatalogStatus.Downloading, app.foldcade.language.PluginCatalogStatus.Installing,
+    app.foldcade.language.PluginCatalogStatus.Failed -> R.drawable.symbol_cloud
+    else -> if (catalog.canInstall) R.drawable.symbol_cloud else R.drawable.symbol_restart
 }
 
 /**
@@ -777,6 +961,10 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     // SteamGridDB is where art comes from: the row wears the picture its page does (review-A 08).
     Row.ArtKey -> R.drawable.symbol_art
     is Row.StreamHost -> R.drawable.symbol_pc
+    // A plugin's page: its release, the computers it may use, and the games it opens.
+    is Row.PluginInstall -> R.drawable.symbol_restart
+    is Row.PluginGrant -> R.drawable.symbol_pc
+    is Row.PluginRouting -> R.drawable.symbol_moonlight
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
     Row.Theme -> R.drawable.symbol_gem
     Row.IconTheme -> R.drawable.symbol_icon
@@ -845,6 +1033,7 @@ private fun CategoryRow(
     selected: Boolean,
     focused: Boolean,
     scale: Float,
+    height: androidx.compose.ui.unit.Dp,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
@@ -854,7 +1043,7 @@ private fun CategoryRow(
     Row(
         modifier
             .fillMaxWidth()
-            .height(ROW_HEIGHT)
+            .height(height)
             .keepInView(focused)
             .press(onClick)
             // Art alone still says which category it is.
@@ -892,6 +1081,30 @@ private fun Modifier.holdPress(app: FoldcadeApp, index: Int, screen: HostScreen,
         // A release after the hold is done, before the next tick, completes it here: its effect must run.
         try { tryAwaitRelease() } finally { onEffect(app.shell.setPromptHeld(key, false, app.shell.inputWindow(screen))) }
     })
+}
+
+/**
+ * A plugin's release row fills as its download does, in the hold's ink, and stays full while
+ * Android installs it. The fill drains once the row has its answer.
+ */
+@Composable
+private fun downloadFill(model: PickerModel, row: Row, scale: Float): Modifier {
+    val packageName = (row as? Row.PluginInstall)?.packageName ?: return Modifier
+    val theme = LocalFoldTheme.current.theme
+    val catalog = model.pluginCatalog(packageName)
+    val target = when (catalog.status) {
+        app.foldcade.language.PluginCatalogStatus.Downloading -> (catalog.progress ?: 0) / 100f
+        app.foldcade.language.PluginCatalogStatus.Installing -> 1f
+        else -> 0f
+    }
+    val shown = eased(target, theme.motion.durationFocus, scale)
+    return Modifier.drawBehind {
+        if (shown.value > 0f) drawRoundRect(
+            theme.focus.copy(alpha = theme.style.menu.holdAlpha),
+            size = Size(size.width * shown.value, size.height),
+            cornerRadius = CornerRadius(theme.style.shape.highlightCornerDp.dp.toPx()),
+        )
+    }
 }
 
 /** The fill a held row grows while it is held, and the shake when it is let go early. */
