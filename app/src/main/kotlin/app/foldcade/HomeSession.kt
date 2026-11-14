@@ -489,6 +489,12 @@ class HomeSession(
     fun emptyCollection(): HomeFolder? =
         if (iconPick != null || typing != null || selection != null || board.editing) null else emptyCollection(board)
 
+    /**
+     * All games while it lists no game. Its tabs only list what has a game, so this is the All tab.
+     * A or X there is Add games, as on Home's tile.
+     */
+    fun emptyAll(): Boolean = board.allOpen && board.hold == null && allRows().isEmpty()
+
     /** Opens All to fill collection [id] from, with Y › Add to. Back from All comes back to it. */
     private fun addGames(id: String): HomeStep {
         board = openAll(board)

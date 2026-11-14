@@ -30,6 +30,9 @@ enum class PromptKey {
 
     /** Left and right on the D-pad, for a slider. Only a hint glyph; no single key is it. */
     DpadSides,
+
+    /** Up and down on the D-pad, for a page that scrolls. The same glyph as [DpadSides]. */
+    DpadUpDown,
     ;
 
     val face: Boolean
@@ -132,6 +135,7 @@ fun keyOfPrompt(key: PromptKey): Int = when (key) {
     PromptKey.R2 -> KeyEvent.KEYCODE_BUTTON_R2
     PromptKey.R3 -> KeyEvent.KEYCODE_BUTTON_THUMBR
     PromptKey.DpadSides -> KeyEvent.KEYCODE_DPAD_RIGHT
+    PromptKey.DpadUpDown -> KeyEvent.KEYCODE_DPAD_DOWN
 }
 
 fun backKeyFor(confirmKey: Int): Int = when (confirmKey) {

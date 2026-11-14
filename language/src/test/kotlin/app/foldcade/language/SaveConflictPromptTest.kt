@@ -135,6 +135,12 @@ class SaveConflictPromptTest {
     }
 
     @Test
+    fun theShowcaseNamesTheScreenTheChoiceIsOn() {
+        assertEquals("Choose a save on the bottom screen.", Copy.saveConflictTop(HostScreen.Bottom))
+        assertEquals("Choose a save on the top screen.", Copy.saveConflictTop(HostScreen.Top))
+    }
+
+    @Test
     fun aNarrowPanelNeverGivesACardANegativeWidth() {
         assertEquals(0f, saveConflictFit(20f, 300f).cardWidth)
     }

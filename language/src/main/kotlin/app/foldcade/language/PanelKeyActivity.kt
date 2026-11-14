@@ -37,6 +37,12 @@ abstract class PanelKeyActivity : ComponentActivity() {
     /** A companion Home sends page controls here after decoding its own physical input. */
     fun dispatchPanelMeaning(meaning: Meaning, repeatCount: Int) = onMeaningRepeated(meaning, repeatCount)
 
+    /** This page's name, for the companion Home beside it. Null leaves the companion's own. */
+    open fun companionTitle(): String? = null
+
+    /** The keys this page takes on its focused row, for the companion beside it to name. Null leaves the companion's own. */
+    open fun companionHints(): List<HintKey>? = null
+
     protected open fun faceMap(): FaceMap = FaceMap.standard()
 
     /** Moving a tile, picking an icon, typing, and All library keys. Idle everywhere else. */

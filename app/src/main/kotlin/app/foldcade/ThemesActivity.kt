@@ -91,6 +91,11 @@ class ThemesActivity : PanelKeyActivity() {
     /** The player's own Confirm and Back, as Home reads them. */
     override fun faceMap(): app.foldcade.language.FaceMap = app.shell.model.faceMap
 
+    override fun companionTitle(): String = ThemesCopy.title
+
+    /** Read from [page], so the companion follows the focused row. */
+    override fun companionHints(): List<app.foldcade.language.HintKey> = page.hints(faceMap())
+
     override fun onMeaning(meaning: Meaning) {
         val (next, action) = page.on(meaning, faceMap())
         page = next

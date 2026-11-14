@@ -338,7 +338,9 @@ object Copy {
     const val savesKeptBody = "This game used the copy from the server. The other copy was archived."
     const val saveConflictTitle = "Two saves"
     const val saveConflictBody = "Both copies are kept. Choose which one this game plays."
-    const val saveConflictTop = "Choose which save to play on the bottom screen."
+    /** Over the choice's showcase half: the screen its cards are on, [controls], as the layout puts them. */
+    fun saveConflictTop(controls: HostScreen) =
+        if (controls == HostScreen.Top) "Choose a save on the top screen." else "Choose a save on the bottom screen."
     /** Under each copy: the game plays it from now on. The other copy is still kept. */
     const val keepThisOne = "Play this one"
     /** Neither copy moves, and Foldcade asks again only once a save changes. */

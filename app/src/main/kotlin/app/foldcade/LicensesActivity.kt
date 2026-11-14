@@ -34,6 +34,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.Theme
+import app.foldcade.language.licensesHints
 import app.foldcade.language.noticeBlocks
 import app.foldcade.language.promptKeyOf
 import app.foldcade.ui.LocalFoldTheme
@@ -61,6 +62,10 @@ class LicensesActivity : PanelKeyActivity() {
 
     /** The player's own Confirm and Back, as Home reads them, so the Back the header names is the one that closes. */
     override fun faceMap(): app.foldcade.language.FaceMap = (application as FoldcadeApp).shell.model.faceMap
+
+    override fun companionTitle(): String = LicenseCopy.title
+
+    override fun companionHints(): List<app.foldcade.language.HintKey> = licensesHints(faceMap())
 
     override fun onMeaning(meaning: Meaning) {
         handle(meaning)

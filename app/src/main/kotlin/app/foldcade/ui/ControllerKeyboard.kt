@@ -86,7 +86,8 @@ import kotlinx.coroutines.withContext
  * show the right glyphs. A tap presses a key through [onTap]; nothing here raises
  * Android's keyboard. Without [chipRow] the keys take the chips' room. [done] is what the
  * Done key says, and [shiftButton] the button Shift wears, or none when no button is Shift.
- * While not [active], as when Find's results have the D-pad, the highlight dims and no key lifts.
+ * While not [active], as when Find's results have the D-pad, the highlight dims, no key lifts,
+ * and the keys' button glyphs fade out: those buttons mean something else there.
  */
 @Composable
 internal fun ControllerKeyboard(
@@ -172,6 +173,7 @@ internal fun ControllerKeyboard(
         val highlight = rememberGlidingRect({ target }, scale)
         val keyboard = theme.style.keyboard
         val lit by eased(if (active) 1f else keyboard.inactiveHighlight, motion.durationFocus, scale)
+        val glyphs by eased(if (active) 1f else 0f, motion.durationFocus, scale)
 
         Box(
             Modifier
@@ -231,6 +233,7 @@ internal fun ControllerKeyboard(
                             caps = { caps },
                             buttons = buttons,
                             held = held,
+                            glyphs = { glyphs },
                             unit = unit,
                             scale = scale,
                             done = done,
@@ -529,7 +532,7 @@ private fun ChipStrip(
 /**
  * One key. It lifts with a bounce under the highlight and squashes as it acts. A letter
  * shows both cases and rolls between them with [caps]. Shift lights while it is on and
- * shows a lamp for caps lock.
+ * shows a lamp for caps lock. [glyphs] fades the buttons the keys wear.
  */
 @Composable
 private fun Key(
@@ -541,6 +544,7 @@ private fun Key(
     caps: () -> Float,
     buttons: TypingFaces,
     held: Set<PromptKey>,
+    glyphs: () -> Float,
     unit: Dp,
     scale: Float,
     done: String,
@@ -648,14 +652,14 @@ private fun Key(
             KeyCap.Shift -> {
                 val off = themeIconOrNull("control.shift", 128)
                 val on = themeIconOrNull("control.shift.on", 128)
-                KeyArt(shiftButton, held, glyphSize) {
+                KeyArt(shiftButton, held, glyphSize, glyphs) {
                     keyGlyph(off, ink)
                     if (shiftLit > 0f) keyGlyph(on, ink, shiftLit)
                     drawLamp(lamp, ring, keyboard.lampHaloAlpha)
                 }
             }
-            KeyCap.Erase -> themeIconOrNull("control.erase", 128).let { art -> KeyArt(buttons.eraseGlyph, held, glyphSize) { keyGlyph(art, ink) } }
-            KeyCap.Space -> themeIconOrNull("control.space", 128).let { art -> KeyArt(buttons.spaceGlyph, held, glyphSize, artWidth = 2.4f) { keyGlyph(art, ink) } }
+            KeyCap.Erase -> themeIconOrNull("control.erase", 128).let { art -> KeyArt(buttons.eraseGlyph, held, glyphSize, glyphs) { keyGlyph(art, ink) } }
+            KeyCap.Space -> themeIconOrNull("control.space", 128).let { art -> KeyArt(buttons.spaceGlyph, held, glyphSize, glyphs, artWidth = 2.4f) { keyGlyph(art, ink) } }
             KeyCap.Done -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(unit * 0.16f),
@@ -664,7 +668,7 @@ private fun Key(
                     done,
                     style = TextStyle(color = androidx.compose.ui.graphics.lerp(theme.muted, ink, doneLit), fontSize = wordSize, fontFamily = theme.font, fontWeight = theme.style.type.strongWeight),
                 )
-                ButtonGlyph(PromptKey.Start, held, glyphSize)
+                ButtonGlyph(PromptKey.Start, held, glyphSize, glyphs)
             }
         }
     }
@@ -672,20 +676,20 @@ private fun Key(
 
 /** A key's drawn symbol beside the button that also does its job, when one does. */
 @Composable
-private fun KeyArt(button: PromptKey?, held: Set<PromptKey>, glyph: Dp, artWidth: Float = 1f, art: DrawScope.() -> Unit) {
+private fun KeyArt(button: PromptKey?, held: Set<PromptKey>, glyph: Dp, shown: () -> Float, artWidth: Float = 1f, art: DrawScope.() -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(glyph * 0.3f)) {
         Canvas(Modifier.size(glyph * artWidth, glyph), onDraw = art)
-        if (button != null) ButtonGlyph(button, held, glyph)
+        if (button != null) ButtonGlyph(button, held, glyph, shown)
     }
 }
 
-/** A button's glyph, small and quiet, lit while that button is held. */
+/** A button's glyph, small and quiet, lit while that button is held. It keeps its room while [shown] fades it. */
 @Composable
-private fun ButtonGlyph(button: PromptKey, held: Set<PromptKey>, size: Dp) {
+private fun ButtonGlyph(button: PromptKey, held: Set<PromptKey>, size: Dp, shown: () -> Float) {
     val glyph = promptGlyph(button)
     val down = button in held
     val rest = LocalFoldTheme.current.theme.style.keyboard.glyphRestAlpha
-    PromptImage(if (down) "${glyph}_filled" else glyph, size, Modifier.graphicsLayer { alpha = if (down) 1f else rest })
+    PromptImage(if (down) "${glyph}_filled" else glyph, size, Modifier.graphicsLayer { alpha = (if (down) 1f else rest) * shown() })
 }
 
 /** A key's symbol from its `control.` slot, in the key's [ink], filling the art's box. */
