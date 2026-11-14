@@ -116,6 +116,15 @@ class AddGamesHostTest {
         assertNull(shell.touchAddGames(HostScreen.Bottom))
         assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        // Up rests on the islands, and Down comes back to the button, so A still adds games.
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertNotNull(shell.model.focus.chrome)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertNull(shell.model.focus.chrome)
+        assertTrue(shell.emptyAll())
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         // B leaves All for its tile.
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         assertFalse(shell.emptyAll())
