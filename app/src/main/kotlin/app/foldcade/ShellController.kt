@@ -534,6 +534,7 @@ class ShellController(
                 else -> undo
             }
             current = stable.copy(firstColumn = shownFirstColumn(stable),
+                emptyGridButton = showingHome(stable) && find == null && (home.emptyAll() || home.emptyCollection() != null),
                 // Read off Home's games by refreshSaveHealth, never by a reducer, so no older model can drop it.
                 boardEmulators = boardEmulators,
                 // A replacement surface must not leave a return target for a later form.
@@ -1107,12 +1108,7 @@ class ShellController(
         val before = model
         if (model.libraryGrid && model.panel == null && meaning == Meaning.Options) librarySavesMenuGame = libraryEntry(model)?.game
         val current = if (model.libraryGrid) model else withShelf(model)
-        val (reduced, effect) = reduce(current, meaning, screen, repeatCount)
-        // An empty grid rests the cursor on R1. Add games opened from an empty All games has its button
-        // to come back to, so its A still adds games once the ways in close.
-        val next = if (current.dialog?.kind == DialogKind.AddGames && reduced.dialog == null && emptyAll()) {
-            reduced.copy(focus = reduced.focus.copy(chrome = null))
-        } else reduced
+        val (next, effect) = reduce(current, meaning, screen, repeatCount)
         if (current.dialog?.kind == DialogKind.BackupDone && effect is Effect.DialogChoice && effect.button == app.foldcade.language.DialogButton.Library) {
             heldActions.capture(meaning.ordinal)
         }

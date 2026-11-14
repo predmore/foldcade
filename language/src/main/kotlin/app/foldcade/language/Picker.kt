@@ -2150,6 +2150,8 @@ data class PickerModel(
     val libraryGrid: Boolean = false,
     val gridKind: GridKind = GridKind.Games,
     val emptyGrid: EmptyGrid = EmptyGrid.None,
+    /** An empty Home page has an Add games button for the cursor to rest on. */
+    val emptyGridButton: Boolean = false,
     val usageGranted: Boolean = false,
     /** Android's current optional all-files access, shared by Settings and save setup. */
     val allFilesGranted: Boolean = false,
@@ -2329,8 +2331,12 @@ private fun coerce(focus: GridFocus, model: PickerModel): GridFocus {
     // A pill the cursor was on before an app covered it gives the cursor back to the grid.
     if (!model.pills && next.chrome != null) next = next.copy(chrome = null)
     if (model.count <= 0) {
-        // An empty grid has nothing but R1 to rest on, when the pills are there to reach.
-        val chrome = if (model.pills) next.chrome ?: Chrome.StatusCluster else null
+        // An empty Home page keeps its button focused; other empty grids rest on R1.
+        val chrome = when {
+            !model.pills -> null
+            model.emptyGridButton -> next.chrome
+            else -> next.chrome ?: Chrome.StatusCluster
+        }
         return next.copy(chrome = chrome, cellIndex = 0, lastColumn = 0)
     }
     if (next.chrome == null && next.cellIndex !in 0 until reach(model)) {
@@ -2500,7 +2506,11 @@ private fun move(focus: GridFocus, meaning: Meaning, model: PickerModel): GridFo
             else -> focus
         }
     }
-    if (model.count <= 0) return if (model.pills) focus.copy(chrome = Chrome.StatusCluster) else focus
+    if (model.count <= 0) return when {
+        model.emptyGridButton && meaning != Meaning.MoveUp -> focus
+        model.pills -> focus.copy(chrome = Chrome.StatusCluster)
+        else -> focus
+    }
     if (model.libraryGrid && model.gridKind == GridKind.NoLibrary) return alongButtons(focus, meaning, model)
     val column = GridStrip.column(focus.cellIndex)
     val row = GridStrip.row(focus.cellIndex)

@@ -118,7 +118,7 @@ class AddGamesHostTest {
         shell.onMeaning(Meaning.Back, HostScreen.Bottom)
         // Up rests on the islands, and Down comes back to the button, so A still adds games.
         shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
-        assertNotNull(shell.model.focus.chrome)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
         shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
         assertNull(shell.model.focus.chrome)
         assertTrue(shell.emptyAll())
@@ -130,6 +130,85 @@ class AddGamesHostTest {
         assertFalse(shell.emptyAll())
         assertNull(shell.emptyAllHero())
         assertTrue(shell.atRest())
+    }
+
+    @Test fun cancellingRommFromEmptyAllKeepsAddGamesFocused() {
+        for (open in listOf(Meaning.Activate, Meaning.ActivateBottom)) {
+            val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+                it.setInstalledApps(emptyList(), emptySet())
+                it.showCuratedHome()
+            }
+            walkTo(shell, 0)
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            shell.onMeaning(open, HostScreen.Bottom)
+            assertEquals(Effect.DialogChoice(DialogButton.SignInRomm, DialogKind.AddGames, null),
+                shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+            shell.openAddRomm()
+            assertTrue(shell.model.connectOpen)
+            shell.onMeaning(Meaning.Back, HostScreen.Top)
+            assertFalse(shell.model.connectOpen)
+            assertTrue(shell.emptyAll())
+            assertNull(shell.model.focus.chrome)
+            assertTrue(shell.onAddGames())
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        }
+    }
+
+    @Test fun cancellingAFolderFromEmptyAllKeepsAddGamesFocused() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(Effect.DialogChoice(DialogButton.AddFolder, DialogKind.AddGames, null),
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        shell.showFolderGuide(FolderGuide(HostScreen.Bottom))
+        shell.showFolderGuide(null)
+        assertTrue(shell.emptyAll())
+        assertNull(shell.model.focus.chrome)
+        assertTrue(shell.onAddGames())
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+    }
+
+    @Test fun gamesArrivingDuringRommSetupReplaceTheEmptyButton() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.openAddRomm()
+        shell.setInstalledApps(apps, emptySet())
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertFalse(shell.emptyAll())
+        assertFalse(shell.model.emptyGridButton)
+        assertNull(shell.model.focus.chrome)
+        assertEquals(quest, shell.homeFace(shell.model.focus.cellIndex)?.id)
+        assertNotNull(shell.libraryBar())
+    }
+
+    @Test fun otherEmptyGridsStillRestOnR1AfterLeavingEmptyAll() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.model.emptyGridButton)
+        shell.showLoading(insidePlatform = false)
+        assertFalse(shell.model.emptyGridButton)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
+        shell.showNoPlatforms("local-folder")
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
     }
 
     @Test fun allGamesWithAGameIsNotEmpty() {
