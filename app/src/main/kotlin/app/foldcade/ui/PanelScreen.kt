@@ -19,7 +19,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -1244,23 +1243,14 @@ private data class ArtPreview(val gameId: String, val kind: ArtKind, val url: St
 private val LocalArtPreview = compositionLocalOf<ArtPreview?> { null }
 
 @Composable
-@OptIn(androidx.compose.animation.ExperimentalAnimationApi::class)
 private fun ArtPreviewHero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (Effect?) -> Unit) {
     val picker = app.shell.artPicker?.takeIf { it.preview }
     val preview = picker?.focused?.let { ArtPreview(picker.gameId, picker.kind, it.url) }
     val motion = LocalFoldTheme.current.theme.motion
-    val previewTransition = updateTransition(preview, label = "art preview")
-    val previewSettled by remember {
-        derivedStateOf { !previewTransition.isRunning && previewTransition.currentState == previewTransition.targetState }
-    }
     Box(Modifier.fillMaxSize()) {
-        previewTransition.Crossfade(animationSpec = motion.arrive(motion.durationScene, scale)) { shown ->
-            // The preview's enclosing crossfade must settle too before its art can occlude.
-            CompositionLocalProvider(
-                LocalArtPreview provides shown,
-                LocalBackdropOpaque provides (LocalBackdropOpaque.current && previewSettled),
-            ) { Hero(app, screen, scale, onEffect) }
-        }
+        // One hero for every candidate: its staged art crossfades only the layers a candidate
+        // changes, so a new icon leaves the wide art, the name card and the islands where they are.
+        CompositionLocalProvider(LocalArtPreview provides preview) { Hero(app, screen, scale, onEffect) }
         if (screen == app.shell.model.layout.menuScreen) {
             Crossfade(app.shell.artPicker?.match?.name,
                 animationSpec = motion.arrive(motion.durationShort, scale),
@@ -1343,7 +1333,8 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
                 travel = staged.travel,
                 travelMillis = motion.sceneDuration(model.motionSpeed, scale),
                 fadeOnly = fadeOnly,
-                keyOf = { it.subject?.key to it.images },
+                // Only what the scene draws: a new cover or logo over the same wide art keeps this layer still.
+                keyOf = { Triple(it.subject?.key, it.images.backdrop, it.images.wide) },
                 // The scene is as deep as the theme's backdrop, so moving the Thor slides it as far.
                 layer = Modifier.fillMaxSize().tilted(tilt, motion, 1f, cover = true),
                 depth = motion.sceneDepth,
