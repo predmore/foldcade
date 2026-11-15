@@ -92,6 +92,19 @@ class EmptyCollectionHostTest {
         assertEquals(group.id, shell.emptyCollection()?.id)
     }
 
+    @Test fun leavingSettingsOverAnEmptyCollectionKeepsAddGamesFocused() {
+        val shell = shell()
+        open(shell, board().slots.indexOf(group.id))
+        shell.onMeaning(Meaning.Menu, HostScreen.Bottom)
+        assertNotNull(shell.model.settings)
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertNull(shell.model.settings)
+        assertEquals(group.id, shell.emptyCollection()?.id)
+        assertNull(shell.model.focus.chrome)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+    }
+
     @Test fun allOpenedAnotherWayStillGoesBackHome() {
         val shell = shell()
         val root = board().slots.indexOf(group.id)

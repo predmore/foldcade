@@ -119,6 +119,21 @@ data class ThemesPage(
         return if (next == focus) this else copy(focus = next, armed = false, note = null)
     }
 
+    /**
+     * What the companion names for the focused row: A where it does something, the bottom-screen
+     * button on a pack that can be removed, then B. Nothing while an install runs, which takes no key.
+     */
+    fun hints(faces: FaceMap = FaceMap.standard()): List<HintKey> {
+        if (busy) return emptyList()
+        val confirm = promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA
+        val action = when (val row = focused) {
+            ThemesRow.Add -> HintKey(confirm, SettingsCopy.open)
+            ThemesRow.Restart -> HintKey(confirm, Copy.restart)
+            is ThemesRow.Pack -> HintKey(actionFaces(faces).bottomGlyph, ThemesCopy.remove).takeIf { row.entry.removable }
+        }
+        return listOfNotNull(action, HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back))
+    }
+
     /** An install began: nothing else is pressed until it ends. */
     fun adding(): ThemesPage = copy(busy = true, note = ThemesCopy.adding)
 

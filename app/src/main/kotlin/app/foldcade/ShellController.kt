@@ -14,6 +14,7 @@ import app.foldcade.language.sameKey
 import app.foldcade.language.DeleteHold
 import app.foldcade.language.Row
 import app.foldcade.language.promptKeyOf
+import app.foldcade.language.HOME_ALL
 import app.foldcade.language.HOME_ANDROID_GAMES
 import app.foldcade.language.HOME_ANDROID_APPS
 import app.foldcade.language.HOME_RECENT
@@ -533,6 +534,7 @@ class ShellController(
                 else -> undo
             }
             current = stable.copy(firstColumn = shownFirstColumn(stable),
+                emptyGridButton = showingHome(stable) && find == null && (home.emptyAll() || home.emptyCollection() != null),
                 // Read off Home's games by refreshSaveHealth, never by a reducer, so no older model can drop it.
                 boardEmulators = boardEmulators,
                 // A replacement surface must not leave a return target for a later form.
@@ -1054,9 +1056,9 @@ class ShellController(
             publish(next)
             return effect
         }
-        // A or X on Home's Add games tile offers the ways to bring games, the one that fits first.
-        // It is an action, not a thing, so Y has nothing to move or file there, unless it undoes.
-        if (onAddGamesTile() && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom || meaning == Meaning.Options && !undoOffered())) {
+        // A or X on Home's Add games tile, or in an empty All games, offers the ways to bring games,
+        // the one that fits first. It is an action, not a thing, so Y has nothing to move or file there, unless it undoes.
+        if (onAddGames() && (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom || meaning == Meaning.Options && !undoOffered())) {
             if (meaning == Meaning.Options || repeatCount > 0) return null
             heldActions.capture(meaning.ordinal)
             publish(model.copy(dialog = addGamesDialog(model.layout.gridScreen, model.romFolderOffer)))
@@ -1467,6 +1469,14 @@ class ShellController(
     /** An empty collection keeps its name and look on the top screen, where an empty slot shows nothing. */
     fun emptyCollectionHero(): HeroSubject? = emptyCollection()?.let(::folderHero)
 
+    /** All games open with no game in it. Its grid shows how to bring games instead of tiles. */
+    fun emptyAll(): Boolean = showingHome() && find == null && home.emptyAll()
+
+    /** All games with nothing in it keeps the name and look its Home tile has, where an empty slot shows nothing. */
+    fun emptyAllHero(): HeroSubject? = if (!emptyAll()) null else home.faceOf(HOME_ALL).let { all ->
+        HeroSubject.Folder(HeroFolder(key = HOME_ALL, name = all.title, count = 0, mark = all.mark))
+    }
+
     /**
      * Hidden with nothing in it: the place itself, its shut eye and "Nothing hidden", so the top
      * screen names where the player is, as every other place does (review-B 135).
@@ -1486,9 +1496,9 @@ class ShellController(
         )
     }
 
-    /** A tap on an empty collection's Add games does what A does there, in one tap: it is the only thing to press. */
+    /** A tap on an empty collection's or an empty All games' Add games does what A does there, in one tap: it is the only thing to press. */
     fun touchAddGames(screen: HostScreen): Effect? {
-        if (!homeActive() || artPicker != null || emptyCollection() == null) return null
+        if (!homeActive() || artPicker != null || emptyCollection() == null && !emptyAll()) return null
         // The cursor may be on a pill. The tap names Add games, so it takes the cursor back first.
         if (model.focus.chrome != null) publish(model.copy(focus = model.focus.copy(chrome = null)))
         return onMeaning(Meaning.Activate, screen)
@@ -1641,8 +1651,8 @@ class ShellController(
     /** A tap on one of Find's filters. */
     fun tapFindFilter(at: Int): Effect? = find?.takeIf { findActive() }?.let { findOutcome(it.tapFilter(at)) }
 
-    /** All games' tabs and the one open, for the bar over its grid, while All games is on screen. Null anywhere else. */
-    fun libraryBar(): LibraryView? = if (showingHome() && home.board.allOpen) home.libraryView() else null
+    /** All games' tabs and the one open, for the bar over its grid, while All games is on screen. Null anywhere else, and with no game to find or sort. */
+    fun libraryBar(): LibraryView? = if (showingHome() && home.board.allOpen && !home.emptyAll()) home.libraryView() else null
 
     /**
      * True while All games has the keys, so its bar takes taps: no Find, art chooser, menu, page,
@@ -1896,7 +1906,7 @@ class ShellController(
 
     /** True when Y would open a menu for the focused tile. A grid with no tiles opens one only for Undo. */
     fun hasOptions(): Boolean =
-        !(onAddGamesTile() && !undoOffered()) && (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
+        !(onAddGames() && !undoOffered()) && (model.focus.chrome == null || find != null) && actionRows(model.tileActions).isNotEmpty() &&
             (find != null || model.count > 0 || model.tileActions?.undo == true)
 
     fun homeEditing(): Boolean =
@@ -3238,10 +3248,10 @@ class ShellController(
     /** Home with nothing over it and no tool holding the keys, where an ask can come up by itself. */
     private fun homeIdle(): Boolean = homeActive() && find == null && homeKeys() == HomeKeys.Idle
 
-    /** The cursor rests on Home's Add games tile, with nothing open over Home. */
-    fun onAddGamesTile(): Boolean =
-        homeActive() && find == null && homeKeys() == HomeKeys.Idle && model.focus.chrome == null &&
-            model.focus.cellIndex == addGamesSlot()
+    /** The cursor rests on Home's Add games tile, or on an empty All games' button, with nothing open over Home. */
+    fun onAddGames(): Boolean =
+        homeActive() && find == null && model.focus.chrome == null &&
+            (homeKeys() == HomeKeys.Idle && model.focus.cellIndex == addGamesSlot() || homeKeys() == HomeKeys.AllLibrary && emptyAll())
 
     /**
      * Once, on a first run with no ROM folder seen and no RomM server, asks where the games are:

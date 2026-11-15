@@ -39,4 +39,15 @@ class LicensesRowTest {
         assertEquals(Effect.OpenLicenses, effect)
         assertEquals(about.settings, stayed.settings)
     }
+
+    @Test
+    fun theCompanionNamesTheNoticeKeysNotTheRowUnderIt() {
+        // The D-pad pages through the notices and B goes back. A does nothing there, so it is not named.
+        assertEquals(
+            listOf(HintKey(PromptKey.DpadUpDown, LicenseCopy.scroll), HintKey(PromptKey.FaceB, Copy.back)),
+            licensesHints(FaceMap.standard()),
+        )
+        val swapped = FaceMap.standard().copy(confirmKey = KeyEvent.KEYCODE_BUTTON_B, backKey = KeyEvent.KEYCODE_BUTTON_A)
+        assertEquals(PromptKey.FaceA, licensesHints(swapped).last().key)
+    }
 }

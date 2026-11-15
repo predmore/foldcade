@@ -371,7 +371,7 @@ internal fun promptGlyph(key: PromptKey): String = when (key) {
     PromptKey.L2 -> "ic_btn_l2"
     PromptKey.R2 -> "ic_btn_r2"
     PromptKey.R3 -> "ic_btn_rstick_press"
-    PromptKey.DpadSides -> "ic_btn_dpad"
+    PromptKey.DpadSides, PromptKey.DpadUpDown -> "ic_btn_dpad"
 }
 
 @Composable

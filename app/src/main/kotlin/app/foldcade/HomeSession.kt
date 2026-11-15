@@ -489,6 +489,12 @@ class HomeSession(
     fun emptyCollection(): HomeFolder? =
         if (iconPick != null || typing != null || selection != null || board.editing) null else emptyCollection(board)
 
+    /**
+     * All games while it lists no game. Its tabs only list what has a game, so this is the All tab.
+     * A or X there is Add games, as on Home's tile.
+     */
+    fun emptyAll(): Boolean = board.allOpen && board.hold == null && allRows().isEmpty()
+
     /** Opens All to fill collection [id] from, with Y › Add to. Back from All comes back to it. */
     private fun addGames(id: String): HomeStep {
         board = openAll(board)
@@ -1163,7 +1169,9 @@ class HomeSession(
             Meaning.LetterForward, Meaning.LetterBackward ->
                 if (repeatCount > 0) step(null, index) else stepLibraryTab(if (meaning == Meaning.LetterForward) 1 else -1, index)
             Meaning.Menu, Meaning.LeftPanel, Meaning.RightPanel, Meaning.Options -> HomeStep(handled = false, effect = null, focus = null)
-            Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight,
+            // With no tile to land on, Down from L1 or R1 comes back to Add games, as in an empty collection.
+            Meaning.MoveDown -> if (emptyAll()) step(null, 0) else HomeStep(handled = false, effect = null, focus = null)
+            Meaning.MoveUp, Meaning.MoveLeft, Meaning.MoveRight,
             Meaning.PageTowardStart, Meaning.PageTowardEnd,
             ->
                 HomeStep(handled = false, effect = null, focus = null)

@@ -52,6 +52,27 @@ class ThemesPageTest {
     }
 
     @Test
+    fun theCompanionNamesWhatTheFocusedRowTakes() {
+        val back = HintKey(PromptKey.FaceB, Copy.back)
+        // A shipped pack takes only B; an installed one also takes the bottom-screen button.
+        assertEquals(listOf(back), page.hints())
+        val dusk = page.on(Meaning.MoveDown).first
+        assertEquals(listOf(HintKey(PromptKey.FaceX, ThemesCopy.remove), back), dusk.hints())
+        val onAdd = dusk.on(Meaning.MoveDown).first
+        assertEquals(listOf(HintKey(PromptKey.FaceA, SettingsCopy.open), back), onAdd.hints())
+        val onRestart = onAdd.settled(ThemesCopy.added, changed = true).on(Meaning.MoveDown).first
+        assertEquals(listOf(HintKey(PromptKey.FaceA, Copy.restart), back), onRestart.hints())
+        // An install in flight takes no key, so none is named.
+        assertEquals(emptyList<HintKey>(), onAdd.adding().hints())
+        // Calibration's keys, as the page reads them.
+        val faces = faceMapWithConfirm(FaceMap.standard(), PromptKey.FaceX)
+        val removes = dusk.hints(faces).first()
+        assertEquals(actionFaces(faces).bottomGlyph, removes.key)
+        assertEquals(promptKeyOf(faces.confirmKey), onAdd.hints(faces).first().key)
+        assertEquals(promptKeyOf(faces.backKey), onAdd.hints(faces).last().key)
+    }
+
+    @Test
     fun anInstallInFlightTakesNoKeys() {
         val adding = page.adding()
         assertEquals(adding to null, adding.on(Meaning.Back))

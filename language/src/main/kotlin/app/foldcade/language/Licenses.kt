@@ -4,7 +4,12 @@ package app.foldcade.language
 object LicenseCopy {
     const val row = "Licenses"
     const val title = "Licenses"
+    const val scroll = "Scroll"
 }
+
+/** What the companion names beside Licenses: the D-pad pages through the notices and B goes back. A does nothing there. */
+fun licensesHints(faces: FaceMap): List<HintKey> =
+    listOf(HintKey(PromptKey.DpadUpDown, LicenseCopy.scroll), HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back))
 
 /** One block of a notice as the page shows it: a heading, or a paragraph the page wraps itself. */
 data class NoticeBlock(val text: String, val heading: Boolean = false)

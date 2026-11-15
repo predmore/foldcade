@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.foldcade.language.Copy
 import app.foldcade.language.DateStyle
+import app.foldcade.language.HostScreen
 import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveConflictFocus
 import app.foldcade.language.SaveConflictPrompt
@@ -51,10 +52,10 @@ import app.foldcade.language.saveConflictFit
 import app.foldcade.language.newerSide
 
 /**
- * The top screen names the game. The choice itself is on the bottom screen.
+ * The hero's screen names the game. The choice itself is on [controls], which this half names.
  */
 @Composable
-internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
+internal fun SaveConflictTop(prompt: SaveConflictPrompt, controls: HostScreen) {
     val theme = LocalFoldTheme.current.theme
     Column(
         Modifier
@@ -68,7 +69,7 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt) {
     ) {
         BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.conflictGame.value, theme, TextAlign.Center, display = true)
         BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center, display = true)
-        BasicLine(Copy.saveConflictTop, theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
+        BasicLine(Copy.saveConflictTop(controls), theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
     }
 }
 

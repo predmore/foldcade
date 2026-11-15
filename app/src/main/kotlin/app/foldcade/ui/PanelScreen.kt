@@ -181,6 +181,7 @@ import app.foldcade.FoldcadeHomeActivity
 import app.foldcade.Panel
 import app.foldcade.Surface
 import app.foldcade.panel
+import app.foldcade.screen
 import app.foldcade.RunningApp
 import app.foldcade.CenterFocus
 import app.foldcade.language.AchievementCopy
@@ -233,6 +234,7 @@ import app.foldcade.language.dialogHints
 import app.foldcade.language.rommConnectTitle
 import app.foldcade.language.EmptyGrid
 import app.foldcade.language.FoundFolderCopy
+import app.foldcade.language.LibraryCopy
 import app.foldcade.language.GridKind
 import app.foldcade.language.HeroBlend
 import app.foldcade.language.HeroItem
@@ -471,7 +473,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
             // The top half rises over the hero as Saves does, on its own scrim, so the focused tile's name never shows through it.
             val conflictTop = presence(conflict?.takeIf { heroHere }, motion.durationIsland, scale)
             conflictTop.shown?.let { shown ->
-                Box(Modifier.fillMaxSize().rise { conflictTop.progress.value }) { SaveConflictTop(shown) }
+                Box(Modifier.fillMaxSize().rise { conflictTop.progress.value }) { SaveConflictTop(shown, session.controlsPanel()?.screen() ?: HostScreen.Bottom) }
             }
             if (conflict != null && controlsHere) {
                 SaveConflictBottom(
@@ -887,8 +889,9 @@ private fun Modifier.wakesCommandCenter(app: FoldcadeApp, panel: Panel?): Modifi
 private sealed interface CenterSubject {
     data class App(val panel: Panel, val running: RunningApp?) : CenterSubject
 
+    /** [hints] are a native page's own keys, as Themes names them, in place of the Foldcade page's. */
     data class Page(val title: String, val icon: Int?, val mark: String?, val settings: Boolean,
-        val game: String? = null, val platform: String? = null) : CenterSubject
+        val game: String? = null, val platform: String? = null, val hints: List<HintKey>? = null) : CenterSubject
 }
 
 /**
@@ -902,7 +905,7 @@ private fun centerSubject(app: FoldcadeApp, panel: Panel): CenterSubject {
     val known = app.commandCenter.beside(panel)
     val other = known == null && app.commandCenter.besideOther(panel)
     if (app.store.session.besideFoldcadePage(panel)) {
-        return CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
+        return CenterSubject.Page(app.settingsPageActivity?.companionTitle() ?: SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
     }
     val minute = app.deviceStatus.status.collectAsStateWithLifecycle().value.minute
     val awake = !app.commandCenter.dimmed(panel)
@@ -930,8 +933,12 @@ private fun pageBeside(
         // The form's own title, so the two screens name one place (review-A 12).
         CompanionPage.Romm -> CenterSubject.Page(rommConnectTitle(model, saved = app.store.rommOrigin() != null), null, "cloud", settings = true)
         CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, R.drawable.symbol_art, null, settings = true)
-        CompanionPage.Settings ->
-            CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
+        CompanionPage.Settings -> {
+            // Themes or Licenses over Settings names itself and its own keys, not the Settings row frozen under it.
+            val owned = app.settingsPageActivity?.takeIf { session.besideFoldcadePage(screen.panel()) }
+            CenterSubject.Page(owned?.companionTitle() ?: SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true,
+                hints = owned?.companionHints())
+        }
         CompanionPage.PlayActivity -> {
             // A game's page names the game, as its About does, with Play time where About has the platform.
             val tile = model.playActivity?.game
@@ -1078,7 +1085,7 @@ private fun CommandCenterScreen(
         if (hints) {
             val inset = maxWidth * design.metrics.insetFraction
             Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.BottomCenter) {
-                GridHints(app)
+                GridHints(app, page = (subject as? CenterSubject.Page)?.hints)
             }
         }
     }
@@ -1286,7 +1293,7 @@ private fun Hero(app: FoldcadeApp, screen: HostScreen, scale: Float, onEffect: (
     // While a name is typed the hero is what is being named, wherever the grid's focus is.
     val naming = app.shell.typingHero()
     // An empty collection has no tile to focus, so the top screen shows the collection.
-    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyHiddenHero() ?: app.shell.noLibraryHero()
+    val subject = naming ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyAllHero() ?: app.shell.emptyHiddenHero() ?: app.shell.noLibraryHero()
     // Find shows its best result, or the focused one, and travels along its strip.
     val find = app.shell.find
     val cellFocused = model.dialog == null && model.panel == null && !model.connectOpen && model.focus.chrome == null
@@ -2944,6 +2951,8 @@ private fun Picker(
                     EmptyLibrary(app, screen, emptyTitle, emptyActions(model))
                 } else if (emptyCollection != null) {
                     EmptyCollection(app, screen, emptyCollection.name)
+                } else if (shell.emptyAll()) {
+                    EmptyCollection(app, screen, LibraryCopy.title, FoundFolderCopy.addGamesLine(model.romFolderOffer))
                 } else if (!model.libraryGrid && (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen()) && model.count == 0) {
                     BasicText(
                         text = if (model.homeGrid == HomeGrid.StandIns) Copy.noFolders else emptyShelf(model.homeGrid),
@@ -3028,7 +3037,7 @@ private fun FocusedName(app: FoldcadeApp, scale: Float, modifier: Modifier) {
     val design = LocalFoldTheme.current.theme.style
     val motion = LocalFoldTheme.current.theme.motion
     val model = app.shell.model
-    val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.noLibraryHero())
+    val name = (app.shell.typingHero() ?: app.shell.focusedHero() ?: app.shell.emptyCollectionHero() ?: app.shell.emptyAllHero() ?: app.shell.noLibraryHero())
         ?.let { heroCopy(it).title }.orEmpty()
     // With no hero and no band above the grid, the open folder or collection leads the name, muted,
     // so this layout names the place too (review-C S3).
@@ -3569,9 +3578,9 @@ private fun MenuHints(app: FoldcadeApp) {
     }
 }
 
-/** The keys under the grid, centred. Nothing when every key here is obvious. */
+/** The keys under the grid, centred. Nothing when every key here is obvious. [page] names a native page's keys instead of the open page's. */
 @Composable
-private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
+private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier, page: List<HintKey>? = null) {
     val shell = app.shell
     val model = shell.model
     val actions = hintFor(
@@ -3587,14 +3596,14 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
     )
     // The grid's own keys only count while nothing covers it.
     val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
-    val page = model.playActivity?.takeIf { model.dialog == null }?.let {
+    val pageKeys = page ?: model.playActivity?.takeIf { model.dialog == null }?.let {
         // Read from the history kept for the page, which follows removals and usage changes.
         playActivityHints(model, app.playHistory(it.game).daySessions(it.cursor).isNotEmpty())
     }
         ?: model.gameAbout?.takeIf { model.dialog == null }?.let { gameAboutHints(model) }
         ?: model.settings?.takeIf { model.dialog == null && !model.connectOpen }?.let { settingsHints(model) }
     val find = shell.findHints()
-    val normalKeys = find ?: ((page ?: panelHints(model) ?: gridHints(
+    val normalKeys = find ?: ((pageKeys ?: panelHints(model) ?: gridHints(
         actions,
         // A menu open over a selection names its own keys, not the selection's.
         if (model.connectOpen || model.panel != null) HomeKeys.Idle else shell.homeKeys(),
@@ -3612,9 +3621,9 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier) {
         if (model.homeGrid == HomeGrid.Hidden && model.count == 0) emptyList()
         else triggerHints(model.gridLabels.isNotEmpty())
     } else emptyList())
-    // An empty collection's one button, and Home's Add games tile, named on A.
+    // An empty collection's or All games' one button, and Home's Add games tile, named on A.
     val addGames = if (gridKeys && find == null && model.settings == null && model.playActivity == null && model.gameAbout == null &&
-        (shell.emptyCollection() != null || shell.onAddGamesTile())) {
+        (shell.emptyCollection() != null || shell.onAddGames())) {
         listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.addGames))
     } else emptyList()
     // A restored place waiting for RomM signs in on A.
@@ -5413,13 +5422,15 @@ private fun EmptyLibrary(
 
 /**
  * An open collection with nothing in it: its name, so it is still the collection on the
- * bottom screen alone, what fills it, and Add games, which A, X or a tap presses.
+ * bottom screen alone, what fills it, and Add games, which A, X or a tap presses. An empty
+ * All games is the same, with [line] for the ways to bring games in place of Y's.
  */
 @Composable
 private fun EmptyCollection(
     app: FoldcadeApp,
     screen: HostScreen,
     name: String,
+    line: String? = null,
 ) {
     val context = LocalContext.current
     val theme = foldTheme()
@@ -5440,7 +5451,11 @@ private fun EmptyCollection(
             modifier = Modifier.padding(top = px(8f)),
             style = text(theme.onBackground, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
         )
-        Row(
+        if (line != null) BasicText(
+            text = line,
+            modifier = Modifier.padding(top = px(4f)),
+            style = text(theme.muted, type.dialogBody, theme).copy(textAlign = TextAlign.Center),
+        ) else Row(
             Modifier.padding(top = px(4f)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(px(8f)),

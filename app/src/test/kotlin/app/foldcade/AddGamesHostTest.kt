@@ -46,7 +46,7 @@ class AddGamesHostTest {
     @Test fun yHasNothingToDoOnTheTile() {
         val shell = shell()
         walkTo(shell, shell.model.count)
-        assertTrue(shell.onAddGamesTile())
+        assertTrue(shell.onAddGames())
         assertFalse(shell.hasOptions())
         assertNull(shell.onMeaning(Meaning.Options, HostScreen.Bottom))
         assertNull(shell.model.panel)
@@ -79,6 +79,146 @@ class AddGamesHostTest {
         assertNull(shell.focusedHero())
         assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         assertNull(shell.model.dialog)
+    }
+
+    @Test fun anEmptyAllGamesNamesItselfAndOffersTheSameWaysIn() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+        assertTrue(shell.emptyAll())
+        // No tabs, Find or empty slot to focus: the top screen keeps All games, as its tile showed it.
+        assertNull(shell.libraryBar())
+        assertNull(shell.focusedHero())
+        val hero = shell.emptyAllHero() as HeroSubject.Folder
+        assertEquals(LibraryCopy.title, heroCopy(hero).title)
+        assertEquals("0 games", heroCopy(hero).detail)
+        // Its one button is Home's Add games: Y has nothing, A and X offer the ways in, and B closes them.
+        assertTrue(shell.onAddGames())
+        assertFalse(shell.hasOptions())
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertEquals(addGamesDialog(shell.model.layout.gridScreen, null), shell.model.dialog)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.model.dialog)
+        assertTrue(shell.emptyAll())
+        // The cursor comes back to the button, not to R1 as on a grid with nothing in it.
+        assertNull(shell.model.focus.chrome)
+        assertNull(shell.onMeaning(Meaning.ActivateBottom, HostScreen.Bottom))
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        // Moving between its buttons first still brings the cursor back.
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertNull(shell.model.focus.chrome)
+        shell.releaseMeaning(Meaning.Activate)
+        assertNull(shell.touchAddGames(HostScreen.Bottom))
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        // Up rests on the islands, and Down comes back to the button, so A still adds games.
+        shell.onMeaning(Meaning.MoveUp, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertNull(shell.model.focus.chrome)
+        assertTrue(shell.emptyAll())
+        assertNull(shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        // B leaves All for its tile.
+        shell.onMeaning(Meaning.Back, HostScreen.Bottom)
+        assertFalse(shell.emptyAll())
+        assertNull(shell.emptyAllHero())
+        assertTrue(shell.atRest())
+    }
+
+    @Test fun cancellingRommFromEmptyAllKeepsAddGamesFocused() {
+        for (open in listOf(Meaning.Activate, Meaning.ActivateBottom)) {
+            val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+                it.setInstalledApps(emptyList(), emptySet())
+                it.showCuratedHome()
+            }
+            walkTo(shell, 0)
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            shell.onMeaning(open, HostScreen.Bottom)
+            assertEquals(Effect.DialogChoice(DialogButton.SignInRomm, DialogKind.AddGames, null),
+                shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+            shell.openAddRomm()
+            assertTrue(shell.model.connectOpen)
+            shell.onMeaning(Meaning.Back, HostScreen.Top)
+            assertFalse(shell.model.connectOpen)
+            assertTrue(shell.emptyAll())
+            assertNull(shell.model.focus.chrome)
+            assertTrue(shell.onAddGames())
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+            assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+        }
+    }
+
+    @Test fun cancellingAFolderFromEmptyAllKeepsAddGamesFocused() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.MoveRight, HostScreen.Bottom)
+        assertEquals(Effect.DialogChoice(DialogButton.AddFolder, DialogKind.AddGames, null),
+            shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
+        shell.showFolderGuide(FolderGuide(HostScreen.Bottom))
+        shell.showFolderGuide(null)
+        assertTrue(shell.emptyAll())
+        assertNull(shell.model.focus.chrome)
+        assertTrue(shell.onAddGames())
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(DialogKind.AddGames, shell.model.dialog?.kind)
+    }
+
+    @Test fun gamesArrivingDuringRommSetupReplaceTheEmptyButton() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        shell.openAddRomm()
+        shell.setInstalledApps(apps, emptySet())
+        shell.onMeaning(Meaning.Back, HostScreen.Top)
+        assertFalse(shell.emptyAll())
+        assertFalse(shell.model.emptyGridButton)
+        assertNull(shell.model.focus.chrome)
+        assertEquals(quest, shell.homeFace(shell.model.focus.cellIndex)?.id)
+        assertNotNull(shell.libraryBar())
+    }
+
+    @Test fun otherEmptyGridsStillRestOnR1AfterLeavingEmptyAll() {
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())).also {
+            it.setInstalledApps(emptyList(), emptySet())
+            it.showCuratedHome()
+        }
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertTrue(shell.model.emptyGridButton)
+        shell.showLoading(insidePlatform = false)
+        assertFalse(shell.model.emptyGridButton)
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
+        shell.showNoPlatforms("local-folder")
+        shell.onMeaning(Meaning.MoveDown, HostScreen.Bottom)
+        assertEquals(Chrome.StatusCluster, shell.model.focus.chrome)
+    }
+
+    @Test fun allGamesWithAGameIsNotEmpty() {
+        val shell = shell()
+        walkTo(shell, 0)
+        shell.onMeaning(Meaning.Activate, HostScreen.Bottom)
+        assertEquals(HomeKeys.AllLibrary, shell.homeKeys())
+        assertFalse(shell.emptyAll())
+        assertFalse(shell.onAddGames())
+        assertNotNull(shell.libraryBar())
     }
 
     @Test fun theFirstRunAsksOnceWhenNothingWasFound() {

@@ -306,6 +306,8 @@ class SessionTest {
         assertEquals(Panel.Bottom, swapped.menuPanel())
         assertEquals(Panel.Bottom, swapped.heroPanel())
         assertEquals(Panel.Top, swapped.controlsPanel())
+        // A save conflict's showcase is on the bottom here, so it sends the player up to the choice.
+        assertEquals("Choose a save on the top screen.", app.foldcade.language.Copy.saveConflictTop(swapped.controlsPanel()!!.screen()))
         assertNull(swapped.darkPanel())
         assertTrue(swapped.islandsOpen())
         // A game on top leaves the bottom its command center, and its islands.

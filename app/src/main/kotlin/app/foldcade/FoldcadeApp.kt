@@ -254,9 +254,10 @@ class FoldcadeApp : Application() {
 
     /**
      * The Settings activity until it is destroyed, so Open an app can finish it even
-     * while Android covers it. Only a resumed activity takes companion keys.
+     * while Android covers it. Only a resumed activity takes companion keys. Snapshot state,
+     * so the companion beside it takes its title and hints once it starts.
      */
-    internal var settingsPageActivity: app.foldcade.language.PanelKeyActivity? = null
+    internal var settingsPageActivity: app.foldcade.language.PanelKeyActivity? by mutableStateOf(null)
 
     /** Mark the page before Home stops, so its Settings parent never moves to the other screen. */
     internal fun noteSettingsPage(activity: android.app.Activity) {
