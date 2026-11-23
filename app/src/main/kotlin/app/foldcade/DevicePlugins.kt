@@ -23,6 +23,7 @@ import app.foldcade.language.gameFanCall
 import app.foldcade.language.lights
 import app.foldcade.language.parseDeviceReply
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -149,6 +150,13 @@ internal class DeviceControl(
     /** The package being let go: the worker wants both panels on and no game override for it. */
     @Volatile private var releasing: String? = null
 
+    /** Completed by the worker once it has nothing more to do for [releasing], any call in flight included. */
+    @Volatile private var releaseDone: CompletableDeferred<Unit>? = null
+
+    /** Settles finished, and whether one is running: for [awaitIdle]. */
+    private val settles = MutableStateFlow(0)
+    @Volatile private var settling = false
+
     /** The plugin's last confirmed state. Waiters watch it. */
     private val confirmed = MutableStateFlow<DeviceState?>(null)
 
@@ -166,6 +174,9 @@ internal class DeviceControl(
 
     // The player's newest choices, until the plugin answers them.
     private val fanWrite = AtomicReference<FanTier?>(null)
+
+    /** The games on screen when the player chose [fanWrite]: the ones that keep the player's tier. */
+    private val fanWriteGames = AtomicReference<Set<String>>(emptySet())
     private val lightsWrite = AtomicReference<StickLights?>(null)
     private val bottomWrite = AtomicReference<Float?>(null)
 
@@ -184,12 +195,20 @@ internal class DeviceControl(
     init {
         scope.launch(worker) {
             for (signal in signals) {
+                settling = true
+                // Only a settle that began after the release was asked for may answer it: it saw the cleanup wanted.
+                val release = releaseDone?.takeIf { releasing != null }
                 try {
                     settle()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
                     Log.w(TAG, "Device plugin reconcile failed", failure)
+                } finally {
+                    // Whatever was in flight has returned and the cleanup has gone as far as it can.
+                    release?.complete(Unit)
+                    settling = false
+                    settles.value++
                 }
             }
         }
@@ -228,7 +247,9 @@ internal class DeviceControl(
         if (revoked == packageName) revoked = null
     }
 
+    /** Main thread: the games on screen now are the ones the choice is for. */
     fun setFan(tier: FanTier) {
+        fanWriteGames.set(liveFans().keys)
         fanWrite.set(tier)
         signal()
     }
@@ -263,7 +284,7 @@ internal class DeviceControl(
     fun onHomeResumed() {
         if (target == null) return
         // Back from AYN's RGB lighting, or anywhere: the stick colors may have changed.
-        if (lightsNeedColor.getAndSet(false)) scope.launch(main) { show() }
+        if (lightsNeedColor.getAndSet(false)) publishNow()
         owe(if (confirmed.value?.root != DeviceRoot.Granted) PROBE else READ)
         signal()
     }
@@ -303,14 +324,12 @@ internal class DeviceControl(
      */
     suspend fun release(packageName: String) {
         if (target?.packageName != packageName) return
+        val done = CompletableDeferred<Unit>()
+        releaseDone = done
         releasing = packageName
         signal()
-        withTimeoutOrNull(releaseTimeoutMs) {
-            confirmed.first { state ->
-                state == null || target?.packageName != packageName ||
-                    ((!state.has(DeviceCapability.Screens) || state.screens == DeviceScreens.Dual) && (!state.has(DeviceCapability.GameFan) || state.fanGame == null))
-            }
-        }
+        // The worker answers once the call it is in has returned and nothing more differs.
+        withTimeoutOrNull(releaseTimeoutMs) { done.await() }
         withContext(main) {
             if (target?.packageName == packageName) {
                 revoked = packageName
@@ -318,6 +337,14 @@ internal class DeviceControl(
             }
         }
         releasing = null
+        releaseDone = null
+    }
+
+    /** Tests: returns once the worker has settled everything signalled before this call. */
+    internal suspend fun awaitIdle() {
+        val after = settles.value + if (settling) 2 else 1
+        signal()
+        settles.first { it >= after }
     }
 
     /** Wakes light both panels. Listen for a display turning on, and put the dark one back. */
@@ -352,11 +379,12 @@ internal class DeviceControl(
         }
     }
 
+    /** Main thread. */
     private fun detach() {
         generation++
         target = null
         reset()
-        scope.launch(main) { show() }
+        publishNow()
     }
 
     private fun reset() {
@@ -417,7 +445,8 @@ internal class DeviceControl(
             // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
             if (reply.ok && known.fanGame != null) {
                 fanTaken = true
-                fanGames = withContext(main) { liveFans() }.keys
+                // Only the games on screen when the player chose; one that started meanwhile gets its own tier.
+                fanGames = fanWriteGames.get()
             }
             if (!reply.ok) owe(READ)
             show()
@@ -473,11 +502,21 @@ internal class DeviceControl(
         return reply
     }
 
-    /** Shows [confirmed] as it stands, with what Foldcade knows of the device and the choices on their way. */
+    /**
+     * Shows [confirmed] as it stands, with what Foldcade knows of the device and the choices on
+     * their way. Read on the main thread, and only if no plugin was let go or taken up since, so a
+     * late one can't bring back controls already gone.
+     */
     private suspend fun show() {
+        val gen = generation
+        withContext(main) { if (gen == generation) publishNow() }
+    }
+
+    /** Main thread. */
+    private fun publishNow() {
         val next = confirmed.value?.let(::annotated)
         state = next
-        withContext(main) { onState(next) }
+        onState(next)
     }
 
     private fun annotated(next: DeviceState): DeviceState {

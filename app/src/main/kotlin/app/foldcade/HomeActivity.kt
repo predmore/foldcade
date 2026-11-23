@@ -1459,13 +1459,20 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private fun afterLit(panels: Set<Panel>, subject: String? = null, start: () -> Unit) {
         val taking = panels.map { it.screen() }.toSet()
-        if (!foldcade.deviceControl.mustLight(taking)) return start()
+        if (!foldcade.deviceControl.mustLight(taking)) {
+            // An older start still waiting for its panel is superseded by this one, as a newer launch always is.
+            // Only then: without a device plugin no start ever waits, and nothing else is cancelled.
+            if (foldcade.lightingStart?.isActive == true) cancelLaunches()
+            return start()
+        }
         val generation = beginLaunch(subject)
-        foldcade.launchWork.job = foldcade.scope.launch(Dispatchers.Main.immediate) {
+        val job = foldcade.scope.launch(Dispatchers.Main.immediate) {
             foldcade.deviceControl.whenLit(taking) {
                 if (launchCurrent(generation) && !isDestroyed && !isFinishing) start()
             }
         }
+        foldcade.launchWork.job = job
+        foldcade.lightingStart = job
     }
 
     private fun launchInstalled(game: ShelfGame) =
