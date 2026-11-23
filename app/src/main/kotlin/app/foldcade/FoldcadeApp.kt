@@ -793,9 +793,6 @@ class FoldcadeApp : Application() {
         ).also { it.watchDisplays(this) }
     }
 
-    /** A start begun on the main thread that is waiting for its panel to light, until it starts or is dropped. */
-    internal var lightingStart: Job? = null
-
     /** The panels the layout and the screens' apps want lit: Foldcade's own, any a game holds, and any a start waits to take. */
     private fun wantedDeviceScreens(taking: Set<app.foldcade.language.HostScreen>): app.foldcade.language.DeviceScreens {
         val session = store.session

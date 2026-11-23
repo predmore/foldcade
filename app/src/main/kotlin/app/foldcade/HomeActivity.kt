@@ -116,6 +116,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
@@ -1450,7 +1451,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private suspend fun <T> whenLit(panels: () -> Set<Panel>, start: suspend () -> T): T {
         val taking = withContext(Dispatchers.Main.immediate) { panels().map { it.screen() }.toSet() }
-        return foldcade.deviceControl.whenLit(taking, start)
+        if (!foldcade.deviceControl.mustLight(taking)) return start()
+        // While it waits, a start that needs no panel lit supersedes it ([afterLit]).
+        val job = currentCoroutineContext()[Job]
+        withContext(Dispatchers.Main.immediate) { foldcade.launchWork.lighting = job }
+        try {
+            return foldcade.deviceControl.whenLit(taking, start)
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                if (foldcade.launchWork.lighting === job) foldcade.launchWork.lighting = null
+            }
+        }
     }
 
     /**
@@ -1462,17 +1473,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (!foldcade.deviceControl.mustLight(taking)) {
             // An older start still waiting for its panel is superseded by this one, as a newer launch always is.
             // Only then: without a device plugin no start ever waits, and nothing else is cancelled.
-            if (foldcade.lightingStart?.isActive == true) cancelLaunches()
+            if (foldcade.launchWork.waitingToLight) cancelLaunches()
             return start()
         }
         val generation = beginLaunch(subject)
         val job = foldcade.scope.launch(Dispatchers.Main.immediate) {
-            foldcade.deviceControl.whenLit(taking) {
-                if (launchCurrent(generation) && !isDestroyed && !isFinishing) start()
+            try {
+                foldcade.deviceControl.whenLit(taking) {
+                    if (launchCurrent(generation) && !isDestroyed && !isFinishing) start()
+                }
+            } finally {
+                if (foldcade.launchWork.lighting === coroutineContext[Job]) foldcade.launchWork.lighting = null
             }
         }
         foldcade.launchWork.job = job
-        foldcade.lightingStart = job
+        foldcade.launchWork.lighting = job
     }
 
     private fun launchInstalled(game: ShelfGame) =
