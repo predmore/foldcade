@@ -29,15 +29,24 @@ internal data class SettingTarget(
 /** Magisk, where the plugin is given root. */
 internal const val MAGISK_PACKAGE = "com.topjohnwu.magisk"
 
-/** AynParts' RGB lighting screen on LineageOS for the Thor, where the sticks' colours are set. */
-internal val AYN_STICK_COLORS = ComponentName("org.lineageos.settings.ayn", "org.lineageos.settings.ayn.lights.RGBLightingSettingsActivity")
+/**
+ * Where the sticks' colors are set on LineageOS for the Thor: AynParts' RGB lighting, or, where
+ * that screen isn't open to other apps (it isn't in AynParts today), AYN's own settings, one tap
+ * from it.
+ */
+internal val AYN_STICK_COLORS = listOf(
+    ComponentName("org.lineageos.settings.ayn", "org.lineageos.settings.ayn.lights.RGBLightingSettingsActivity"),
+    ComponentName("org.lineageos.settings.ayn", "org.lineageos.settings.ayn.AynSettingsActivity"),
+)
 
-/** True when [AYN_STICK_COLORS] is installed, enabled and open to other apps. */
-internal fun aynStickColorsOpen(pm: PackageManager): Boolean = try {
-    pm.getActivityInfo(AYN_STICK_COLORS, 0).let { it.exported && it.enabled && it.applicationInfo.enabled }
+private fun PackageManager.opens(component: ComponentName): Boolean = try {
+    getActivityInfo(component, 0).let { it.exported && it.enabled && it.applicationInfo.enabled }
 } catch (_: PackageManager.NameNotFoundException) {
     false
 }
+
+/** True when one of [AYN_STICK_COLORS] is installed, enabled and open to other apps. */
+internal fun aynStickColorsOpen(pm: PackageManager): Boolean = AYN_STICK_COLORS.any(pm::opens)
 
 /**
  * Panel intents first, where Android defines one. Everything else is a
@@ -86,7 +95,7 @@ internal fun androidSettingTargets(setting: AndroidSetting): List<SettingTarget>
             root,
         )
         // Only offered where it opens; there is no broader screen to fall back to.
-        AndroidSetting.StickColor -> listOf(SettingTarget(Intent.ACTION_MAIN, component = AYN_STICK_COLORS))
+        AndroidSetting.StickColor -> AYN_STICK_COLORS.map { SettingTarget(Intent.ACTION_MAIN, component = it) }
         AndroidSetting.RootManager -> listOf(SettingTarget(Intent.ACTION_MAIN, launches = MAGISK_PACKAGE))
     }
 }

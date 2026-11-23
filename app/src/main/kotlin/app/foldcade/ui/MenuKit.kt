@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -778,7 +779,7 @@ internal fun MenuRow(
     place: PlaceSymbol? = null,
     /**
      * A line or two under the words, inside the row and its highlight: what a switch allows,
-     * or why an action stopped. The row grows to hold it. Not for a choice row.
+     * or why an action stopped, or why a choice row offers fewer choices. The row grows to hold it.
      */
     caption: String? = null,
     /** Breathes [icon] as a downloading tile's cloud does, for a row whose work is under way. */
@@ -822,17 +823,20 @@ internal fun MenuRow(
             )
         }
         val valueStyle = labelStyle.copy(color = theme.muted, textAlign = TextAlign.End)
+        val captionText: @Composable () -> Unit = {
+            BasicText(
+                caption.orEmpty(),
+                // Three lines at most, for the bottom screen's narrower card; a top-screen caption takes one or two.
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                style = labelStyle.copy(color = theme.muted, fontSize = theme.style.type.hint, fontWeight = theme.style.type.bodyWeight),
+            )
+        }
         if (control !is RowControl.Choice) {
             if (caption == null) labelText(Modifier.weight(1f))
             else Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 labelText(Modifier)
-                BasicText(
-                    caption,
-                    // Three lines at most, for the bottom screen's narrower card; a top-screen caption takes one or two.
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                    style = labelStyle.copy(color = theme.muted, fontSize = theme.style.type.hint, fontWeight = theme.style.type.bodyWeight),
-                )
+                captionText()
             }
         }
         when (control) {
@@ -844,11 +848,19 @@ internal fun MenuRow(
                     focused -> theme.onBackground
                     else -> theme.muted
                 }
-                LabelAndChoice(Modifier.weight(1f)) {
-                    labelText(Modifier)
-                    // A missing emulator's row says so in full; its name is what shortens.
-                    ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale, short = control.short,
-                        keepEnd = PlayerChoiceCopy.notInstalledEnd.takeIf { control.attention })
+                val choice: @Composable (Modifier) -> Unit = { width ->
+                    LabelAndChoice(width) {
+                        labelText(Modifier)
+                        // A missing emulator's row says so in full; its name is what shortens.
+                        ChoiceValue(control.value, focused, valueStyle.copy(color = ink), scale, short = control.short,
+                            keepEnd = PlayerChoiceCopy.notInstalledEnd.takeIf { control.attention })
+                    }
+                }
+                // A choice offering fewer choices says why under the label and its value.
+                if (caption == null) choice(Modifier.weight(1f))
+                else Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    choice(Modifier.fillMaxWidth())
+                    captionText()
                 }
             }
             is RowControl.Value -> {
