@@ -100,6 +100,13 @@ class RecoveryLeaseTest {
         for (panel in Panel.entries) assertFalse(canRecoverPanel(dual, panel))
     }
 
+    @Test fun presentationRecoveryStopsAtAndroid16WhereAPresentationStopsTheHomeBeneathIt() {
+        assertTrue(presentationRecoveryWorks(33))
+        assertTrue(presentationRecoveryWorks(35))
+        assertFalse(presentationRecoveryWorks(36))
+        assertFalse(presentationRecoveryWorks(37))
+    }
+
     @Test fun secondaryResumeKeepsBothScreenAppInChargeUntilPrimaryReturns() {
         val playing = Session().launch(ExternalApp("emulator", occupiesBothDisplays = true))
         val secondary = playing.foldcadeResumed(Panel.Bottom)

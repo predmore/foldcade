@@ -34,6 +34,15 @@ internal class RecoveryLease(
     }
 }
 
+/**
+ * Whether a Presentation can lift Home's panel above another app's leftover one. Up to
+ * Android 15 a Presentation drew over its own activity, which kept running. From Android 16
+ * Android stops the task beneath a Presentation and takes away a Presentation whose app is
+ * no longer in front. There the recovery window would stop the Home it was meant to show,
+ * leaving its screen black, and the leftover window it covered no longer outlives the game.
+ */
+internal fun presentationRecoveryWorks(sdk: Int): Boolean = sdk < 36
+
 /** An app opened elsewhere may have its own second-screen window. Yield conservatively. */
 internal fun canRecoverPanel(session: Session, panel: Panel): Boolean =
     session.surfaceOn(panel) != null && session.externalOn(panel.flip())?.id != OTHER_APP_ID
