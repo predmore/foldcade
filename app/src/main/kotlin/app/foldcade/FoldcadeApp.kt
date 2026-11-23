@@ -760,6 +760,8 @@ class FoldcadeApp : Application() {
                 installedPlugins().firstOrNull { it.packageName == packageName }?.let {
                     apkPluginGrants.setGranted(it, scopeName, on)
                 }
+                // Only a new grant lets a plugin that was let go be used again.
+                if (on && scopeName == app.foldcade.language.DEVICE_SCOPE) withContext(Dispatchers.Main.immediate) { deviceControl.granted(packageName) }
                 refreshApkPlugins()
             }
         }
@@ -780,7 +782,7 @@ class FoldcadeApp : Application() {
      */
     internal val deviceControl: DeviceControl by lazy {
         DeviceControl(
-            context = this,
+            transport = ProviderTransport(this),
             scope = scope,
             onState = { shell.setDevice(it) },
             wantedScreens = ::wantedDeviceScreens,
@@ -788,25 +790,14 @@ class FoldcadeApp : Application() {
             liveFans = { store.session.let { session -> Panel.entries.mapNotNull { session.externalOn(it)?.id }.distinct().associateWith(shell::gameFan) } },
             colorSettings = { aynStickColorsOpen(packageManager) },
             rootSettings = { packageManager.getLaunchIntentForPackage(MAGISK_PACKAGE) != null },
-        ).also { it.watchDisplays() }
+        ).also { it.watchDisplays(this) }
     }
 
-    /**
-     * The panels to light, and wait for, before a start takes [panels]: a dark panel in a one-screen
-     * layout. Null when nothing needs lighting.
-     */
-    internal fun screensToLight(panels: Set<Panel>): app.foldcade.language.DeviceScreens? {
-        val current = deviceControl.state?.takeIf { it.has(app.foldcade.language.DeviceCapability.Screens) } ?: return null
+    /** The panels the layout and the screens' apps want lit: Foldcade's own, any a game holds, and any a start waits to take. */
+    private fun wantedDeviceScreens(taking: Set<app.foldcade.language.HostScreen>): app.foldcade.language.DeviceScreens {
         val session = store.session
         val held = Panel.entries.filter { session.externalOn(it) != null }.map { it.screen() }.toSet()
-        return app.foldcade.language.screensToLight(current.screens, session.layout, held, panels.map { it.screen() }.toSet())
-    }
-
-    /** The panels the layout and the screens' apps want lit: Foldcade's own, and any a game holds. */
-    private fun wantedDeviceScreens(): app.foldcade.language.DeviceScreens {
-        val session = store.session
-        val held = Panel.entries.filter { session.externalOn(it) != null }.map { it.screen() }.toSet()
-        return app.foldcade.language.wantedScreens(session.layout, held)
+        return app.foldcade.language.wantedScreens(session.layout, held + taking)
     }
 
     private fun apkMoonlightPlayer(gameId: String): Player? {
@@ -890,8 +881,11 @@ class FoldcadeApp : Application() {
                     if (restartStillExpected(SystemClock.uptimeMillis(), pendingRestart?.until)) return@withContext false
                     val started = externalPlay.startedAtMillis ?: return@withContext true
                     if (!playerDiedAfterStart(started, exits)) return@withContext false
+                    val gameId = externalPlay.gameId
                     externalPlay.endBecausePlayerGone(plays)
                     runningGames.forget(watched)
+                    // Its screen is no longer its: a game that took it since keeps it. This also lets go of its fan tier.
+                    gameId?.let { id -> store.update { session -> Panel.entries.fold(session) { held, panel -> held.clearIfCurrent(panel, id) } } }
                     true
                 }
                 if (ended) return@launch
@@ -993,8 +987,7 @@ class FoldcadeApp : Application() {
             if (::shell.isInitialized) shell.noteSessionChanged()
             // A panel is lit before a game takes it, and dark again once it leaves. A game on a screen holds its fan tier.
             if (::shell.isInitialized && shell.model.device != null) {
-                deviceControl.reconcileScreens()
-                deviceControl.reconcileFan()
+                deviceControl.reconcile()
             }
             refreshHomeRecovery()
         }
@@ -1143,7 +1136,7 @@ class FoldcadeApp : Application() {
         // Moving art is saved apart from the tiles, so a stop between the two is put right here.
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
-        shell.onGameFanChanged = { if (shell.model.device != null) deviceControl.reconcileFan() }
+        shell.onGameFanChanged = { if (shell.model.device != null) deviceControl.reconcile() }
         commandCenter = CommandCenter(
             store = store,
             scope = scope,

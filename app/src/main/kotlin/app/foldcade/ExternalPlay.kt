@@ -19,6 +19,10 @@ class ExternalPlay {
     var displayId: Int? = null
         private set
 
+    /** The game the open session is for, as the session's screens hold it. */
+    var gameId: String? = null
+        private set
+
     /** Package of the player that was started. Null for a stand-in in this process. */
     var packageName: String? = null
         private set
@@ -49,6 +53,7 @@ class ExternalPlay {
             throw failure
         }
         sessionId = id
+        this.gameId = gameId
         this.displayId = displayId
         this.packageName = packageName?.takeUnless { it.isBlank() }
         startedAtMillis = nowMillis
@@ -90,6 +95,7 @@ class ExternalPlay {
 
     private fun forget() {
         sessionId = null
+        gameId = null
         displayId = null
         packageName = null
         startedAtMillis = null

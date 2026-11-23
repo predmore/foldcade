@@ -12,23 +12,29 @@ import android.view.Display
 import app.foldcade.language.DEVICE_SCOPE
 import app.foldcade.language.DeviceCapability
 import app.foldcade.language.DeviceReply
+import app.foldcade.language.DeviceRoot
 import app.foldcade.language.DeviceScreens
 import app.foldcade.language.DeviceState
 import app.foldcade.language.FanTier
 import app.foldcade.language.GameFanCall
+import app.foldcade.language.HostScreen
 import app.foldcade.language.StickLights
 import app.foldcade.language.gameFanCall
+import app.foldcade.language.lights
 import app.foldcade.language.parseDeviceReply
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -79,260 +85,245 @@ internal fun discoverDevicePlugins(pm: PackageManager): List<ApkPlugin> =
         )
     }.sortedBy { it.packageName }.distinctBy { it.packageName }
 
+/** One blocking call to a device plugin's provider: its reply's keys and values, or null when it threw. */
+internal fun interface DeviceTransport {
+    fun call(authority: String, method: String, arg: String?, extras: Map<String, Any?>): Map<String, Any?>?
+}
+
+/** The real transport: `ContentResolver.call`. */
+internal class ProviderTransport(private val context: Context) : DeviceTransport {
+    override fun call(authority: String, method: String, arg: String?, extras: Map<String, Any?>): Map<String, Any?>? {
+        val bundle = if (extras.isEmpty()) null else Bundle().apply {
+            extras.forEach { (key, value) ->
+                when (value) {
+                    is Boolean -> putBoolean(key, value)
+                    is Float -> putFloat(key, value)
+                    is String -> putString(key, value)
+                }
+            }
+        }
+        return context.contentResolver.call(authority, method, arg, bundle)?.let(::bundleValues)
+    }
+}
+
 /**
- * Calls one granted device plugin, one call at a time, in the order asked, on one thread of its
- * own. Every call is bounded by a timeout and nothing it does throws into the UI: a plugin that
- * fails, hangs or goes away leaves the last state shown, or none. While a call that timed out is
- * still stuck in the plugin, later calls are dropped rather than queued behind it. Replies
- * carrying the state bundle replace [state], which [onState] hands to the shell on the main thread.
+ * Keeps one authorized device plugin where Foldcade wants the device. It is level-triggered:
+ * Foldcade states what it wants (the panels, the games' fan, and the newest fan tier, lights mode
+ * and bottom level the player chose), and one worker thread sends whatever differs from what the
+ * plugin last confirmed, a call at a time, until nothing does. A signal (a change, Home resuming, a
+ * display turning on) wakes it. Nothing is dropped: a call that never returns only keeps the worker
+ * busy, and when it returns the worker reads what is wanted now, so it never sends a stale value. A
+ * refused call waits for the next signal rather than retrying in a loop.
  *
- * It also keeps the device where Foldcade wants it: the panels a one-screen layout leaves dark
- * ([reconcileScreens], [light]), and the highest fan tier among the games on the screens
- * ([reconcileFan]). The device lights both panels by itself on every wake, so a display turning
- * on, and Home coming back, apply the wanted panels again.
+ * Authorization is a generation. Letting a plugin go ([release]) first wants both panels on and
+ * no game override, waits a bound for the plugin to confirm that, then moves the generation on;
+ * the worker checks it before every call, so nothing reaches a plugin let go. Only a new grant
+ * ([granted]) lets the same package be used again.
+ *
+ * Without an authorized plugin nothing waits and nothing is sent.
  */
 internal class DeviceControl(
-    private val context: Context,
+    private val transport: DeviceTransport,
     private val scope: CoroutineScope,
-    /** Called on the main thread with every new state, or null once no plugin is in use. */
+    /** Called on [main] with every state to show, or null once no plugin is in use. */
     private val onState: (DeviceState?) -> Unit,
-    /** The panels Foldcade wants powered now. Read on the main thread. */
-    private val wantedScreens: () -> DeviceScreens,
-    /** The games on the screens now, by id, each with its own tier or null for Default. Read on the main thread. */
+    /** The panels Foldcade wants powered, given the panels starts are waiting to take. Read on [main]. */
+    private val wantedScreens: (Set<HostScreen>) -> DeviceScreens,
+    /** The games on the screens now, by id, each with its own tier or null for Default. Read on [main]. */
     private val liveFans: () -> Map<String, FanTier?>,
     /** True when AYN's RGB lighting screen can be opened, to set a stick color. */
     private val colorSettings: () -> Boolean = { false },
     /** True when Magisk can be opened, to grant the plugin root. */
     private val rootSettings: () -> Boolean = { false },
+    private val main: CoroutineDispatcher = Dispatchers.Main.immediate,
+    worker: CoroutineDispatcher = Executors.newSingleThreadExecutor { Thread(it, "FoldcadeDevice").apply { isDaemon = true } }.asCoroutineDispatcher(),
+    private val lightTimeoutMs: Long = LIGHT_TIMEOUT_MS,
+    private val releaseTimeoutMs: Long = RELEASE_TIMEOUT_MS,
 ) {
-    private val jobs = Channel<suspend () -> Unit>(Channel.UNLIMITED)
-    @Volatile private var plugin: ApkPlugin? = null
+    @Volatile private var target: ApkPlugin? = null
+    @Volatile private var generation = 0
 
-    /** The package of the plugin in use, or null. */
-    val pluginPackage: String? get() = plugin?.packageName
+    /** A package let go before its consent went. Only [granted] lets it be used again. */
+    @Volatile private var revoked: String? = null
 
-    /** The plugin's last state, or null without one in use. */
+    /** The package being let go: the worker wants both panels on and no game override for it. */
+    @Volatile private var releasing: String? = null
+
+    /** The plugin's last confirmed state. Waiters watch it. */
+    private val confirmed = MutableStateFlow<DeviceState?>(null)
+
+    /** What is shown: [confirmed], with what Foldcade knows of the device and the choices on their way. */
     @Volatile var state: DeviceState? = null
         private set
 
-    /** The tier Foldcade last began for a game, until it ends. Read and written only by jobs. */
-    private var appliedFan: FanTier? = null
+    /** The package of the plugin in use, or null. */
+    val pluginPackage: String? get() = target?.packageName
 
-    /** The games on the screens when the fan was last settled. A game not among them is new. */
-    private var fanGames: Set<String> = emptySet()
+    private val signals = Channel<Unit>(Channel.CONFLATED)
 
-    /** The player chose a tier during a game's override, so those games keep it until another game starts. */
-    private var fanTaken = false
+    /** A read the worker owes: none, `state`, or `state` probing again ([PROBE]). */
+    private val readWanted = AtomicInteger(NONE)
+
+    // The player's newest choices, until the plugin answers them.
+    private val fanWrite = AtomicReference<FanTier?>(null)
+    private val lightsWrite = AtomicReference<StickLights?>(null)
+    private val bottomWrite = AtomicReference<Float?>(null)
+
+    /** Starts waiting for a dark panel to light, by token: the panels each will take. */
+    private val pendingLit = ConcurrentHashMap<Any, Set<HostScreen>>()
 
     /** The last `lights.set` was refused for want of a stick color ([DeviceState.lightsNeedColor]). */
-    private var lightsNeedColor = false
+    private val lightsNeedColor = AtomicBoolean(false)
 
-    /** A package whose consent went before its cleanup could run. Nothing calls it again until it is granted anew. */
-    @Volatile private var revoked: String? = null
-    private val callThread = Executors.newSingleThreadExecutor { Thread(it, "FoldcadeDevice") }.asCoroutineDispatcher()
+    /** The player chose a tier during a game's override, so the games then on screen keep it. Worker only. */
+    private var fanTaken = false
+    private var fanGames: Set<String> = emptySet()
 
-    /** True while a call is in the plugin, including one that timed out and is still stuck there. */
-    private val calling = AtomicBoolean(false)
-    private val bottomPending = AtomicReference<Float?>(null)
-    private val fanPending = AtomicReference<FanTier?>(null)
-    private val lightsPending = AtomicReference<StickLights?>(null)
-
-    /*
-     * The newest value asked for, until the plugin's reply to it settles it. Every state shown
-     * meanwhile carries it, so a quick second step starts from the first, not from the device.
-     */
-    private val fanShown = AtomicReference<FanTier?>(null)
-    private val lightsShown = AtomicReference<StickLights?>(null)
-    private val bottomShown = AtomicReference<Float?>(null)
-    private val screensQueued = AtomicBoolean(false)
-    private val fanQueued = AtomicBoolean(false)
     private val displaysOn = HashMap<Int, Boolean>()
 
     init {
-        scope.launch {
-            for (job in jobs) {
+        scope.launch(worker) {
+            for (signal in signals) {
                 try {
-                    job()
+                    settle()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
-                    Log.w(TAG, "Device plugin call failed", failure)
+                    Log.w(TAG, "Device plugin reconcile failed", failure)
                 }
             }
         }
     }
 
-    private fun enqueue(job: suspend () -> Unit) {
-        jobs.trySend(job)
+    private fun signal() {
+        signals.trySend(Unit)
+    }
+
+    private fun owe(read: Int) {
+        readWanted.accumulateAndGet(read, ::maxOf)
     }
 
     /**
-     * The device plugin to use now: the granted one, or null. A new plugin, or a new build of it,
-     * is asked to probe its capabilities; then the games' fan and the wanted panels are applied,
-     * which also ends an override Foldcade lost track of.
+     * The device plugin the grants name now, or null. Called on the main thread. A new plugin, or
+     * a new build of it, starts a new generation and is asked to probe its capabilities. A package
+     * let go stays let go until [granted].
      */
-    fun use(next: ApkPlugin?) = enqueue {
-        // Granted again: it may be called again.
-        if (next != null && next.packageName == revoked) revoked = null
-        val was = plugin
+    fun use(next: ApkPlugin?) {
+        if (next != null && next.packageName == revoked) return
+        val was = target
         if (next == null) {
-            if (was != null || state != null) detach()
-            return@enqueue
+            if (was != null) detach()
+            return
         }
-        if (was?.packageName == next.packageName && was.signers == next.signers && was.version == next.version && was.authority == next.authority) return@enqueue
-        plugin = next
-        appliedFan = null
-        fanGames = emptySet()
-        fanTaken = false
-        lightsNeedColor = false
-        publish(read(refresh = true)?.state)
-        settle()
+        if (was?.packageName == next.packageName && was.signers == next.signers && was.version == next.version && was.authority == next.authority) return
+        generation++
+        target = next
+        reset()
+        owe(PROBE)
+        signal()
     }
 
-    /*
-     * A held key sends only the newest value: steps that arrive while one is applied replace each
-     * other, so the plugin never works through a backlog of root commands.
-     */
+    /** The player granted [packageName] the device scope: it may be used again. */
+    fun granted(packageName: String) {
+        if (revoked == packageName) revoked = null
+    }
 
     fun setFan(tier: FanTier) {
-        fanShown.set(tier)
-        if (fanPending.getAndSet(tier) != null) return
-        enqueue {
-            val next = fanPending.getAndSet(null) ?: return@enqueue
-            val reply = call("fan.set", next.id)
-            fanShown.compareAndSet(next, null)
-            // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
-            if (reply?.ok == true && appliedFan != null) {
-                appliedFan = null
-                fanTaken = true
-            }
-            reply.orRead()
-        }
+        fanWrite.set(tier)
+        signal()
     }
 
     fun setLights(mode: StickLights) {
-        lightsShown.set(mode)
-        if (lightsPending.getAndSet(mode) != null) return
-        enqueue {
-            val next = lightsPending.getAndSet(null) ?: return@enqueue
-            val reply = call("lights.set", next.id)
-            lightsShown.compareAndSet(next, null)
-            val needsColor = when {
-                reply?.ok == true -> false
-                reply?.error == NEEDS_COLOR -> true
-                else -> lightsNeedColor
-            }
-            if (needsColor != lightsNeedColor) {
-                lightsNeedColor = needsColor
-                state?.let { publish(it) }
-            }
-            reply.orRead()
-        }
+        lightsWrite.set(mode)
+        signal()
     }
 
     fun setBottomBrightness(level: Float) {
-        // One box in both, so the reply settles only the level it answers.
-        val boxed: Float? = level
-        bottomShown.set(boxed)
-        if (bottomPending.getAndSet(boxed) != null) return
-        enqueue {
-            val next = bottomPending.getAndSet(null) ?: return@enqueue
-            val reply = call("brightness.set", "bottom", Bundle().apply { putFloat("level", next) }, BRIGHTNESS_TIMEOUT_MS)
-            bottomShown.compareAndSet(next, null)
-            if (reply?.ok != true) read()
-        }
+        bottomWrite.set(level)
+        signal()
     }
 
-    /** Asks again, probing what the plugin can do now, as after root was granted in Magisk. Stick colors may have been set meanwhile. */
-    fun check() = enqueue {
-        lightsNeedColor = false
-        read(refresh = true)
-        settle()
+    /** Asks again, probing what the plugin can do now, as after root was granted. Stick colors may have changed. */
+    fun check() {
+        if (target == null) return
+        lightsNeedColor.set(false)
+        owe(PROBE)
+        signal()
     }
 
-    /** The screens changed hands, or the layout changed: power the panels the session wants. */
-    fun reconcileScreens() {
-        if (!screensQueued.compareAndSet(false, true)) return
-        enqueue {
-            screensQueued.set(false)
-            applyScreens(state)
-        }
-    }
-
-    /** A game came onto a screen or left one, or a game's tier changed. */
-    fun reconcileFan() {
-        if (!fanQueued.compareAndSet(false, true)) return
-        enqueue {
-            fanQueued.set(false)
-            applyFan()
-        }
+    /** The screens changed hands, the layout changed, or a game's tier did. */
+    fun reconcile() {
+        if (target != null) signal()
     }
 
     /**
-     * Lights [wanted] before a game takes a dark panel, waiting at most [LIGHT_TIMEOUT_MS]: a
-     * start that has to wait longer goes ahead anyway.
+     * Home is in front again: read the device, which the device itself, AYN's or Magisk's screens
+     * may have changed meanwhile, and put it back where Foldcade wants it.
      */
-    suspend fun light(wanted: DeviceScreens) {
-        val done = CompletableDeferred<Unit>()
-        enqueue {
-            try {
-                if (state?.screens != wanted) {
-                    val reply = call("screens.set", wanted.id, timeoutMs = LIGHT_TIMEOUT_MS)
-                    done.complete(Unit)
-                    reply.orRead()
-                }
-            } finally {
-                done.complete(Unit)
+    fun onHomeResumed() {
+        if (target == null) return
+        // Back from AYN's RGB lighting, or anywhere: the stick colors may have changed.
+        if (lightsNeedColor.getAndSet(false)) scope.launch(main) { show() }
+        owe(if (confirmed.value?.root != DeviceRoot.Granted) PROBE else READ)
+        signal()
+    }
+
+    /** True when a start that takes [panels] must wait for one to light. Main thread. */
+    fun mustLight(panels: Set<HostScreen>): Boolean {
+        if (target == null) return false
+        val current = confirmed.value?.takeIf { it.has(DeviceCapability.Screens) }?.screens ?: return false
+        return !current.lights(panels)
+    }
+
+    /**
+     * Runs [start] once [panels] are lit, waiting at most [LIGHT_TIMEOUT_MS]: a start that would
+     * have to wait longer goes ahead anyway. The panels stay wanted until [start] returns, and stop
+     * being wanted if the wait is cancelled, so a cancelled start never leaves a panel lit.
+     */
+    suspend fun <T> whenLit(panels: Set<HostScreen>, start: suspend () -> T): T {
+        if (!mustLight(panels)) return start()
+        val token = Any()
+        pendingLit[token] = panels
+        signal()
+        try {
+            withTimeoutOrNull(lightTimeoutMs) {
+                confirmed.first { it == null || target == null || it.screens?.lights(panels) != false }
             }
+            return start()
+        } finally {
+            pendingLit.remove(token)
+            signal()
         }
-        withTimeoutOrNull(LIGHT_TIMEOUT_MS) { done.await() }
     }
 
     /**
-     * Home is in front again. With no game on the screens that has a tier, any game override ends,
-     * which also heals one a crash or force-stop of either app left behind. The panels are read
-     * and set again.
-     */
-    fun onHomeResumed() = enqueue {
-        // A plugin that didn't answer before, as one still starting, is asked again.
-        val known = state ?: (if (plugin != null) read(refresh = true)?.state else null) ?: return@enqueue
-        // Back from Magisk, root may be granted now: ask again, probing what the plugin can do.
-        if (known.root != app.foldcade.language.DeviceRoot.Granted) read(refresh = true)
-        // Back from AYN's RGB lighting, or anywhere else: the stick colors may have changed, so every mode is offered again.
-        if (lightsNeedColor) {
-            lightsNeedColor = false
-            publish(known)
-        }
-        val fresh = applyFan(heal = true)
-        applyScreens(fresh ?: if (known.has(DeviceCapability.Screens)) read()?.state else null)
-    }
-
-    /**
-     * Before [packageName] stops being the device plugin, as its consent goes or another is
-     * granted: both panels on, and any game override ended, then it is let go. If the queue can't
-     * get there within a bound, it is let go untouched: nothing calls it after this returns.
+     * Lets [packageName] go before its consent goes, or before another plugin is granted: both
+     * panels on and any game override ended, confirmed within [RELEASE_TIMEOUT_MS], then the
+     * generation moves on and nothing calls it again.
      */
     suspend fun release(packageName: String) {
-        val done = CompletableDeferred<Unit>()
-        enqueue {
-            try {
-                if (plugin?.packageName == packageName) {
-                    val known = state
-                    if (known?.has(DeviceCapability.Screens) == true && known.screens != DeviceScreens.Dual) call("screens.set", DeviceScreens.Dual.id)
-                    if (known?.has(DeviceCapability.GameFan) == true) call("game.end")
-                    detach()
-                }
-            } finally {
-                done.complete(Unit)
+        if (target?.packageName != packageName) return
+        releasing = packageName
+        signal()
+        withTimeoutOrNull(releaseTimeoutMs) {
+            confirmed.first { state ->
+                state == null || target?.packageName != packageName ||
+                    ((!state.has(DeviceCapability.Screens) || state.screens == DeviceScreens.Dual) && (!state.has(DeviceCapability.GameFan) || state.fanGame == null))
             }
         }
-        if (withTimeoutOrNull(RELEASE_TIMEOUT_MS) { done.await() } == null) revoked = packageName
+        withContext(main) {
+            if (target?.packageName == packageName) {
+                revoked = packageName
+                detach()
+            }
+        }
+        releasing = null
     }
 
     /** Wakes light both panels. Listen for a display turning on, and put the dark one back. */
-    fun watchDisplays() {
+    fun watchDisplays(context: Context) {
         val manager = context.getSystemService(DisplayManager::class.java) ?: return
-        val main = Handler(Looper.getMainLooper())
+        val handler = Handler(Looper.getMainLooper())
         manager.displays.forEach { displaysOn[it.displayId] = it.state == Display.STATE_ON }
         manager.registerDisplayListener(object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) = onDisplayChanged(displayId)
@@ -344,7 +335,7 @@ internal class DeviceControl(
                 val was = displaysOn.put(displayId, on)
                 if (on && was == false && state?.has(DeviceCapability.Screens) == true) onDisplayOn()
             }
-        }, main)
+        }, handler)
     }
 
     /**
@@ -352,139 +343,170 @@ internal class DeviceControl(
      * display on, so the panels are read and set now and once more shortly after.
      */
     private fun onDisplayOn() {
-        val again = suspend {
-            if (state?.has(DeviceCapability.Screens) == true) applyScreens(read()?.state)
-        }
-        enqueue(again)
+        owe(READ)
+        signal()
         scope.launch {
             delay(WAKE_SETTLE_MS)
-            enqueue(again)
+            owe(READ)
+            signal()
         }
     }
 
-    /** After a plugin arrives or answers anew: the games' fan, healing a lost override, then the panels. */
+    private fun detach() {
+        generation++
+        target = null
+        reset()
+        scope.launch(main) { show() }
+    }
+
+    private fun reset() {
+        confirmed.value = null
+        readWanted.set(NONE)
+        fanWrite.set(null)
+        lightsWrite.set(null)
+        bottomWrite.set(null)
+        lightsNeedColor.set(false)
+    }
+
+    /** Steps toward what is wanted until nothing differs, a call fails, or the steps run out. */
     private suspend fun settle() {
-        val fresh = applyFan(heal = true)
-        applyScreens(fresh ?: state)
+        repeat(MAX_STEPS) { if (!step()) return }
     }
 
-    private suspend fun detach() {
-        plugin = null
-        appliedFan = null
-        fanGames = emptySet()
-        fanTaken = false
-        lightsNeedColor = false
-        fanShown.set(null)
-        lightsShown.set(null)
-        bottomShown.set(null)
-        publish(null)
-    }
-
-    private suspend fun applyScreens(known: DeviceState?) {
-        val current = known ?: return
-        if (!current.has(DeviceCapability.Screens)) return
-        val wanted = withContext(Dispatchers.Main.immediate) { wantedScreens() }
-        if (current.screens != wanted) call("screens.set", wanted.id).orRead()
-    }
-
-    /** Begins or ends a game's override as the games on screen want. The reply's state, when a call was made. */
-    private suspend fun applyFan(heal: Boolean = false): DeviceState? {
-        if (state?.has(DeviceCapability.GameFan) != true) return null
-        val live = withContext(Dispatchers.Main.immediate) { liveFans() }
-        if ((live.keys - fanGames).isNotEmpty()) fanTaken = false
-        fanGames = live.keys
-        if (fanTaken && live.values.any { it != null }) return null
-        fanTaken = false
-        return when (val next = gameFanCall(appliedFan, live.values, heal)) {
-            is GameFanCall.Begin -> {
-                val reply = call("game.begin", extras = Bundle().apply { putString("fan", next.tier.id) })
-                if (reply?.ok == true) appliedFan = next.tier else reply.orRead()
-                reply?.state
-            }
-            GameFanCall.End -> {
-                appliedFan = null
-                val reply = call("game.end")
-                reply.orRead()
-                reply?.state
-            }
-            null -> null
+    /** One call toward what is wanted. False when nothing differs, or a call failed: then the next signal tries again. */
+    private suspend fun step(): Boolean {
+        val gen = generation
+        val plugin = target ?: return false
+        val read = readWanted.getAndSet(NONE)
+        val known = confirmed.value
+        if (read != NONE || known == null) {
+            val reply = call(gen, plugin, "state", extras = if (read == PROBE || known == null) mapOf("refresh" to true) else emptyMap())
+            if (reply?.state == null) return false
+            return true
         }
-    }
-
-    private suspend fun read(refresh: Boolean = false): DeviceReply? =
-        call("state", extras = if (refresh) Bundle().apply { putBoolean("refresh", true) } else null,
-            timeoutMs = if (refresh) PROBE_TIMEOUT_MS else CALL_TIMEOUT_MS)
-
-    /** A refused or lost change: read what the device has, so the model stops showing what it asked for. */
-    private suspend fun DeviceReply?.orRead() {
-        if (this?.ok != true || state == null) read()
+        val letGo = releasing == plugin.packageName
+        if (!letGo) writeStep(gen, plugin, known)?.let { return it }
+        val wanted = withContext(main) { if (letGo) DeviceScreens.Dual to emptyMap() else wantedScreens(pendingLit.values.flatten().toSet()) to liveFans() }
+        if (known.has(DeviceCapability.Screens) && known.screens != wanted.first) {
+            return call(gen, plugin, "screens.set", wanted.first.id)?.ok == true
+        }
+        if (known.has(DeviceCapability.GameFan)) {
+            val live = wanted.second
+            if ((live.keys - fanGames).isNotEmpty()) fanTaken = false
+            fanGames = live.keys
+            if (fanTaken && live.values.any { it != null }) return false
+            fanTaken = false
+            when (val next = gameFanCall(known.fanGame, live.values)) {
+                is GameFanCall.Begin -> return call(gen, plugin, "game.begin", extras = mapOf("fan" to next.tier.id))?.ok == true
+                GameFanCall.End -> return call(gen, plugin, "game.end")?.ok == true
+                null -> Unit
+            }
+        }
+        return false
     }
 
     /**
-     * One call to the plugin's provider, bounded by [timeoutMs]. A provider stuck past it keeps
-     * the call thread, and until it lets go every call is dropped. The reply's state bundle, when
-     * it has one, is published.
+     * The player's newest choice, if one waits: sent, and cleared once the plugin answered it. A
+     * refused one is dropped and the device read again; one the plugin never got waits for the
+     * next signal. Null when none waits.
      */
-    private suspend fun call(method: String, arg: String? = null, extras: Bundle? = null, timeoutMs: Long = CALL_TIMEOUT_MS): DeviceReply? {
-        val target = plugin ?: return null
-        if (target.packageName == revoked) return null
-        val authority = target.authority ?: return null
-        if (!calling.compareAndSet(false, true)) {
-            Log.w(TAG, "Device plugin $method dropped: an earlier call is still waiting")
-            return null
-        }
-        val pending = scope.async(callThread) {
-            try {
-                context.contentResolver.call(authority, method, arg, extras)?.let(::bundleValues)
-            } catch (failure: Exception) {
-                Log.w(TAG, "Device plugin $method failed", failure)
-                null
-            } finally {
-                calling.set(false)
+    private suspend fun writeStep(gen: Int, plugin: ApkPlugin, known: DeviceState): Boolean? {
+        fanWrite.get()?.let { tier ->
+            val reply = call(gen, plugin, "fan.set", tier.id) ?: return false
+            fanWrite.compareAndSet(tier, null)
+            // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
+            if (reply.ok && known.fanGame != null) {
+                fanTaken = true
+                fanGames = withContext(main) { liveFans() }.keys
             }
+            if (!reply.ok) owe(READ)
+            show()
+            return true
         }
-        val values = withTimeoutOrNull(timeoutMs) { pending.await() }
-        if (values == null) {
-            if (pending.isActive) Log.w(TAG, "Device plugin $method did not answer")
-            return null
+        lightsWrite.get()?.let { mode ->
+            val reply = call(gen, plugin, "lights.set", mode.id) ?: return false
+            lightsWrite.compareAndSet(mode, null)
+            when {
+                reply.ok -> lightsNeedColor.set(false)
+                reply.error == NEEDS_COLOR -> lightsNeedColor.set(true)
+            }
+            if (!reply.ok) owe(READ)
+            show()
+            return true
         }
-        val reply = parseDeviceReply(target.packageName, values)
+        val bottom: Float? = bottomWrite.get()
+        if (bottom != null) {
+            val level: Float = bottom
+            val reply = call(gen, plugin, "brightness.set", "bottom", mapOf("level" to level)) ?: return false
+            // The very box stored, so a newer level set meanwhile stays.
+            bottomWrite.compareAndSet(bottom, null)
+            if (reply.ok) {
+                val applied = (reply.values["level"] as? Number)?.toFloat() ?: level
+                confirmed.value = confirmed.value?.copy(brightnessBottom = applied)
+            } else owe(READ)
+            show()
+            return true
+        }
+        return null
+    }
+
+    /**
+     * One call, if [gen] is still the generation and [plugin] not let go. A reply arriving after
+     * the generation moved on means nothing. The reply's state bundle, when it has one, is confirmed.
+     */
+    private suspend fun call(gen: Int, plugin: ApkPlugin, method: String, arg: String? = null, extras: Map<String, Any?> = emptyMap()): DeviceReply? {
+        val authority = plugin.authority ?: return null
+        if (gen != generation || plugin.packageName == revoked) return null
+        val values = try {
+            transport.call(authority, method, arg, extras)
+        } catch (failure: Exception) {
+            Log.w(TAG, "Device plugin $method failed", failure)
+            null
+        } ?: return null
+        if (gen != generation) return null
+        val reply = parseDeviceReply(plugin.packageName, values)
         if (!reply.ok) Log.w(TAG, "Device plugin $method: ${reply.error} ${values["message"] ?: ""}")
-        reply.state?.let { publish(it) }
+        reply.state?.let {
+            confirmed.value = it
+            show()
+        }
         return reply
     }
 
-    /** Adds what Foldcade knows of the device to the plugin's state, and the values still on their way to it. */
+    /** Shows [confirmed] as it stands, with what Foldcade knows of the device and the choices on their way. */
+    private suspend fun show() {
+        val next = confirmed.value?.let(::annotated)
+        state = next
+        withContext(main) { onState(next) }
+    }
+
     private fun annotated(next: DeviceState): DeviceState {
-        var shown = next.copy(lightsNeedColor = lightsNeedColor, colorSettings = lightsNeedColor && colorSettings(),
-            rootSettings = next.root != app.foldcade.language.DeviceRoot.Granted && rootSettings())
-        fanShown.get()?.takeIf { shown.has(DeviceCapability.Fan) }?.let { shown = shown.copy(fan = it, fanBaseline = it, fanGame = null) }
-        lightsShown.get()?.takeIf { shown.has(DeviceCapability.Lights) }?.let { shown = shown.copy(lights = it) }
-        bottomShown.get()?.takeIf { shown.has(DeviceCapability.Brightness) }?.let { shown = shown.copy(brightnessBottom = it) }
+        val needsColor = lightsNeedColor.get()
+        var shown = next.copy(lightsNeedColor = needsColor, colorSettings = needsColor && colorSettings(),
+            rootSettings = next.root != DeviceRoot.Granted && rootSettings())
+        fanWrite.get()?.takeIf { shown.has(DeviceCapability.Fan) }?.let { shown = shown.copy(fan = it, fanBaseline = it, fanGame = null) }
+        lightsWrite.get()?.takeIf { shown.has(DeviceCapability.Lights) }?.let { shown = shown.copy(lights = it) }
+        bottomWrite.get()?.takeIf { shown.has(DeviceCapability.Brightness) }?.let { shown = shown.copy(brightnessBottom = it) }
         return shown
     }
 
-    private suspend fun publish(next: DeviceState?) {
-        val shown = next?.let(::annotated)
-        state = shown
-        withContext(Dispatchers.Main.immediate) { onState(shown) }
-    }
-
-    private companion object {
+    internal companion object {
         const val TAG = "FoldcadeDevice"
-        const val CALL_TIMEOUT_MS = 10_000L
 
-        /** The first `state` probes every capability, each a root command. */
-        const val PROBE_TIMEOUT_MS = 20_000L
-        const val BRIGHTNESS_TIMEOUT_MS = 3_000L
+        private const val NONE = 0
+        private const val READ = 1
+        private const val PROBE = 2
+
+        /** Calls one signal may make before it waits for the next: a plugin that never converges can't spin. */
+        private const val MAX_STEPS = 16
 
         /** How long a start waits for its panel to light. */
         const val LIGHT_TIMEOUT_MS = 2_500L
         const val RELEASE_TIMEOUT_MS = 8_000L
-        const val WAKE_SETTLE_MS = 1_500L
+        private const val WAKE_SETTLE_MS = 1_500L
 
         /** `lights.set` refused Charging or Breathe because every stick color is black. */
-        const val NEEDS_COLOR = "needs_color"
+        private const val NEEDS_COLOR = "needs_color"
     }
 }
 

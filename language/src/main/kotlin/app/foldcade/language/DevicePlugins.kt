@@ -216,28 +216,30 @@ sealed interface GameFanCall {
     data object End : GameFanCall
 }
 
+/** The highest of [live]'s tiers, as appwatch picks the highest of its profiles: quiet, then balanced, then performance. */
+fun highestFan(live: Collection<FanTier?>): FanTier? =
+    live.filterNotNull().filter { it in FanTier.chosen }.maxByOrNull { FanTier.chosen.indexOf(it) }
+
 /**
- * The games on the screens now each have a tier or Default ([live]). The highest tier among them
- * holds, as appwatch picks the highest of its profiles: quiet, then balanced, then performance.
- * With none, any override Foldcade began ([applied]) ends, and [heal] ends one Foldcade may have
- * lost track of, as after a crash.
+ * The games on the screens now each have a tier or Default ([live]); [active] is the override the
+ * plugin reports (`fanGame`). The highest tier among the games should be the override; with none,
+ * an override ends, whoever began it, which also heals one a crash left behind.
  */
-fun gameFanCall(applied: FanTier?, live: Collection<FanTier?>, heal: Boolean = false): GameFanCall? {
-    val wanted = live.filterNotNull().filter { it in FanTier.chosen }.maxByOrNull { FanTier.chosen.indexOf(it) }
+fun gameFanCall(active: FanTier?, live: Collection<FanTier?>): GameFanCall? {
+    val wanted = highestFan(live)
     return when {
-        wanted != null && wanted != applied -> GameFanCall.Begin(wanted)
-        wanted == null && (applied != null || heal) -> GameFanCall.End
+        wanted != null && wanted != active -> GameFanCall.Begin(wanted)
+        wanted == null && active != null -> GameFanCall.End
         else -> null
     }
 }
 
-/**
- * The panels to light before a game takes [taking], when its start must wait for them: the
- * screens' apps' panels ([held]) and [taking] want a dark panel lit that [current] leaves off.
- * Null when nothing needs lighting, so the start goes ahead at once.
- */
-fun screensToLight(current: DeviceScreens?, layout: ScreenLayout, held: Set<HostScreen>, taking: Set<HostScreen>): DeviceScreens? =
-    wantedScreens(layout, held + taking).takeIf { it == DeviceScreens.Dual && current != null && current != DeviceScreens.Dual }
+/** True when these powered panels include every one of [panels]. */
+fun DeviceScreens.lights(panels: Set<HostScreen>): Boolean = when (this) {
+    DeviceScreens.Dual -> true
+    DeviceScreens.Top -> panels.all { it == HostScreen.Top }
+    DeviceScreens.Bottom -> panels.all { it == HostScreen.Bottom }
+}
 
 /** The bottom slider's position, 0 to 100, for a panel [level] from 0 to 1. */
 fun bottomBrightnessPosition(level: Float): Int = (level.coerceIn(0f, 1f) * 100f).roundToInt()

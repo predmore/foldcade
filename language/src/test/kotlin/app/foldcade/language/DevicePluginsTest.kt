@@ -219,6 +219,7 @@ class DevicePluginsTest {
     }
 
     @Test fun theHighestTierOnTheScreensHoldsAndTheOverrideEndsWithTheLast() {
+        // The override compared is the one the plugin reports, so the decision is the same whoever began it.
         assertNull(gameFanCall(null, emptyList()))
         assertNull(gameFanCall(null, listOf(null)))
         assertEquals(GameFanCall.Begin(FanTier.Quiet), gameFanCall(null, listOf(FanTier.Quiet)))
@@ -230,25 +231,22 @@ class DevicePluginsTest {
         // The higher one leaves: the other's tier again. The last one leaves: the override ends.
         assertEquals(GameFanCall.Begin(FanTier.Quiet), gameFanCall(FanTier.Performance, listOf(FanTier.Quiet)))
         assertEquals(GameFanCall.End, gameFanCall(FanTier.Quiet, emptyList()))
-        assertEquals(GameFanCall.End, gameFanCall(FanTier.Quiet, listOf(null)))
-        // Healing ends an override Foldcade lost track of, but never one a game on screen still wants.
-        assertEquals(GameFanCall.End, gameFanCall(null, listOf(null), heal = true))
-        assertNull(gameFanCall(FanTier.Quiet, listOf(FanTier.Quiet), heal = true))
+        // An override a crash left, with no game with a tier on screen: it ends.
+        assertEquals(GameFanCall.End, gameFanCall(FanTier.Performance, listOf(null)))
+        assertEquals(FanTier.Performance, highestFan(listOf(FanTier.Balanced, null, FanTier.Performance, FanTier.Quiet)))
     }
 
-    @Test fun aStartWaitsOnlyForADarkPanelItTakes() {
-        // Top only with the bottom off: a game on top needs nothing; one on the bottom, or on both, lights it first.
-        assertNull(screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Top)))
-        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Bottom)))
-        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), HostScreen.entries.toSet()))
-        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Bottom, ScreenLayout.BottomOnly, emptySet(), setOf(HostScreen.Top)))
-        // Already lit, a two-screen layout, or no panel state at all: start at once.
-        assertNull(screensToLight(DeviceScreens.Dual, ScreenLayout.TopOnly, setOf(HostScreen.Bottom), setOf(HostScreen.Bottom)))
-        assertNull(screensToLight(DeviceScreens.Dual, ScreenLayout.ShowcaseTop, emptySet(), setOf(HostScreen.Bottom)))
-        assertNull(screensToLight(null, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Bottom)))
+    @Test fun poweredPanelsSayWhetherAStartMustWait() {
+        assertTrue(DeviceScreens.Dual.lights(HostScreen.entries.toSet()))
+        assertTrue(DeviceScreens.Top.lights(setOf(HostScreen.Top)))
+        assertFalse(DeviceScreens.Top.lights(setOf(HostScreen.Bottom)))
+        assertFalse(DeviceScreens.Top.lights(HostScreen.entries.toSet()))
+        assertTrue(DeviceScreens.Bottom.lights(setOf(HostScreen.Bottom)))
+        assertFalse(DeviceScreens.Bottom.lights(setOf(HostScreen.Top)))
+        assertTrue(DeviceScreens.Top.lights(emptySet()))
     }
 
-    @Test fun lightsWithoutAColourSayWhereToSetOneAndAGoesThere() {
+    @Test fun lightsWithoutAColorSayWhereToSetOneAndAGoesThere() {
         val refused = model().let { it.copy(device = it.device!!.copy(lightsNeedColor = true)) }.onSetting(Row.StickLights)
         assertEquals(DeviceCopy.lightsNeedColor, settingsRowCaption(Row.StickLights, refused))
         assertNull(settingsRowCaption(Row.StickLights, model()))
