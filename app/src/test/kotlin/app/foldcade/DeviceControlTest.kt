@@ -436,6 +436,22 @@ class DeviceControlTest {
         assertFalse(plugin.calls.drop(before).any { it.startsWith("game.begin") })
     }
 
+    @Test fun changingARunningGamesTierAfterTheGlobalFanTakesEffect() = runBlocking {
+        plugin.screens = "dual"
+        layout.set(ScreenLayout.ShowcaseTop)
+        live.set(mapOf("kart" to null))
+        val control = control()
+        onMain { control.use(thor) }
+        control.awaitIdle()
+        onMain { control.setFan(FanTier.Quiet) }
+        control.awaitIdle()
+        // Y › Fan on the running game: Default to Performance.
+        live.set(mapOf("kart" to FanTier.Performance))
+        control.reconcile()
+        control.awaitIdle()
+        assertEquals("performance", plugin.game)
+    }
+
     @Test fun aStartBeforeThePluginAnsweredWaitsForItsPanel() = runBlocking {
         // Top only, cold: the plugin hasn't said whether the bottom panel is off.
         plugin.blocking = "state"

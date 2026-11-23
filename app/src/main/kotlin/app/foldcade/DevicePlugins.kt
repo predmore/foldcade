@@ -176,7 +176,7 @@ internal class DeviceControl(
     private val fanWrite = AtomicReference<FanTier?>(null)
 
     /** The games on screen when the player chose [fanWrite]: the ones that keep the player's tier. */
-    private val fanWriteGames = AtomicReference<Set<String>>(emptySet())
+    private val fanWriteGames = AtomicReference<Map<String, FanTier?>>(emptyMap())
     private val lightsWrite = AtomicReference<StickLights?>(null)
     private val bottomWrite = AtomicReference<Float?>(null)
 
@@ -188,7 +188,8 @@ internal class DeviceControl(
 
     /** The player chose a tier during a game's override, so the games then on screen keep it. Cleared with each generation. */
     @Volatile private var fanTaken = false
-    @Volatile private var fanGames: Set<String> = emptySet()
+    /** The games the player's fan choice covers, with the tier each had when it was made or last seen. */
+    @Volatile private var fanGames: Map<String, FanTier?> = emptyMap()
 
     private val displaysOn = HashMap<Int, Boolean>()
 
@@ -255,7 +256,7 @@ internal class DeviceControl(
 
     /** Main thread: the games on screen now are the ones the choice is for. */
     fun setFan(tier: FanTier) {
-        fanWriteGames.set(liveFans().keys)
+        fanWriteGames.set(liveFans())
         fanWrite.set(tier)
         signal()
     }
@@ -414,7 +415,7 @@ internal class DeviceControl(
         lightsNeedColor.set(false)
         // A plugin attached anew, or updated, owes the games on screen their own tiers again.
         fanTaken = false
-        fanGames = emptySet()
+        fanGames = emptyMap()
     }
 
     /** Steps toward what is wanted until nothing differs, a call fails, or the steps run out. */
@@ -449,8 +450,9 @@ internal class DeviceControl(
             val live = wanted.second
             // Only a newly arrived game with a tier of its own ends the player's choice. A notice's
             // app, or a game with no tier, opened beside the game leaves the player's tier in force.
-            if ((live.keys - fanGames).any { live[it] != null }) fanTaken = false
-            fanGames = live.keys
+            // A game's own Y › Fan changed while it runs is a choice too: it takes the fan back.
+            if (live.any { (id, tier) -> tier != null && (id !in fanGames || fanGames[id] != tier) }) fanTaken = false
+            fanGames = live
             if (fanTaken && live.values.any { it != null }) return false
             fanTaken = false
             when (val next = gameFanCall(known.fanGame, live.values)) {
