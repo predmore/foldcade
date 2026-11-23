@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.AboutCopy
+import app.foldcade.language.deviceHas
 import app.foldcade.language.ArtChoices
 import app.foldcade.language.ThemeFile
 import app.foldcade.language.MusicTrack
@@ -722,18 +723,21 @@ class FoldcadeApp : Application() {
         scope.launch {
             apkPluginChanges.withLock {
                 if (version != apkPluginRefreshVersion.get()) return@withLock
-                val plugins = discoverApkPlugins(packageManager)
+                val plugins = installedPlugins()
                 apkPluginGrants.repairRoute(plugins)
                 val rows = plugins.map { plugin ->
                     app.foldcade.language.ApkPluginSetting(plugin.packageName, plugin.activity, plugin.label, plugin.version, plugin.fingerprint,
                         plugin.supported, plugin.scopes, plugin.scopes.filter { apkPluginGrants.granted(plugin, it) }.toSet(), apkPluginGrants.routes(plugin),
-                        signers = plugin.signers)
+                        signers = plugin.signers, device = plugin.device)
                 }
+                // One device plugin at a time: the granted one Foldcade can drive.
+                val device = plugins.firstOrNull { it.device != null && it.supported && apkPluginGrants.granted(it, app.foldcade.language.DEVICE_SCOPE) }
                 withContext(Dispatchers.Main.immediate) {
                     if (version == apkPluginRefreshVersion.get()) {
                         installedApkPlugins = plugins
                         apkPluginsLoaded = true
                         shell.setApkPlugins(rows)
+                        deviceControl.use(device)
                         apkPluginCatalogs.values.forEach { it.reassess() }
                     }
                 }
@@ -741,10 +745,16 @@ class FoldcadeApp : Application() {
         }
     }
 
+    /** Play plugins, then device plugins. A package that is both is listed as the play plugin it is first. */
+    private fun installedPlugins(): List<ApkPlugin> =
+        (discoverApkPlugins(packageManager) + discoverDevicePlugins(packageManager)).distinctBy { it.packageName }
+
     internal fun setPluginGrant(packageName: String, scopeName: String, on: Boolean) {
         scope.launch {
             apkPluginChanges.withLock {
-                discoverApkPlugins(packageManager).firstOrNull { it.packageName == packageName }?.let {
+                // Foldcade may not call the plugin once the grant is gone, so it puts the device back first.
+                if (!on && scopeName == app.foldcade.language.DEVICE_SCOPE) deviceControl.release(packageName)
+                installedPlugins().firstOrNull { it.packageName == packageName }?.let {
                     apkPluginGrants.setGranted(it, scopeName, on)
                 }
                 refreshApkPlugins()
@@ -759,6 +769,27 @@ class FoldcadeApp : Application() {
                 refreshApkPlugins()
             }
         }
+    }
+
+    /**
+     * The granted device plugin: the fan, stick lights and screens it reports, and the panels and
+     * game fan tiers Foldcade keeps it at. See docs/device-plugins.md.
+     */
+    internal val deviceControl: DeviceControl by lazy {
+        DeviceControl(
+            context = this,
+            scope = scope,
+            onState = { shell.setDevice(it) },
+            wantedScreens = ::wantedDeviceScreens,
+            liveFans = { plays.liveGames().map(shell::gameFan) },
+        ).also { it.watchDisplays() }
+    }
+
+    /** The panels the layout and the screens' apps want lit: Foldcade's own, and any a game holds. */
+    private fun wantedDeviceScreens(): app.foldcade.language.DeviceScreens {
+        val session = store.session
+        val held = Panel.entries.filter { session.externalOn(it) != null }.map { it.screen() }.toSet()
+        return app.foldcade.language.wantedScreens(session.layout, held)
     }
 
     private fun apkMoonlightPlayer(gameId: String): Player? {
@@ -943,6 +974,8 @@ class FoldcadeApp : Application() {
             artSession = next
             music.onSessionChanged()
             if (::shell.isInitialized) shell.noteSessionChanged()
+            // A panel is lit before a game takes it, and dark again once it leaves.
+            if (::shell.isInitialized && shell.model.device != null) deviceControl.reconcileScreens()
             refreshHomeRecovery()
         }
         perfMark("themes-start")
@@ -1007,7 +1040,10 @@ class FoldcadeApp : Application() {
                 val game = (plugins.library(GameNativeLibrary.ID) as? GameNativeLibrary)?.confirmed()?.firstOrNull { it.remoteKey == key }
                 if (game != null && unpinGameNativeShortcut(this@FoldcadeApp, game)) refreshGameNative()
             } },
-            onBrightness = { position -> brightness.write(brightnessLevel(position)) },
+            // With the bottom screen's own slider, this one is the top screen's alone.
+            onBrightness = { position ->
+                brightness.write(brightnessLevel(position), both = !shell.model.deviceHas(app.foldcade.language.DeviceCapability.Brightness))
+            },
             onSameGames = { groups -> saveArtChoices(artChoices.adopt(groups)) },
             appVersion = installedVersion(),
             onSavePickerClosed = { onSaveConflicts?.invoke() },
@@ -1087,6 +1123,9 @@ class FoldcadeApp : Application() {
         // Moving art is saved apart from the tiles, so a stop between the two is put right here.
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
+        // A game with its own fan tier holds it while its play session is open, wherever it runs.
+        plays.onLiveChanged = { if (shell.model.device != null) deviceControl.reconcileFan() }
+        shell.onGameFanChanged = { if (shell.model.device != null) deviceControl.reconcileFan() }
         commandCenter = CommandCenter(
             store = store,
             scope = scope,

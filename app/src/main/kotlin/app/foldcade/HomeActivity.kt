@@ -61,6 +61,7 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.settingsActivityScreen
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.AboutCopy
+import app.foldcade.language.playScreen
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
@@ -424,7 +425,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // A second A/X keeps the original request, including its screen and bloom subject.
                 val focused = foldcade.shell.focusedGame()?.id?.let(foldcade.shell::tileOf)
                 if (focused != null && foldcade.launchWork.pending(focused)) return
-                launchScreen = foldcade.store.session.playOn.let { if (effect.elsewhere) it.flip() else it }
+                // Play on's screen, or in a one-screen layout whose other panel is powered off, the lit one.
+                launchScreen = foldcade.shell.model.playScreen().panel().let { if (effect.elsewhere) it.flip() else it }
                 launchSubject = foldcade.shell.focusedRunningApp()
                 bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
                 if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
@@ -461,8 +463,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenFolders, is Effect.FolderOnHome,
             is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
-            is Effect.SortFolder, is Effect.SetGamePlayerChoice, is Effect.SetSystemPlayerChoice,
+            is Effect.SortFolder, is Effect.SetGamePlayerChoice, is Effect.SetSystemPlayerChoice, is Effect.SetGameFan,
             -> Unit
+            // The model already shows the new value; the plugin's reply replaces it.
+            is Effect.SetFan -> foldcade.deviceControl.setFan(effect.tier)
+            is Effect.SetStickLights -> foldcade.deviceControl.setLights(effect.mode)
+            is Effect.SetBottomBrightness -> foldcade.deviceControl.setBottomBrightness(app.foldcade.language.bottomBrightnessLevel(effect.position))
+            is Effect.CheckDevice -> foldcade.deviceControl.check()
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
             is Effect.CloseGame -> askCloseGame(effect.gameId)
@@ -899,6 +906,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshBrightness()
         foldcade.brightness.refreshOther()
         foldcade.refreshNoticeAccess()
+        // No game left open ends any game's fan override, and the dark panel goes dark again.
+        foldcade.deviceControl.onHomeResumed()
         reconcileUsage()
     }
 
@@ -2516,7 +2525,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun openNotice(key: String) {
         val listener = NoticeListener.connected ?: return
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(session.playOn) ?: return
+        val panel = session.singleScreenTarget(foldcade.shell.model.playScreen().panel()) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId
@@ -3850,7 +3859,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             withContext(Dispatchers.Main.immediate) {
                 if (success && saveId != null && destination == null && !isDestroyed && !isFinishing && foldcade.shell.model.savePicker?.target == target) {
                     foldcade.shell.presentSavePicker(null)
-                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: foldcade.store.session.playOn
+                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: foldcade.shell.model.playScreen().panel()
                     launchBackendGame(request.owner.label, request.route.play.platformId, request.route, fresh = true)
                 } else if (success) loadSavePicker(target)
             }

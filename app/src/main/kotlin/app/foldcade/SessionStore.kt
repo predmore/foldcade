@@ -236,6 +236,16 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
     fun setSystemPlayerChoice(platformId: String, choice: PlayerChoice?) = writePlayerChoice("system_player:", platformId, choice)
     fun setGamePlayerChoice(gameId: String, choice: PlayerChoice?) = writePlayerChoice("game_player:", gameId, choice)
 
+    /** A game's own fan tier (`game_fan:`, by tile id, as its Open with is), or null for Default. */
+    fun gameFan(gameId: String): app.foldcade.language.FanTier? =
+        app.foldcade.language.FanTier.fromId(prefs.getString(GAME_FAN_PREFIX + choiceField(gameId), null))
+            ?.takeIf { it in app.foldcade.language.FanTier.chosen }
+
+    fun setGameFan(gameId: String, tier: app.foldcade.language.FanTier?) {
+        val key = GAME_FAN_PREFIX + choiceField(gameId)
+        prefs.edit().apply { if (tier == null) remove(key) else putString(key, tier.id) }.apply()
+    }
+
     private fun readPlayerChoice(prefix: String, id: String): PlayerChoice? = runCatching {
         val fields = prefs.getString(prefix + choiceField(id), null)?.split('|') ?: return null
         if (fields.size != 4 || fields[0] != "1") return null
@@ -751,6 +761,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
         private const val PLAYER_SAVE_FOLDER_PREFIX = "player_save_folder:"
         private const val PLAYER_FIRMWARE_FOLDER_PREFIX = "player_firmware_folder:"
+        private const val GAME_FAN_PREFIX = "game_fan:"
 
         private fun saveFolderKey(playerId: String) = PLAYER_SAVE_FOLDER_PREFIX + playerId
 

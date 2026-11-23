@@ -66,10 +66,11 @@ class ScreenBrightness(private val context: Context) {
         }
 
     /**
-     * Stores [level] on both screens. A device in automatic mode would ignore it,
+     * Stores [level] on both screens, or on the default display's alone when not [both], as once
+     * a device plugin sets the other's. A device in automatic mode would ignore it,
      * so this turns automatic off first, the way moving Android's own slider does.
      */
-    fun write(level: Int): Boolean {
+    fun write(level: Int, both: Boolean = true): Boolean {
         if (!allowed()) return false
         return try {
             val mode = Settings.System.getInt(
@@ -84,7 +85,7 @@ class ScreenBrightness(private val context: Context) {
                     Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL,
                 )
             }
-            if (pending.getAndSet(level) < 0) {
+            if (both && pending.getAndSet(level) < 0) {
                 other.execute {
                     val next = pending.getAndSet(-1)
                     displays.otherDisplayId()?.let { if (AynBrightness.set(it, next)) otherLevel = next }

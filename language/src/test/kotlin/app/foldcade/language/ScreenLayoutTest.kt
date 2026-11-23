@@ -26,6 +26,15 @@ class ScreenLayoutTest {
             assertNull(showcaseScreen)
             assertEquals(HostScreen.Bottom, darkScreen)
             assertEquals(HostScreen.Top, menuScreen)
+            assertEquals(HostScreen.Top, pageScreen)
+        }
+        // Its mirror: everything Foldcade shows, pages included, is on the bottom screen.
+        with(ScreenLayout.BottomOnly) {
+            assertEquals(HostScreen.Bottom, gridScreen)
+            assertNull(showcaseScreen)
+            assertEquals(HostScreen.Top, darkScreen)
+            assertEquals(HostScreen.Bottom, menuScreen)
+            assertEquals(HostScreen.Bottom, pageScreen)
         }
     }
 
@@ -33,7 +42,7 @@ class ScreenLayoutTest {
     fun aSavedIdReadsBackAndAnUnknownOneIsTheDefault() {
         ScreenLayout.entries.forEach { assertEquals(it, ScreenLayout.fromId(it.id)) }
         assertEquals(ScreenLayout.ShowcaseTop, ScreenLayout.fromId(null))
-        assertEquals(ScreenLayout.ShowcaseTop, ScreenLayout.fromId("bottom-only"))
+        assertEquals(ScreenLayout.ShowcaseTop, ScreenLayout.fromId("left-only"))
     }
 
     @Test
@@ -44,8 +53,8 @@ class ScreenLayoutTest {
             for (from in HostScreen.entries) {
                 assertEquals(layout.menuScreen, reduce(model, Meaning.LeftPanel, from).first.panel?.screen)
                 assertEquals(layout.menuScreen, reduce(model, Meaning.RightPanel, from).first.panel?.screen)
-                // Settings takes the larger top screen in every layout.
-                assertEquals(HostScreen.Top, reduce(model, Meaning.Menu, from).first.settings?.screen)
+                // Settings takes the larger top screen in every layout but Bottom only, whose top is dark.
+                assertEquals(layout.pageScreen, reduce(model, Meaning.Menu, from).first.settings?.screen)
             }
         }
     }

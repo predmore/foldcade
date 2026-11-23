@@ -3336,7 +3336,7 @@ HSPLapp/foldcade/language/PickerKt;->reachColumns(Lapp/foldcade/language/PickerM
 HSPLapp/foldcade/language/PickerKt;->reduce(Lapp/foldcade/language/PickerModel;Lapp/foldcade/language/Meaning;Lapp/foldcade/language/HostScreen;I)Lkotlin/Pair;
 PLapp/foldcade/language/PickerKt;->retainMenuRows$changed(Lapp/foldcade/language/FolderSortChoice;Lapp/foldcade/language/FolderSortChoice;)Z
 HSPLapp/foldcade/language/PickerKt;->retainMenuRows(Lapp/foldcade/language/PickerModel;Lapp/foldcade/language/PickerModel;)Lapp/foldcade/language/PickerModel;
-PLapp/foldcade/language/PickerKt;->rightRows(Ljava/util/List;)Ljava/util/List;
+PLapp/foldcade/language/PickerKt;->rightRows(Ljava/util/List;Lapp/foldcade/language/DeviceState;)Ljava/util/List;
 PLapp/foldcade/language/PickerKt;->rightStart()I
 HPLapp/foldcade/language/PickerKt;->rowLabel(Lapp/foldcade/language/Row;Lapp/foldcade/language/PickerModel;)Ljava/lang/String;
 HPLapp/foldcade/language/PickerKt;->rowText(Lapp/foldcade/language/Row;Lapp/foldcade/language/PickerModel;)Lapp/foldcade/language/RowText;

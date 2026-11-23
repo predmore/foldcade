@@ -77,6 +77,18 @@ class PlaySessions private constructor(
     /** A session started for the tile a game id is shown as. The app keeps its cover then. */
     var onStarted: ((String) -> Unit)? = null
 
+    /**
+     * Fired after a session opens or ends, on the thread that opened or ended it. Every player's
+     * start and end comes through here: one screen, both screens, an APK plugin, or a stand-in.
+     */
+    var onLiveChanged: (() -> Unit)? = null
+
+    /** Open sessions, oldest first: session id to the game id it was started for. */
+    private val live = LinkedHashMap<String, String>()
+
+    /** The games of the sessions open now, oldest first. */
+    fun liveGames(): List<String> = synchronized(live) { live.values.toList() }
+
     private var usageGranted = false
     private var usageByPackage = emptyMap<String, PackagePlay>()
     private var usageSeen = emptyList<UsageSpan>()
@@ -88,13 +100,16 @@ class PlaySessions private constructor(
     fun start(gameId: String, name: String? = null): String {
         if (name != null) names.remember(gameId, name)
         val id = log.start(gameId)
+        synchronized(live) { live[id] = gameId }
         changed()
         onStarted?.invoke(tileOf(gameId))
+        onLiveChanged?.invoke()
         return id
     }
 
     fun signal(sessionId: String, signal: PlaySignal) {
         if (log.signal(sessionId, signal)) changed()
+        if (signal == PlaySignal.End && synchronized(live) { live.remove(sessionId) } != null) onLiveChanged?.invoke()
     }
 
     /** Foreground sample for crash recovery. It does not emit a session event. */

@@ -58,6 +58,8 @@ enum class SettingsCategory {
     Library,
     Players,
     Screens,
+    /** The granted device plugin's controls, named for the device: Settings › Thor. */
+    Device,
     Plugins,
     About,
 }
@@ -106,6 +108,7 @@ fun settingsHints(model: PickerModel): List<HintKey> {
         row == Row.Version -> HintKey(confirm, SettingsCopy.copy)
         row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
         row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
+        row is Row.DeviceRoot -> HintKey(confirm, DeviceCopy.checkAgain)
         // Android owns these switches: A opens its access page, it does not flip them here.
         row == Row.FindGames || row == Row.FindSaves -> HintKey(confirm, SettingsCopy.open)
         row == Row.MusicVolume -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
@@ -156,6 +159,7 @@ fun settingsTitle(category: SettingsCategory): String = when (category) {
     SettingsCategory.Library -> SettingsCopy.library
     SettingsCategory.Players -> SettingsCopy.players
     SettingsCategory.Screens -> SettingsCopy.screens
+    SettingsCategory.Device -> DeviceCopy.thor
     SettingsCategory.Plugins -> ApkPluginCopy.title
     SettingsCategory.About -> SettingsCopy.about
 }
@@ -225,6 +229,11 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         // Setup and play history, to a file and back.
         add(Row.Backup)
         add(Row.AndroidSettings)
+    }
+    // Only what the granted plugin reports it can do. Without either, there is no Thor category.
+    SettingsCategory.Device -> buildList {
+        if (model.deviceHas(DeviceCapability.Fan)) add(Row.Fan)
+        if (model.deviceHas(DeviceCapability.Lights)) add(Row.StickLights)
     }
     SettingsCategory.Plugins -> model.apkPlugins.map { Row.SettingsTile(SettingsInner.ApkPlugin(it.packageName)) } +
         PluginRegistry.sources.filter { source -> model.apkPlugins.none { it.packageName == source.packageName } }
@@ -379,6 +388,8 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
             if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
+            // Under its consent: what root still needs, until the plugin has it.
+            if (deviceRootPending(plugin, model)) add(Row.DeviceRoot(plugin.packageName))
         }
     }.orEmpty()
     SettingsInner.Systems -> model.systemPlayers.filter { it.choice.visible }.sortedBy { it.label.lowercase() }.map { Row.SystemPlayer(it.platformId) }
@@ -399,7 +410,13 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
  * or why an action stopped. Most rows need none.
  */
 fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
-    is Row.PluginGrant -> ApkPluginCopy.consent.takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
+    is Row.PluginGrant -> (if (row.scope == DEVICE_SCOPE) DeviceCopy.consent else ApkPluginCopy.consent)
+        .takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
+    is Row.DeviceRoot -> model.device?.takeIf { it.packageName == row.packageName }?.let { device ->
+        if (device.root == DeviceRoot.Absent) DeviceCopy.rootMissing
+        else DeviceCopy.rootSteps(model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { plugin ->
+            PluginRegistry.sourceOrDebug(plugin.packageName)?.label ?: plugin.label } ?: settingsInnerTitle(SettingsInner.ApkPlugin(row.packageName), model))
+    }
     is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
     is Row.PluginInstall -> ApkPluginCopy.actionCaption(model.pluginCatalog(row.packageName))
     else -> null
@@ -699,7 +716,9 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
         RowControl.Choice(value.orEmpty(), attention = choice?.missing == true, short = choice?.shortValue())
     }
     in choiceRows -> RowControl.Choice(value.orEmpty())
-    Row.MusicVolume, Row.Brightness -> RowControl.None
+    Row.MusicVolume, Row.Brightness, Row.BottomBrightness -> RowControl.None
+    // Root is the plugin's to get, so it reads as something to do; A asks the plugin again.
+    is Row.DeviceRoot -> value?.takeIf { it.isNotEmpty() }?.let { RowControl.Value(it, attention = true) } ?: RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.Folders, Row.Hidden, Row.AddToCollection, is Row.RommConnection,
     Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
@@ -775,7 +794,8 @@ fun libraryFolderDetail(folder: LibraryFolder): String? = listOfNotNull(
 fun settingsInnerDetail(inner: SettingsInner, model: PickerModel): String? = when (inner) {
     is SettingsInner.PluginCatalog -> PluginRegistry.source(inner.packageName)?.detail
     is SettingsInner.ApkPlugin -> when {
-        model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } -> ApkPluginCopy.unsupported
+        model.apkPlugins.any { it.packageName == inner.packageName && !it.supported } ->
+            if (model.apkPlugins.any { it.packageName == inner.packageName && it.device != null }) DeviceCopy.unsupported else ApkPluginCopy.unsupported
         // A registry plugin, or its own debug build, says what it does; another plugin says nothing it may not do.
         else -> PluginRegistry.sourceOrDebug(inner.packageName)?.detail
     }

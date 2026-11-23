@@ -670,6 +670,9 @@ class ShellController(
     }
 
     internal var runningPlayer: (String) -> Player? = { null }
+
+    /** A game's own fan tier changed. A game open now takes it at once. */
+    internal var onGameFanChanged: () -> Unit = {}
     internal var onPlayerChoiceChanged: (String) -> Unit = {}
     internal var onPlayerAvailabilityChanged: () -> Unit = {}
 
@@ -688,6 +691,18 @@ class ShellController(
         return (home.copies(tile).map { homeGameId(it.backendId, it.remoteKey) } + gameId)
             .firstNotNullOfOrNull { id -> id.takeIf { it != tile }?.let(store::gamePlayerChoice) }
     }
+
+    /** The game's own fan tier, saved under its tile, or under a copy's id from before the copies folded, as [gamePlayerChoice] is. */
+    internal fun gameFan(gameId: String): app.foldcade.language.FanTier? {
+        val tile = tileOf(gameId)
+        store.gameFan(tile)?.let { return it }
+        return (home.copies(tile).map { homeGameId(it.backendId, it.remoteKey) } + gameId)
+            .firstNotNullOfOrNull { id -> id.takeIf { it != tile }?.let(store::gameFan) }
+    }
+
+    /** Y's Fan row for [gameId], while the device plugin can give a game its own tier. */
+    private fun gameFanSetting(gameId: String, device: app.foldcade.language.DeviceState?): app.foldcade.language.GameFanSetting? =
+        if (device?.has(app.foldcade.language.DeviceCapability.GameFan) == true) app.foldcade.language.GameFanSetting(gameFan(gameId)) else null
 
     internal fun playerResolution(
         gameId: String?, platformId: String,
@@ -1259,6 +1274,15 @@ class ShellController(
                 } else store.setGamePlayerChoice(tile, effect.choice)
                 onPlayerChoiceChanged("game:$tile")
                 refreshSaveHealth()
+                publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                null
+            }
+            is Effect.SetGameFan -> {
+                val tile = tileOf(effect.gameId)
+                if (effect.tier == null) {
+                    (listOf(tile) + sameGroups()[tile].orEmpty() + effect.gameId).distinct().forEach { store.setGameFan(it, null) }
+                } else store.setGameFan(tile, effect.tier)
+                onGameFanChanged()
                 publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
                 null
             }
@@ -2636,6 +2660,20 @@ class ShellController(
         val next = model.copy(apkPlugins = plugins, pluginCatalogs = catalogs)
         publish(app.foldcade.language.afterApkPluginInstall(model, next))
         noteShelfChanged()
+    }
+
+    /** The granted device plugin's newest state, or null without one. Its controls come and go with what it reports. */
+    internal fun setDevice(state: app.foldcade.language.DeviceState?) {
+        if (model.device == state) return
+        publish(model.copy(device = state))
+    }
+
+    /** A drag on R1's bottom-screen slider, to [position] from 0 to 100. The plugin applies the newest. */
+    fun touchBottomBrightness(position: Int): Effect? {
+        val device = model.device?.takeIf { it.has(app.foldcade.language.DeviceCapability.Brightness) } ?: return null
+        val clamped = position.coerceIn(0, 100)
+        publish(model.copy(device = device.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped))))
+        return Effect.SetBottomBrightness(clamped)
     }
 
     internal fun setPluginCatalog(packageName: String, catalog: app.foldcade.language.PluginCatalogSetting) {
@@ -4122,7 +4160,7 @@ class ShellController(
                 home.item(id)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
         }
         val withChoice = if (choiceGame != null && targetGame?.platformId != null) {
-            (withSaves ?: TileActions()).copy(game = choiceGame, openWith = openWith(choiceGame, targetGame.platformId))
+            (withSaves ?: TileActions()).copy(game = choiceGame, openWith = openWith(choiceGame, targetGame.platformId), gameFan = gameFanSetting(choiceGame, counted.device))
         } else withSaves
         // A game's own play, and where more of it can come from, once anything has been played.
         val playGame = (tile?.game ?: targetGame?.id)?.takeIf {
@@ -4356,7 +4394,7 @@ class ShellController(
             val id = game?.let { homeGameId(it.backendId, it.remoteKey) }
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
-                openWith = openWith(tileOf(id), game.platformId)) else null,
+                openWith = openWith(tileOf(id), game.platformId), gameFan = gameFanSetting(tileOf(id), ready.device)) else null,
                 playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(ready))
         } else {
             withShelf(ready.copy(libraryGrid = false))
