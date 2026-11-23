@@ -2,7 +2,7 @@
 
 The bundled, in-process contract lives in `:api` ([MIT](../api/LICENSE)). The host that loads it is `:host`. Samples are `:plugins:sample` and `:samples:out-of-tree`.
 
-Installed apps use the separate [APK plugin protocol](apk-plugins.md). Settings › Plugins discovers them, requests consent, and installs catalog releases. No code from another APK is loaded into Foldcade.
+Installed apps use the separate [APK plugin protocol](apk-plugins.md). Settings › Plugins discovers them, requests consent, and installs catalog releases. No code from another APK is loaded into Foldcade. [Device plugins](device-plugins.md) are installed apps Foldcade calls to drive hardware, such as the Thor's fan, stick lights and panels; they share that page and its consent.
 
 ## Stability
 
