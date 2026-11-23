@@ -1420,6 +1420,10 @@
       "file": "icons/ic_status_settings.xml",
       "tint": true
     },
+    "status.stick.lights": {
+      "file": "icons/ic_status_stick_lights.xml",
+      "tint": true
+    },
     "status.tools": {
       "file": "icons/ic_status_tools.xml",
       "tint": false

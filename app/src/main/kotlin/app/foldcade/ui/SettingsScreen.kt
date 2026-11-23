@@ -970,7 +970,7 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     is Row.DeviceRoot -> R.drawable.symbol_shield
     // Thor: the fan, and the lights round the sticks.
     Row.Fan -> R.drawable.ic_status_fan
-    Row.StickLights -> R.drawable.symbol_star
+    Row.StickLights -> R.drawable.ic_status_stick_lights
     is Row.PluginRouting -> R.drawable.symbol_moonlight
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
     Row.Theme -> R.drawable.symbol_gem

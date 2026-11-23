@@ -300,6 +300,18 @@ def fan():
     # The hub's axle is cut through, so it reads as a fan and not a clover.
     return out + [solid(circle(12, 12, 3.4) + circle_ccw(12, 12, 1.4))]
 
+def stick_lights():
+    """Stick lights: a thumbstick seen from above, its cap's grip ring cut in, inside a short glow ring."""
+    out = [solid(circle(12, 12, 5.4) + circle_ccw(12, 12, 3.6) + circle(12, 12, 2.2))]
+    # The glow: eight short dashes round the stick, as the LED ring lights around it.
+    for i in range(8):
+        a = math.pi / 4 * i + math.pi / 8
+        b = a + math.pi / 4 * 0.4
+        x1, y1 = 12 + 8.6 * math.cos(a), 12 + 8.6 * math.sin(a)
+        x2, y2 = 12 + 8.6 * math.cos(b), 12 + 8.6 * math.sin(b)
+        out.append(ink(f"M{f(x1)},{f(y1)} A8.6,8.6 0 0 1 {f(x2)},{f(y2)}"))
+    return out
+
 def status_assets():
     A = [Asset("ic_status_bell", 24, 24, bell(), note="Notifications"),
          Asset("ic_status_bell_dot", 24, 24, bell("dot"), note="Notifications, something unread")]
@@ -323,7 +335,8 @@ def status_assets():
           Asset("ic_status_playtime", 24, 24, clock(), note="Play time today"),
           Asset("ic_status_info", 24, 24, info(), note="About"),
           Asset("ic_status_display", 24, 24, display(), note="Personalization: brightness"),
-          Asset("ic_status_fan", 24, 24, fan(), note="A device plugin's fan")]
+          Asset("ic_status_fan", 24, 24, fan(), note="A device plugin's fan"),
+          Asset("ic_status_stick_lights", 24, 24, stick_lights(), note="A device plugin's stick lights")]
     return A
 
 # ---------------- tile badges (tinted by the host) ----------------

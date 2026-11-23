@@ -505,6 +505,7 @@
     "status.plugins",
     "status.power",
     "status.settings",
+    "status.stick.lights",
     "status.tools",
     "status.volume.1",
     "status.volume.2",
