@@ -296,4 +296,66 @@ class DeviceControlTest {
         assertNull(shown.last())
         assertNull(control.state)
     }
+
+    @Test fun aReplyReadWhileThePluginIsLetGoChangesNothing() = runBlocking {
+        // Hold the reply's parsing after the call checked its generation: consent goes meanwhile.
+        val parsing = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val first = java.util.concurrent.atomic.AtomicBoolean()
+        val base = mapOf<String, Any?>("ok" to true, "device" to "ayn-thor", "root" to "granted",
+            "capabilities" to arrayOf("fan", "screens"), "screens" to "top", "fan" to "balanced")
+        val reply = object : Map<String, Any?> by base {
+            override fun get(key: String): Any? {
+                if (key == "root" && first.compareAndSet(false, true)) {
+                    parsing.countDown()
+                    check(resume.await(5, TimeUnit.SECONDS))
+                }
+                return base[key]
+            }
+        }
+        val control = DeviceControl(DeviceTransport { _, _, _, _ -> reply }, scope, { shown += it?.packageName },
+            { app.foldcade.language.DeviceScreens.Top }, { emptyMap() }, main = main)
+        onMain { control.use(thor) }
+        check(withContext(Dispatchers.IO) { parsing.await(5, TimeUnit.SECONDS) })
+        onMain { control.use(null) }
+        resume.countDown()
+        control.awaitIdle()
+        withContext(main) { }
+        assertNull(control.pluginPackage)
+        assertNull(control.state)
+        assertNull(shown.last())
+        assertFalse(shown.contains("test.thor"))
+    }
+
+    @Test fun aStartNeedingNoPanelSupersedesOneStillWaitingForItsPanel() = runBlocking {
+        // A ROM waits for the dark bottom panel; an app opens on the lit top meanwhile.
+        val control = control()
+        control.started()
+        val work = LaunchWork()
+        val starts = CopyOnWriteArrayList<String>()
+        plugin.blocking = "screens.set"
+        onMain {
+            val generation = work.begin("rom")
+            val job = scope.launch {
+                control.whenLit(setOf(HostScreen.Bottom)) { withContext(main) { if (work.current(generation)) starts += "old ROM" } }
+            }
+            work.job = job
+            work.lighting = job
+        }
+        blocked()
+        onMain {
+            assertFalse(control.mustLight(setOf(HostScreen.Top)))
+            assertTrue(work.waitingToLight)
+            if (work.waitingToLight) work.cancel()
+            starts += "new app"
+        }
+        // The superseded wait lets go of its panel as it ends.
+        work.lighting!!.join()
+        plugin.unblock.countDown()
+        control.awaitIdle()
+        assertEquals(listOf("new app"), starts)
+        assertFalse(work.waitingToLight)
+        // Nothing wants the bottom panel any more: it goes dark again.
+        assertEquals(plugin.calls.toString(), "top", plugin.screens)
+    }
 }

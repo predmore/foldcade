@@ -441,40 +441,40 @@ internal class DeviceControl(
     private suspend fun writeStep(gen: Int, plugin: ApkPlugin, known: DeviceState): Boolean? {
         fanWrite.get()?.let { tier ->
             val reply = call(gen, plugin, "fan.set", tier.id) ?: return false
-            fanWrite.compareAndSet(tier, null)
-            // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
-            if (reply.ok && known.fanGame != null) {
-                fanTaken = true
-                // Only the games on screen when the player chose; one that started meanwhile gets its own tier.
-                fanGames = fanWriteGames.get()
+            return underGeneration(gen) {
+                fanWrite.compareAndSet(tier, null)
+                // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
+                if (reply.ok && known.fanGame != null) {
+                    fanTaken = true
+                    // Only the games on screen when the player chose; one that started meanwhile gets its own tier.
+                    fanGames = fanWriteGames.get()
+                }
+                if (!reply.ok) owe(READ)
             }
-            if (!reply.ok) owe(READ)
-            show()
-            return true
         }
         lightsWrite.get()?.let { mode ->
             val reply = call(gen, plugin, "lights.set", mode.id) ?: return false
-            lightsWrite.compareAndSet(mode, null)
-            when {
-                reply.ok -> lightsNeedColor.set(false)
-                reply.error == NEEDS_COLOR -> lightsNeedColor.set(true)
+            return underGeneration(gen) {
+                lightsWrite.compareAndSet(mode, null)
+                when {
+                    reply.ok -> lightsNeedColor.set(false)
+                    reply.error == NEEDS_COLOR -> lightsNeedColor.set(true)
+                }
+                if (!reply.ok) owe(READ)
             }
-            if (!reply.ok) owe(READ)
-            show()
-            return true
         }
         val bottom: Float? = bottomWrite.get()
         if (bottom != null) {
             val level: Float = bottom
             val reply = call(gen, plugin, "brightness.set", "bottom", mapOf("level" to level)) ?: return false
-            // The very box stored, so a newer level set meanwhile stays.
-            bottomWrite.compareAndSet(bottom, null)
-            if (reply.ok) {
-                val applied = (reply.values["level"] as? Number)?.toFloat() ?: level
-                confirmed.value = confirmed.value?.copy(brightnessBottom = applied)
-            } else owe(READ)
-            show()
-            return true
+            return underGeneration(gen) {
+                // The very box stored, so a newer level set meanwhile stays.
+                bottomWrite.compareAndSet(bottom, null)
+                if (reply.ok) {
+                    val applied = (reply.values["level"] as? Number)?.toFloat() ?: level
+                    confirmed.value = confirmed.value?.copy(brightnessBottom = applied)
+                } else owe(READ)
+            }
         }
         return null
     }
@@ -492,24 +492,23 @@ internal class DeviceControl(
             Log.w(TAG, "Device plugin $method failed", failure)
             null
         } ?: return null
-        if (gen != generation) return null
         val reply = parseDeviceReply(plugin.packageName, values)
         if (!reply.ok) Log.w(TAG, "Device plugin $method: ${reply.error} ${values["message"] ?: ""}")
-        reply.state?.let {
-            confirmed.value = it
-            show()
-        }
+        // A reply from a plugin let go, or taken up anew, since the call began means nothing now.
+        if (!underGeneration(gen) { reply.state?.let { confirmed.value = it } }) return null
         return reply
     }
 
     /**
-     * Shows [confirmed] as it stands, with what Foldcade knows of the device and the choices on
-     * their way. Read on the main thread, and only if no plugin was let go or taken up since, so a
-     * late one can't bring back controls already gone.
+     * Runs [block] on the main thread, where [detach] runs, only if [gen] is still the generation,
+     * then shows [confirmed] as it stands. So a late reply can neither change what is kept nor bring
+     * back controls already gone. False when the generation moved on.
      */
-    private suspend fun show() {
-        val gen = generation
-        withContext(main) { if (gen == generation) publishNow() }
+    private suspend fun underGeneration(gen: Int, block: () -> Unit): Boolean = withContext(main) {
+        if (gen != generation) return@withContext false
+        block()
+        publishNow()
+        true
     }
 
     /** Main thread. */
