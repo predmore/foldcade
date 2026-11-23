@@ -31,6 +31,9 @@ internal object AynBrightness {
         writeBoolean(false)
     } == level
 
+    /** Whether AYN's service is there at all. LineageOS has none, and SELinux hides it from apps. */
+    fun available(): Boolean = binder() != null
+
     /** The level [displayId] holds, 0 to 255. Null off the Thor. */
     fun get(displayId: Int): Int? = call(GET) { writeInt(displayId) }?.takeIf { it >= 0 }
 

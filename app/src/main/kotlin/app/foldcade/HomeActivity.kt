@@ -1066,9 +1066,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * moves this panel's backlight and no other. Not dimmed hands the panel back
      * to its own level, with nothing to remember or restore. [dark], the screen a
      * one-screen layout leaves black, goes to the lowest backlight there is.
+     * Where the other panel follows the default display's backlight (LineageOS),
+     * the default display keeps its level: dimming it would dim the game beside it.
      */
     fun applyCommandCenterDim(dimmed: Boolean, dark: Boolean = false) {
+        val leadsOtherPanel = display?.displayId == Display.DEFAULT_DISPLAY && foldcade.brightness.panelsShareBacklight
         val level = when {
+            leadsOtherPanel -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
             dark -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
             dimmed -> commandCenterDimLevel()
             else -> WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
