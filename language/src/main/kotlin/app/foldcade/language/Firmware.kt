@@ -2,6 +2,9 @@ package app.foldcade.language
 
 object FirmwareCopy {
     fun ready(platform: String): String = "$platform BIOS ready"
+    const val importPs2Title = "Import your PlayStation 2 BIOS"
+    fun importPs2(place: String): String =
+        "ARMSX2 loads its BIOS from its own folder. In ARMSX2, open ☰ › Setup / Change Folders › Select your BIOS and choose ${place.replace("/", "/\u2060")}. Then start the game again."
     fun missing(system: String, files: List<String>, place: String, rommConnected: Boolean = false): String {
         val detail = files.joinToString(", ").removePrefix("$system BIOS ").trim('(', ')')
         // A BIOS on RomM is placed by itself (#365), so RomM leads when it is there; the folder stays the other way (review-D 109).

@@ -2258,14 +2258,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return withContext(Dispatchers.Main.immediate) {
             if (!launchCurrent(generation)) return@withContext false
             if (result.blocksLaunch) foldcade.dismissNotice("firmware:${player.id}")
-            if (result.written.isNotEmpty() && !result.blocksLaunch) {
-                val name = foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId
-                foldcade.postNotice(app.foldcade.language.FoldNotice(
-                    id = "firmware:${player.id}", title = app.foldcade.language.FirmwareCopy.ready(name),
-                    body = app.foldcade.language.FirmwareCopy.readyBody, postedMillis = System.currentTimeMillis(),
-                    packageName = player.packageNames.firstOrNull(),
-                ))
-            }
+            firmwareWrittenNotice(result, player, foldcade.plugins.platform(game.platformId)?.displayName ?: game.platformId)
+                ?.let { foldcade.postNotice(it) }
             if (!result.needsFolder) foldcade.dismissNotice("firmware-folder:${player.saveFolderId()}")
             when {
                 result.needsFolder -> {

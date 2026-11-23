@@ -147,6 +147,8 @@ ARMSX2 needs a PlayStation 2 BIOS dumped from a console you own. Put it in RomM'
 
 The first time you play a RomM game with ARMSX2, Foldcade asks for ARMSX2's folder. The picker opens at the GitHub build's data folder, so tap **Use this folder** and **Allow**. That is where the BIOS goes. You can change the folder later in **Foldcade Settings › Emulators › ARMSX2**. A folder you pick has to hold `bios` or `memcards`. The Play Store and nightly builds keep their own data folders. If you use one of those, pick that build's folder instead.
 
+With ARMSX2's **App Data Folder › Custom folder**, ARMSX2 still loads its BIOS from its private folder. Foldcade places a missing BIOS in the picked folder's `bios` folder and tells you to import it in ARMSX2 through ☰ › **Setup / Change Folders › Select your BIOS**; the game still launches.
+
 ### Memory cards
 
 Foldcade syncs each game's saves on ARMSX2's slot 1 folder card through [RomM](romm.md#save-sync). The saves for one game are the folders on that card whose names contain the game's serial, such as `BASLUS-210651` for `SLUS-21065`.
