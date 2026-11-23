@@ -83,3 +83,7 @@ A foreign Presentation created later than the one bounded repair can cover Foldc
 Active Azahar gameplay, every emulator, physical display removal/reconnection, and swapped display assignments were not exercised. These tests do not establish that every adoption gate from the research document has passed.
 
 The final clean debug APK is installed as `app.foldcade.debug`. The original production Home role and the original stay-awake setting are restored at handoff. The production APK and paused Azahar game were preserved; the release artifact is unsigned validation output.
+
+## Android 16 and later
+
+On LineageOS 24 (Android 17, API 37) for the Thor, checked on 22 November 2026, a Presentation stops the task beneath it, and Android takes away a Presentation once its app's activity is hidden. The recovery window stopped the companion Home it was meant to lift: the bottom screen went black, Home marked it as taken by another app, and the top screen showed the command center. melonDS's bottom-screen Presentation was removed by Android when Home came forward, so the leftover window this workaround covered no longer outlives the game. `presentationRecoveryWorks` keeps recovery to API 35 and below; from API 36 the companion stays in its own activity window.

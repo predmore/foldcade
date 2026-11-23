@@ -796,7 +796,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         setContentView(root)
         // What shows before the first frame and while the window moves is the theme's, not black.
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(themeBackgroundArgb()))
-        recoveryWindow = PanelRecoveryWindow(this, root, panel)
+        if (presentationRecoveryWorks(Build.VERSION.SDK_INT)) recoveryWindow = PanelRecoveryWindow(this, root, panel)
         hideSystemBars()
     }
 
