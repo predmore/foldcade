@@ -19,6 +19,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * Both screens' brightness. The default display's level lives in
  * `Settings.System`; the other panel's is set through [AynBrightness], off the
  * main thread. One level goes to both, as AYN's "both screens" slider does.
+ * Without that service (LineageOS) Android drives the other panel from the
+ * default display's level itself ([panelsShareBacklight]).
  *
  * Writing needs "Modify system settings", which Android grants from
  * [Settings.ACTION_MANAGE_WRITE_SETTINGS], not a runtime prompt.
@@ -96,8 +98,19 @@ class ScreenBrightness(private val context: Context) {
 
     /** Reads the other panel's level again, off the main thread. AYN's own menu can move it, so resume calls this. */
     fun refreshOther() = other.execute {
-        otherLevel = displays.otherDisplayId()?.let(AynBrightness::get)
+        val id = displays.otherDisplayId()
+        panelsShareBacklight = id != null && !AynBrightness.available()
+        // Assigned last: its setter moves [revision], so windows read the flag above too.
+        otherLevel = id?.let(AynBrightness::get)
     }
+
+    /**
+     * True where the other panel has no backlight of its own to set: AYN's service is missing,
+     * as on LineageOS, which drives the bottom panel from the default display's level. A dim
+     * on the default display's window would dim a game on the other panel with it.
+     */
+    @Volatile var panelsShareBacklight = false
+        private set
 
     /** Android's page for this app's "Modify system settings" switch. */
     fun accessIntent(): Intent =
