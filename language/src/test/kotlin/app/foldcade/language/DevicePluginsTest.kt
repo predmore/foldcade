@@ -331,6 +331,12 @@ class DevicePluginsTest {
         val cold = PickerModel(count = 1, rowsPerPage = 1, layout = ScreenLayout.BottomOnly, playOn = HostScreen.Top)
         assertEquals(HostScreen.Bottom, cold.playScreen())
         assertFalse(Row.PlayOn in settingsRows(SettingsCategory.Screens, cold))
+        // Top only, granted, before the plugin first answers: A plays on the lit top, not the panel that may be off.
+        val waiting = model(device = null).copy(layout = ScreenLayout.TopOnly, playOn = HostScreen.Bottom)
+        assertEquals(HostScreen.Top, waiting.playScreen())
+        // Once it answers without panel power, or with no consent, Play on holds as today.
+        assertEquals(HostScreen.Bottom, waiting.copy(device = parseDeviceState(thor, reply + ("capabilities" to arrayOf("fan")))).playScreen())
+        assertEquals(HostScreen.Bottom, model(device = null, granted = false).copy(layout = ScreenLayout.TopOnly, playOn = HostScreen.Bottom).playScreen())
         assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, model().copy(layout = ScreenLayout.ShowcaseTop)))
     }
 

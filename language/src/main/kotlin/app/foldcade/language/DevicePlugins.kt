@@ -260,8 +260,15 @@ fun PickerModel.playScreen(): HostScreen {
     // before the plugin has said so, as on a cold start.
     if (layout == ScreenLayout.BottomOnly) return HostScreen.Bottom
     val dark = layout.darkScreen ?: return playOn
-    return if (deviceHas(DeviceCapability.Screens)) dark.other() else playOn
+    // A granted device plugin that hasn't answered yet may have the dark panel off: play on the lit
+    // one, rather than light a panel for a game A meant for the screen in front of the player.
+    val powered = device?.has(DeviceCapability.Screens) ?: deviceGranted()
+    return if (powered) dark.other() else playOn
 }
+
+/** True with a granted device plugin this host can drive, before it has answered as after. */
+fun PickerModel.deviceGranted(): Boolean =
+    apkPlugins.any { it.device != null && it.supported && DEVICE_SCOPE in it.granted }
 
 /** The layouts Settings › System › Layout steps through. Bottom only needs a panel it can power off, unless it is already chosen. */
 fun offeredLayouts(model: PickerModel): List<ScreenLayout> = ScreenLayout.entries.filter {
