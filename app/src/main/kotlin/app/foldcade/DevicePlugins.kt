@@ -134,6 +134,14 @@ internal class DeviceControl(
     private val bottomPending = AtomicReference<Float?>(null)
     private val fanPending = AtomicReference<FanTier?>(null)
     private val lightsPending = AtomicReference<StickLights?>(null)
+
+    /*
+     * The newest value asked for, until the plugin's reply to it settles it. Every state shown
+     * meanwhile carries it, so a quick second step starts from the first, not from the device.
+     */
+    private val fanShown = AtomicReference<FanTier?>(null)
+    private val lightsShown = AtomicReference<StickLights?>(null)
+    private val bottomShown = AtomicReference<Float?>(null)
     private val screensQueued = AtomicBoolean(false)
     private val fanQueued = AtomicBoolean(false)
     private val displaysOn = HashMap<Int, Boolean>()
@@ -185,10 +193,12 @@ internal class DeviceControl(
      */
 
     fun setFan(tier: FanTier) {
+        fanShown.set(tier)
         if (fanPending.getAndSet(tier) != null) return
         enqueue {
             val next = fanPending.getAndSet(null) ?: return@enqueue
             val reply = call("fan.set", next.id)
+            fanShown.compareAndSet(next, null)
             // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
             if (reply?.ok == true && appliedFan != null) {
                 appliedFan = null
@@ -199,10 +209,12 @@ internal class DeviceControl(
     }
 
     fun setLights(mode: StickLights) {
+        lightsShown.set(mode)
         if (lightsPending.getAndSet(mode) != null) return
         enqueue {
             val next = lightsPending.getAndSet(null) ?: return@enqueue
             val reply = call("lights.set", next.id)
+            lightsShown.compareAndSet(next, null)
             val needsColor = when {
                 reply?.ok == true -> false
                 reply?.error == NEEDS_COLOR -> true
@@ -217,10 +229,14 @@ internal class DeviceControl(
     }
 
     fun setBottomBrightness(level: Float) {
-        if (bottomPending.getAndSet(level) != null) return
+        // One box in both, so the reply settles only the level it answers.
+        val boxed: Float? = level
+        bottomShown.set(boxed)
+        if (bottomPending.getAndSet(boxed) != null) return
         enqueue {
             val next = bottomPending.getAndSet(null) ?: return@enqueue
             val reply = call("brightness.set", "bottom", Bundle().apply { putFloat("level", next) }, BRIGHTNESS_TIMEOUT_MS)
+            bottomShown.compareAndSet(next, null)
             if (reply?.ok != true) read()
         }
     }
@@ -348,6 +364,9 @@ internal class DeviceControl(
         fanGames = emptySet()
         fanTaken = false
         lightsNeedColor = false
+        fanShown.set(null)
+        lightsShown.set(null)
+        bottomShown.set(null)
         publish(null)
     }
 
@@ -421,16 +440,18 @@ internal class DeviceControl(
         }
         val reply = parseDeviceReply(target.packageName, values)
         if (!reply.ok) Log.w(TAG, "Device plugin $method: ${reply.error} ${values["message"] ?: ""}")
-        reply.state?.let { next ->
-            // A newer choice is on its way: showing this reply would step the row back for a moment.
-            if (fanPending.get() == null && lightsPending.get() == null && bottomPending.get() == null) publish(next) else state = annotated(next)
-        }
+        reply.state?.let { publish(it) }
         return reply
     }
 
-    /** Adds what Foldcade knows of the device to the plugin's state. */
-    private fun annotated(next: DeviceState): DeviceState =
-        next.copy(lightsNeedColor = lightsNeedColor, colorSettings = lightsNeedColor && colorSettings())
+    /** Adds what Foldcade knows of the device to the plugin's state, and the values still on their way to it. */
+    private fun annotated(next: DeviceState): DeviceState {
+        var shown = next.copy(lightsNeedColor = lightsNeedColor, colorSettings = lightsNeedColor && colorSettings())
+        fanShown.get()?.takeIf { shown.has(DeviceCapability.Fan) }?.let { shown = shown.copy(fan = it, fanBaseline = it, fanGame = null) }
+        lightsShown.get()?.takeIf { shown.has(DeviceCapability.Lights) }?.let { shown = shown.copy(lights = it) }
+        bottomShown.get()?.takeIf { shown.has(DeviceCapability.Brightness) }?.let { shown = shown.copy(brightnessBottom = it) }
+        return shown
+    }
 
     private suspend fun publish(next: DeviceState?) {
         val shown = next?.let(::annotated)
