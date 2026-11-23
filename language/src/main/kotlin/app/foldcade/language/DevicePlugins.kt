@@ -241,6 +241,14 @@ fun DeviceScreens.lights(panels: Set<HostScreen>): Boolean = when (this) {
     DeviceScreens.Bottom -> panels.all { it == HostScreen.Bottom }
 }
 
+/**
+ * R1's Top slider writes Android's level for the default display, and Bottom the plugin's bottom
+ * panel. That split holds only while the default display is the top panel, as it always is on the
+ * Thor; otherwise R1 keeps today's one slider for both screens, so the plugin's brightness is left out.
+ */
+fun brightnessFor(state: DeviceState, defaultDisplayIsTop: Boolean): DeviceState =
+    if (defaultDisplayIsTop) state else state.copy(capabilities = state.capabilities - DeviceCapability.Brightness, brightnessTop = null, brightnessBottom = null)
+
 /** The bottom slider's position, 0 to 100, for a panel [level] from 0 to 1. */
 fun bottomBrightnessPosition(level: Float): Int = (level.coerceIn(0f, 1f) * 100f).roundToInt()
 

@@ -153,6 +153,16 @@ class DevicePluginsTest {
         assertEquals(BrightnessCopy.row, rowText(Row.Brightness, fanOnly).label)
     }
 
+    @Test fun r1SplitsBrightnessOnlyWhereTheDefaultDisplayIsTheTopPanel() {
+        assertEquals(full, brightnessFor(full, defaultDisplayIsTop = true))
+        // The default display is the bottom: Top would drive the bottom panel, so R1 keeps one slider for both.
+        val swapped = model().let { it.copy(device = brightnessFor(it.device!!, defaultDisplayIsTop = false)) }
+        assertEquals(listOf(Row.Brightness, Row.FanNow), rightRows(swapped.notices, swapped.device).drop(quickSettings().size))
+        assertEquals(BrightnessCopy.row, rowText(Row.Brightness, swapped).label)
+        // The rest of the plugin's controls stay.
+        assertTrue(swapped.deviceHas(DeviceCapability.Screens))
+    }
+
     @Test fun aGamesFanStepsFromDefaultAndPersistsThroughItsEffect() {
         val tile = TileActions(game = "rom", gameFan = GameFanSetting(), openWith = PlayerChoiceRow(emptyList(), PlayerChoice("a", label = "A")))
         assertEquals(listOf(Row.OpenWith, Row.GameFan), actionRows(tile).filter { it == Row.OpenWith || it == Row.GameFan })

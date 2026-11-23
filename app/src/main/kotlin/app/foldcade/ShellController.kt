@@ -2665,8 +2665,10 @@ class ShellController(
 
     /** The granted device plugin's newest state, or null without one. Its controls come and go with what it reports. */
     internal fun setDevice(state: app.foldcade.language.DeviceState?) {
-        if (model.device == state) return
-        publish(model.copy(device = state))
+        // R1's Top slider writes the default display's level: split only where that display is the top panel.
+        val shown = state?.let { app.foldcade.language.brightnessFor(it, defaultDisplayIsTop = store.session.defaultDisplayIsTop) }
+        if (model.device == shown) return
+        publish(model.copy(device = shown))
     }
 
     /** A drag on R1's bottom-screen slider, to [position] from 0 to 100. The plugin applies the newest. */
