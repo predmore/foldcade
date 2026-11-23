@@ -11,7 +11,8 @@ class ApkPluginSettingsTest {
 
     @Test fun catalogIsPresentWithoutAnInstalledPlugin() {
         val model = PickerModel(count = 4, rowsPerPage = 1)
-        assertEquals(listOf(Row.SettingsTile(catalogPage)), settingsRows(SettingsCategory.Plugins, model))
+        assertEquals(listOf(Row.SettingsTile(catalogPage), Row.SettingsTile(SettingsInner.PluginCatalog(PluginRegistry.thor.packageName))),
+            settingsRows(SettingsCategory.Plugins, model))
         assertEquals(listOf(Row.PluginInstall(moonlight)), settingsInnerRows(catalogPage, model))
         assertEquals("Foldcade Moonlight", settingsInnerTitle(catalogPage, model))
         assertEquals("Moonlight", settingsTileLabel(catalogPage, model))

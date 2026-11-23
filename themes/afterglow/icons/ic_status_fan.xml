@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Foldcade original art, MIT licensed (see LICENSE). A device plugin's fan -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M10.2,9.8 C7.4,7.6 8,2.4 12.4,2.2 C16.8,2 17.2,6.8 14,9.6 Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M14.805,11.541 C18.111,10.216 22.314,13.336 20.287,17.246 C18.26,21.157 13.903,19.103 13.078,14.932 Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M10.995,14.659 C10.489,18.184 5.686,20.264 3.313,16.554 C0.94,12.843 4.897,10.097 8.922,11.468 Z"
+        android:fillColor="#FFF4F1EA" />
+    <path
+        android:pathData="M8.6,12A3.4,3.4 0 1 1 15.4,12A3.4,3.4 0 1 1 8.6,12ZM10.6,12A1.4,1.4 0 1 0 13.4,12A1.4,1.4 0 1 0 10.6,12Z"
+        android:fillColor="#FFF4F1EA" />
+</vector>

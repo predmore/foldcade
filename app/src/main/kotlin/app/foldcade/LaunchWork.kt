@@ -27,6 +27,15 @@ internal class LaunchWork {
         if (current(ticket)) subjectId = null
     }
 
+    /**
+     * A launch waiting for its panel to light (a device plugin's one-screen layout), until it
+     * starts or is dropped. Set and cleared on the main thread, by identity.
+     */
+    var lighting: Job? = null
+
+    /** True while a launch waits for its panel: a start that needs none supersedes it, as any newer launch does. */
+    val waitingToLight: Boolean get() = lighting?.isActive == true
+
     fun cancel() {
         generation += 1
         job?.cancel()

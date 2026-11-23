@@ -6,6 +6,8 @@ data class ApkPluginSetting(
     val supported: Boolean, val scopes: Set<String>, val granted: Set<String>, val useForMoonlight: Boolean,
     /** The SHA-256 of each certificate the installed APK is signed with. */
     val signers: Set<String> = emptySet(),
+    /** The device a device plugin controls ([docs/device-plugins.md]). Null for a play plugin. */
+    val device: String? = null,
 ) {
     /** Signed exactly as its [PluginRegistry] entry pins, as an install from the registry is. */
     val verified: Boolean get() = signers.isNotEmpty() && PluginRegistry.source(packageName)?.signers == signers
@@ -54,7 +56,19 @@ object PluginRegistry {
         signers = setOf(FOLDCADE_RELEASE_SIGNER),
     )
 
-    val sources: List<PluginSource> = listOf(moonlight).also { requireValidRegistry(it) }
+    /** A device plugin ([docs/device-plugins.md]): the fan, stick lights and screens on the AYN Thor. */
+    val thor = PluginSource(
+        packageName = "app.foldcade.thor",
+        label = "Foldcade Thor",
+        name = "Thor",
+        detail = "Fan, stick lights and screens on the Thor.",
+        mark = "clamshell",
+        repository = "predmore/foldcade-thor",
+        asset = "foldcade-thor.apk",
+        signers = setOf("6d3570114da628a5085edf54c43186e0bc8cf6592f0bff6dec7ab7ee75c93366"),
+    )
+
+    val sources: List<PluginSource> = listOf(moonlight, thor).also { requireValidRegistry(it) }
 
     fun source(packageName: String): PluginSource? = sources.firstOrNull { it.packageName == packageName }
 
@@ -265,6 +279,8 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
                     PluginListing(name, line, verified = plugin.verified, value = action.value ?: action.label, attention = action.attention)
                 }
             plugin.scopes.isNotEmpty() && plugin.granted.isEmpty() -> PluginListing(name, line, verified = plugin.verified, value = ApkPluginCopy.off)
+            // Allowed, but its root manager has not let it in: it can do nothing yet, and its page says what to do.
+            deviceRootPending(plugin, model) -> PluginListing(name, line, verified = plugin.verified, value = DeviceCopy.needsRoot, attention = true)
             PluginRegistry.source(plugin.packageName) != null -> ApkPluginCopy.action(model.pluginCatalog(plugin.packageName)).let { action ->
                 when {
                     action.healthy -> PluginListing(name, line, verified = plugin.verified, value = action.value, healthy = true)
@@ -278,6 +294,11 @@ fun pluginListing(inner: SettingsInner, model: PickerModel): PluginListing? = wh
     }
     else -> null
 }
+
+/** A granted device plugin whose own state says root isn't granted: its page shows Root access. */
+fun deviceRootPending(plugin: ApkPluginSetting, model: PickerModel): Boolean =
+    plugin.device != null && DEVICE_SCOPE in plugin.granted &&
+        model.device?.takeIf { it.packageName == plugin.packageName }?.root.let { it != null && it != DeviceRoot.Granted }
 
 /**
  * Installation and discovery can report in either order. Once both have arrived, a first install,

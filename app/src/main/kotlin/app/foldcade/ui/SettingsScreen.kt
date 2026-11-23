@@ -929,6 +929,8 @@ private fun categoryIcon(category: SettingsCategory): Int = when (category) {
     SettingsCategory.Library -> R.drawable.symbol_library
     SettingsCategory.Players -> R.drawable.symbol_emulators
     SettingsCategory.Screens -> R.drawable.ic_status_settings
+    // Named for the device, so it wears the device: the open clamshell.
+    SettingsCategory.Device -> R.drawable.symbol_clamshell
     SettingsCategory.Plugins -> R.drawable.ic_status_plugins
     SettingsCategory.About -> R.drawable.ic_status_info
 }
@@ -963,7 +965,12 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     is Row.StreamHost -> R.drawable.symbol_pc
     // A plugin's page: its release, the computers it may use, and the games it opens.
     is Row.PluginInstall -> R.drawable.symbol_restart
-    is Row.PluginGrant -> R.drawable.symbol_pc
+    is Row.PluginGrant -> if (row.scope == app.foldcade.language.DEVICE_SCOPE) R.drawable.symbol_clamshell else R.drawable.symbol_pc
+    // Root is a permission the plugin holds, as Android's are.
+    is Row.DeviceRoot -> R.drawable.symbol_shield
+    // Thor: the fan, and the lights round the sticks.
+    Row.Fan -> R.drawable.ic_status_fan
+    Row.StickLights -> R.drawable.ic_status_stick_lights
     is Row.PluginRouting -> R.drawable.symbol_moonlight
     // Look: the pack is a gem, its icons a framed mark, the scene's glow, how fast things move, the buttons.
     Row.Theme -> R.drawable.symbol_gem

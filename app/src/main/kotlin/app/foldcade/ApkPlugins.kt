@@ -28,8 +28,12 @@ internal data class ApkPlugin(
     val platform: String,
     val bothScreens: Boolean,
     val scopes: Set<String>,
+    /** A device plugin's provider authority ([discoverDevicePlugins]). Null for a play plugin. */
+    val authority: String? = null,
+    /** The device a device plugin controls. Null for a play plugin. */
+    val device: String? = null,
 ) {
-    val supported: Boolean get() = platform == "moonlight"
+    val supported: Boolean get() = if (device != null) device in app.foldcade.language.KNOWN_DEVICES else platform == "moonlight"
     val fingerprint: String get() = signers.sorted().joinToString(" / ") { it.take(8).chunked(2).joinToString(":") }
     val component: ComponentName get() = ComponentName(packageName, activity)
 }
@@ -78,6 +82,8 @@ internal class ApkPluginGrants(private val prefs: SharedPreferences) {
         val grants = prefs.getStringSet("grants", emptySet()).orEmpty().toMutableSet()
         if (on) grants.add(key) else grants.remove(key)
         var disabled = prefs.getStringSet("disabled", emptySet()).orEmpty() - key
+        // One device plugin at a time: the one granted most recently. Every other's switch shows off.
+        if (on && scope == app.foldcade.language.DEVICE_SCOPE) grants.removeAll { it.endsWith("|$scope") && it.substringBefore('|') != plugin.packageName }
         // Granting turns routing on, so a plugin that can play becomes the one Moonlight games open in.
         // A plugin Foldcade can't play is recorded as not routing, so it never looks like the route.
         if (on && scope == ApkPluginProtocol.GAMESTREAM) {

@@ -24,6 +24,8 @@ object BackupSettings {
     private val backedStrings = listOf("music_track", "background_motion", "motion_speed", "theme", "icon_theme_id",
         "home_board", "same_games", "romm_origin", "button_prompt_confirm:", "screen_layout", "play_on",
         "system_player:", "game_player:",
+        // A game's own fan tier travels with the board whose tile ids it names, as Open with does.
+        "game_fan:",
         // Found ROM folders the player removed stay removed after a restore.
         "removed_roots")
     private val backedBooleans = listOf("primary_top", "music_enabled", "music_default_night_route", "artwork", "button_prompt_dismissed:")

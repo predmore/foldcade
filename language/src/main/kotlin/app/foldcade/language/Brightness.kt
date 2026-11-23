@@ -9,7 +9,9 @@ import kotlin.math.roundToInt
  * the same as a percent there.
  *
  * One slider sets both screens. Android stores the level for the default
- * display only; the other screen is set through AYN's settings service.
+ * display only; the other screen is set through AYN's settings service. With a
+ * device plugin that sets the bottom panel's own level, R1 has a slider for each
+ * screen, and this one sets the top's alone ([Row.BottomBrightness]).
  */
 object BrightnessCopy {
     const val row = "Brightness"

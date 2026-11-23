@@ -1,5 +1,6 @@
 package app.foldcade.ui
 
+import app.foldcade.language.playScreen
 import androidx.compose.animation.Crossfade
 
 import android.graphics.RenderEffect
@@ -3084,7 +3085,7 @@ private fun PanelRows(
     val fixedHeights = remember(panel.level, rows) { mutableStateMapOf<Int, Int>() }
     val block = remember(rows) { tileBlock(rows) }
     val fixedRows = rows.indices.filter { it in block || rows[it] is Row.PlayActivity ||
-        rows[it] is Row.Notice || rows[it] is Row.Brightness || rows[it] is Row.MusicVolume }
+        rows[it] is Row.Notice || rows[it] is Row.Brightness || rows[it] is Row.BottomBrightness || rows[it] is Row.MusicVolume }
     val regularRows = rows.size - fixedRows.size
     val tiled = block.count()
     val blocks = rows.size - tiled + if (tiled > 0) 1 else 0
@@ -3201,16 +3202,29 @@ private fun PanelRows(
                 )
                 notice != null -> NoticeRow(notice = notice, focused = focused, modifier = place.then(press))
                 // A slider under the tiles, as in Android's quick settings: the sun, the track, the percent.
+                // With a slider for each screen, each says which screen it is.
                 row is Row.Brightness -> SliderRow(
                     label = parts.label,
                     value = parts.value.orEmpty(),
-                    showLabel = false,
+                    showLabel = Row.BottomBrightness in rows,
                     icon = R.drawable.ic_status_display,
                     fraction = model.brightness / 100f,
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
                     onFraction = { app.shell.touchBrightness((it * 100f).roundToInt()) },
+                    modifier = place,
+                    scale = scale,
+                )
+                row is Row.BottomBrightness -> SliderRow(
+                    label = parts.label,
+                    value = parts.value.orEmpty(),
+                    icon = R.drawable.ic_status_display,
+                    fraction = model.device?.brightnessBottom ?: 0f,
+                    focused = focused,
+                    interactive = interactive,
+                    onStep = step,
+                    onFraction = { onEffect(app.shell.touchBottomBrightness((it * 100f).roundToInt())) },
                     modifier = place,
                     scale = scale,
                 )
@@ -3613,7 +3627,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier, page: Lis
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
         close = gridKeys && shell.focusedCanClose(),
-        playOn = model.playOn,
+        // The screen A really opens a game on: the lit one in a one-screen layout with its other panel off.
+        playOn = model.playScreen(),
     // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
     )) + if (gridKeys && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())

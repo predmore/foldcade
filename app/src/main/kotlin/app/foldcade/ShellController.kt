@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.playScreen
 import app.foldcade.language.HomeUndo
 import app.foldcade.language.pluginCatalog
 import app.foldcade.language.openSettings
@@ -670,6 +671,9 @@ class ShellController(
     }
 
     internal var runningPlayer: (String) -> Player? = { null }
+
+    /** A game's own fan tier changed. A game open now takes it at once. */
+    internal var onGameFanChanged: () -> Unit = {}
     internal var onPlayerChoiceChanged: (String) -> Unit = {}
     internal var onPlayerAvailabilityChanged: () -> Unit = {}
 
@@ -688,6 +692,18 @@ class ShellController(
         return (home.copies(tile).map { homeGameId(it.backendId, it.remoteKey) } + gameId)
             .firstNotNullOfOrNull { id -> id.takeIf { it != tile }?.let(store::gamePlayerChoice) }
     }
+
+    /** The game's own fan tier, saved under its tile, or under a copy's id from before the copies folded, as [gamePlayerChoice] is. */
+    internal fun gameFan(gameId: String): app.foldcade.language.FanTier? {
+        val tile = tileOf(gameId)
+        store.gameFan(tile)?.let { return it }
+        return (home.copies(tile).map { homeGameId(it.backendId, it.remoteKey) } + gameId)
+            .firstNotNullOfOrNull { id -> id.takeIf { it != tile }?.let(store::gameFan) }
+    }
+
+    /** Y's Fan row for [gameId], while the device plugin can give a game its own tier. */
+    private fun gameFanSetting(gameId: String, device: app.foldcade.language.DeviceState?): app.foldcade.language.GameFanSetting? =
+        if (device?.has(app.foldcade.language.DeviceCapability.GameFan) == true) app.foldcade.language.GameFanSetting(gameFan(gameId)) else null
 
     internal fun playerResolution(
         gameId: String?, platformId: String,
@@ -1262,6 +1278,15 @@ class ShellController(
                 publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
                 null
             }
+            is Effect.SetGameFan -> {
+                val tile = tileOf(effect.gameId)
+                if (effect.tier == null) {
+                    (listOf(tile) + sameGroups()[tile].orEmpty() + effect.gameId).distinct().forEach { store.setGameFan(it, null) }
+                } else store.setGameFan(tile, effect.tier)
+                onGameFanChanged()
+                publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                null
+            }
             is Effect.SetSystemPlayerChoice -> {
                 val id = canonicalSystem(effect.platformId)
                 store.setSystemPlayerChoice(id, effect.choice)
@@ -1683,7 +1708,7 @@ class ShellController(
     fun findHints(): List<HintKey>? {
         val session = find?.takeIf { findActive() } ?: return null
         return if (session.onResults) {
-            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose(), playOn = model.playOn)
+            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose(), playOn = model.playScreen())
         } else {
             findKeyboardHints(model.faceMap, typed = session.query.isNotEmpty())
         }
@@ -2636,6 +2661,22 @@ class ShellController(
         val next = model.copy(apkPlugins = plugins, pluginCatalogs = catalogs)
         publish(app.foldcade.language.afterApkPluginInstall(model, next))
         noteShelfChanged()
+    }
+
+    /** The granted device plugin's newest state, or null without one. Its controls come and go with what it reports. */
+    internal fun setDevice(state: app.foldcade.language.DeviceState?) {
+        // R1's Top slider writes the default display's level: split only where that display is the top panel.
+        val shown = state?.let { app.foldcade.language.brightnessFor(it, defaultDisplayIsTop = store.session.defaultDisplayIsTop) }
+        if (model.device == shown) return
+        publish(model.copy(device = shown))
+    }
+
+    /** A drag on R1's bottom-screen slider, to [position] from 0 to 100. The plugin applies the newest. */
+    fun touchBottomBrightness(position: Int): Effect? {
+        val device = model.device?.takeIf { it.has(app.foldcade.language.DeviceCapability.Brightness) } ?: return null
+        val clamped = position.coerceIn(0, 100)
+        publish(model.copy(device = device.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped))))
+        return Effect.SetBottomBrightness(clamped)
     }
 
     internal fun setPluginCatalog(packageName: String, catalog: app.foldcade.language.PluginCatalogSetting) {
@@ -4140,8 +4181,15 @@ class ShellController(
         // A game a library lists has a page of its own. An app, a stream, or a shortcut has nothing for it to say.
         val aboutGame = playGame?.takeIf { home.item(it)?.let { item -> app.foldcade.language.hasAboutPage(item) } == true }
         val withAbout = if (aboutGame != null) (withPlay ?: TileActions()).copy(about = true, game = withPlay?.game ?: aboutGame) else withPlay
+        // Every game Foldcade launches can have its own fan tier: a ROM, a stream, an Android game, a PC game.
+        // Not an app, an emulator, a folder or a gap. Only while the device plugin can set one.
+        val fanGame = (tile?.game ?: targetGame?.id)?.takeIf { id ->
+            tile?.bulk == null && home.selection == null && home.item(id)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
+        }
+        val withFan = fanGame?.let { id -> gameFanSetting(id, counted.device) }
+            ?.let { (withAbout ?: TileActions()).copy(gameFan = it, game = withAbout?.game ?: fanGame) } ?: withAbout
         val signIn = tile?.bulk == null && home.selection == null && onHome && find == null && gapNeedsSignIn(counted.focus.cellIndex)
-        return counted.copy(tileActions = (withAbout ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null, signIn = signIn),
+        return counted.copy(tileActions = (withFan ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null, signIn = signIn),
             undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 
@@ -4356,7 +4404,7 @@ class ShellController(
             val id = game?.let { homeGameId(it.backendId, it.remoteKey) }
             val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
-                openWith = openWith(tileOf(id), game.platformId)) else null,
+                openWith = openWith(tileOf(id), game.platformId), gameFan = gameFanSetting(tileOf(id), ready.device)) else null,
                 playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(ready))
         } else {
             withShelf(ready.copy(libraryGrid = false))

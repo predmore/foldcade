@@ -24,8 +24,9 @@ enum class Surface {
     CommandCenter,
 
     /**
-     * The screen [ScreenLayout.TopOnly] leaves black, at its lowest backlight. Nothing is
-     * drawn there and its keys drive the grid. It stays dark beside a game too.
+     * The screen a one-screen layout ([ScreenLayout.TopOnly], [ScreenLayout.BottomOnly]) leaves
+     * black, at its lowest backlight, or powered off by a device plugin. Nothing is drawn there and
+     * its keys drive the grid. It stays dark beside a game too.
      */
     Dark,
 }
@@ -42,7 +43,7 @@ data class ExternalApp(
  * default the hero on top and the picker on the bottom.
  * A single-screen launch leaves the command center on the other panel, and
  * the picker there only while the user is [browsing] it. The dark screen of
- * [ScreenLayout.TopOnly] stays dark instead.
+ * a one-screen layout stays dark instead.
  * Android Home clears only the panel that has input. An app on both screens
  * runs on the top panel, so Home there clears both.
  *

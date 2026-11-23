@@ -1,6 +1,6 @@
 # APK plugins
 
-Protocol 1. Foldcade owns this MIT contract. APK plugins implement it in their own code. The first is Foldcade Moonlight (`app.foldcade.moonlight`, GPL-3.0). The bundled, in-process API is separate: see [plugins](plugins.md).
+Protocol 1. Foldcade owns this MIT contract. APK plugins implement it in their own code. The first is Foldcade Moonlight (`app.foldcade.moonlight`, GPL-3.0). The bundled, in-process API is separate: see [plugins](plugins.md). A **device plugin**, which Foldcade calls to drive hardware such as the Thor's fan and panels, is the reverse direction and has its own contract: [device plugins](device-plugins.md). It shares this page's identity, consent, card and catalog.
 
 ## Boundary
 
@@ -137,14 +137,16 @@ Each entry has these fields:
 | Asset | The one release file Foldcade downloads. Other assets, such as a source archive, are ignored. |
 | Signers | The SHA-256 of each signing certificate, as lowercase hex. The APK's current signer set must equal it exactly. |
 
-Protocol 1's registry has one entry:
+Protocol 1's registry has two entries:
 
-| Field | Value |
-| --- | --- |
-| Package | `app.foldcade.moonlight` |
-| Repository | `predmore/foldcade-moonlight` |
-| Asset | `foldcade-moonlight.apk` |
-| Signers | `36f68830…e6581ff`, Foldcade's release certificate. First-party plugins are signed with Foldcade's own key. |
+| Field | Foldcade Moonlight | Foldcade Thor ([device plugin](device-plugins.md)) |
+| --- | --- | --- |
+| Package | `app.foldcade.moonlight` | `app.foldcade.thor` |
+| Repository | `predmore/foldcade-moonlight` | `predmore/foldcade-thor` |
+| Asset | `foldcade-moonlight.apk` | `foldcade-thor.apk` |
+| Signers | `36f68830…e6581ff`, Foldcade's release certificate. | `6d357011…ee75c93366`, the certificate Foldcade Thor releases are signed with. |
+
+Foldcade Thor's catalog card is offered on every device, as Foldcade is a launcher for the Thor; on other hardware the plugin reports no capability, and Foldcade shows no control.
 
 Trust is pinned in the entry. It doesn't depend on how this copy of Foldcade is signed, so a debug Foldcade installs the same release a signed one does. Registry entries are checked when the registry loads: a plain `owner/name`, a plain `.apk` file name, a package name, at least one signer, and no package twice.
 

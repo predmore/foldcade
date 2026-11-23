@@ -101,18 +101,20 @@ class GameAboutShellTest {
             val shell = shell(store)
             // Keys come from the grid's screen; the dark screen's are the grid's too.
             openAbout(shell, "Zelda", keys = layout.gridScreen)
-            assertEquals(case, HostScreen.Top, shell.model.gameAbout?.screen)
-            // Top only leaves nothing beside the page: the bottom stays dark.
-            assertEquals(case, layout != ScreenLayout.TopOnly, store.session.draws(Panel.Bottom))
-            shell.onMeaning(Meaning.Back, HostScreen.Top)
+            // Bottom only's top is dark, so its pages are on the bottom.
+            assertEquals(case, layout.pageScreen, shell.model.gameAbout?.screen)
+            // A one-screen layout leaves nothing beside the page: the other screen stays dark.
+            for (panel in Panel.entries) assertEquals(case, layout.darkScreen != panel.screen(), store.session.draws(panel))
+            shell.onMeaning(Meaning.Back, layout.pageScreen)
             assertNull(case, shell.model.gameAbout)
         }
     }
 
     @Test
     fun besideAGameThePageOpensOnTheScreenFoldcadeStillShowsInEveryLayout() {
-        // Each layout with a game on either screen, but Top only's game on top, which leaves no grid to open.
-        val cases = ScreenLayout.entries.flatMap { layout -> Panel.entries.map { layout to it } } - (ScreenLayout.TopOnly to Panel.Top)
+        // Each layout with a game on either screen, but a one-screen layout's game on its lit screen, which leaves no grid to open.
+        val cases = ScreenLayout.entries.flatMap { layout -> Panel.entries.map { layout to it } } - (ScreenLayout.TopOnly to Panel.Top) -
+            (ScreenLayout.BottomOnly to Panel.Bottom)
         for ((layout, playOn) in cases) {
             val case = "$layout, Play on $playOn"
             val store = SessionStore(MemoryPrefs())

@@ -114,7 +114,7 @@ class GameAboutTest {
             val menu = yMenu(layout)
             assertEquals(layout.name, layout.gridScreen, menu.panel?.screen)
             // The page is a full page, as Settings and Play activity are: the larger top screen.
-            assertEquals(layout.name, HostScreen.Top, openAbout(layout).gameAbout?.screen)
+            assertEquals(layout.name, layout.pageScreen, openAbout(layout).gameAbout?.screen)
         }
     }
 

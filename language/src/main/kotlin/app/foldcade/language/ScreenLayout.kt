@@ -4,7 +4,9 @@ package app.foldcade.language
  * How Foldcade spreads itself over the two screens while it has both. The showcase is the
  * hero: the focused game large, with the L1 and R1 islands over it. The grid is the picker
  * and its hint row. [TopOnly] keeps the grid, with the islands, on the top screen and leaves
- * the bottom one black at its lowest backlight.
+ * the bottom one black at its lowest backlight, or powered off by a device plugin that can.
+ * [BottomOnly] is its mirror, offered only with such a plugin ([offeredLayouts]): everything
+ * Foldcade shows, its pages included, is on the bottom screen, and the top is powered off.
  *
  * A game beside Foldcade still takes the screen it opens on, and the screen left beside it
  * is the command center, as in every layout, except the dark screen, which stays dark.
@@ -14,12 +16,13 @@ enum class ScreenLayout(val id: String) {
     ShowcaseTop("showcase-top"),
     ShowcaseBottom("showcase-bottom"),
     TopOnly("top-only"),
+    BottomOnly("bottom-only"),
     ;
 
     /** The screen the grid has while no game is beside it. */
     val gridScreen: HostScreen
         get() = when (this) {
-            ShowcaseTop -> HostScreen.Bottom
+            ShowcaseTop, BottomOnly -> HostScreen.Bottom
             ShowcaseBottom, TopOnly -> HostScreen.Top
         }
 
@@ -28,12 +31,16 @@ enum class ScreenLayout(val id: String) {
         get() = when (this) {
             ShowcaseTop -> HostScreen.Top
             ShowcaseBottom -> HostScreen.Bottom
-            TopOnly -> null
+            TopOnly, BottomOnly -> null
         }
 
     /** The screen left black. */
     val darkScreen: HostScreen?
-        get() = if (this == TopOnly) HostScreen.Bottom else null
+        get() = when (this) {
+            TopOnly -> HostScreen.Bottom
+            BottomOnly -> HostScreen.Top
+            ShowcaseTop, ShowcaseBottom -> null
+        }
 
     /**
      * Where the L1 and R1 islands sit, and where their menus open: over the hero, or over
@@ -44,11 +51,11 @@ enum class ScreenLayout(val id: String) {
 
     /**
      * Where Settings, Play activity, a game's About, and the connect form open: the top screen, the larger,
-     * in every layout. Its rows were laid out for that width. A game there sends them to the
-     * screen Foldcade still has ([onShownScreens]).
+     * in every layout but [BottomOnly], whose top is dark. Its rows were laid out for that width. A game
+     * there sends them to the screen Foldcade still has ([onShownScreens]), as Bottom only always does.
      */
     val pageScreen: HostScreen
-        get() = HostScreen.Top
+        get() = if (this == BottomOnly) HostScreen.Bottom else HostScreen.Top
 
     companion object {
         val Default = ShowcaseTop
@@ -70,6 +77,7 @@ object ScreenCopy {
     const val showcaseTop = "Art top"
     const val showcaseBottom = "Art bottom"
     const val topOnly = "Top only"
+    const val bottomOnly = "Bottom only"
     const val playOn = "Play on"
 }
 
@@ -77,6 +85,7 @@ fun layoutLabel(layout: ScreenLayout): String = when (layout) {
     ScreenLayout.ShowcaseTop -> ScreenCopy.showcaseTop
     ScreenLayout.ShowcaseBottom -> ScreenCopy.showcaseBottom
     ScreenLayout.TopOnly -> ScreenCopy.topOnly
+    ScreenLayout.BottomOnly -> ScreenCopy.bottomOnly
 }
 
 fun screenLabel(screen: HostScreen): String = when (screen) {

@@ -61,6 +61,7 @@ import app.foldcade.artwork.SteamGridDb
 import app.foldcade.language.settingsActivityScreen
 import app.foldcade.language.MotionSpeed
 import app.foldcade.language.AboutCopy
+import app.foldcade.language.playScreen
 import app.foldcade.language.SaveConflictAction
 import app.foldcade.language.SaveConflictPrompt
 import app.foldcade.language.SaveConflictSide
@@ -115,6 +116,7 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
@@ -424,7 +426,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // A second A/X keeps the original request, including its screen and bloom subject.
                 val focused = foldcade.shell.focusedGame()?.id?.let(foldcade.shell::tileOf)
                 if (focused != null && foldcade.launchWork.pending(focused)) return
-                launchScreen = foldcade.store.session.playOn.let { if (effect.elsewhere) it.flip() else it }
+                // Play on's screen, or in a one-screen layout whose other panel is powered off, the lit one.
+                launchScreen = foldcade.shell.model.playScreen().panel().let { if (effect.elsewhere) it.flip() else it }
                 launchSubject = foldcade.shell.focusedRunningApp()
                 bloomPress = BloomPress(foldcade.shell.focusedGame()?.id, SystemClock.uptimeMillis())
                 if (foldcade.shell.model.libraryGrid) launchLibraryGame(effect.index) else launchFocused()
@@ -461,8 +464,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             Effect.OpenFolders, is Effect.FolderOnHome,
             is Effect.MoveApp, is Effect.Hide,
             Effect.RenameFolder, Effect.ChooseFolderIcon, Effect.RemoveTile, Effect.Tidy, Effect.GoHome, Effect.EditField,
-            is Effect.SortFolder, is Effect.SetGamePlayerChoice, is Effect.SetSystemPlayerChoice,
+            is Effect.SortFolder, is Effect.SetGamePlayerChoice, is Effect.SetSystemPlayerChoice, is Effect.SetGameFan,
             -> Unit
+            // The model already shows the new value; the plugin's reply replaces it.
+            is Effect.SetFan -> foldcade.deviceControl.setFan(effect.tier)
+            is Effect.SetStickLights -> foldcade.deviceControl.setLights(effect.mode)
+            is Effect.SetBottomBrightness -> foldcade.deviceControl.setBottomBrightness(app.foldcade.language.bottomBrightnessLevel(effect.position))
+            is Effect.CheckDevice -> foldcade.deviceControl.check()
             is Effect.RemoveDownload -> removeDownload(effect.gameId)
             is Effect.RestartGame -> askRestart(effect.gameId)
             is Effect.CloseGame -> askCloseGame(effect.gameId)
@@ -899,6 +907,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshBrightness()
         foldcade.brightness.refreshOther()
         foldcade.refreshNoticeAccess()
+        // No game left open ends any game's fan override, and the dark panel goes dark again.
+        foldcade.deviceControl.onHomeResumed()
         reconcileUsage()
     }
 
@@ -1388,14 +1398,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         firmware = { firmwareTarget, backendId -> prepareFirmwareFiles(player, apiGame, firmwareTarget, generation, backendId) },
                     ) == null) return@launch
                     val steps = playerSetupSteps(player)
-                    withContext(Dispatchers.Main.immediate) {
-                        if (!launchCurrent(generation)) return@withContext
-                        if (steps != null) {
-                            showPlayerSetup(player.id, steps)
-                            return@withContext
+                    whenLit({ if (steps == null) startPanels(decision.occupiesBothDisplays, primary = decision.startDisplay == StartDisplay.Primary) else emptySet() }) {
+                        withContext(Dispatchers.Main.immediate) {
+                            if (!launchCurrent(generation)) return@withContext
+                            if (steps != null) {
+                                showPlayerSetup(player.id, steps)
+                                return@withContext
+                            }
+                            clearPendingLaunch()
+                            startPlayer(game, decision, apiGame, player, generation, spots, saveSyncForLaunch(player, saveSyncDeclinedFor))
                         }
-                        clearPendingLaunch()
-                        startPlayer(game, decision, apiGame, player, generation, spots, saveSyncForLaunch(player, saveSyncDeclinedFor))
                     }
                 }
             }
@@ -1422,7 +1434,66 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * opens on the top screen and takes both, as a 3DS game does.
      * [PluginHost.openInstalledApp] does not read a save folder, so a missing one does not block this.
      */
-    private fun launchInstalled(game: ShelfGame) {
+    /**
+     * The panels a start is about to take: both for a both-screen app, the first display's for a
+     * player that always starts there, else the screen it asked for, or the free one.
+     */
+    private fun startPanels(both: Boolean, primary: Boolean = false, requested: Panel = launchScreen): Set<Panel> = when {
+        both -> Panel.entries.toSet()
+        primary -> setOf(Panel.Top)
+        else -> setOfNotNull(foldcade.store.session.singleScreenTarget(requested))
+    }
+
+    /**
+     * A device plugin powers a one-screen layout's dark panel off. A start that takes it waits, a
+     * bounded moment, for it to light, so the game never opens on a panel that is off. The panel
+     * stays wanted until [start] returns. Without such a plugin, [start] runs at once.
+     */
+    private suspend fun <T> whenLit(panels: () -> Set<Panel>, start: suspend () -> T): T {
+        val taking = withContext(Dispatchers.Main.immediate) { panels().map { it.screen() }.toSet() }
+        if (!foldcade.deviceControl.mustLight(taking)) return start()
+        // While it waits, a start that needs no panel lit supersedes it ([afterLit]).
+        val job = currentCoroutineContext()[Job]
+        withContext(Dispatchers.Main.immediate) { foldcade.launchWork.lighting = job }
+        try {
+            return foldcade.deviceControl.whenLit(taking, start)
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main.immediate) {
+                if (foldcade.launchWork.lighting === job) foldcade.launchWork.lighting = null
+            }
+        }
+    }
+
+    /**
+     * A start begun on the main thread: [start] at once, as without a device plugin, or once its
+     * panel is lit. The wait is the launch's own job, so B, a cancel or a newer launch drops it.
+     */
+    private fun afterLit(panels: Set<Panel>, subject: String? = null, start: () -> Unit) {
+        val taking = panels.map { it.screen() }.toSet()
+        if (!foldcade.deviceControl.mustLight(taking)) {
+            // An older start still waiting for its panel is superseded by this one, as a newer launch always is.
+            // Only then: without a device plugin no start ever waits, and nothing else is cancelled.
+            if (foldcade.launchWork.waitingToLight) cancelLaunches()
+            return start()
+        }
+        val generation = beginLaunch(subject)
+        val job = foldcade.scope.launch(Dispatchers.Main.immediate) {
+            try {
+                foldcade.deviceControl.whenLit(taking) {
+                    if (launchCurrent(generation) && !isDestroyed && !isFinishing) start()
+                }
+            } finally {
+                if (foldcade.launchWork.lighting === coroutineContext[Job]) foldcade.launchWork.lighting = null
+            }
+        }
+        foldcade.launchWork.job = job
+        foldcade.launchWork.lighting = job
+    }
+
+    private fun launchInstalled(game: ShelfGame) =
+        afterLit(startPanels(game.occupiesBothDisplays), game.id) { launchInstalledNow(game) }
+
+    private fun launchInstalledNow(game: ShelfGame) {
         val pkg = game.androidPackage ?: return
         val opened = foldcade.plugins.openInstalledApp(pkg)
         val launch = packageManager.getLaunchIntentForPackage(pkg) ?: return
@@ -1794,44 +1865,51 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             null
         }
         val installedIntent = playerIntent?.toStartIntent(foldcade.rommFolderAuthority)
-        withContext(Dispatchers.Main.immediate) {
-            if (!launchCurrent(generation)) return@withContext
-            when (plan) {
-                is GameLaunch.Dummy -> openContent(
-                    id,
-                    title,
-                    platformId,
-                    plan.uri,
-                    occupiesBoth = false,
-                )
-                is GameLaunch.Installed -> if (installedIntent != null) {
-                    val started = startExternal(
+        val taking = { when (plan) {
+            is GameLaunch.Installed -> if (installedIntent != null) startPanels(plan.player.occupiesBothDisplays) else emptySet()
+            is GameLaunch.Dummy -> startPanels(false)
+            else -> emptySet()
+        } }
+        whenLit(taking) {
+            withContext(Dispatchers.Main.immediate) {
+                if (!launchCurrent(generation)) return@withContext
+                when (plan) {
+                    is GameLaunch.Dummy -> openContent(
                         id,
                         title,
-                        game.platformId,
-                        plan.player.occupiesBothDisplays,
-                        installedIntent,
-                        noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
+                        platformId,
+                        plan.uri,
+                        occupiesBoth = false,
                     )
-                    if (started) {
-                        foldcade.notePlayerChoiceLaunch(id, game.platformId, resolution)
-                        val saves = if (saveSyncForLaunch(plan.player, saveSyncDeclinedFor)) LibraryReturn(
-                            owner.backendId,
-                            owner,
-                            plan.player,
-                            spots,
-                            (target as? LaunchTarget.ContentUri)?.uri,
-                        ) else null
-                        saves?.let(::rememberReturn)
-                        noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, playerIntent?.flags.orEmpty())
+                    is GameLaunch.Installed -> if (installedIntent != null) {
+                        val started = startExternal(
+                            id,
+                            title,
+                            game.platformId,
+                            plan.player.occupiesBothDisplays,
+                            installedIntent,
+                            noteStart = { playerIntent?.let { foldcade.noteStarted(plan.player, it) } == true },
+                        )
+                        if (started) {
+                            foldcade.notePlayerChoiceLaunch(id, game.platformId, resolution)
+                            val saves = if (saveSyncForLaunch(plan.player, saveSyncDeclinedFor)) LibraryReturn(
+                                owner.backendId,
+                                owner,
+                                plan.player,
+                                spots,
+                                (target as? LaunchTarget.ContentUri)?.uri,
+                            ) else null
+                            saves?.let(::rememberReturn)
+                            noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, playerIntent?.flags.orEmpty())
+                        }
+                    } else if (launchCurrent(generation)) {
+                        showMissing(plan.player.displayName, emptyList())
                     }
-                } else if (launchCurrent(generation)) {
-                    showMissing(plan.player.displayName, emptyList())
+                    is GameLaunch.Missing -> if (launchCurrent(generation)) {
+                        showMissing(plan.playerName, plan.alsoRuns)
+                    }
+                    GameLaunch.NotAFile -> foldcade.retryLibrary()
                 }
-                is GameLaunch.Missing -> if (launchCurrent(generation)) {
-                    showMissing(plan.playerName, plan.alsoRuns)
-                }
-                GameLaunch.NotAFile -> foldcade.retryLibrary()
             }
         }
     }
@@ -1911,16 +1989,34 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         // would send a fresh start and discard its unsaved progress. Without
         // exit observations, Restart remains the explicit way to start it over.
         cancelLaunches()
-        if (running.resumeStart != null) {
+        // Coming back onto a panel that is off waits for it to light, as a fresh start does.
+        val panels = startPanels(running.occupiesBoth, requested = running.panel)
+        val light = foldcade.deviceControl.mustLight(panels.map { it.screen() }.toSet())
+        if (running.resumeStart != null || light) {
             // The same start boots the game again when it had closed, and it writes the saves the read-back
             // of its last session may still be reading. A read-back already holding the save flow finishes
             // first, and only then is this session's own noted, so that read-back cannot drop it.
             val generation = beginLaunch()
             foldcade.launchWork.job = foldcade.scope.launch {
-                foldcade.saveFlow.withLock { }
-                withContext(Dispatchers.Main.immediate) {
-                    if (!launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
-                    if (!sendResume(running, tileId, title, platformId, front)) startAnew()
+                if (!light) {
+                    foldcade.saveFlow.withLock { }
+                    withContext(Dispatchers.Main.immediate) {
+                        if (!launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
+                        if (!sendResume(running, tileId, title, platformId, front)) startAnew()
+                    }
+                    return@launch
+                }
+                // Waiting for the panel keeps the save flow, as Move does, so no save return can start
+                // reading while the game it resumes is about to write. The run is matched again after.
+                foldcade.saveFlow.withLock {
+                    whenLit({ panels }) {
+                        withContext(Dispatchers.Main.immediate) {
+                            val current = foldcade.runningOn(tileId)
+                                ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
+                            if (current == null || !launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
+                            if (!sendResume(current, tileId, title, platformId, front)) startAnew()
+                        }
+                    }
                 }
             }
             return true
@@ -2127,13 +2223,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.launchWork.job = foldcade.scope.launch {
             // SameStartResumes may boot a closed game, so finish its preceding save return first.
             foldcade.saveFlow.withLock {
-                withContext(Dispatchers.Main.immediate) {
-                    // A save choice may have committed while Move waited for the flow. The same
-                    // run may have gained or lost a companion meanwhile, so it is matched by its start.
-                    val current = foldcade.runningOn(id)
-                        ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
-                    if (current == null || !launchCurrent(generation) || isDestroyed || isFinishing || foldcade.moveGameTarget(id) != target) return@withContext
-                    sendResume(current, id, current.title, current.platformId, front, panel = target)
+                whenLit({ startPanels(running.occupiesBoth, requested = target) }) {
+                    withContext(Dispatchers.Main.immediate) {
+                        // A save choice may have committed while Move waited for the flow. The same
+                        // run may have gained or lost a companion meanwhile, so it is matched by its start.
+                        val current = foldcade.runningOn(id)
+                            ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
+                        if (current == null || !launchCurrent(generation) || isDestroyed || isFinishing || foldcade.moveGameTarget(id) != target) return@withContext
+                        sendResume(current, id, current.title, current.platformId, front, panel = target)
+                    }
                 }
             }
         }
@@ -2385,7 +2483,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return true
     }
 
-    private fun launchStandIn(game: ShelfGame) {
+    private fun launchStandIn(game: ShelfGame) =
+        afterLit(startPanels(game.occupiesBothDisplays), game.id) { launchStandInNow(game) }
+
+    private fun launchStandInNow(game: ShelfGame) {
         foldcade.music.onExternalLaunch()
         val session = foldcade.store.session
         val external = ExternalApp(game.id, game.occupiesBothDisplays)
@@ -2516,13 +2617,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun openNotice(key: String) {
         val listener = NoticeListener.connected ?: return
         val session = foldcade.store.session
-        val panel = session.singleScreenTarget(session.playOn) ?: return
+        val panel = session.singleScreenTarget(foldcade.shell.model.playScreen().panel()) ?: return
         val assignment = displays.assignment(session.defaultDisplayIsTop)
         val displayId = when (panel) {
             Panel.Top -> assignment.topDisplayId
             Panel.Bottom -> assignment.bottomDisplayId ?: return
         }
         val pkg = foldcade.shell.model.notices.firstOrNull { it.id == key }?.packageName
+        afterLit(setOf(panel)) { openNoticeOn(listener, key, displayId, panel, pkg) }
+    }
+
+    private fun openNoticeOn(listener: NoticeListener, key: String, displayId: Int, panel: Panel, pkg: String?) {
         listener.open(key, displayId) {
             foldcade.music.onExternalLaunch()
             val id = "notice:${pkg ?: key}"
@@ -3850,7 +3955,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             withContext(Dispatchers.Main.immediate) {
                 if (success && saveId != null && destination == null && !isDestroyed && !isFinishing && foldcade.shell.model.savePicker?.target == target) {
                     foldcade.shell.presentSavePicker(null)
-                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: foldcade.store.session.playOn
+                    launchScreen = foldcade.runningOn(target.gameId)?.panel ?: foldcade.shell.model.playScreen().panel()
                     launchBackendGame(request.owner.label, request.route.play.platformId, request.route, fresh = true)
                 } else if (success) loadSavePicker(target)
             }

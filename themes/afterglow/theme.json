@@ -1396,6 +1396,10 @@
       "file": "icons/ic_status_display.xml",
       "tint": true
     },
+    "status.fan": {
+      "file": "icons/ic_status_fan.xml",
+      "tint": true
+    },
     "status.info": {
       "file": "icons/ic_status_info.xml",
       "tint": true
@@ -1414,6 +1418,10 @@
     },
     "status.settings": {
       "file": "icons/ic_status_settings.xml",
+      "tint": true
+    },
+    "status.stick.lights": {
+      "file": "icons/ic_status_stick_lights.xml",
       "tint": true
     },
     "status.tools": {

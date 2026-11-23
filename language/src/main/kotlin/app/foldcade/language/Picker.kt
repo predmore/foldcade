@@ -1034,8 +1034,24 @@ sealed interface Row {
     data object Backup : Row
     data class QuickTile(val setting: QuickSetting) : Row
 
-    /** The R1 slider for both screens' brightness. */
+    /** The R1 slider for both screens' brightness, or the top screen's once a device plugin sets the bottom's ([BottomBrightness]). */
     data object Brightness : Row
+
+    /** R1's slider for the bottom screen, through the device plugin's `brightness.set`. */
+    data object BottomBrightness : Row
+
+    /** Settings › Thor: the fan tier the player chose (`fanBaseline`). */
+    data object Fan : Row
+
+    /** R1: the fan tier in force, a game's while one overrides it. */
+    data object FanNow : Row
+    data object StickLights : Row
+
+    /** Y's menu: the game's own fan tier, or Default. */
+    data object GameFan : Row
+
+    /** A device plugin's page, while its root manager has not let it in: what to do, and A checks again. */
+    data class DeviceRoot(val packageName: String) : Row
     data object ButtonLabels : Row
     data object Licenses : Row
 
@@ -1142,6 +1158,12 @@ enum class AndroidSetting {
     Sound,
     Battery,
     AppInfo,
+
+    /** AYN's RGB lighting screen, where the sticks' colours are set. Only offered where it opens ([DeviceState.colorSettings]). */
+    StickColor,
+
+    /** Magisk, where root is granted. Only offered where it opens ([DeviceState.rootSettings]). */
+    RootManager,
 }
 
 fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
@@ -1352,14 +1374,17 @@ fun rommWaitsForPhone(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, 
  * R1 opens on brightness ([rightStart]), so R1 then left or right changes it.
  * Notification access is asked from Settings, not here.
  */
-fun rightRows(notices: List<FoldNotice>): List<Row> = buildList {
+fun rightRows(notices: List<FoldNotice>, device: DeviceState? = null): List<Row> = buildList {
     quickSettings().forEach { add(Row.QuickTile(it)) }
+    // Top first, where R1 opens, then the bottom screen's own level, then the fan in force.
     add(Row.Brightness)
+    if (device?.has(DeviceCapability.Brightness) == true) add(Row.BottomBrightness)
+    if (device?.has(DeviceCapability.Fan) == true) add(Row.FanNow)
     notices.forEach { add(Row.Notice(it.id)) }
     if (notices.count { it.dismissable } >= 2) add(Row.ClearNotices)
 }
 
-/** Where R1 opens: the brightness slider, under the tiles. */
+/** Where R1 opens: the brightness slider, under the tiles. With two, the top screen's. */
 fun rightStart(): Int = quickSettings().size
 
 /** A choice Add to lists, Home ([HOME_ROOT]) or a collection, and whether the focused game is in it. */
@@ -1406,6 +1431,8 @@ data class TileActions(
     val moveGame: HostScreen? = null,
     val saves: Boolean = false,
     val openWith: PlayerChoiceRow? = null,
+    /** The game's own fan tier, while the device plugin can set one for a game. Null leaves the row out. */
+    val gameFan: GameFanSetting? = null,
     /** The game's play time, for its Play time row. Null or 0 with nothing [playFound] leaves the row out: not a game, or never played. */
     val playTime: Long? = null,
     /** With no play of its own, the time a gone game of its name left: the row says it was found. */
@@ -1462,6 +1489,7 @@ fun actionRows(tile: TileActions?): List<Row> = buildList {
     if (tile.icon) add(Row.FolderIcon)
     if (tile.newCollection && tile.collections == null) add(Row.NewCollection)
     if (tile.openWith != null) add(Row.OpenWith)
+    if (tile.gameFan != null) add(Row.GameFan)
     // A game never played says nothing with "0m", so the row waits for real time or time found to move.
     if (tile.playTime != null && (tile.playTime > 0L || tile.playFound != null)) add(Row.PlayTime)
     if (tile.show) add(Row.ShowHidden)
@@ -1493,6 +1521,8 @@ fun panelHints(model: PickerModel): List<HintKey>? {
         Row.RemoveDownload, Row.DeleteShortcut -> listOf(HintKey(model.deleteHold?.key ?: promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, ""), back)
         Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
             else listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, BrightnessCopy.allow), back)
+        // The plugin's slider needs no Android permission.
+        Row.BottomBrightness -> listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
@@ -1570,6 +1600,8 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
 
 private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
     (it == Row.Undo && model.tileActions?.undo != true) ||
+        // The device plugin went, or can no longer set a game's tier: its row leaves the open menu.
+        (it == Row.GameFan && model.tileActions?.gameFan == null) ||
         (model.tileActions?.kept == true && (it == Row.SelectTile || it == Row.MoveTile || it == Row.RemoveTile))
 }
 
@@ -1587,7 +1619,7 @@ private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = whe
     PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
-        Side.Right -> rightRows(model.notices)
+        Side.Right -> rightRows(model.notices, model.device)
         Side.Tile -> emptyList()
     }
 }
@@ -1673,9 +1705,15 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         },
     )
     Row.Brightness -> RowText(
-        BrightnessCopy.row,
+        if (model.deviceHas(DeviceCapability.Brightness)) DeviceCopy.top else BrightnessCopy.row,
         if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
+    Row.BottomBrightness -> RowText(DeviceCopy.bottom, BrightnessCopy.percent(model.device?.brightnessBottom?.let(::bottomBrightnessPosition) ?: 0))
+    Row.Fan -> RowText(DeviceCopy.fan, DeviceCopy.fan(model.device?.fanBaseline))
+    Row.FanNow -> RowText(DeviceCopy.fan, DeviceCopy.fan(model.device?.fan))
+    Row.StickLights -> RowText(DeviceCopy.stickLights, DeviceCopy.lights(model.device?.lights))
+    Row.GameFan -> RowText(DeviceCopy.fan, DeviceCopy.gameFan(model.tileActions?.gameFan?.tier))
+    is Row.DeviceRoot -> RowText(DeviceCopy.rootAccess, model.device?.takeIf { it.packageName == row.packageName }?.root?.let(DeviceCopy::root))
     // Only Settings › Library › Add lists these, under its own "Add".
     Row.AddFolder -> RowText(Copy.addFolderRow)
     Row.SyncLibrary -> RowText(Copy.syncGames, librarySyncValue(model))
@@ -1743,7 +1781,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.AddNewGames -> RowText(Copy.addNewGames, if (model.addNewToHome) Copy.on else Copy.off)
     Row.RecentOnHome -> RowText(Copy.recentlyPlayed, if (model.recentOnHome) Copy.on else Copy.off)
     Row.Artwork -> RowText(Copy.artwork, if (model.artwork) Copy.on else Copy.off)
-    is Row.PluginGrant -> RowText(ApkPluginCopy.pairedComputers)
+    is Row.PluginGrant -> RowText(if (row.scope == DEVICE_SCOPE) DeviceCopy.controlDevice else ApkPluginCopy.pairedComputers)
     is Row.PluginRouting -> RowText(ApkPluginCopy.useForMoonlight)
     is Row.PluginInstall -> ApkPluginCopy.action(model.pluginCatalog(row.packageName)).let { RowText(it.label, it.value) }
     Row.ArtKey -> RowText(Copy.steamGridDb, if (model.artKeySaved) Copy.keySaved else Copy.noKey)
@@ -1841,6 +1879,17 @@ sealed interface Effect {
     data class SetPluginGrant(val packageName: String, val scope: String, val on: Boolean) : Effect
     data class SetPluginRouting(val packageName: String, val on: Boolean) : Effect
     data class InstallPlugin(val packageName: String) : Effect
+
+    /** The device plugin's fan tier, stick lights, or bottom screen's level ([bottomBrightnessLevel]). The model already shows them. */
+    data class SetFan(val tier: FanTier) : Effect
+    data class SetStickLights(val mode: StickLights) : Effect
+    data class SetBottomBrightness(val position: Int) : Effect
+
+    /** Ask the device plugin again, probing its capabilities, as after root was granted. */
+    data class CheckDevice(val packageName: String) : Effect
+
+    /** [gameId]'s own fan tier, or Default for null. */
+    data class SetGameFan(val gameId: String, val tier: FanTier?) : Effect
     /** Ask [packageName]'s repository for its latest release. [onlyIfStale] skips it when a check just ran. */
     data class CheckPluginRelease(val packageName: String, val onlyIfStale: Boolean = false) : Effect
     data object OpenArtKey : Effect
@@ -2170,6 +2219,8 @@ data class PickerModel(
     /** Moonlight's computers, each with a switch in Settings › Library. */
     val streamHosts: List<StreamHostSetting> = emptyList(),
     val apkPlugins: List<ApkPluginSetting> = emptyList(),
+    /** The granted device plugin's state. Null without one, or before it has answered: no device control shows. */
+    val device: DeviceState? = null,
     /** Each [PluginRegistry] plugin's catalog state, by package. Read it with [pluginCatalog]. */
     val pluginCatalogs: Map<String, PluginCatalogSetting> = emptyMap(),
     val connectKind: ConnectKind = ConnectKind.Romm,
@@ -2766,6 +2817,7 @@ private fun applyPanel(
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             // A folder's order is the board's, which the shell changes; the menu stays on the row.
             playerChoiceStep(model, rows[index], direction)?.let { return model.copy(panel = current) to it }
+            deviceStep(model, rows[index], direction)?.let { (stepped, effect) -> return stepped.copy(panel = current) to effect }
             if (rows[index] == Row.SortFolder) return model.copy(panel = current) to sortStep(model, direction)
             val nudged = stepRow(model, rows[index], direction)
             if (nudged != null) {
@@ -2797,7 +2849,38 @@ private fun applyPanel(
  */
 internal val choiceRows: Set<Row> = setOf(
     Row.Theme, Row.IconTheme, Row.Background, Row.MotionSpeed, Row.MusicTrack, Row.ScreenLayout, Row.PlayOn, Row.SortFolder, Row.OpenWith,
+    Row.Fan, Row.FanNow, Row.StickLights, Row.GameFan,
 )
+
+/**
+ * The device plugin's rows step at once and send the change: the model shows the new value while
+ * the plugin applies it, and its reply then replaces the state. Choosing a fan tier ends a game's
+ * override, as `fan.set` does. Null for any other row.
+ */
+private fun deviceStep(model: PickerModel, row: Row, direction: Int): Pair<PickerModel, Effect>? {
+    val device = model.device
+    return when (row) {
+        Row.Fan, Row.FanNow -> device?.takeIf { it.has(DeviceCapability.Fan) }?.let {
+            val tier = steppedFan(if (row == Row.Fan) it.fanBaseline else it.fan, direction)
+            model.copy(device = it.copy(fan = tier, fanBaseline = tier, fanGame = null)) to Effect.SetFan(tier)
+        }
+        Row.StickLights -> device?.takeIf { it.has(DeviceCapability.Lights) }?.let {
+            val mode = steppedLights(it.lights, direction, offeredLights(it))
+            model.copy(device = it.copy(lights = mode)) to Effect.SetStickLights(mode)
+        }
+        Row.BottomBrightness -> device?.takeIf { it.has(DeviceCapability.Brightness) }?.let {
+            val position = steppedBrightness(bottomBrightnessPosition(it.brightnessBottom ?: 0f), direction)
+            model.copy(device = it.copy(brightnessBottom = bottomBrightnessLevel(position))) to Effect.SetBottomBrightness(position)
+        }
+        Row.GameFan -> model.tileActions?.let { tile ->
+            val game = tile.game ?: return null
+            val setting = tile.gameFan ?: return null
+            val tier = steppedGameFan(setting.tier, direction)
+            model.copy(tileActions = tile.copy(gameFan = GameFanSetting(tier))) to Effect.SetGameFan(game, tier)
+        }
+        else -> null
+    }
+}
 
 /** The shell persists choices; effects always carry the menu's game, never the grid focus. */
 private fun playerChoiceStep(model: PickerModel, row: Row, direction: Int): Effect? = when (row) {
@@ -2854,7 +2937,7 @@ private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? 
             model.copy(motionSpeed = speeds[Math.floorMod(speeds.indexOf(model.motionSpeed) + direction, speeds.size)])
         }
         Row.ScreenLayout -> {
-            val layouts = ScreenLayout.entries
+            val layouts = offeredLayouts(model)
             model.copy(layout = layouts[Math.floorMod(layouts.indexOf(model.layout) + direction, layouts.size)])
         }
         Row.PlayOn -> model.copy(playOn = model.playOn.other())
@@ -2931,6 +3014,7 @@ private fun applySettings(
         Meaning.MoveLeft, Meaning.MoveRight -> {
             val direction = if (meaning == Meaning.MoveLeft) -1 else 1
             playerChoiceStep(model, row, direction)?.let { return model.copy(settings = current) to it }
+            deviceStep(model, row, direction)?.let { (stepped, effect) -> return stepped.copy(capturingConfirm = false, settings = current) to effect }
             val nudged = stepRow(model, row, direction)
             when {
                 nudged != null -> nudged.copy(capturingConfirm = false, settings = current) to null
@@ -3017,6 +3101,18 @@ private fun activateRow(
         Row.Theme -> model.copy(panel = panel) to Effect.OpenThemes
         // A choice row too, whose value is the board's: the shell steps it.
         Row.OpenWith, is Row.SystemPlayer -> model.copy(panel = panel) to playerChoiceStep(model, row, 1)
+        // The device's choices step forward on A; its slider moves only with left and right.
+        Row.Fan, Row.FanNow, Row.StickLights, Row.GameFan ->
+            // Lights without a colour: A goes where the colour is set, as the caption says.
+            if (row == Row.StickLights && model.device?.let { it.lightsNeedColor && it.colorSettings } == true) {
+                model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.StickColor)
+            } else {
+                deviceStep(model, row, 1)?.let { (stepped, effect) -> stepped.copy(panel = panel) to effect } ?: (model.copy(panel = panel) to null)
+            }
+        Row.BottomBrightness -> model.copy(panel = panel) to null
+        // Where Magisk opens, A goes there, and Home's return reads root again; otherwise A asks the plugin again.
+        is Row.DeviceRoot -> model.copy(panel = panel) to
+            if (rootOpensMagisk(row, model)) Effect.OpenAndroidSetting(AndroidSetting.RootManager) else Effect.CheckDevice(row.packageName)
         Row.Systems -> model.copy(panel = panel) to null
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null

@@ -283,6 +283,35 @@ def plugins():
          "A2.5,2.5 0 1 0 4,13.5 H2.5 V10.5 Q2.5,9 4,9 Z")
     return [solid(d)]
 
+def fan():
+    """The device's fan: three swept blades round a hub."""
+    def turned(x, y, a):
+        c, s_ = math.cos(a), math.sin(a)
+        return 12 + (x - 12) * c - (y - 12) * s_, 12 + (x - 12) * s_ + (y - 12) * c
+    # One blade above the hub, leaning with the turn: from the hub's edge out to a round tip and back.
+    blade = [(10.2, 9.8), (7.4, 7.6), (8.0, 2.4), (12.4, 2.2), (16.8, 2.0), (17.2, 6.8), (14.0, 9.6)]
+    out = []
+    for i in range(3):
+        a = 2 * math.pi * i / 3
+        p = [turned(x, y, a) for x, y in blade]
+        d = (f"M{f(p[0][0])},{f(p[0][1])} C{f(p[1][0])},{f(p[1][1])} {f(p[2][0])},{f(p[2][1])} {f(p[3][0])},{f(p[3][1])} "
+             f"C{f(p[4][0])},{f(p[4][1])} {f(p[5][0])},{f(p[5][1])} {f(p[6][0])},{f(p[6][1])} Z")
+        out.append(solid(d))
+    # The hub's axle is cut through, so it reads as a fan and not a clover.
+    return out + [solid(circle(12, 12, 3.4) + circle_ccw(12, 12, 1.4))]
+
+def stick_lights():
+    """Stick lights: a thumbstick seen from above, its cap's grip ring cut in, inside a short glow ring."""
+    out = [solid(circle(12, 12, 5.4) + circle_ccw(12, 12, 3.6) + circle(12, 12, 2.2))]
+    # The glow: eight short dashes round the stick, as the LED ring lights around it.
+    for i in range(8):
+        a = math.pi / 4 * i + math.pi / 8
+        b = a + math.pi / 4 * 0.4
+        x1, y1 = 12 + 8.6 * math.cos(a), 12 + 8.6 * math.sin(a)
+        x2, y2 = 12 + 8.6 * math.cos(b), 12 + 8.6 * math.sin(b)
+        out.append(ink(f"M{f(x1)},{f(y1)} A8.6,8.6 0 0 1 {f(x2)},{f(y2)}"))
+    return out
+
 def status_assets():
     A = [Asset("ic_status_bell", 24, 24, bell(), note="Notifications"),
          Asset("ic_status_bell_dot", 24, 24, bell("dot"), note="Notifications, something unread")]
@@ -305,7 +334,9 @@ def status_assets():
           Asset("ic_status_power", 24, 24, power(), note="Power"),
           Asset("ic_status_playtime", 24, 24, clock(), note="Play time today"),
           Asset("ic_status_info", 24, 24, info(), note="About"),
-          Asset("ic_status_display", 24, 24, display(), note="Personalization: brightness")]
+          Asset("ic_status_display", 24, 24, display(), note="Personalization: brightness"),
+          Asset("ic_status_fan", 24, 24, fan(), note="A device plugin's fan"),
+          Asset("ic_status_stick_lights", 24, 24, stick_lights(), note="A device plugin's stick lights")]
     return A
 
 # ---------------- tile badges (tinted by the host) ----------------
