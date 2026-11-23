@@ -447,7 +447,9 @@ internal class DeviceControl(
         }
         if (known.has(DeviceCapability.GameFan)) {
             val live = wanted.second
-            if ((live.keys - fanGames).isNotEmpty()) fanTaken = false
+            // Only a newly arrived game with a tier of its own ends the player's choice. A notice's
+            // app, or a game with no tier, opened beside the game leaves the player's tier in force.
+            if ((live.keys - fanGames).any { live[it] != null }) fanTaken = false
             fanGames = live.keys
             if (fanTaken && live.values.any { it != null }) return false
             fanTaken = false

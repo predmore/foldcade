@@ -412,6 +412,30 @@ class DeviceControlTest {
         assertEquals("balanced", plugin.game)
     }
 
+    @Test fun somethingWithoutATierOpenedBesideTheGameKeepsThePlayersFan() = runBlocking {
+        plugin.screens = "dual"
+        layout.set(ScreenLayout.ShowcaseTop)
+        live.set(mapOf("kart" to FanTier.Quiet))
+        val control = control()
+        onMain { control.use(thor) }
+        control.awaitIdle()
+        assertEquals("quiet", plugin.game)
+        onMain { control.setFan(FanTier.Performance) }
+        control.awaitIdle()
+        val before = plugin.calls.size
+        // A notice's app opens on the free panel while the game stays.
+        live.set(mapOf("kart" to FanTier.Quiet, "notice:com.example.chat" to null))
+        control.reconcile()
+        control.awaitIdle()
+        val after = plugin.calls.drop(before)
+        assertFalse(after.toString(), after.any { it.startsWith("game.begin") })
+        // Dismissing it changes nothing either.
+        live.set(mapOf("kart" to FanTier.Quiet))
+        control.reconcile()
+        control.awaitIdle()
+        assertFalse(plugin.calls.drop(before).any { it.startsWith("game.begin") })
+    }
+
     @Test fun aStartBeforeThePluginAnsweredWaitsForItsPanel() = runBlocking {
         // Top only, cold: the plugin hasn't said whether the bottom panel is off.
         plugin.blocking = "state"
