@@ -1991,17 +1991,31 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         cancelLaunches()
         // Coming back onto a panel that is off waits for it to light, as a fresh start does.
         val panels = startPanels(running.occupiesBoth, requested = running.panel)
-        if (running.resumeStart != null || foldcade.deviceControl.mustLight(panels.map { it.screen() }.toSet())) {
+        val light = foldcade.deviceControl.mustLight(panels.map { it.screen() }.toSet())
+        if (running.resumeStart != null || light) {
             // The same start boots the game again when it had closed, and it writes the saves the read-back
             // of its last session may still be reading. A read-back already holding the save flow finishes
             // first, and only then is this session's own noted, so that read-back cannot drop it.
             val generation = beginLaunch()
             foldcade.launchWork.job = foldcade.scope.launch {
-                foldcade.saveFlow.withLock { }
-                whenLit({ panels }) {
+                if (!light) {
+                    foldcade.saveFlow.withLock { }
                     withContext(Dispatchers.Main.immediate) {
                         if (!launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
                         if (!sendResume(running, tileId, title, platformId, front)) startAnew()
+                    }
+                    return@launch
+                }
+                // Waiting for the panel keeps the save flow, as Move does, so no save return can start
+                // reading while the game it resumes is about to write. The run is matched again after.
+                foldcade.saveFlow.withLock {
+                    whenLit({ panels }) {
+                        withContext(Dispatchers.Main.immediate) {
+                            val current = foldcade.runningOn(tileId)
+                                ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
+                            if (current == null || !launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
+                            if (!sendResume(current, tileId, title, platformId, front)) startAnew()
+                        }
                     }
                 }
             }
