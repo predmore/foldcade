@@ -108,7 +108,7 @@ fun settingsHints(model: PickerModel): List<HintKey> {
         row == Row.Version -> HintKey(confirm, SettingsCopy.copy)
         row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
         row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
-        row is Row.DeviceRoot -> HintKey(confirm, DeviceCopy.checkAgain)
+        row is Row.DeviceRoot -> HintKey(confirm, if (rootOpensMagisk(row, model)) DeviceCopy.openMagisk else DeviceCopy.checkAgain)
         row == Row.StickLights && model.device?.let { it.lightsNeedColor && it.colorSettings } == true -> HintKey(confirm, SettingsCopy.open)
         // Android owns these switches: A opens its access page, it does not flip them here.
         row == Row.FindGames || row == Row.FindSaves -> HintKey(confirm, SettingsCopy.open)
@@ -220,7 +220,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.Screens -> buildList {
         // Which screen shows what, then where A opens a game.
         add(Row.ScreenLayout)
-        add(Row.PlayOn)
+        // A one-screen layout whose dark panel is powered off opens games on the lit screen, so Play on has nothing to choose.
+        if (model.layout.darkScreen == null || !model.deviceHas(DeviceCapability.Screens)) add(Row.PlayOn)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
         add(Row.DefaultHomeApp)
         // Android's permissions sit together: usage access for play time, then notification access.
@@ -406,6 +407,10 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     SettingsInner.Add -> listOfNotNull(Row.AddFolder, Row.AddRomm.takeIf { !model.rommSaved && model.signedIn.none { it.pluginId == "romm" } })
 }
 
+/** Root access's A opens Magisk, where it can be opened, rather than asking the plugin again. */
+fun rootOpensMagisk(row: Row.DeviceRoot, model: PickerModel): Boolean =
+    model.device?.let { it.packageName == row.packageName && it.rootSettings } == true
+
 /**
  * The line a settings row carries under its name, inside its highlight: what a switch allows,
  * or why an action stopped. Most rows need none.
@@ -417,7 +422,8 @@ fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
     is Row.DeviceRoot -> model.device?.takeIf { it.packageName == row.packageName }?.let { device ->
         if (device.root == DeviceRoot.Absent) DeviceCopy.rootMissing
         else DeviceCopy.rootSteps(model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { plugin ->
-            PluginRegistry.sourceOrDebug(plugin.packageName)?.label ?: plugin.label } ?: settingsInnerTitle(SettingsInner.ApkPlugin(row.packageName), model))
+            PluginRegistry.sourceOrDebug(plugin.packageName)?.label ?: plugin.label } ?: settingsInnerTitle(SettingsInner.ApkPlugin(row.packageName), model),
+            checkAgain = !rootOpensMagisk(row, model))
     }
     is Row.PluginRouting -> ApkPluginCopy.officialMoonlight.takeIf { model.apkPlugins.any { it.packageName == row.packageName && !it.useForMoonlight } }
     is Row.PluginInstall -> ApkPluginCopy.actionCaption(model.pluginCatalog(row.packageName))

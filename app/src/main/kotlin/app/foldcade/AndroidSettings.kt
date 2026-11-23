@@ -22,7 +22,12 @@ internal data class SettingTarget(
     val packageData: Boolean = false,
     /** An explicit screen, as AYN's RGB lighting, rather than whatever answers [action]. */
     val component: ComponentName? = null,
+    /** An app's own launcher entry, as Magisk's, rather than a Settings screen. */
+    val launches: String? = null,
 )
+
+/** Magisk, where the plugin is given root. */
+internal const val MAGISK_PACKAGE = "com.topjohnwu.magisk"
 
 /** AynParts' RGB lighting screen on LineageOS for the Thor, where the sticks' colours are set. */
 internal val AYN_STICK_COLORS = ComponentName("org.lineageos.settings.ayn", "org.lineageos.settings.ayn.lights.RGBLightingSettingsActivity")
@@ -82,6 +87,7 @@ internal fun androidSettingTargets(setting: AndroidSetting): List<SettingTarget>
         )
         // Only offered where it opens; there is no broader screen to fall back to.
         AndroidSetting.StickColor -> listOf(SettingTarget(Intent.ACTION_MAIN, component = AYN_STICK_COLORS))
+        AndroidSetting.RootManager -> listOf(SettingTarget(Intent.ACTION_MAIN, launches = MAGISK_PACKAGE))
     }
 }
 
@@ -103,7 +109,7 @@ internal inline fun SessionStore.handoffAndroidSetting(panel: Panel?, launch: ()
  */
 internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: String = this.packageName): Boolean {
     for (target in androidSettingTargets(setting)) {
-        val intent = Intent(target.action)
+        val intent = target.launches?.let { packageManager.getLaunchIntentForPackage(it) ?: continue } ?: Intent(target.action)
         if (target.packageData) {
             intent.data = Uri.fromParts("package", packageName, null)
         }

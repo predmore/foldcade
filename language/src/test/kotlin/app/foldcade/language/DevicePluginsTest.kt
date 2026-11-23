@@ -119,7 +119,7 @@ class DevicePluginsTest {
         assertEquals(RowText("Stick lights", "Breathe"), rowText(Row.StickLights, lights))
         val (usb, effect) = reduce(lights, Meaning.MoveRight)
         assertEquals(Effect.SetStickLights(StickLights.Usb), effect)
-        assertEquals("USB", rowText(Row.StickLights, usb).value)
+        assertEquals("Plugged in", rowText(Row.StickLights, usb).value)
         assertEquals(Effect.SetStickLights(StickLights.Off), reduce(usb, Meaning.MoveRight).second)
         assertEquals(Effect.SetStickLights(StickLights.Charging), reduce(reduce(usb, Meaning.MoveRight).first, Meaning.MoveRight).second)
     }
@@ -252,7 +252,7 @@ class DevicePluginsTest {
         val refused = model().let { it.copy(device = it.device!!.copy(lightsNeedColor = true)) }.onSetting(Row.StickLights)
         assertEquals(DeviceCopy.lightsNeedColor, settingsRowCaption(Row.StickLights, refused))
         assertNull(settingsRowCaption(Row.StickLights, model()))
-        // Only the modes that need no colour are offered, both ways, so Right can't stall on Charging.
+        // Only the modes that need no color are offered, both ways, so Right can't stall on Charging.
         val off = refused.copy(device = refused.device!!.copy(lights = StickLights.Off))
         val (usb, toUsb) = reduce(off, Meaning.MoveRight)
         assertEquals(Effect.SetStickLights(StickLights.Usb), toUsb)
@@ -303,12 +303,16 @@ class DevicePluginsTest {
         assertEquals(listOf(Row.PluginInstall(thor), grant, root), settingsInnerRows(page, denied))
         assertEquals(RowText(DeviceCopy.rootAccess, DeviceCopy.rootDenied), rowText(root, denied))
         assertEquals(RowControl.Value(DeviceCopy.rootDenied, attention = true), rowControl(root, denied))
-        assertEquals(DeviceCopy.rootSteps("Foldcade Thor"), settingsRowCaption(root, denied))
-        assertTrue(settingsRowCaption(root, denied)!!.contains("Superuser › +"))
+        assertEquals("Magisk won’t ask. In Magisk › Superuser, tap + and add Foldcade Thor, then check again.", settingsRowCaption(root, denied))
         assertEquals(PluginListing("Foldcade Thor", "1.0", DeviceCopy.needsRoot, attention = true, verified = true), pluginListing(page, denied))
         val onRoot = denied.copy(settings = SettingsPage(HostScreen.Top, settingsCategories(denied).indexOf(SettingsCategory.Plugins), 2, onRows = true, inner = page))
         assertEquals(DeviceCopy.checkAgain, settingsHints(onRoot).first().label)
         assertEquals(Effect.CheckDevice(thor), reduce(onRoot, Meaning.Activate).second)
+        // Where Magisk opens, A goes there, and the caption leaves out Check again.
+        val magisk = onRoot.copy(device = onRoot.device!!.copy(rootSettings = true))
+        assertEquals(DeviceCopy.openMagisk, settingsHints(magisk).first().label)
+        assertEquals(Effect.OpenAndroidSetting(AndroidSetting.RootManager), reduce(magisk, Meaning.Activate).second)
+        assertEquals("Magisk won’t ask. In Magisk › Superuser, tap + and add Foldcade Thor.", settingsRowCaption(root, magisk))
         val absent = model(parseDeviceState(thor, reply + ("root" to "absent")))
         assertEquals(DeviceCopy.rootMissing, settingsRowCaption(root, absent))
         // Root granted: the row leaves.
@@ -316,6 +320,16 @@ class DevicePluginsTest {
         // A plugin for a device protocol 1 doesn't know says so.
         val other = off.copy(apkPlugins = listOf(plugin.copy(device = "other", supported = false)))
         assertEquals(DeviceCopy.unsupported, settingsInnerDetail(page, other))
+    }
+
+    @Test fun playOnLeavesSystemWhereItCanDoNothing() {
+        // A one-screen layout with its dark panel powered off opens games on the lit screen.
+        for (layout in listOf(ScreenLayout.TopOnly, ScreenLayout.BottomOnly)) {
+            assertFalse(Row.PlayOn in settingsRows(SettingsCategory.Screens, model().copy(layout = layout)))
+            // Without a plugin that powers panels, Play on still chooses, as today.
+            assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, PickerModel(count = 1, rowsPerPage = 1, layout = layout)))
+        }
+        assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, model().copy(layout = ScreenLayout.ShowcaseTop)))
     }
 
     @Test fun theRegistryOffersFoldcadeThor() {

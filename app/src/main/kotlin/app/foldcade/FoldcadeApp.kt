@@ -787,6 +787,7 @@ class FoldcadeApp : Application() {
             // Every game on a screen, one-screen, both-screen or a stand-in, by the id the session holds it under.
             liveFans = { store.session.let { session -> Panel.entries.mapNotNull { session.externalOn(it)?.id }.distinct().associateWith(shell::gameFan) } },
             colorSettings = { aynStickColorsOpen(packageManager) },
+            rootSettings = { packageManager.getLaunchIntentForPackage(MAGISK_PACKAGE) != null },
         ).also { it.watchDisplays() }
     }
 

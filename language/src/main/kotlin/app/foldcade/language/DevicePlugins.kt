@@ -104,11 +104,13 @@ data class DeviceState(
     val screens: DeviceScreens? = null,
     /**
      * Foldcade's, not the plugin's: the last `lights.set` was refused with `needs_color`, as stickfx
-     * refuses Charging and Breathe while every stick colour is black. Cleared once one goes through.
+     * refuses Charging and Breathe while every stick color is black. Cleared once one goes through.
      */
     val lightsNeedColor: Boolean = false,
-    /** Foldcade's: AYN's RGB lighting screen can be opened to set a stick colour. */
+    /** Foldcade's: AYN's RGB lighting screen can be opened to set a stick color. */
     val colorSettings: Boolean = false,
+    /** Foldcade's: root isn't granted, and Magisk can be opened to grant it. */
+    val rootSettings: Boolean = false,
 ) {
     fun has(capability: DeviceCapability): Boolean = capability in capabilities
 }
@@ -182,8 +184,8 @@ fun steppedGameFan(current: FanTier?, direction: Int): FanTier? {
 }
 
 /**
- * The modes Stick lights offers. Once the plugin has refused one for want of a stick colour, only
- * those that need none, until the colours may have changed.
+ * The modes Stick lights offers. Once the plugin has refused one for want of a stick color, only
+ * those that need none, until the colors may have changed.
  */
 fun offeredLights(device: DeviceState?): List<StickLights> =
     if (device?.lightsNeedColor == true) listOf(StickLights.Off, StickLights.Usb) else StickLights.entries
@@ -280,7 +282,8 @@ object DeviceCopy {
     const val lightsOff = "Off"
     const val charging = "Charging"
     const val breathe = "Breathe"
-    const val usb = "USB"
+    /** stickfx's `usb`: lit while a cable is plugged in. */
+    const val usb = "Plugged in"
     const val top = "Top"
     const val bottom = "Bottom"
     const val rootAccess = "Root access"
@@ -291,12 +294,16 @@ object DeviceCopy {
     const val needsRoot = "Needs root"
     const val unsupported = "Foldcade does not support this plugin’s device yet."
 
-    /** Under Stick lights after stickfx refused Charging or Breathe for want of a colour. */
-    const val lightsNeedColor = "Charging and Breathe need a stick colour. Set one in AYN › RGB lighting, then come back for them."
+    /** Under Stick lights after stickfx refused Charging or Breathe for want of a color. */
+    const val lightsNeedColor = "Charging and Breathe need a stick color. Set one in AYN › RGB lighting."
 
     /** Under Root access while the root manager refuses: Magisk 31 lists the plugin only when it is added by hand. */
-    fun rootSteps(plugin: String) = "Magisk never asks. Open Magisk › Superuser › +, add $plugin, then check again."
-    const val rootMissing = "It needs root, as Magisk gives."
+    fun rootSteps(plugin: String, checkAgain: Boolean) =
+        "Magisk won’t ask. In Magisk › Superuser, tap + and add $plugin" + if (checkAgain) ", then check again." else "."
+    const val rootMissing = "It needs a rooted Thor, as with Magisk."
+
+    /** A on Root access while Magisk can be opened. */
+    const val openMagisk = "Open Magisk"
 
     fun category(device: String): String = when (device) {
         DEVICE_THOR -> thor

@@ -1161,6 +1161,9 @@ enum class AndroidSetting {
 
     /** AYN's RGB lighting screen, where the sticks' colours are set. Only offered where it opens ([DeviceState.colorSettings]). */
     StickColor,
+
+    /** Magisk, where root is granted. Only offered where it opens ([DeviceState.rootSettings]). */
+    RootManager,
 }
 
 fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
@@ -3107,7 +3110,9 @@ private fun activateRow(
                 deviceStep(model, row, 1)?.let { (stepped, effect) -> stepped.copy(panel = panel) to effect } ?: (model.copy(panel = panel) to null)
             }
         Row.BottomBrightness -> model.copy(panel = panel) to null
-        is Row.DeviceRoot -> model.copy(panel = panel) to Effect.CheckDevice(row.packageName)
+        // Where Magisk opens, A goes there, and Home's return reads root again; otherwise A asks the plugin again.
+        is Row.DeviceRoot -> model.copy(panel = panel) to
+            if (rootOpensMagisk(row, model)) Effect.OpenAndroidSetting(AndroidSetting.RootManager) else Effect.CheckDevice(row.packageName)
         Row.Systems -> model.copy(panel = panel) to null
         Row.SortFolder -> model.copy(panel = panel) to sortStep(model, 1)
         Row.UsageAccess -> model.copy(dialog = usageAccessPrompt(screen)) to null

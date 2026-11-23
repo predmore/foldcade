@@ -100,8 +100,10 @@ internal class DeviceControl(
     private val wantedScreens: () -> DeviceScreens,
     /** The games on the screens now, by id, each with its own tier or null for Default. Read on the main thread. */
     private val liveFans: () -> Map<String, FanTier?>,
-    /** True when AYN's RGB lighting screen can be opened, to set a stick colour. */
+    /** True when AYN's RGB lighting screen can be opened, to set a stick color. */
     private val colorSettings: () -> Boolean = { false },
+    /** True when Magisk can be opened, to grant the plugin root. */
+    private val rootSettings: () -> Boolean = { false },
 ) {
     private val jobs = Channel<suspend () -> Unit>(Channel.UNLIMITED)
     @Volatile private var plugin: ApkPlugin? = null
@@ -122,7 +124,7 @@ internal class DeviceControl(
     /** The player chose a tier during a game's override, so those games keep it until another game starts. */
     private var fanTaken = false
 
-    /** The last `lights.set` was refused for want of a stick colour ([DeviceState.lightsNeedColor]). */
+    /** The last `lights.set` was refused for want of a stick color ([DeviceState.lightsNeedColor]). */
     private var lightsNeedColor = false
 
     /** A package whose consent went before its cleanup could run. Nothing calls it again until it is granted anew. */
@@ -241,7 +243,7 @@ internal class DeviceControl(
         }
     }
 
-    /** Asks again, probing what the plugin can do now, as after root was granted in Magisk. Stick colours may have been set meanwhile. */
+    /** Asks again, probing what the plugin can do now, as after root was granted in Magisk. Stick colors may have been set meanwhile. */
     fun check() = enqueue {
         lightsNeedColor = false
         read(refresh = true)
@@ -294,7 +296,9 @@ internal class DeviceControl(
     fun onHomeResumed() = enqueue {
         // A plugin that didn't answer before, as one still starting, is asked again.
         val known = state ?: (if (plugin != null) read(refresh = true)?.state else null) ?: return@enqueue
-        // Back from AYN's RGB lighting, or anywhere else: the stick colours may have changed, so every mode is offered again.
+        // Back from Magisk, root may be granted now: ask again, probing what the plugin can do.
+        if (known.root != app.foldcade.language.DeviceRoot.Granted) read(refresh = true)
+        // Back from AYN's RGB lighting, or anywhere else: the stick colors may have changed, so every mode is offered again.
         if (lightsNeedColor) {
             lightsNeedColor = false
             publish(known)
@@ -452,7 +456,8 @@ internal class DeviceControl(
 
     /** Adds what Foldcade knows of the device to the plugin's state, and the values still on their way to it. */
     private fun annotated(next: DeviceState): DeviceState {
-        var shown = next.copy(lightsNeedColor = lightsNeedColor, colorSettings = lightsNeedColor && colorSettings())
+        var shown = next.copy(lightsNeedColor = lightsNeedColor, colorSettings = lightsNeedColor && colorSettings(),
+            rootSettings = next.root != app.foldcade.language.DeviceRoot.Granted && rootSettings())
         fanShown.get()?.takeIf { shown.has(DeviceCapability.Fan) }?.let { shown = shown.copy(fan = it, fanBaseline = it, fanGame = null) }
         lightsShown.get()?.takeIf { shown.has(DeviceCapability.Lights) }?.let { shown = shown.copy(lights = it) }
         bottomShown.get()?.takeIf { shown.has(DeviceCapability.Brightness) }?.let { shown = shown.copy(brightnessBottom = it) }
@@ -478,7 +483,7 @@ internal class DeviceControl(
         const val RELEASE_TIMEOUT_MS = 8_000L
         const val WAKE_SETTLE_MS = 1_500L
 
-        /** `lights.set` refused Charging or Breathe because every stick colour is black. */
+        /** `lights.set` refused Charging or Breathe because every stick color is black. */
         const val NEEDS_COLOR = "needs_color"
     }
 }
