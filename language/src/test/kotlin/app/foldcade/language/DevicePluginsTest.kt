@@ -324,9 +324,13 @@ class DevicePluginsTest {
         // A one-screen layout with its dark panel powered off opens games on the lit screen.
         for (layout in listOf(ScreenLayout.TopOnly, ScreenLayout.BottomOnly)) {
             assertFalse(Row.PlayOn in settingsRows(SettingsCategory.Screens, model().copy(layout = layout)))
-            // Without a plugin that powers panels, Play on still chooses, as today.
-            assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, PickerModel(count = 1, rowsPerPage = 1, layout = layout)))
         }
+        // Without a plugin that powers panels, Top only's Play on still chooses, as today.
+        assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, PickerModel(count = 1, rowsPerPage = 1, layout = ScreenLayout.TopOnly)))
+        // Bottom only plays on the bottom even before the plugin has said it powers panels, as on a cold start.
+        val cold = PickerModel(count = 1, rowsPerPage = 1, layout = ScreenLayout.BottomOnly, playOn = HostScreen.Top)
+        assertEquals(HostScreen.Bottom, cold.playScreen())
+        assertFalse(Row.PlayOn in settingsRows(SettingsCategory.Screens, cold))
         assertTrue(Row.PlayOn in settingsRows(SettingsCategory.Screens, model().copy(layout = ScreenLayout.ShowcaseTop)))
     }
 

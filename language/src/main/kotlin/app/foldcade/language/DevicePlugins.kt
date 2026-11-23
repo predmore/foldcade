@@ -256,6 +256,9 @@ fun PickerModel.deviceHas(capability: DeviceCapability): Boolean = device?.has(c
  * is Play on, as without a device plugin.
  */
 fun PickerModel.playScreen(): HostScreen {
+    // Bottom only is offered only with a panel the plugin powers: its games play on the bottom even
+    // before the plugin has said so, as on a cold start.
+    if (layout == ScreenLayout.BottomOnly) return HostScreen.Bottom
     val dark = layout.darkScreen ?: return playOn
     return if (deviceHas(DeviceCapability.Screens)) dark.other() else playOn
 }

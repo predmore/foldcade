@@ -221,7 +221,8 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         // Which screen shows what, then where A opens a game.
         add(Row.ScreenLayout)
         // A one-screen layout whose dark panel is powered off opens games on the lit screen, so Play on has nothing to choose.
-        if (model.layout.darkScreen == null || !model.deviceHas(DeviceCapability.Screens)) add(Row.PlayOn)
+        // Bottom only always plays on the bottom.
+        if (model.layout != ScreenLayout.BottomOnly && (model.layout.darkScreen == null || !model.deviceHas(DeviceCapability.Screens))) add(Row.PlayOn)
         if (!model.homeRoleHeld) add(Row.SetAsHome)
         add(Row.DefaultHomeApp)
         // Android's permissions sit together: usage access for play time, then notification access.
