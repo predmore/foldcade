@@ -752,8 +752,11 @@ class FoldcadeApp : Application() {
     internal fun setPluginGrant(packageName: String, scopeName: String, on: Boolean) {
         scope.launch {
             apkPluginChanges.withLock {
-                // Foldcade may not call the plugin once the grant is gone, so it puts the device back first.
-                if (!on && scopeName == app.foldcade.language.DEVICE_SCOPE) deviceControl.release(packageName)
+                // Foldcade may not call a plugin once it is no longer the device plugin, so it puts the device back
+                // first: before its own consent goes, or before another plugin is granted in its place.
+                if (scopeName == app.foldcade.language.DEVICE_SCOPE) deviceControl.pluginPackage
+                    ?.takeIf { current -> if (on) current != packageName else current == packageName }
+                    ?.let { deviceControl.release(it) }
                 installedPlugins().firstOrNull { it.packageName == packageName }?.let {
                     apkPluginGrants.setGranted(it, scopeName, on)
                 }
@@ -781,8 +784,21 @@ class FoldcadeApp : Application() {
             scope = scope,
             onState = { shell.setDevice(it) },
             wantedScreens = ::wantedDeviceScreens,
-            liveFans = { plays.liveGames().map(shell::gameFan) },
+            // Every game on a screen, one-screen, both-screen or a stand-in, by the id the session holds it under.
+            liveFans = { store.session.let { session -> Panel.entries.mapNotNull { session.externalOn(it)?.id }.distinct().associateWith(shell::gameFan) } },
+            colorSettings = { aynStickColorsOpen(packageManager) },
         ).also { it.watchDisplays() }
+    }
+
+    /**
+     * The panels to light, and wait for, before a start takes [panels]: a dark panel in a one-screen
+     * layout. Null when nothing needs lighting.
+     */
+    internal fun screensToLight(panels: Set<Panel>): app.foldcade.language.DeviceScreens? {
+        val current = deviceControl.state?.takeIf { it.has(app.foldcade.language.DeviceCapability.Screens) } ?: return null
+        val session = store.session
+        val held = Panel.entries.filter { session.externalOn(it) != null }.map { it.screen() }.toSet()
+        return app.foldcade.language.screensToLight(current.screens, session.layout, held, panels.map { it.screen() }.toSet())
     }
 
     /** The panels the layout and the screens' apps want lit: Foldcade's own, and any a game holds. */
@@ -974,8 +990,11 @@ class FoldcadeApp : Application() {
             artSession = next
             music.onSessionChanged()
             if (::shell.isInitialized) shell.noteSessionChanged()
-            // A panel is lit before a game takes it, and dark again once it leaves.
-            if (::shell.isInitialized && shell.model.device != null) deviceControl.reconcileScreens()
+            // A panel is lit before a game takes it, and dark again once it leaves. A game on a screen holds its fan tier.
+            if (::shell.isInitialized && shell.model.device != null) {
+                deviceControl.reconcileScreens()
+                deviceControl.reconcileFan()
+            }
             refreshHomeRecovery()
         }
         perfMark("themes-start")
@@ -1123,8 +1142,6 @@ class FoldcadeApp : Application() {
         // Moving art is saved apart from the tiles, so a stop between the two is put right here.
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
-        // A game with its own fan tier holds it while its play session is open, wherever it runs.
-        plays.onLiveChanged = { if (shell.model.device != null) deviceControl.reconcileFan() }
         shell.onGameFanChanged = { if (shell.model.device != null) deviceControl.reconcileFan() }
         commandCenter = CommandCenter(
             store = store,

@@ -1,12 +1,9 @@
 package app.foldcade
 
 import app.foldcade.host.backup.BackupSettings
-import app.foldcade.host.play.PlaySignal
 import app.foldcade.language.FanTier
 import app.foldcade.language.DEVICE_SCOPE
 import app.foldcade.language.DEVICE_THOR
-import java.io.File
-import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,27 +42,6 @@ class DevicePluginTest {
         grants.forget(other.packageName)
         assertFalse(grants.granted(other, DEVICE_SCOPE))
         assertTrue(grants.routes(moonlight))
-    }
-
-    @Test fun openPlaySessionsAreKnownUntilTheyEndHoweverTheyStarted() {
-        val plays = PlaySessions.open(File(Files.createTempDirectory("device-play").toFile(), "events.log"))
-        var changes = 0
-        plays.onLiveChanged = { changes++ }
-        val external = ExternalPlay()
-        external.open(plays, "lib:romm:kart", "Kart", 2) {}
-        assertEquals(listOf("lib:romm:kart"), plays.liveGames())
-        // A stand-in's session, opened directly, counts too.
-        val standIn = plays.start("stand-in", "Stand-in")
-        assertEquals(listOf("lib:romm:kart", "stand-in"), plays.liveGames())
-        plays.signal(standIn, PlaySignal.Sleep)
-        assertEquals(2, plays.liveGames().size)
-        plays.signal(standIn, PlaySignal.End)
-        external.endIfDisplayHome(plays, 2)
-        assertEquals(emptyList<String>(), plays.liveGames())
-        assertEquals(4, changes)
-        // A start that throws is never left open.
-        runCatching { external.open(plays, "lib:romm:zelda", "Zelda", 2) { error("missing") } }
-        assertEquals(emptyList<String>(), plays.liveGames())
     }
 
     @Test fun aGamesFanTierIsSavedUnderItsTileAndTravelsInTheSetupBackup() {

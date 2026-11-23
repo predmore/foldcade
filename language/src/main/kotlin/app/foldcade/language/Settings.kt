@@ -109,6 +109,7 @@ fun settingsHints(model: PickerModel): List<HintKey> {
         row == Row.ButtonLabels -> HintKey(confirm, Copy.setUp)
         row == Row.SyncLibrary -> HintKey(confirm, SettingsCopy.sync)
         row is Row.DeviceRoot -> HintKey(confirm, DeviceCopy.checkAgain)
+        row == Row.StickLights && model.device?.let { it.lightsNeedColor && it.colorSettings } == true -> HintKey(confirm, SettingsCopy.open)
         // Android owns these switches: A opens its access page, it does not flip them here.
         row == Row.FindGames || row == Row.FindSaves -> HintKey(confirm, SettingsCopy.open)
         row == Row.MusicVolume -> HintKey(PromptKey.DpadSides, SettingsCopy.change)
@@ -412,6 +413,7 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
 fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
     is Row.PluginGrant -> (if (row.scope == DEVICE_SCOPE) DeviceCopy.consent else ApkPluginCopy.consent)
         .takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
+    Row.StickLights -> DeviceCopy.lightsNeedColor.takeIf { model.device?.lightsNeedColor == true }
     is Row.DeviceRoot -> model.device?.takeIf { it.packageName == row.packageName }?.let { device ->
         if (device.root == DeviceRoot.Absent) DeviceCopy.rootMissing
         else DeviceCopy.rootSteps(model.apkPlugins.firstOrNull { it.packageName == row.packageName }?.let { plugin ->

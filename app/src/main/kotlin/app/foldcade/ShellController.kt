@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.language.playScreen
 import app.foldcade.language.HomeUndo
 import app.foldcade.language.pluginCatalog
 import app.foldcade.language.openSettings
@@ -1707,7 +1708,7 @@ class ShellController(
     fun findHints(): List<HintKey>? {
         val session = find?.takeIf { findActive() } ?: return null
         return if (session.onResults) {
-            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose(), playOn = model.playOn)
+            findResultHints(model.faceMap, screens = focusedLaunchesOnOneScreen(), options = hasOptions(), play = focusedPlayKey(), close = focusedCanClose(), playOn = model.playScreen())
         } else {
             findKeyboardHints(model.faceMap, typed = session.query.isNotEmpty())
         }
@@ -4160,7 +4161,7 @@ class ShellController(
                 home.item(id)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
         }
         val withChoice = if (choiceGame != null && targetGame?.platformId != null) {
-            (withSaves ?: TileActions()).copy(game = choiceGame, openWith = openWith(choiceGame, targetGame.platformId), gameFan = gameFanSetting(choiceGame, counted.device))
+            (withSaves ?: TileActions()).copy(game = choiceGame, openWith = openWith(choiceGame, targetGame.platformId))
         } else withSaves
         // A game's own play, and where more of it can come from, once anything has been played.
         val playGame = (tile?.game ?: targetGame?.id)?.takeIf {
@@ -4178,8 +4179,15 @@ class ShellController(
         // A game a library lists has a page of its own. An app, a stream, or a shortcut has nothing for it to say.
         val aboutGame = playGame?.takeIf { home.item(it)?.let { item -> app.foldcade.language.hasAboutPage(item) } == true }
         val withAbout = if (aboutGame != null) (withPlay ?: TileActions()).copy(about = true, game = withPlay?.game ?: aboutGame) else withPlay
+        // Every game Foldcade launches can have its own fan tier: a ROM, a stream, an Android game, a PC game.
+        // Not an app, an emulator, a folder or a gap. Only while the device plugin can set one.
+        val fanGame = (tile?.game ?: targetGame?.id)?.takeIf { id ->
+            tile?.bulk == null && home.selection == null && home.item(id)?.let { item -> app.foldcade.language.listedInLibrary(item) } == true
+        }
+        val withFan = fanGame?.let { id -> gameFanSetting(id, counted.device) }
+            ?.let { (withAbout ?: TileActions()).copy(gameFan = it, game = withAbout?.game ?: fanGame) } ?: withAbout
         val signIn = tile?.bulk == null && home.selection == null && onHome && find == null && gapNeedsSignIn(counted.focus.cellIndex)
-        return counted.copy(tileActions = (withAbout ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null, signIn = signIn),
+        return counted.copy(tileActions = (withFan ?: TileActions()).copy(undo = home.selection == null && activeUndo() != null, signIn = signIn),
             undoVerb = activeUndo()?.verb, atLibraryRoot = root)
     }
 

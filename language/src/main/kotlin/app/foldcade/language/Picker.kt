@@ -1158,6 +1158,9 @@ enum class AndroidSetting {
     Sound,
     Battery,
     AppInfo,
+
+    /** AYN's RGB lighting screen, where the sticks' colours are set. Only offered where it opens ([DeviceState.colorSettings]). */
+    StickColor,
 }
 
 fun QuickSetting.androidSetting(): AndroidSetting = when (this) {
@@ -1594,6 +1597,8 @@ fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
 
 private fun validMenuRows(rows: List<Row>, model: PickerModel): List<Row> = rows.filterNot {
     (it == Row.Undo && model.tileActions?.undo != true) ||
+        // The device plugin went, or can no longer set a game's tier: its row leaves the open menu.
+        (it == Row.GameFan && model.tileActions?.gameFan == null) ||
         (model.tileActions?.kept == true && (it == Row.SelectTile || it == Row.MoveTile || it == Row.RemoveTile))
 }
 
@@ -3094,8 +3099,13 @@ private fun activateRow(
         // A choice row too, whose value is the board's: the shell steps it.
         Row.OpenWith, is Row.SystemPlayer -> model.copy(panel = panel) to playerChoiceStep(model, row, 1)
         // The device's choices step forward on A; its slider moves only with left and right.
-        Row.Fan, Row.FanNow, Row.StickLights, Row.GameFan -> deviceStep(model, row, 1)?.let { (stepped, effect) -> stepped.copy(panel = panel) to effect }
-            ?: (model.copy(panel = panel) to null)
+        Row.Fan, Row.FanNow, Row.StickLights, Row.GameFan ->
+            // Lights without a colour: A goes where the colour is set, as the caption says.
+            if (row == Row.StickLights && model.device?.let { it.lightsNeedColor && it.colorSettings } == true) {
+                model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.StickColor)
+            } else {
+                deviceStep(model, row, 1)?.let { (stepped, effect) -> stepped.copy(panel = panel) to effect } ?: (model.copy(panel = panel) to null)
+            }
         Row.BottomBrightness -> model.copy(panel = panel) to null
         is Row.DeviceRoot -> model.copy(panel = panel) to Effect.CheckDevice(row.packageName)
         Row.Systems -> model.copy(panel = panel) to null

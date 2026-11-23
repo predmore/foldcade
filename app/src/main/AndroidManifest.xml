@@ -32,6 +32,8 @@
              intent filter, so queryIntentContentProviders and ContentResolver.call reach any
              device plugin; Foldcade Thor is named too, as Foldcade Moonlight is. -->
         <package android:name="app.foldcade.thor" />
+        <!-- AynParts' RGB lighting, where Stick lights sends the player to set a colour. -->
+        <package android:name="org.lineageos.settings.ayn" />
         <intent>
             <action android:name="app.foldcade.plugin.action.DEVICE" />
         </intent>

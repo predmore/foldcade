@@ -1,5 +1,6 @@
 package app.foldcade.ui
 
+import app.foldcade.language.playScreen
 import androidx.compose.animation.Crossfade
 
 import android.graphics.RenderEffect
@@ -3626,7 +3627,8 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier, page: Lis
         drop = shell.homeHoldDrop(),
         play = if (gridKeys) shell.focusedPlayKey() else PlayKey.None,
         close = gridKeys && shell.focusedCanClose(),
-        playOn = model.playOn,
+        // The screen A really opens a game on: the lit one in a one-screen layout with its other panel off.
+        playOn = model.playScreen(),
     // All games' bar shows L2 and R2 beside its tabs, so only Hidden and Folders name them here.
     )) + if (gridKeys && model.settings == null && model.playActivity == null && model.gameAbout == null &&
         (model.homeGrid != HomeGrid.StandIns || shell.homeFoldersOpen())

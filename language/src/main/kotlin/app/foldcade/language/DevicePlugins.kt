@@ -102,6 +102,13 @@ data class DeviceState(
     val brightnessTop: Float? = null,
     val brightnessBottom: Float? = null,
     val screens: DeviceScreens? = null,
+    /**
+     * Foldcade's, not the plugin's: the last `lights.set` was refused with `needs_color`, as stickfx
+     * refuses Charging and Breathe while every stick colour is black. Cleared once one goes through.
+     */
+    val lightsNeedColor: Boolean = false,
+    /** Foldcade's: AYN's RGB lighting screen can be opened to set a stick colour. */
+    val colorSettings: Boolean = false,
 ) {
     fun has(capability: DeviceCapability): Boolean = capability in capabilities
 }
@@ -202,18 +209,27 @@ sealed interface GameFanCall {
 }
 
 /**
- * The newest open play session whose game has its own tier wins; with none, any override Foldcade
- * began ends. [live] is each open session's game tier, oldest first. [applied] is the tier Foldcade
- * last began, or null once it ended.
+ * The games on the screens now each have a tier or Default ([live]). The highest tier among them
+ * holds, as appwatch picks the highest of its profiles: quiet, then balanced, then performance.
+ * With none, any override Foldcade began ([applied]) ends, and [heal] ends one Foldcade may have
+ * lost track of, as after a crash.
  */
-fun gameFanCall(applied: FanTier?, live: List<FanTier?>): GameFanCall? {
-    val wanted = live.lastOrNull { it != null }
+fun gameFanCall(applied: FanTier?, live: Collection<FanTier?>, heal: Boolean = false): GameFanCall? {
+    val wanted = live.filterNotNull().filter { it in FanTier.chosen }.maxByOrNull { FanTier.chosen.indexOf(it) }
     return when {
         wanted != null && wanted != applied -> GameFanCall.Begin(wanted)
-        wanted == null && applied != null -> GameFanCall.End
+        wanted == null && (applied != null || heal) -> GameFanCall.End
         else -> null
     }
 }
+
+/**
+ * The panels to light before a game takes [taking], when its start must wait for them: the
+ * screens' apps' panels ([held]) and [taking] want a dark panel lit that [current] leaves off.
+ * Null when nothing needs lighting, so the start goes ahead at once.
+ */
+fun screensToLight(current: DeviceScreens?, layout: ScreenLayout, held: Set<HostScreen>, taking: Set<HostScreen>): DeviceScreens? =
+    wantedScreens(layout, held + taking).takeIf { it == DeviceScreens.Dual && current != null && current != DeviceScreens.Dual }
 
 /** The bottom slider's position, 0 to 100, for a panel [level] from 0 to 1. */
 fun bottomBrightnessPosition(level: Float): Int = (level.coerceIn(0f, 1f) * 100f).roundToInt()
@@ -268,6 +284,9 @@ object DeviceCopy {
     /** A plugin's card while it can do nothing without root. */
     const val needsRoot = "Needs root"
     const val unsupported = "Foldcade does not support this plugin’s device yet."
+
+    /** Under Stick lights after stickfx refused Charging or Breathe for want of a colour. */
+    const val lightsNeedColor = "Charging and Breathe need a stick colour. Set one in AYN › RGB lighting."
 
     /** Under Root access while the root manager refuses: Magisk 31 lists the plugin only when it is added by hand. */
     fun rootSteps(plugin: String) = "Magisk never asks. Open Magisk › Superuser › +, add $plugin, then check again."

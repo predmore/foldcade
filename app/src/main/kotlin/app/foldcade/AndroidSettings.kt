@@ -3,7 +3,9 @@ package app.foldcade
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import app.foldcade.language.AndroidSetting
@@ -18,7 +20,19 @@ private const val ACTION_POWER_USAGE_SUMMARY = "android.intent.action.POWER_USAG
 internal data class SettingTarget(
     val action: String,
     val packageData: Boolean = false,
+    /** An explicit screen, as AYN's RGB lighting, rather than whatever answers [action]. */
+    val component: ComponentName? = null,
 )
+
+/** AynParts' RGB lighting screen on LineageOS for the Thor, where the sticks' colours are set. */
+internal val AYN_STICK_COLORS = ComponentName("org.lineageos.settings.ayn", "org.lineageos.settings.ayn.lights.RGBLightingSettingsActivity")
+
+/** True when [AYN_STICK_COLORS] is installed, enabled and open to other apps. */
+internal fun aynStickColorsOpen(pm: PackageManager): Boolean = try {
+    pm.getActivityInfo(AYN_STICK_COLORS, 0).let { it.exported && it.enabled && it.applicationInfo.enabled }
+} catch (_: PackageManager.NameNotFoundException) {
+    false
+}
 
 /**
  * Panel intents first, where Android defines one. Everything else is a
@@ -66,6 +80,8 @@ internal fun androidSettingTargets(setting: AndroidSetting): List<SettingTarget>
             SettingTarget(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS),
             root,
         )
+        // Only offered where it opens; there is no broader screen to fall back to.
+        AndroidSetting.StickColor -> listOf(SettingTarget(Intent.ACTION_MAIN, component = AYN_STICK_COLORS))
     }
 }
 
@@ -91,6 +107,7 @@ internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: St
         if (target.packageData) {
             intent.data = Uri.fromParts("package", packageName, null)
         }
+        target.component?.let(intent::setComponent)
         try {
             if (this !is Activity) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -98,6 +115,8 @@ internal fun Context.openAndroidSetting(setting: AndroidSetting, packageName: St
             startActivity(intent)
             return true
         } catch (_: ActivityNotFoundException) {
+            continue
+        } catch (_: SecurityException) {
             continue
         }
     }

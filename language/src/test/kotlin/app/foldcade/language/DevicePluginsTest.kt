@@ -218,18 +218,58 @@ class DevicePluginsTest {
         assertEquals(HostScreen.Bottom, lit.settings?.screen)
     }
 
-    @Test fun theNewestGameWithItsOwnTierWinsAndTheOverrideEndsWithTheLast() {
+    @Test fun theHighestTierOnTheScreensHoldsAndTheOverrideEndsWithTheLast() {
         assertNull(gameFanCall(null, emptyList()))
         assertNull(gameFanCall(null, listOf(null)))
         assertEquals(GameFanCall.Begin(FanTier.Quiet), gameFanCall(null, listOf(FanTier.Quiet)))
         assertNull(gameFanCall(FanTier.Quiet, listOf(FanTier.Quiet)))
-        // A second game on the other screen with its own tier takes over; one with Default doesn't.
-        assertEquals(GameFanCall.Begin(FanTier.Performance), gameFanCall(FanTier.Quiet, listOf(FanTier.Quiet, FanTier.Performance)))
+        // A second game with a higher tier takes over, whichever started first; a lower one or Default doesn't.
+        assertEquals(GameFanCall.Begin(FanTier.Performance), gameFanCall(FanTier.Quiet, listOf(FanTier.Performance, FanTier.Quiet)))
+        assertNull(gameFanCall(FanTier.Performance, listOf(FanTier.Performance, FanTier.Balanced)))
         assertNull(gameFanCall(FanTier.Quiet, listOf(FanTier.Quiet, null)))
-        // It leaves: the first game's tier again. The last one leaves: the override ends.
+        // The higher one leaves: the other's tier again. The last one leaves: the override ends.
         assertEquals(GameFanCall.Begin(FanTier.Quiet), gameFanCall(FanTier.Performance, listOf(FanTier.Quiet)))
         assertEquals(GameFanCall.End, gameFanCall(FanTier.Quiet, emptyList()))
         assertEquals(GameFanCall.End, gameFanCall(FanTier.Quiet, listOf(null)))
+        // Healing ends an override Foldcade lost track of, but never one a game on screen still wants.
+        assertEquals(GameFanCall.End, gameFanCall(null, listOf(null), heal = true))
+        assertNull(gameFanCall(FanTier.Quiet, listOf(FanTier.Quiet), heal = true))
+    }
+
+    @Test fun aStartWaitsOnlyForADarkPanelItTakes() {
+        // Top only with the bottom off: a game on top needs nothing; one on the bottom, or on both, lights it first.
+        assertNull(screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Top)))
+        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Bottom)))
+        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Top, ScreenLayout.TopOnly, emptySet(), HostScreen.entries.toSet()))
+        assertEquals(DeviceScreens.Dual, screensToLight(DeviceScreens.Bottom, ScreenLayout.BottomOnly, emptySet(), setOf(HostScreen.Top)))
+        // Already lit, a two-screen layout, or no panel state at all: start at once.
+        assertNull(screensToLight(DeviceScreens.Dual, ScreenLayout.TopOnly, setOf(HostScreen.Bottom), setOf(HostScreen.Bottom)))
+        assertNull(screensToLight(DeviceScreens.Dual, ScreenLayout.ShowcaseTop, emptySet(), setOf(HostScreen.Bottom)))
+        assertNull(screensToLight(null, ScreenLayout.TopOnly, emptySet(), setOf(HostScreen.Bottom)))
+    }
+
+    @Test fun lightsWithoutAColourSayWhereToSetOneAndAGoesThere() {
+        val refused = model().let { it.copy(device = it.device!!.copy(lightsNeedColor = true)) }.onSetting(Row.StickLights)
+        assertEquals(DeviceCopy.lightsNeedColor, settingsRowCaption(Row.StickLights, refused))
+        assertNull(settingsRowCaption(Row.StickLights, model()))
+        // Without AYN's screen, A still steps; with it, A opens it, and left and right still step.
+        assertEquals(Effect.SetStickLights(StickLights.Usb), reduce(refused, Meaning.Activate).second)
+        val openable = refused.copy(device = refused.device!!.copy(colorSettings = true))
+        assertEquals(Effect.OpenAndroidSetting(AndroidSetting.StickColor), reduce(openable, Meaning.Activate).second)
+        assertEquals(SettingsCopy.open, settingsHints(openable).first().label)
+        assertEquals(Effect.SetStickLights(StickLights.Usb), reduce(openable, Meaning.MoveRight).second)
+    }
+
+    @Test fun anOpenMenuDropsItsFanRowWhenThePluginGoes() {
+        val tile = TileActions(game = "rom", gameFan = GameFanSetting(FanTier.Performance), playTime = 5L)
+        val m = model().copy(tileActions = tile)
+        val rows = actionRows(tile)
+        val open = retainMenuRows(m, m.copy(panel = tileMenu(m.focus, m.layout).copy(index = rows.indexOf(Row.GameFan))))
+        assertTrue(Row.GameFan in panelRows(open.panel!!, open))
+        val gone = retainMenuRows(open, open.copy(device = null, tileActions = tile.copy(gameFan = null)))
+        val left = panelRows(gone.panel!!, gone)
+        assertFalse(Row.GameFan in left)
+        assertTrue(gone.panel!!.index in left.indices)
     }
 
     @Test fun thePluginPageAsksForConsentThenSaysWhatRootNeeds() {
