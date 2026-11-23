@@ -252,12 +252,29 @@ class DevicePluginsTest {
         val refused = model().let { it.copy(device = it.device!!.copy(lightsNeedColor = true)) }.onSetting(Row.StickLights)
         assertEquals(DeviceCopy.lightsNeedColor, settingsRowCaption(Row.StickLights, refused))
         assertNull(settingsRowCaption(Row.StickLights, model()))
-        // Without AYN's screen, A still steps; with it, A opens it, and left and right still step.
-        assertEquals(Effect.SetStickLights(StickLights.Usb), reduce(refused, Meaning.Activate).second)
+        // Only the modes that need no colour are offered, both ways, so Right can't stall on Charging.
+        val off = refused.copy(device = refused.device!!.copy(lights = StickLights.Off))
+        val (usb, toUsb) = reduce(off, Meaning.MoveRight)
+        assertEquals(Effect.SetStickLights(StickLights.Usb), toUsb)
+        assertEquals(Effect.SetStickLights(StickLights.Off), reduce(usb, Meaning.MoveRight).second)
+        assertEquals(Effect.SetStickLights(StickLights.Usb), reduce(off, Meaning.MoveLeft).second)
+        // A mode the device is in but no longer offered steps into the offered ones. Without AYN's screen, A still steps.
+        assertEquals(Effect.SetStickLights(StickLights.Off), reduce(refused, Meaning.Activate).second)
+        // With it, A opens it, and left and right still step.
         val openable = refused.copy(device = refused.device!!.copy(colorSettings = true))
         assertEquals(Effect.OpenAndroidSetting(AndroidSetting.StickColor), reduce(openable, Meaning.Activate).second)
         assertEquals(SettingsCopy.open, settingsHints(openable).first().label)
-        assertEquals(Effect.SetStickLights(StickLights.Usb), reduce(openable, Meaning.MoveRight).second)
+        assertEquals(Effect.SetStickLights(StickLights.Off), reduce(openable, Meaning.MoveRight).second)
+        // Colours may have changed: every mode again.
+        assertEquals(StickLights.entries, offeredLights(model().device))
+    }
+
+    @Test fun aQuickSecondStepStartsFromTheFirst() {
+        // The model shows each step at once, and the next one steps from it, not from the device.
+        val quiet = model(extra = mapOf("fan" to "quiet", "fanBaseline" to "quiet")).onSetting(Row.Fan)
+        val (balanced, first) = reduce(quiet, Meaning.MoveRight)
+        assertEquals(Effect.SetFan(FanTier.Balanced), first)
+        assertEquals(Effect.SetFan(FanTier.Performance), reduce(balanced, Meaning.MoveRight).second)
     }
 
     @Test fun anOpenMenuDropsItsFanRowWhenThePluginGoes() {

@@ -181,8 +181,14 @@ fun steppedGameFan(current: FanTier?, direction: Int): FanTier? {
     return values[Math.floorMod(values.indexOf(current).coerceAtLeast(0) + direction, values.size)]
 }
 
-fun steppedLights(current: StickLights?, direction: Int): StickLights {
-    val modes = StickLights.entries
+/**
+ * The modes Stick lights offers. Once the plugin has refused one for want of a stick colour, only
+ * those that need none, until the colours may have changed.
+ */
+fun offeredLights(device: DeviceState?): List<StickLights> =
+    if (device?.lightsNeedColor == true) listOf(StickLights.Off, StickLights.Usb) else StickLights.entries
+
+fun steppedLights(current: StickLights?, direction: Int, modes: List<StickLights> = StickLights.entries): StickLights {
     val at = modes.indexOf(current)
     if (at < 0) return if (direction >= 0) modes.first() else modes.last()
     return modes[Math.floorMod(at + direction, modes.size)]
@@ -286,7 +292,7 @@ object DeviceCopy {
     const val unsupported = "Foldcade does not support this plugin’s device yet."
 
     /** Under Stick lights after stickfx refused Charging or Breathe for want of a colour. */
-    const val lightsNeedColor = "Charging and Breathe need a stick colour. Set one in AYN › RGB lighting."
+    const val lightsNeedColor = "Charging and Breathe need a stick colour. Set one in AYN › RGB lighting, then come back for them."
 
     /** Under Root access while the root manager refuses: Magisk 31 lists the plugin only when it is added by hand. */
     fun rootSteps(plugin: String) = "Magisk never asks. Open Magisk › Superuser › +, add $plugin, then check again."

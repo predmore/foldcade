@@ -2862,7 +2862,7 @@ private fun deviceStep(model: PickerModel, row: Row, direction: Int): Pair<Picke
             model.copy(device = it.copy(fan = tier, fanBaseline = tier, fanGame = null)) to Effect.SetFan(tier)
         }
         Row.StickLights -> device?.takeIf { it.has(DeviceCapability.Lights) }?.let {
-            val mode = steppedLights(it.lights, direction)
+            val mode = steppedLights(it.lights, direction, offeredLights(it))
             model.copy(device = it.copy(lights = mode)) to Effect.SetStickLights(mode)
         }
         Row.BottomBrightness -> device?.takeIf { it.has(DeviceCapability.Brightness) }?.let {

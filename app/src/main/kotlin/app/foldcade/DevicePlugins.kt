@@ -241,8 +241,9 @@ internal class DeviceControl(
         }
     }
 
-    /** Asks again, probing what the plugin can do now, as after root was granted in Magisk. */
+    /** Asks again, probing what the plugin can do now, as after root was granted in Magisk. Stick colours may have been set meanwhile. */
     fun check() = enqueue {
+        lightsNeedColor = false
         read(refresh = true)
         settle()
     }
@@ -293,6 +294,11 @@ internal class DeviceControl(
     fun onHomeResumed() = enqueue {
         // A plugin that didn't answer before, as one still starting, is asked again.
         val known = state ?: (if (plugin != null) read(refresh = true)?.state else null) ?: return@enqueue
+        // Back from AYN's RGB lighting, or anywhere else: the stick colours may have changed, so every mode is offered again.
+        if (lightsNeedColor) {
+            lightsNeedColor = false
+            publish(known)
+        }
         val fresh = applyFan(heal = true)
         applyScreens(fresh ?: if (known.has(DeviceCapability.Screens)) read()?.state else null)
     }
