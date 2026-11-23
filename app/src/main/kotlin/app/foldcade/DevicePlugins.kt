@@ -153,9 +153,9 @@ internal class DeviceControl(
     /** Completed by the worker once it has nothing more to do for [releasing], any call in flight included. */
     @Volatile private var releaseDone: CompletableDeferred<Unit>? = null
 
-    /** Settles finished, and whether one is running: for [awaitIdle]. */
-    private val settles = MutableStateFlow(0)
-    @Volatile private var settling = false
+    /** For [awaitIdle]: each pass takes an id as it starts, and [settled] holds the id of the last one finished. */
+    private val passes = AtomicInteger(0)
+    private val settled = MutableStateFlow(0)
 
     /** The plugin's last confirmed state. Waiters watch it. */
     private val confirmed = MutableStateFlow<DeviceState?>(null)
@@ -196,7 +196,7 @@ internal class DeviceControl(
     init {
         scope.launch(worker) {
             for (signal in signals) {
-                settling = true
+                val pass = passes.incrementAndGet()
                 // Only a settle that began after the release was asked for may answer it: it saw the cleanup wanted.
                 val release = releaseDone?.takeIf { releasing != null }
                 try {
@@ -214,8 +214,7 @@ internal class DeviceControl(
                 } finally {
                     // Whatever was in flight has returned and the cleanup has gone as far as it can.
                     release?.complete(Unit)
-                    settling = false
-                    settles.value++
+                    settled.value = pass
                 }
             }
         }
@@ -354,9 +353,10 @@ internal class DeviceControl(
 
     /** Tests: returns once the worker has settled everything signalled before this call. */
     internal suspend fun awaitIdle() {
-        val after = settles.value + if (settling) 2 else 1
+        // A pass that starts after this read sees everything that happened before the call.
+        val before = passes.get()
         signal()
-        settles.first { it >= after }
+        settled.first { it > before }
     }
 
     /** Wakes light both panels. Listen for a display turning on, and put the dark one back. */
