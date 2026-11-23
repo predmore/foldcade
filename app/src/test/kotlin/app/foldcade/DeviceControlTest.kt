@@ -41,6 +41,11 @@ class DeviceControlTest {
         @Volatile var screens = "top"
         @Volatile var game: String? = null
         @Volatile var blocking: String? = null
+        @Volatile var capabilities = arrayOf("fan", "gameFan", "screens", "brightness")
+
+        /** Calls to refuse (ok false) or throw on, a number of times each. */
+        val refusals = java.util.concurrent.ConcurrentHashMap<String, Int>()
+        val throws = java.util.concurrent.ConcurrentHashMap<String, Int>()
         val entered = CountDownLatch(1)
         val unblock = CountDownLatch(1)
         val calls = CopyOnWriteArrayList<String>()
@@ -53,6 +58,15 @@ class DeviceControlTest {
                 entered.countDown()
                 check(unblock.await(10, TimeUnit.SECONDS))
             }
+            val key = "$method:${arg ?: ""}"
+            if ((throws[key] ?: 0) > 0) {
+                throws.merge(key, -1, Int::plus)
+                throw IllegalStateException("plugin crashed")
+            }
+            if ((refusals[key] ?: 0) > 0) {
+                refusals.merge(key, -1, Int::plus)
+                return mapOf("ok" to false, "error" to "failed")
+            }
             when (method) {
                 "screens.set" -> screens = arg!!
                 "game.begin" -> game = extras["fan"] as String
@@ -62,7 +76,7 @@ class DeviceControlTest {
             if (method == "brightness.set") return mapOf("ok" to true, "level" to extras["level"])
             return mapOf(
                 "ok" to true, "protocol" to 1, "device" to "ayn-thor", "root" to "granted",
-                "capabilities" to arrayOf("fan", "gameFan", "screens", "brightness"),
+                "capabilities" to capabilities,
                 "fan" to (game ?: "balanced"), "fanBaseline" to "balanced", "fanGame" to game,
                 "screens" to screens, "brightnessTop" to 0.5f, "brightnessBottom" to 0.5f,
             )
@@ -357,5 +371,74 @@ class DeviceControlTest {
         assertFalse(work.waitingToLight)
         // Nothing wants the bottom panel any more: it goes dark again.
         assertEquals(plugin.calls.toString(), "top", plugin.screens)
+    }
+
+    @Test fun releaseRetriesACleanupThePluginRefusedOrFailed() = runBlocking {
+        plugin.screens = "bottom"
+        layout.set(ScreenLayout.BottomOnly)
+        live.set(mapOf("kart" to FanTier.Performance))
+        val control = control()
+        control.started()
+        assertEquals("performance", plugin.game)
+        // The panel refuses twice and the override's end throws once: release keeps at it, then lets go.
+        plugin.refusals["screens.set:dual"] = 2
+        plugin.throws["game.end:"] = 1
+        control.release("test.thor")
+        assertNull(control.pluginPackage)
+        assertEquals("dual", plugin.screens)
+        assertNull(plugin.game)
+        assertEquals(3, plugin.calls.count { it == "screens.set:dual" })
+    }
+
+    @Test fun aFanChoiceBeforeTheGamesOverrideBeganHolds() = runBlocking {
+        // The game is on screen, but the plugin hasn't answered yet, so no override has begun.
+        plugin.screens = "dual"
+        layout.set(ScreenLayout.ShowcaseTop)
+        live.set(mapOf("kart" to FanTier.Quiet))
+        plugin.blocking = "state"
+        val control = control()
+        onMain { control.use(thor) }
+        blocked()
+        onMain { control.setFan(FanTier.Performance) }
+        plugin.unblock.countDown()
+        control.awaitIdle()
+        // The player's tier holds for the game on screen: no game.begin undoes it.
+        assertFalse(plugin.calls.toString(), plugin.calls.any { it.startsWith("game.begin") })
+        assertTrue(plugin.calls.contains("fan.set:performance"))
+        // A game that starts afterwards gets its own tier.
+        live.set(mapOf("kart" to FanTier.Quiet, "zelda" to FanTier.Balanced))
+        control.reconcile()
+        control.awaitIdle()
+        assertEquals("balanced", plugin.game)
+    }
+
+    @Test fun aStartBeforeThePluginAnsweredWaitsForItsPanel() = runBlocking {
+        // Top only, cold: the plugin hasn't said whether the bottom panel is off.
+        plugin.blocking = "state"
+        val control = control()
+        onMain { control.use(thor) }
+        blocked()
+        // Only a panel the layout leaves dark waits; the lit one, or both in a two-screen layout, start at once.
+        assertTrue(withContext(main) { control.mustLight(setOf(HostScreen.Bottom)) })
+        assertFalse(withContext(main) { control.mustLight(setOf(HostScreen.Top)) })
+        layout.set(ScreenLayout.ShowcaseTop)
+        assertFalse(withContext(main) { control.mustLight(setOf(HostScreen.Bottom)) })
+        layout.set(ScreenLayout.TopOnly)
+        val start = scope.async(main) { control.whenLit(setOf(HostScreen.Bottom)) { plugin.screens } }
+        plugin.unblock.countDown()
+        // It started only once the panel was lit.
+        assertEquals("dual", start.await())
+        control.awaitIdle()
+        assertEquals("top", plugin.screens)
+    }
+
+    @Test fun aPluginWithoutScreenControlNeverHoldsAStart() = runBlocking {
+        plugin.capabilities = arrayOf("fan")
+        val control = control()
+        control.started()
+        assertFalse(withContext(main) { control.mustLight(setOf(HostScreen.Bottom)) })
+        var started = false
+        control.whenLit(setOf(HostScreen.Bottom)) { started = true }
+        assertTrue(started)
     }
 }

@@ -200,6 +200,12 @@ internal class DeviceControl(
                 val release = releaseDone?.takeIf { releasing != null }
                 try {
                     settle()
+                    // A release isn't answered until its cleanup is confirmed: a refused or failed call is
+                    // tried again shortly, until it goes through or the release gives up and lets go.
+                    while (release != null && !release.isCompleted && releasing != null && target != null && !cleanedUp()) {
+                        delay(CLEANUP_RETRY_MS)
+                        settle()
+                    }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -289,10 +295,14 @@ internal class DeviceControl(
         signal()
     }
 
-    /** True when a start that takes [panels] must wait for one to light. Main thread. */
+    /**
+     * True when a start that takes [panels] must wait for one to light. Main thread. Before the
+     * plugin has said what it can do, a panel the layout leaves dark may be off, so that waits too.
+     */
     fun mustLight(panels: Set<HostScreen>): Boolean {
         if (target == null) return false
-        val current = confirmed.value?.takeIf { it.has(DeviceCapability.Screens) }?.screens ?: return false
+        val known = confirmed.value ?: return !wantedScreens(emptySet()).lights(panels)
+        val current = known.takeIf { it.has(DeviceCapability.Screens) }?.screens ?: return false
         return !current.lights(panels)
     }
 
@@ -308,7 +318,8 @@ internal class DeviceControl(
         signal()
         try {
             withTimeoutOrNull(lightTimeoutMs) {
-                confirmed.first { it == null || target == null || it.screens?.lights(panels) != false }
+                // Lit, or known to be none of the plugin's doing, or no plugin any more. Not yet known is no answer.
+                confirmed.first { target == null || (it != null && (!it.has(DeviceCapability.Screens) || it.screens?.lights(panels) == true)) }
             }
             return start()
         } finally {
@@ -379,6 +390,13 @@ internal class DeviceControl(
         }
     }
 
+    /** Both panels on and no game override, as confirmed by the plugin: what a release leaves behind. */
+    private fun cleanedUp(): Boolean {
+        val known = confirmed.value ?: return false
+        return (!known.has(DeviceCapability.Screens) || known.screens == DeviceScreens.Dual) &&
+            (!known.has(DeviceCapability.GameFan) || known.fanGame == null)
+    }
+
     /** Main thread. */
     private fun detach() {
         generation++
@@ -413,7 +431,7 @@ internal class DeviceControl(
             return true
         }
         val letGo = releasing == plugin.packageName
-        if (!letGo) writeStep(gen, plugin, known)?.let { return it }
+        if (!letGo) writeStep(gen, plugin)?.let { return it }
         val wanted = withContext(main) { if (letGo) DeviceScreens.Dual to emptyMap() else wantedScreens(pendingLit.values.flatten().toSet()) to liveFans() }
         if (known.has(DeviceCapability.Screens) && known.screens != wanted.first) {
             return call(gen, plugin, "screens.set", wanted.first.id)?.ok == true
@@ -438,15 +456,15 @@ internal class DeviceControl(
      * refused one is dropped and the device read again; one the plugin never got waits for the
      * next signal. Null when none waits.
      */
-    private suspend fun writeStep(gen: Int, plugin: ApkPlugin, known: DeviceState): Boolean? {
+    private suspend fun writeStep(gen: Int, plugin: ApkPlugin): Boolean? {
         fanWrite.get()?.let { tier ->
             val reply = call(gen, plugin, "fan.set", tier.id) ?: return false
             return underGeneration(gen) {
                 fanWrite.compareAndSet(tier, null)
-                // fan.set ends a game's override without restoring: the games on screen keep the player's tier.
-                if (reply.ok && known.fanGame != null) {
+                // The player's tier holds for the games on screen when they chose it, whether or not their
+                // override had begun (fan.set ends one without restoring); one that starts later gets its own.
+                if (reply.ok) {
                     fanTaken = true
-                    // Only the games on screen when the player chose; one that started meanwhile gets its own tier.
                     fanGames = fanWriteGames.get()
                 }
                 if (!reply.ok) owe(READ)
@@ -542,6 +560,9 @@ internal class DeviceControl(
         const val LIGHT_TIMEOUT_MS = 2_500L
         const val RELEASE_TIMEOUT_MS = 8_000L
         private const val WAKE_SETTLE_MS = 1_500L
+
+        /** Between tries of a release's cleanup that the plugin refused or failed. */
+        private const val CLEANUP_RETRY_MS = 250L
 
         /** `lights.set` refused Charging or Breathe because every stick color is black. */
         private const val NEEDS_COLOR = "needs_color"
