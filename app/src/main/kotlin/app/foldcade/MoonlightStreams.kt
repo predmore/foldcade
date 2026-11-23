@@ -100,8 +100,7 @@ internal class MoonlightStreams(
         found?.let(::use)
         paired = store.pairedStreamHosts(found?.fingerprint)
         val keys = paired.map { it.key }.toSet()
-        val listed = store.listedStreamApps().filter { it.hostUuid.lowercase(Locale.ROOT) in keys }
-        library()?.replaceListed(listed)
+        library()?.replaceListed(pairedStreamApps(store.listedStreamApps(), keys))
         hosts.knowPaired(paired)
         hosts.knowNames(names)
         val known = paired.associate { it.key to MoonlightHost(it.name, online = null) } +
@@ -282,13 +281,10 @@ internal class MoonlightStreams(
             // Forgotten while it was asked.
             if (paired.none { it.key == host.key }) return
             val mine = apps.mapNotNull { moonlightApp(hostUuid = host.uuid, appId = it.id, label = it.title) }
-            val before = store.listedStreamApps()
-            val all = before.filter { it.hostUuid.lowercase(Locale.ROOT) != host.key } + mine
-            if (all != before) {
-                store.setListedStreamApps(all)
-                library()?.replaceListed(all)
-            }
-            all != before
+            val next = relistStreamApps(store.listedStreamApps(), host.key, mine, paired.map { it.key }.toSet())
+            next.save?.let(store::setListedStreamApps)
+            library()?.replaceListed(next.shown)
+            next.save != null
         }
         if (listedOnce.add(host.key) || changed) withContext(Dispatchers.Main.immediate) { refreshArt(host.key) }
         refreshShelf(host.key)
@@ -300,6 +296,29 @@ internal class MoonlightStreams(
     } catch (_: PackageManager.NameNotFoundException) {
         false
     }
+}
+
+/** The saved apps of the computers in [pairedKeys], the ones the library lists. */
+internal fun pairedStreamApps(saved: List<MoonlightApp>, pairedKeys: Set<String>): List<MoonlightApp> =
+    saved.filter { it.hostUuid.lowercase(Locale.ROOT) in pairedKeys }
+
+/** What a paired computer's app list changes: [save] is null when the saved list stays as it is. */
+internal data class RelistedStreamApps(val save: List<MoonlightApp>?, val shown: List<MoonlightApp>)
+
+/**
+ * The computer [hostKey] listed [mine]: they replace its saved apps. [RelistedStreamApps.shown] is
+ * for the library every time, even when nothing saved changed. The library starts with only the
+ * computers still paired, so one paired again after its key was lost (a reinstall, data moved to
+ * a new system) lists the very apps that are still saved, and they must show then.
+ */
+internal fun relistStreamApps(
+    saved: List<MoonlightApp>,
+    hostKey: String,
+    mine: List<MoonlightApp>,
+    pairedKeys: Set<String>,
+): RelistedStreamApps {
+    val all = saved.filter { it.hostUuid.lowercase(Locale.ROOT) != hostKey } + mine
+    return RelistedStreamApps(save = all.takeIf { it != saved }, shown = pairedStreamApps(all, pairedKeys))
 }
 
 /** How long a plugin's computer list may spend confirming addresses before using saved ones. */
