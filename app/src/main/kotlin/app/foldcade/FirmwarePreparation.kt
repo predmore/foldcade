@@ -4,6 +4,7 @@ import app.foldcade.api.plugin.FirmwareBytes
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 
 /** Optional BIOS must never add storage discovery, downloads or setup to a game start. */
@@ -28,21 +29,22 @@ internal fun prepareFirmware(
     docs: SaveDocuments, saves: PlayerSaves,
     folder: () -> String?, local: () -> List<FirmwareBytes>, onCopy: () -> Unit = {},
 ): FirmwareResult {
-    fun result(written: List<String> = emptyList(), missing: List<String> = emptyList(), needsFolder: Boolean = false) =
-        FirmwareResult(written, missing, needsFolder, place)
+    fun result(written: List<String> = emptyList(), missing: List<String> = emptyList(), needsFolder: Boolean = false, requiresImport: Boolean = false) =
+        FirmwareResult(written, missing, needsFolder, place, requiresImport)
     if (!firmwareRequired(player, game)) return result()
     val launchGame = firmwareGame(game, target, docs)
     val into = folder() ?: return result(needsFolder = true)
     val access = saves.firmwareFolder(player, into)
     if (access.list("") == null) return result(needsFolder = true)
-    if (!player.needsFirmware(access)) return result()
+    val requiresImport = player is ArmsX2Player && player.firmwareNeedsImport(access, runCatching { folderDocumentId(into) }.getOrNull())
+    if (!player.needsFirmware(access)) return result(requiresImport = requiresImport)
     val missing = player.missingFirmware(launchGame, access)
     if (player is RetroArchPlayer && missing.isEmpty()) return result()
     val sources = (target as? LaunchTarget.ContentUri)?.firmware.orEmpty()
     val localSources = if (missing.isNotEmpty() || player is app.foldcade.plugins.aps3e.Aps3ePlayer) local() else emptyList()
     val uri = (target as? LaunchTarget.ContentUri)?.uri ?: "content://firmware/launch"
     val written = saves.placeFirmware(player, launchGame, LaunchTarget.ContentUri(uri, sources + localSources), into, onWrite = onCopy)
-    return result(written, saves.missingFirmware(player, launchGame, into))
+    return result(written, saves.missingFirmware(player, launchGame, into), requiresImport = requiresImport)
 }
 
 /** A confirmed custom system folder stays chosen. Only an explicit RetroArch root is narrowed. */

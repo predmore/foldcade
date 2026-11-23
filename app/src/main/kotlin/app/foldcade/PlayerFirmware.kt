@@ -15,9 +15,13 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.coroutines.cancellation.CancellationException
 
-internal data class FirmwareResult(val written: List<String>, val missing: List<String>, val needsFolder: Boolean, val place: String) {
-    // A missing grant cannot prove the emulator lacks its own BIOS.
-    val blocksLaunch: Boolean get() = !needsFolder && missing.isNotEmpty()
+internal data class FirmwareResult(
+    val written: List<String>, val missing: List<String>, val needsFolder: Boolean, val place: String,
+    /** This folder stages firmware; the emulator loads its own copy elsewhere. */
+    val requiresImport: Boolean = false,
+) {
+    // A missing grant or an inaccessible private copy cannot prove the emulator lacks its BIOS.
+    val blocksLaunch: Boolean get() = !needsFolder && !requiresImport && missing.isNotEmpty()
 }
 
 /** Upload advice is actionable only when this launch negotiates firmware with RomM. */

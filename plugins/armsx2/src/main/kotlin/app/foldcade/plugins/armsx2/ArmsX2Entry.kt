@@ -19,6 +19,7 @@ import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.api.plugin.StartDisplay
 import java.util.Locale
+import java.util.concurrent.CancellationException
 
 /**
  * PlayStation 2 player for ARMSX2. The platform id is the local-folder
@@ -133,6 +134,26 @@ class ArmsX2Player : Player, SaveFolderHolder {
         choosePs2Bios(offered, Locale.getDefault().country)
 
     override fun needsFirmware(folder: SaveFolderAccess): Boolean = !hasBios(folder)
+
+    /** A staged BIOS needs ARMSX2's import when its configured folder is outside this SAF document. */
+    fun firmwareNeedsImport(folder: SaveFolderAccess, documentId: String?): Boolean {
+        // Other document providers do not identify a shared-storage filesystem path.
+        if (documentId == null || ':' !in documentId) return false
+        val ini = try {
+            folder.read(Ps2Card.INI, INI_LIMIT)?.toString(Charsets.UTF_8)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        val bios = iniValues(ini, "Folders").lastOrNull { it.first == "Bios" }?.second ?: return false
+        if (!bios.startsWith('/')) return false
+        val volume = documentId.substringBefore(':')
+        val root = if (volume == "primary") "/storage/emulated/0" else "/storage/$volume"
+        val path = documentId.substringAfter(':').trimEnd('/')
+        val picked = if (path.isEmpty()) root else "$root/$path"
+        return bios.trimEnd('/') != "$picked/$BIOS"
+    }
 
     override fun missingFirmware(game: Game, folder: SaveFolderAccess): List<String> =
         if (hasBios(folder)) emptyList() else listOf("PlayStation 2 BIOS (.bin)")

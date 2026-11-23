@@ -145,21 +145,9 @@ internal data class Slot1(val enabled: Boolean, val filename: String)
 
 /** `Slot1_Enable` and `Slot1_Filename` in a PCSX2 ini. Null when the enable flag is not a boolean. */
 internal fun parseSlot1(ini: String): Slot1? {
-    var section = ""
     var enabled = true
     var filename = Ps2Card.DEFAULT_FILE
-    for (raw in ini.split('\n')) {
-        val line = raw.trim().trimEnd('\r')
-        if (line.isEmpty() || line.startsWith(";") || line.startsWith("#")) continue
-        if (line.startsWith("[") && line.endsWith("]")) {
-            section = line.substring(1, line.length - 1).trim()
-            continue
-        }
-        if (section != "MemoryCards") continue
-        val split = line.indexOf('=')
-        if (split <= 0) continue
-        val key = line.substring(0, split).trim()
-        val value = line.substring(split + 1).trim().removeSurrounding("\"")
+    for ((key, value) in iniValues(ini, "MemoryCards")) {
         when (key) {
             "Slot1_Enable" -> enabled = when (value.lowercase()) {
                 "true", "1" -> true
@@ -198,7 +186,6 @@ private fun erased(bytes: ByteArray): Boolean {
     return bytes.all { it == mark }
 }
 
-private const val INI_LIMIT = 256 * 1024
 private const val SETTINGS_LIMIT = 2 * 1024 * 1024
 private const val SUPER_READ = 64 * 1024
 private const val CARD_RAW = 8_388_608L
