@@ -186,9 +186,9 @@ internal class DeviceControl(
     /** The last `lights.set` was refused for want of a stick color ([DeviceState.lightsNeedColor]). */
     private val lightsNeedColor = AtomicBoolean(false)
 
-    /** The player chose a tier during a game's override, so the games then on screen keep it. Worker only. */
-    private var fanTaken = false
-    private var fanGames: Set<String> = emptySet()
+    /** The player chose a tier during a game's override, so the games then on screen keep it. Cleared with each generation. */
+    @Volatile private var fanTaken = false
+    @Volatile private var fanGames: Set<String> = emptySet()
 
     private val displaysOn = HashMap<Int, Boolean>()
 
@@ -412,6 +412,9 @@ internal class DeviceControl(
         lightsWrite.set(null)
         bottomWrite.set(null)
         lightsNeedColor.set(false)
+        // A plugin attached anew, or updated, owes the games on screen their own tiers again.
+        fanTaken = false
+        fanGames = emptySet()
     }
 
     /** Steps toward what is wanted until nothing differs, a call fails, or the steps run out. */
@@ -430,9 +433,15 @@ internal class DeviceControl(
             if (reply?.state == null) return false
             return true
         }
-        val letGo = releasing == plugin.packageName
-        if (!letGo) writeStep(gen, plugin)?.let { return it }
-        val wanted = withContext(main) { if (letGo) DeviceScreens.Dual to emptyMap() else wantedScreens(pendingLit.values.flatten().toSet()) to liveFans() }
+        if (releasing == plugin.packageName) {
+            // Both cleanup calls are tried on every pass, each on its own: one that keeps failing never
+            // keeps the other from going out. The release retries until both are confirmed.
+            if (known.has(DeviceCapability.Screens) && known.screens != DeviceScreens.Dual) call(gen, plugin, "screens.set", DeviceScreens.Dual.id)
+            if ((confirmed.value ?: known).let { it.has(DeviceCapability.GameFan) && it.fanGame != null }) call(gen, plugin, "game.end")
+            return false
+        }
+        writeStep(gen, plugin)?.let { return it }
+        val wanted = withContext(main) { wantedScreens(pendingLit.values.flatten().toSet()) to liveFans() }
         if (known.has(DeviceCapability.Screens) && known.screens != wanted.first) {
             return call(gen, plugin, "screens.set", wanted.first.id)?.ok == true
         }

@@ -441,4 +441,38 @@ class DeviceControlTest {
         control.whenLit(setOf(HostScreen.Bottom)) { started = true }
         assertTrue(started)
     }
+
+    @Test fun aGameOnScreenGetsItsTierAgainOnceThePluginIsUpdated() = runBlocking {
+        plugin.screens = "dual"
+        layout.set(ScreenLayout.ShowcaseTop)
+        live.set(mapOf("kart" to FanTier.Quiet))
+        val control = control()
+        control.started()
+        assertEquals("quiet", plugin.game)
+        // The player takes the fan: kart keeps their tier while this plugin build is in use.
+        onMain { control.setFan(FanTier.Performance) }
+        control.awaitIdle()
+        assertNull(plugin.game)
+        // A new build of the plugin is a new generation: kart is owed its own tier again.
+        onMain { control.use(thor.copy(version = "2")) }
+        control.awaitIdle()
+        assertEquals("quiet", plugin.game)
+    }
+
+    @Test fun releaseEndsTheOverrideWhileThePanelKeepsFailing() = runBlocking {
+        plugin.screens = "bottom"
+        layout.set(ScreenLayout.BottomOnly)
+        live.set(mapOf("kart" to FanTier.Performance))
+        val control = control(releaseMs = 1_000)
+        control.started()
+        assertEquals("performance", plugin.game)
+        plugin.refusals["screens.set:dual"] = Int.MAX_VALUE
+        control.release("test.thor")
+        assertNull(control.pluginPackage)
+        // The panel never lit, but the override ended on the first pass, and the panel was tried throughout.
+        assertNull(plugin.game)
+        assertEquals("bottom", plugin.screens)
+        assertEquals(1, plugin.calls.count { it == "game.end:" })
+        assertTrue(plugin.calls.count { it == "screens.set:dual" } > 1)
+    }
 }
