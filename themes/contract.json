@@ -499,6 +499,7 @@
     "status.bluetooth",
     "status.bluetooth.off",
     "status.display",
+    "status.fan",
     "status.info",
     "status.playtime",
     "status.plugins",
