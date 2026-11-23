@@ -258,6 +258,30 @@ class MoonlightHomeTest {
     }
 
     @Test
+    fun pairingAgainAfterALostKeyListsTheAppsThatWereStillSaved() {
+        val gameWin = "8FE9E201-578A-7C2C-B017-F2A9A9D86886"
+        val key = gameWin.lowercase()
+        val other = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
+        val desktop = moonlightApp(gameWin, "881448767", "Desktop")!!
+        val diablo = moonlightApp(gameWin, "668130246", "Diablo IV")!!
+        val elsewhere = moonlightApp(other, "7", "Hades")!!
+        // Saved under the lost key; at start the library lists none of them.
+        val saved = listOf(elsewhere, desktop, diablo)
+        assertEquals(emptyList<Any>(), pairedStreamApps(saved, emptySet()))
+
+        // Paired again, game-win lists the same apps: nothing to save, but the library shows them.
+        val again = relistStreamApps(saved, key, listOf(desktop, diablo), setOf(key))
+        assertNull(again.save)
+        assertEquals(listOf(desktop, diablo), again.shown)
+
+        // A new app is saved, and a computer still unpaired stays out of the library.
+        val stellar = moonlightApp(gameWin, "1561678719", "Stellar Blade")!!
+        val more = relistStreamApps(saved, key, listOf(desktop, diablo, stellar), setOf(key))
+        assertEquals(listOf(elsewhere, desktop, diablo, stellar), more.save)
+        assertEquals(listOf(desktop, diablo, stellar), more.shown)
+    }
+
+    @Test
     fun onlyPairedLocationsLoadOrSaveAndForgettingPrunesTheSavedAddress() {
         val prefs = MemoryPrefs()
         val store = SessionStore(prefs)
