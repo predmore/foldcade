@@ -1,0 +1,4 @@
+[   0.000097] Frontend <Info> main/jni/native.cpp:Java_org_citra_citra_1emu_NativeLibrary_createLogFile:998: Logging backend initialised
+[   0.000133] Frontend <Info> main/jni/native.cpp:Java_org_citra_citra_1emu_NativeLibrary_logUserDirectory:1005: User directory path: content://com.android.externalstorage.documents/tree/primary%3AAzahar
+[   0.014015] Frontend <Info> main/jni/native.cpp:Java_org_citra_citra_1emu_NativeLibrary_logDeviceInfo:1244: Azahar Version: 2126.2 | HEAD-219d743
+[   0.127850] Frontend <Info> main/jni/native.cpp:RunCitra:203: Azahar starting...

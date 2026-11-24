@@ -91,6 +91,16 @@ interface LibraryBackend {
      */
     suspend fun unsyncedSaves(): Set<String> = emptySet()
 
+    /** Accepted times for held bytes, per slot. No network. Added in API minor 26. */
+    suspend fun saveReceipts(game: Game): Map<String, Long?> = emptyMap()
+
+    /** Whether saves can reach this backend now. Added in API minor 26. */
+    suspend fun saveServiceState(): SaveServiceState = SaveServiceState.Unknown
+
+    /** Keep unslotted Backups, verifying each server copy. Added in API minor 26. */
+    suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> =
+        throw PluginException.Unavailable("Backups are not supported")
+
     /** Every server version for this game, newest first. Added in API minor 16. */
     suspend fun serverSaves(game: Game, player: Player? = null): List<ServerSave> = emptyList()
 

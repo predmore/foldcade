@@ -810,6 +810,31 @@ internal class RommLibrary internal constructor(
         false
     }
 
+    override suspend fun saveReceipts(game: Game): Map<String, Long?> {
+        val wiring = gate.wiring()
+        val romId = game.romId()
+        return romLock(romId).withLock {
+            val ledger = wiring.data.ledger(romId).slots()
+            localSaves(wiring.data, romId, null).mapNotNull { save ->
+                val slot = save.slot ?: return@mapNotNull null
+                val record = ledger[slot] ?: return@mapNotNull null
+                if (record.syncedHash == md5File(save.file)) slot to record.syncedAtMillis else null
+            }.toMap()
+        }
+    }
+
+    override suspend fun saveServiceState(): app.foldcade.api.plugin.SaveServiceState = try {
+        gate.call { _, ops ->
+            val beat = ops.heartbeat()
+            val version = app.foldcade.romm.RommVersion.parse(beat.version)
+            if (version == null) app.foldcade.api.plugin.SaveServiceState.Unknown
+            else if (!version.isAtLeast(5, 4, 0)) app.foldcade.api.plugin.SaveServiceState.ServerTooOld(beat.version)
+            else app.foldcade.api.plugin.SaveServiceState.Ready
+        }
+    } catch (cancelled: CancellationException) { throw cancelled
+    } catch (_: PluginException.NotAuthenticated) { app.foldcade.api.plugin.SaveServiceState.SignedOut
+    } catch (_: Exception) { app.foldcade.api.plugin.SaveServiceState.Unreachable(null) }
+
     /**
      * Keeps what the player wrote, then starts a sync in the background and
      * returns. The observed bytes are written durably before any network call,

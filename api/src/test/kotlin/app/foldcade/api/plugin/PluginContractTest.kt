@@ -121,16 +121,17 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(25, PLUGIN_API_MINOR)
+        assertEquals(26, PLUGIN_API_MINOR)
         for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave", "firmwareDestination", "getFirmwareKeepsFolders", "missingFirmware")) {
             assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
         }
+        assertTrue(SaveFolderAccess::class.java.methods.single { it.name == "modifiedAtMillis" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPickedInPlayer" }.isDefault)
         assertTrue(GameFileReader::class.java.methods.single { it.name == "getFileName" }.isDefault)
         assertNull(object : GameFileReader { override fun read(offset: Long, length: Int): ByteArray? = null }.fileName)
         assertTrue(LibraryBackend::class.java.methods.single { it.name == "unsyncedSaves" }.isDefault)
-        for (name in listOf("serverSaves", "serverSaveOrigins", "syncServerSaves", "playServerSave", "copyServerSave")) {
+        for (name in listOf("saveReceipts", "saveServiceState", "keepAsBackups", "serverSaves", "serverSaveOrigins", "syncServerSaves", "playServerSave", "copyServerSave")) {
             assertTrue(LibraryBackend::class.java.methods.single { it.name == name }.isDefault)
         }
         val bind = PluginEntry::class.java.methods.single { it.name == "bind" }
@@ -292,6 +293,7 @@ class PluginContractTest {
                 "serverSaves",
                 "serverSaveBackups",
                 "serverSaveOrigins",
+                "saveReceipts", "saveServiceState", "keepAsBackups",
                 "syncServerSaves",
                 "playServerSave",
                 "copyServerSave",

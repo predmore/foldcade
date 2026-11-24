@@ -60,6 +60,7 @@ class LocalFolderBackendTest {
                 "serverSaves",
                 "serverSaveBackups",
                 "serverSaveOrigins",
+                "saveReceipts", "saveServiceState", "keepAsBackups",
                 "syncServerSaves",
                 "playServerSave",
                 "copyServerSave",

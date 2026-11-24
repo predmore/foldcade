@@ -197,6 +197,26 @@ class RommSyncTest {
         }
     }
 
+    @Test fun receiptsRequireMatchingHeldBytesAndServiceStateIsHonest() = runBlocking {
+        val library = library()
+        writeSlot("sav", "progress")
+        val ledger = RommData(data, ORIGIN).ledger(1234)
+        assertTrue(library.saveReceipts(GAME).isEmpty())
+        ledger.markSynced("sav", md5("progress"), "melonds")
+        assertEquals(ledger.slot("sav")!!.syncedAtMillis, library.saveReceipts(GAME)["sav"])
+        writeSlot("sav", "more progress")
+        assertTrue(library.saveReceipts(GAME).isEmpty())
+        ops.onHeartbeat = { app.foldcade.romm.Heartbeat("5.3.0") }
+        assertEquals(app.foldcade.api.plugin.SaveServiceState.ServerTooOld("5.3.0"), library.saveServiceState())
+        ops.onHeartbeat = { app.foldcade.romm.Heartbeat("5.4.0") }
+        assertEquals(app.foldcade.api.plugin.SaveServiceState.Ready, library.saveServiceState())
+        ops.onHeartbeat = { throw RommUnavailable("offline") }
+        assertTrue(library.saveServiceState() is app.foldcade.api.plugin.SaveServiceState.Unreachable)
+        token = null
+        assertEquals(app.foldcade.api.plugin.SaveServiceState.SignedOut, library.saveServiceState())
+        library.disconnect()
+    }
+
     @Test
     fun ledgerWaitingStateSurvivesReopeningAndClearsOnlyForMatchingBytes() = runBlocking {
         writeSlot("sav", "progress")
