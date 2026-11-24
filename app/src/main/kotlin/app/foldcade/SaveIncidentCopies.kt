@@ -8,6 +8,9 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.SaveIncident
 import app.foldcade.language.blocksLaunch
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** Suspect bytes never enter the library's held slot. Caller holds saveFlow. */
 internal class SaveIncidentCopies(
@@ -27,12 +30,19 @@ internal class SaveIncidentCopies(
     }
 
     /** Called only after a successful external start, before its return record is saved. */
-    fun beginUnprotected(game: Game, player: Player): Boolean {
-        val incidents = store.incidents().filter { it.playerKey == player.saveFolderId() && it.blocksLaunch }
-        if (incidents.isEmpty() && !store.pendingBackup(player.saveFolderId(), game)) return false
-        store.requireBackup(player.saveFolderId(), game)
+    suspend fun beginUnprotected(game: Game, player: Player): Boolean = withContext(NonCancellable + Dispatchers.IO) {
+        val key = player.saveFolderId()
+        val incidents = store.incidents().filter { it.playerKey == key && it.blocksLaunch }
+        if (incidents.isEmpty() && !store.needsBackup(key, game)) return@withContext false
+        store.requireBackup(key, game)
         incidents.forEach { store.put(it.copy(recoveryRequired = true)) }
-        return true
+        true
+    }
+
+    /** A checked head in the working folder ends the rebound fence, even without an outside copy. */
+    suspend fun headPlaced(game: Game, player: Player) = withContext(Dispatchers.IO) {
+        val key = player.saveFolderId()
+        if (store.needsBackup(key, game)) store.handled(key, game)
     }
 
     /** The launch's persisted decision wins even if a guided fix closed the incident meanwhile. */
@@ -52,8 +62,8 @@ internal class SaveIncidentCopies(
     suspend fun preserveBeforeLaunch(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves): Boolean {
         val key = player.saveFolderId()
         if (!store.needsBackup(key, game)) return false
+        if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false
-        if (spots.isEmpty()) throw SaveNotPlaced()
         val observed = stage(game, player, spots, mark = false)
         if (outside.slots.any { slot -> observed.slots.none { it.slot == slot.slot } }) throw SaveNotPlaced()
         saves.noteHandedOver(game.backendId, game, player, spots, observed)

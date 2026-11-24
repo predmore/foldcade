@@ -220,6 +220,81 @@ class LaunchSavesTest {
         assertEquals(1, server.backups.size)
     }
 
+    @Test fun aVerifiedHeadPlacementClearsTheFenceForAnAbsentOrMatchingFirstCopy() = runBlocking {
+        val file = "$SAVES/Tetris DS (USA).sav"
+        for (matching in listOf(false, true)) {
+            server.calls.clear(); server.observed.clear(); server.backups.clear()
+            docs.files.remove(file)
+            server.toPlace = "RomM head"
+            val spots = saves.spots(Melon, owner, local)
+            if (matching) {
+                docs.files[file] = "RomM head".toByteArray()
+                assertTrue(saves.place(owner.backendId, owner, Melon, spots, listOf(PlacedSave("sav", "lib://server", md5Hex("RomM head".toByteArray())))))
+            }
+            val directory = Files.createTempDirectory("placement-fence")
+            val store = SaveProtectionStore(directory)
+            store.rebound(Melon.id, 100)
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            val launch = LaunchSaves(saves, plugins, preserveOutside = copies::preserveBeforeLaunch,
+                onHeadPlaced = copies::headPlaced) { awaiting += it }
+            launch.prepare(GameRoute("tile", play, owner), Melon, local)
+            assertEquals("RomM head", String(docs.files.getValue(file)))
+            assertFalse(SaveProtectionStore(directory).needsBackup(Melon.id, owner))
+            docs.files[file] = "later legitimate progress".toByteArray()
+            server.toPlace = "later legitimate progress"
+            launch.prepare(GameRoute("tile", play, owner), Melon, local)
+            assertEquals(listOf(md5Hex("later legitimate progress".toByteArray())), server.observed)
+            assertTrue(server.backups.isEmpty())
+        }
+    }
+
+    @Test fun failedNonStrictReadsAndFailedPlacementDoNotClearTheFence() = runBlocking {
+        val store = SaveProtectionStore(Files.createTempDirectory("unreadable-fence"))
+        store.rebound(Melon.id, 100)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        server.toPlace = "RomM head"
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "unreadable outside progress".toByteArray()
+        docs.unreadable = true
+        val launch = LaunchSaves(saves, plugins, preserveOutside = copies::preserveBeforeLaunch,
+            onHeadPlaced = copies::headPlaced) { awaiting += it }
+        assertTrue(runCatching { launch.prepare(GameRoute("tile", play, owner), Melon, local) }.exceptionOrNull() is SaveNotPlaced)
+        assertTrue(store.needsBackup(Melon.id, owner))
+        assertTrue(server.observed.isEmpty())
+        assertEquals("unreadable outside progress", String(docs.files.getValue("$SAVES/Tetris DS (USA).sav")))
+    }
+
+    @Test fun anUnresolvableSpotKeepsItsPendingLatchWithoutInventingALaunchStop() = runBlocking {
+        val unresolved = object : Player by Melon {
+            override fun saveFileName(slot: String, romFileName: String): String? = null
+        }
+        val store = SaveProtectionStore(Files.createTempDirectory("unresolved-return"))
+        store.requireBackup(unresolved.id, owner)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val launch = LaunchSaves(saves, plugins, preserveOutside = copies::preserveBeforeLaunch,
+            onHeadPlaced = copies::headPlaced) { awaiting += it }
+        val prepared = launch.prepare(GameRoute("tile", owner, owner), unresolved, local)
+        assertTrue(prepared.spots.isEmpty())
+        assertTrue(store.pendingBackup(unresolved.id, owner))
+        assertTrue(store.needsBackup(unresolved.id, owner))
+        assertEquals(listOf("prepareLaunch:12"), server.calls)
+        assertTrue(server.observed.isEmpty())
+    }
+
+    @Test fun aFencedOptOutLatchesWithoutAnIncidentAndKeepsItsReturnAsABackup() = runBlocking {
+        val store = SaveProtectionStore(Files.createTempDirectory("fenced-opt-out"))
+        store.rebound(Melon.id, 100)
+        assertTrue(store.incidents().isEmpty())
+        assertFalse(store.pendingBackup(Melon.id, owner))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val backupOnly = copies.beginUnprotected(owner, Melon)
+        assertTrue(backupOnly)
+        assertTrue(store.pendingBackup(Melon.id, owner))
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "opt-out progress".toByteArray()
+        assertTrue(copies.preserveReturn(owner, Melon, saves.spots(Melon, owner, local), backupOnly))
+        assertEquals(listOf(md5Hex("opt-out progress".toByteArray())), server.backups)
+        assertTrue(server.observed.isEmpty())
+    }
+
     @Test fun aStartedBypassRemainsBackupOnlyIfFixClosesItsIncidentBeforeReturn() = runBlocking {
         val directory = Files.createTempDirectory("bypass-return")
         val store = SaveProtectionStore(directory)

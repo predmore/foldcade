@@ -3,6 +3,7 @@ package app.foldcade
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SaveDestination
@@ -18,6 +19,8 @@ internal class ServerSaveFlow(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
     private val awaitsLoad: (String) -> Boolean,
+    private val preserveOutside: suspend (Game, Player, List<SaveSpot>, ObservedSaves) -> Boolean = { _, _, _, _ -> false },
+    private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
     private val awaitLoad: (String, Boolean) -> Unit,
 ) {
     suspend fun perform(request: SavePickerRequest, saveId: String?, destination: SaveDestination? = null) {
@@ -43,7 +46,8 @@ internal class ServerSaveFlow(
         // A server-only ROM has no new emulator progress to capture. Reading its file is unnecessary.
         if (!remote && player != null && spots.isNotEmpty()) {
             val observed = saves.changedSince(library, owner, player, spots, strict = true)
-            if (observed.slots.isNotEmpty()) {
+            val preserved = preserveOutside(owner, player, spots, observed)
+            if (observed.slots.isNotEmpty() && !preserved) {
                 plugins.reconcile(library, owner, playerForSaveSpots(player, owner, spots), observed)
                 saves.noteHandedOver(library, owner, player, spots, observed)
             }
@@ -73,6 +77,9 @@ internal class ServerSaveFlow(
             throw refused
         }
         // A failure after promotion keeps the marker: the new bytes must load on the next launch.
-        if (placed.isNotEmpty() && (player == null || !saves.place(library, owner, player, spots, placed))) throw SaveNotPlaced()
+        if (placed.isNotEmpty()) {
+            if (player == null || !saves.place(library, owner, player, spots, placed)) throw SaveNotPlaced()
+            if (placed.all { save -> spots.any { it.slot == save.slot } }) onHeadPlaced(owner, player)
+        }
     }
 }

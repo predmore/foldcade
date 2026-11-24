@@ -24,6 +24,7 @@ internal class LaunchSaves(
     private val protectionGate: suspend (GameRoute, Player, LaunchTarget) -> Unit = { _, _, _ -> },
     private val baseline: (Player, Game, LaunchTarget) -> app.foldcade.language.ProbeSnapshot? = { _, _, _ -> null },
     private val preserveOutside: suspend (Game, Player, List<SaveSpot>, app.foldcade.api.plugin.ObservedSaves) -> Boolean = { _, _, _, _ -> false },
+    private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -130,6 +131,8 @@ internal class LaunchSaves(
             // Card setup counts as a change too: a running player would still be holding the old card.
             if (written.isNotEmpty() || setup.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
+            if (placement.savesToPlace.isNotEmpty() && placement.savesToPlace.all { save -> spots.any { it.slot == save.slot } })
+                onHeadPlaced(owner, player)
             return PreparedLaunch(placement.target, spots, owner, baseline(player, owner, local))
         } catch (cancelled: CancellationException) {
             throw cancelled

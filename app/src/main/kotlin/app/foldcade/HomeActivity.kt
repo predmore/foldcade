@@ -2532,6 +2532,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
                 },
                 preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
+                onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
                 firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
                 onSpots = { game, picked, spots ->
@@ -2674,7 +2675,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun startPlayer(
+    private suspend fun startPlayer(
         game: ShelfGame,
         ready: PlayerLaunch.Ready,
         apiGame: Game,
@@ -4167,7 +4168,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             var failure = app.foldcade.language.SavePickerCopy.failed
             try {
                 foldcade.saveFlow.withLock {
-                    ServerSaveFlow(foldcade.playerSaves, foldcade.plugins, foldcade.store::saveAwaitsLoad, foldcade.store::setSaveAwaitsLoad)
+                    ServerSaveFlow(foldcade.playerSaves, foldcade.plugins, foldcade.store::saveAwaitsLoad,
+                        preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
+                        onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
+                        awaitLoad = foldcade.store::setSaveAwaitsLoad)
                         .perform(request.copy(player = installedPlayer), saveId, destination)
                 }
                 success = true

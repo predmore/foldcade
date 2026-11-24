@@ -332,9 +332,9 @@ internal class PlayerSaves(
     fun removeQueuedCopy(copy: StagedSaveCopy) {
         val file = java.nio.file.Paths.get(java.net.URI(copy.slot.contentUri!!))
         require(file.toAbsolutePath().normalize().parent == handover.toAbsolutePath().normalize())
-        // Both removals follow verification. A crash between them leaves only already-uploaded bytes.
-        Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
+        // Both removals follow verification. A crash between them leaves only a skipped sidecar.
         Files.deleteIfExists(file)
+        Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
     }
 
     private fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray): String {
