@@ -86,6 +86,14 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
             .apply()
     }
 
+    fun automaticUpdates(): Boolean = prefs.getBoolean("automatic_updates", true)
+    fun includePrereleases(): Boolean = prefs.getBoolean("include_prereleases", false)
+    fun setAutomaticUpdates(on: Boolean) { prefs.edit().putBoolean("automatic_updates", on).apply() }
+    fun setIncludePrereleases(on: Boolean) { prefs.edit().putBoolean("include_prereleases", on).apply() }
+
+    /** A self update kills this process, so finish every earlier apply before committing its session. */
+    fun flush() { check(prefs.edit().commit()) { "Settings could not be flushed" } }
+
     fun homePromptSettled(): Boolean = prefs.getBoolean(KEY_HOME_PROMPTED, false)
 
     fun setHomePromptSettled() {

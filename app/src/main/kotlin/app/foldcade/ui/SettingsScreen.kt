@@ -990,6 +990,8 @@ private fun settingsRowIcon(row: Row): Int? = when (row) {
     Row.Backup -> R.drawable.symbol_saves
     Row.AndroidSettings -> R.drawable.symbol_android_apps
     Row.Version -> R.drawable.ic_status_info
+    is Row.WhatsNew -> R.drawable.ic_status_info
+    Row.AutomaticUpdates, Row.IncludePrereleases -> R.drawable.symbol_restart
     Row.Licenses -> R.drawable.symbol_shield
     else -> rowIcon(row)
 }

@@ -6,6 +6,14 @@
 
 A debug install is `app.foldcade.debug`. The signed release stays `app.foldcade`, so the two do not replace each other.
 
+## Updates in Foldcade
+
+A CI release signed with Foldcade’s pinned release certificate checks `releases/latest` shortly after startup and every six hours. Settings › About’s **Update automatically** defaults on. **Include pre-releases** defaults off; when on, the rolling `pre-release` and latest stable are compared by their `versionCode:` hints. Turning it off never downgrades. Debug and local release builds have no self-update row. Plugins use stable releases in every build.
+
+Self-update waits for both screens to be free, no save sync, ROM download, theme install, setup backup/restore or launch, then screen-off or ten minutes without Home input. Settings are flushed before the install session commits. Android may still require confirmation, including when the APK’s target SDK is too old for silent installation on that Android release; R1 then offers the staged update for a confirmed install. The next process compares installed versions with its no-backup ledger and keeps an updated notice until read. A opens What’s new, also available in About and installed plugin pages.
+
+The rolling pre-release keeps its `versionName:`, `versionCode:` and `commit:` headers. When a reachable `v0.*` tag exists, its notes append `Changes since v<last stable>:` and the first-parent commit subjects between that tag and HEAD. Stable release publishing is unchanged.
+
 ## Install with Obtainium
 
 Add `https://github.com/predmore/foldcade`. Set the APK filter to `^foldcade\.apk$`. Every release file is named `foldcade.apk`.

@@ -43,7 +43,10 @@ data class PluginSource(
 
 object PluginRegistry {
     /** First-party plugins are signed with Foldcade's own release key. */
-    private const val FOLDCADE_RELEASE_SIGNER = "36f6883086e694e0a8b245421543063e6b96450970bd4030198543a59e6581ff"
+    const val FOLDCADE_RELEASE_SIGNER = "36f6883086e694e0a8b245421543063e6b96450970bd4030198543a59e6581ff"
+
+    /** Foldcade uses the same catalog, but is never a tile under Plugins. */
+    val foldcade = PluginSource("app.foldcade", "Foldcade", "Foldcade", "", "", "predmore/foldcade", "foldcade.apk", setOf(FOLDCADE_RELEASE_SIGNER))
 
     val moonlight = PluginSource(
         packageName = "app.foldcade.moonlight",
@@ -325,6 +328,6 @@ fun pluginPageCheck(inner: SettingsInner, model: PickerModel): Effect? {
         is SettingsInner.ApkPlugin -> inner.packageName
         else -> return null
     }
-    if (PluginRegistry.source(packageName) == null || model.pluginCatalog(packageName).let { it.busy || it.arriving }) return null
+    if (PluginRegistry.source(packageName) == null || model.pluginCatalogs[packageName]?.let { it.busy || it.arriving } == true) return null
     return Effect.CheckPluginRelease(packageName, onlyIfStale = true)
 }
