@@ -263,6 +263,8 @@ class FoldcadeApp : Application() {
      * so the companion beside it takes its title and hints once it starts.
      */
     internal var settingsPageActivity: app.foldcade.language.PanelKeyActivity? by mutableStateOf(null)
+    /** The staged install an update ready notice asked for while Android's install switch was off. Main thread. */
+    internal var installAfterAccess: String? = null
 
     /** Mark the page before Home stops, so its Settings parent never moves to the other screen. */
     internal fun noteSettingsPage(activity: android.app.Activity) {
