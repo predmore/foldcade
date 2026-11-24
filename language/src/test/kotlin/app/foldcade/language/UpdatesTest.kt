@@ -127,6 +127,15 @@ class UpdatesTest {
         assertTrue(updateNotesText(update, emptyList()).contains(UpdateCopy.empty))
     }
 
+    @Test fun aReleasesOwnSectionsSitOneLevelUnderItsVersion() {
+        val update = ComponentUpdate(packageName, "Foldcade", 1, "one", 3, "three", 0)
+        val notes = listOf(ReleaseNotes(3, "three", "# Top\n\nText\n\n## What's Changed\n\n### Thor\n\nMore"), ReleaseNotes(2, "two", "Two"))
+        val levels = noticeBlocks(updateNotesText(update, notes)).filter { it.heading }.map { it.text to it.level }
+        assertEquals(listOf("Foldcade three" to 1, "three" to 2, "Top" to 3, "What's Changed" to 3, "Thor" to 3, "two" to 2), levels)
+        // Licenses keep their one level: `#` and an underline are both 1.
+        assertEquals(listOf(1, 1), noticeBlocks("# Title\n\nText\n\nCOPYING\n-------\n\nMore").filter { it.heading }.map { it.level })
+    }
+
     @Test fun notesNameThePreviousVersionOnlyWhenItDiffersAndSubheadOnlyMultipleReleases() {
         val update = ComponentUpdate(packageName, "Foldcade", 1, "same", 2, "same", 0)
         val release = ReleaseNotes(2, "same", "A change")

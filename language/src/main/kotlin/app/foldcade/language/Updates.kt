@@ -80,13 +80,20 @@ private val MARKDOWN_LINK = Regex("\\[([^]]+)]\\([^)]*\\)")
 private val GITHUB_CREDIT = Regex(" by @[A-Za-z0-9_-]+ in https://github\\.com/\\S+/pull/[0-9]+\\s*$")
 
 /** Remove build bookkeeping and generated attribution, leaving readable release prose. */
+private val NOTE_HEADING = Regex("""#{1,6}\s+\S.*""")
+
 fun cleanReleaseNotes(body: String): String = body.lineSequence().map(String::trimEnd).filterNot { raw ->
     val line = raw.trim()
     NOTE_HEADER.matches(line) || line.startsWith("Asset name:") || line.startsWith("The release asset is ") ||
         line.startsWith("Complete source") || line.startsWith("**Full Changelog**:")
 }.map { raw ->
     val line = MARKDOWN_LINK.replace(GITHUB_CREDIT.replace(raw, ""), "$1")
-    if (line.startsWith("* ") || line.startsWith("- ")) "• " + line.drop(2) else line
+    when {
+        line.startsWith("* ") || line.startsWith("- ") -> "• " + line.drop(2)
+        // A release's own sections sit under the page's version headings, whatever depth its author used.
+        NOTE_HEADING.matches(line) -> "### " + line.trimStart('#').trim()
+        else -> line
+    }
 }.joinToString("\n").trim()
 
 fun ComponentUpdate.updatedFromLine(): String? = fromName?.takeIf { it.isNotBlank() && it != toName }?.let(UpdateCopy::from)

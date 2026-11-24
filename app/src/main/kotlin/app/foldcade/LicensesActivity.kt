@@ -153,13 +153,17 @@ internal fun NoticePage(theme: Theme, title: String, notice: String, scroll: Scr
                 Modifier.fillMaxSize().padding(end = 22.dp).verticalScroll(scroll).padding(vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                blocks.forEach { block ->
+                blocks.forEachIndexed { index, block ->
+                    // Each version after the first starts below a rule, so its sections read as its own.
+                    if (block.level == 2 && index > 0) Box(Modifier.fillMaxWidth().padding(top = 10.dp).height(1.dp).background(theme.muted.copy(alpha = 0.3f)))
+                    // A section inside one version is bold body text, a step under the version's heading.
+                    val major = block.heading && block.level <= 2
                     BasicText(
                         text = block.text,
                         style = TextStyle(
                             color = if (block.text == smallLine) theme.muted else theme.onBackground,
-                            fontFamily = if (block.heading) theme.displayFont else theme.font,
-                            fontSize = if (block.heading) theme.style.type.dialogTitle else if (block.text == smallLine) theme.style.type.hint else theme.style.type.dialogBody,
+                            fontFamily = if (major) theme.displayFont else theme.font,
+                            fontSize = if (major) theme.style.type.dialogTitle else if (block.text == smallLine) theme.style.type.hint else theme.style.type.dialogBody,
                             fontWeight = if (block.heading) theme.style.type.strongWeight else theme.style.type.bodyWeight,
                         ),
                     )

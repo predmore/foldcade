@@ -11,8 +11,12 @@ object LicenseCopy {
 fun licensesHints(faces: FaceMap): List<HintKey> =
     listOf(HintKey(PromptKey.DpadUpDown, LicenseCopy.scroll), HintKey(promptKeyOf(faces.backKey) ?: PromptKey.FaceB, Copy.back))
 
-/** One block of a notice as the page shows it: a heading, or a paragraph the page wraps itself. */
-data class NoticeBlock(val text: String, val heading: Boolean = false)
+/**
+ * One block of a notice as the page shows it: a heading, or a paragraph the page wraps itself.
+ * [level] is a heading's depth, its count of `#`; an underlined heading is 1. Release notes use
+ * 2 for each version and 3 for the sections inside one, so a version reads apart from its parts.
+ */
+data class NoticeBlock(val text: String, val heading: Boolean = false, val level: Int = if (heading) 1 else 0)
 
 /**
  * A plain-text or Markdown notice as blocks the page can wrap to its own width. The files are
@@ -39,7 +43,7 @@ fun noticeBlocks(text: String): List<NoticeBlock> {
             }
             line.startsWith("#") -> {
                 flush()
-                blocks += NoticeBlock(line.trimStart('#').trim(), heading = true)
+                blocks += NoticeBlock(line.trimStart('#').trim(), heading = true, level = line.takeWhile { it == '#' }.length)
             }
             lines.isNotEmpty() && lines.last().length >= WRAPPED_AT && !LIST_ITEM.containsMatchIn(line) ->
                 lines[lines.lastIndex] = lines.last() + " " + line.trim()
