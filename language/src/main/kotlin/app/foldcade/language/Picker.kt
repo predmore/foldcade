@@ -1959,7 +1959,7 @@ sealed interface Effect {
     /** Go to the board's folder [folderId] and open it, as L1's Games and Apps do. */
     data class OpenFolder(val folderId: String) : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
-    data class OpenWhatsNew(val packageName: String, val unread: Boolean = false) : Effect
+    data class OpenWhatsNew(val packageName: String) : Effect
     data object OpenLicenses : Effect
     data object OpenThemes : Effect
     data object OpenBackup : Effect
@@ -3358,7 +3358,7 @@ private fun TileActions.toggled(folderId: String): TileActions = copy(
 /** A. An app's notice opens that app and R1 closes. A Foldcade notice has no app, so A shows all of its text. */
 private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
-    notice.updatePackage?.let { return model.copy(panel = panel) to Effect.OpenWhatsNew(it, unread = true) }
+    notice.updatePackage?.let { return model.copy(panel = panel) to Effect.OpenWhatsNew(it) }
     notice.installUpdatePackage?.let { return model.copy(panel = null, focus = panel.grid) to Effect.InstallPlugin(it, staged = true) }
     if (notice.id == ROMM_SIGN_IN_NOTICE) return model.openRommSignIn(panel.grid)
     // The save-setup notices open Set up saves: the merged one at the first emulator that needs

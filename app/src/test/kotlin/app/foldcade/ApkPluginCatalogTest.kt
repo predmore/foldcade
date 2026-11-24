@@ -11,6 +11,24 @@ class ApkPluginCatalogTest {
     private val source = PluginRegistry.moonlight.copy(signers = trusted)
     private val archive = PluginArchive("app.foldcade.moonlight", 7, trusted)
 
+    @Test fun stagedReuseTracksTheAssetRatherThanOptionalOrStaleVersionHints() {
+        val staged = PluginRelease("pre-release", "https://example/rolling.apk", 100, 7)
+        assertFalse(mayReuseStagedRelease(null, staged))
+        assertTrue(mayReuseStagedRelease(staged, staged.copy(versionCode = null)))
+        assertTrue(mayReuseStagedRelease(staged, staged.copy(versionCode = 8)))
+        assertFalse(mayReuseStagedRelease(staged, staged.copy(url = "https://example/new.apk")))
+        assertFalse(mayReuseStagedRelease(staged, staged.copy(bytes = 101)))
+    }
+
+    @Test fun onlyAutomaticSessionsRestoreAndUncommittedSessionsAreAbandoned() {
+        assertEquals(17, restoredAutomaticSession(17, true))
+        assertNull(restoredAutomaticSession(17, false))
+        assertNull(restoredAutomaticSession(-1, true))
+        assertTrue(shouldAbandonInstallSession(false))
+        assertFalse(shouldAbandonInstallSession(true))
+        assertFalse(shouldAbandonInstallSession(null)) // Missing sessions settle by installed version.
+    }
+
     @Test fun requiresTheRegisteredPackageANewerVersionAndTheExactPinnedSignerSet() {
         assertEquals(PluginVerification.Verified, verifyPluginArchive(archive, null, source))
         assertEquals(PluginVerification.Verified, verifyPluginArchive(archive, 6, source.copy(signers = trusted.reversed().toSet())))

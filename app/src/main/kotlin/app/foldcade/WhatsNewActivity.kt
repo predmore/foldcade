@@ -54,7 +54,7 @@ class WhatsNewActivity : PanelKeyActivity() {
             }
             val back = promptKeyOf(faceMap().backKey) ?: PromptKey.FaceB
             CompositionLocalProvider(LocalFoldTheme provides paint) {
-                NoticePage(theme, UpdateCopy.title, text, scroll, back, ::finish, smallLine = update.fromName?.let(UpdateCopy::from))
+                NoticePage(theme, UpdateCopy.title, text, scroll, back, ::finish, smallLine = update.updatedFromLine())
             }
         }
         hideSystemBars()

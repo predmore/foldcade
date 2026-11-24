@@ -576,7 +576,7 @@ class FoldcadeApp : Application() {
 
     /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
     internal val runningGames = RunningGames().also { games ->
-        games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
+        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate() } }
     }
 
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
@@ -724,7 +724,7 @@ class FoldcadeApp : Application() {
                 includePrereleases = { store.includePrereleases() },
                 onRelease = { componentUpdates.keepRelease(source.packageName, it) },
                 onStaged = { componentUpdates.reevaluate() },
-                automaticAllowed = { componentUpdates.mayInstall(source == app.foldcade.language.PluginRegistry.foldcade) },
+                automaticAllowed = { componentUpdates.mayInstall(source.packageName) },
             ) {
                 shell.setPluginCatalog(source.packageName, it)
                 if (it.status == app.foldcade.language.PluginCatalogStatus.Installed) refreshApkPlugins()
@@ -860,7 +860,7 @@ class FoldcadeApp : Application() {
     private val playScreen = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             notePlayScreen()
-            componentUpdates.reevaluate()
+            componentUpdates.screenChanged(intent?.action == Intent.ACTION_SCREEN_OFF)
         }
     }
 
@@ -1351,7 +1351,7 @@ class FoldcadeApp : Application() {
 
     /** Removes a notice; only explicit user actions suppress later optional BIOS guidance. */
     fun dismissNotice(id: String, byUser: Boolean = false) {
-        componentUpdates.dismiss(id)
+        componentUpdates.dismiss(listOf(id))
         firmwareNoticeDismissals.dismiss(foldcadeNotices.firstOrNull { it.id == id }, byUser)
         playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
@@ -1368,7 +1368,7 @@ class FoldcadeApp : Application() {
     }
 
     fun clearNotices() {
-        foldcadeNotices.filter { it.dismissable }.forEach { componentUpdates.dismiss(it.id) }
+        componentUpdates.dismiss(foldcadeNotices.filter { it.dismissable }.map { it.id })
         foldcadeNotices.filter { it.dismissable }.forEach { firmwareNoticeDismissals.dismiss(it, byUser = true) }
         saveSetupNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }

@@ -161,12 +161,17 @@ internal class PanelRecoveryWindow(
         }
 
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) takeFocus()
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                (activity.application as FoldcadeApp).componentUpdates.playerInput()
+                takeFocus()
+            }
             return super.dispatchTouchEvent(event)
         }
 
-        override fun dispatchKeyEvent(event: KeyEvent): Boolean =
-            activity.dispatchFormKeyEvent(event) ?: (super.dispatchKeyEvent(event) || activity.dispatchKeyEvent(event))
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            (activity.application as FoldcadeApp).componentUpdates.playerInput()
+            return activity.dispatchFormKeyEvent(event) ?: (super.dispatchKeyEvent(event) || activity.dispatchKeyEvent(event))
+        }
 
         @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
         override fun onBackPressed() = activity.onBackPressedDispatcher.onBackPressed()

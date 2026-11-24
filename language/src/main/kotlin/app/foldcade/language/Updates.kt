@@ -15,8 +15,8 @@ object UpdateCopy {
     const val readyPrefix = "foldcade:update-ready:"
     fun updated(label: String) = "$label updated"
     fun body(version: String) = "$version · See what’s new"
-    fun ready(label: String, version: String) = "$label $version is ready"
-    const val readyBody = "Android asks before installing. Press A to install."
+    fun ready(label: String) = "$label update ready"
+    fun readyBody(version: String) = "$version · Android asks before it installs"
     fun from(version: String) = "Updated from $version"
 }
 
@@ -47,7 +47,7 @@ fun ComponentUpdate.notice(): FoldNotice = FoldNotice(
     updatePackage = packageName,
 )
 fun readyUpdateNotice(packageName: String, label: String, version: String, atMillis: Long): FoldNotice = FoldNotice(
-    UpdateCopy.readyPrefix + packageName, UpdateCopy.ready(label, version), UpdateCopy.readyBody, packageName, atMillis,
+    UpdateCopy.readyPrefix + packageName, UpdateCopy.ready(label), UpdateCopy.readyBody(version), packageName, atMillis,
     installUpdatePackage = packageName,
 )
 
@@ -56,11 +56,15 @@ data class UpdateGate(
     val automatic: Boolean, val screensFree: Boolean, val saveSync: Boolean = false, val romDownload: Boolean = false,
     val themeInstall: Boolean = false, val backup: Boolean = false, val launching: Boolean = false,
     val screenOff: Boolean = false, val homeShown: Boolean = true, val idleMillis: Long = 0,
+    val screenOffMillis: Long = 0, val holdingPlayers: Set<String> = emptySet(), val pluginWork: Boolean = false,
 )
 const val SELF_UPDATE_IDLE_MS = 10 * 60_000L
-fun mayInstallUpdate(self: Boolean, gate: UpdateGate): Boolean = gate.automatic && gate.screensFree &&
+const val SELF_UPDATE_SCREEN_OFF_MS = 5 * 60_000L
+fun mayInstallUpdate(packageName: String, self: Boolean, gate: UpdateGate): Boolean = gate.automatic && gate.screensFree &&
     !gate.saveSync && !gate.romDownload && !gate.themeInstall && !gate.backup && !gate.launching &&
-    (gate.screenOff || (gate.homeShown && (!self || gate.idleMillis >= SELF_UPDATE_IDLE_MS)))
+    (if (self) !gate.pluginWork &&
+        ((gate.screenOff && gate.screenOffMillis >= SELF_UPDATE_SCREEN_OFF_MS) || (gate.homeShown && gate.idleMillis >= SELF_UPDATE_IDLE_MS))
+    else packageName !in gate.holdingPlayers && (gate.screenOff || gate.homeShown))
 
 /** Eligibility is deliberately narrower than having the release application id. */
 fun mayUpdateFoldcade(packageName: String, origin: String, signers: Set<String>): Boolean =
@@ -85,9 +89,11 @@ fun cleanReleaseNotes(body: String): String = body.lineSequence().map(String::tr
     if (line.startsWith("* ") || line.startsWith("- ")) "• " + line.drop(2) else line
 }.joinToString("\n").trim()
 
+fun ComponentUpdate.updatedFromLine(): String? = fromName?.takeIf { it.isNotBlank() && it != toName }?.let(UpdateCopy::from)
+
 fun updateNotesText(update: ComponentUpdate, notes: List<ReleaseNotes>): String = buildString {
     appendLine("# ${update.label} ${update.toName}")
-    update.fromName?.let { appendLine(); appendLine(UpdateCopy.from(it)) }
+    update.updatedFromLine()?.let { appendLine(); appendLine(it) }
     if (notes.isEmpty()) { appendLine(); appendLine(UpdateCopy.empty) }
     notes.forEach { release ->
         appendLine()

@@ -9,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
+import android.util.Log
 import androidx.annotation.MainThread
 import app.foldcade.language.ApkPluginCopy
 import app.foldcade.language.PluginCatalogSetting
@@ -18,6 +19,7 @@ import app.foldcade.language.PluginRegistry
 import app.foldcade.net.PublicHttps
 import app.foldcade.romm.writeDurably
 import java.io.File
+import java.io.IOException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +40,13 @@ internal fun latestReleaseApi(source: PluginSource): String = "https://api.githu
 internal data class PluginRelease(val tag: String, val url: String, val bytes: Long, val versionCode: Long? = null, val body: String = "", val versionName: String? = null) {
     val name: String? get() = versionName ?: tag.removePrefix("v").ifBlank { null }
 }
+
+/** Version hints may be absent or disagree with a replaced rolling asset. The asset identifies reuse. */
+internal fun mayReuseStagedRelease(staged: PluginRelease?, latest: PluginRelease): Boolean =
+    staged != null && staged.url == latest.url && staged.bytes == latest.bytes
+
+internal fun restoredAutomaticSession(id: Int, automatic: Boolean): Int? = id.takeIf { automatic && it >= 0 }
+internal fun shouldAbandonInstallSession(committed: Boolean?): Boolean = committed == false
 
 private val VERSION_CODE_LINE = Regex("""versionCode:[ \t]*([1-9][0-9]{0,17})""")
 
@@ -147,12 +156,14 @@ internal class ApkPluginCatalog(
     private val scope: CoroutineScope,
     val source: PluginSource,
     private val includePrereleases: () -> Boolean = { false },
-    private val onRelease: (PluginRelease) -> Unit = {},
+    private val onRelease: suspend (PluginRelease) -> Unit = {},
     private val onStaged: () -> Unit = {},
     private val automaticAllowed: () -> Boolean = { false },
     private val publish: (PluginCatalogSetting) -> Unit,
 ) {
-    private var work: Job? = null
+    @Volatile private var work: Job? = null
+    /** Self-update waits for plugin downloads, staging, commits and their Android results. */
+    val installInFlight: Boolean get() = work?.isActive == true || session != null
     private var release: PluginRelease? = null
     private var stagedRelease: PluginRelease? = null
     private var state = PluginCatalogSetting()
@@ -185,15 +196,20 @@ internal class ApkPluginCatalog(
             if (stagedFile.isFile) {
                 release = parsePluginRelease(saved.getString("release"), source,
                     if (saved.optBoolean("prerelease")) ReleaseChannel.Prerelease else ReleaseChannel.Stable)
-                stagedRelease = release
                 stagedCode = saved.getLong("code")
                 stagedName = saved.getString("name")
+                release = release?.copy(versionCode = stagedCode, versionName = stagedName)
+                stagedRelease = release
                 stagedAt = saved.optLong("atMillis", System.currentTimeMillis())
                 needsConfirmation = saved.optBoolean("confirmation")
-                session = saved.optInt("session", -1).takeIf { it >= 0 }
                 automaticSession = saved.optBoolean("automatic")
+                session = restoredAutomaticSession(saved.optInt("session", -1), automaticSession)
                 assessedCode = if (saved.has("assessedCode") && !saved.isNull("assessedCode")) saved.getLong("assessedCode") else null
+                // Forget manual confirmations from older metadata; they are reassessed by installed version.
+                if (!automaticSession && saved.optInt("session", -1) >= 0) saveStaged()
+                abandonUncommittedSession()
                 if (session != null) state = PluginCatalogSetting(PluginCatalogStatus.Installing, installed = assessedCode != null)
+                else state = PluginCatalogSetting(releaseStatus(release, assessedCode), installed = assessedCode != null)
             }
         } catch (_: Exception) { clearStaged() }
     }
@@ -205,9 +221,28 @@ internal class ApkPluginCatalog(
                 .put("name", source.asset).put("size", latest.bytes).put("browser_download_url", latest.url)))
         val saved = JSONObject().put("release", root.toString()).put("prerelease", latest.tag == "pre-release")
             .put("code", stagedCode).put("name", stagedName).put("confirmation", needsConfirmation)
-            .put("atMillis", stagedAt).put("session", session ?: -1).put("automatic", automaticSession).put("assessedCode", assessedCode)
+            .put("atMillis", stagedAt).put("session", session.takeIf { automaticSession } ?: -1)
+            .put("automatic", automaticSession).put("assessedCode", assessedCode)
         stagedInfo.parentFile?.mkdirs()
-        writeDurably(stagedInfo.toPath(), saved.toString().toByteArray())
+        try { writeDurably(stagedInfo.toPath(), saved.toString().toByteArray()) }
+        catch (failure: IOException) { Log.w("FoldcadeUpdates", "Staged metadata not saved: ${source.packageName}", failure) }
+    }
+
+    /** A process can die after copying a session but before commit. Keep the APK and retry later. */
+    private fun abandonUncommittedSession(): Boolean {
+        if (!automaticSession) return false
+        val id = session ?: return false
+        val installer = context.packageManager.packageInstaller
+        val info = installer.getSessionInfo(id)
+        if (!shouldAbandonInstallSession(info?.isCommitted)) return false
+        try { installer.abandonSession(id) } catch (failure: RuntimeException) {
+            Log.w("FoldcadeUpdates", "Could not abandon stale install session", failure)
+        }
+        session = null
+        automaticSession = false
+        attemptedAutomatically = false
+        saveStaged()
+        return true
     }
 
     private fun clearStaged() {
@@ -316,6 +351,7 @@ internal class ApkPluginCatalog(
     fun reassess() {
         if (work?.isActive == true) return
         val code = installedCode()
+        if (abandonUncommittedSession()) showFor(releaseStatus(release, code), code)
         if (stagedCode?.let { code != null && code >= it } == true || code == null) {
             clearStaged()
             onStaged()
@@ -352,7 +388,7 @@ internal class ApkPluginCatalog(
                     return@launch
                 }
                 staged.parentFile?.mkdirs()
-                if (stagedCode == null || (latest.versionCode != null && latest.versionCode != stagedCode)) {
+                if (stagedCode == null || !staged.isFile || !mayReuseStagedRelease(stagedRelease, latest)) {
                     clearStaged()
                     show(PluginCatalogStatus.Downloading)
                     // Each whole percent fills the row a little more; the release's own size stands in for a missing length.
@@ -373,25 +409,26 @@ internal class ApkPluginCatalog(
                         }
                     }
                 }
-                require(staged.length() == latest.bytes) { "Incomplete release asset" }
+                if (staged.length() != latest.bytes) { clearStaged(); error("Incomplete release asset") }
                 failureMessage = ApkPluginCopy.verificationFailed
                 val pm = context.packageManager
                 val info = pm.getPackageArchiveInfo(staged.path, PackageManager.GET_SIGNING_CERTIFICATES)
                 val archive = info?.let { PluginArchive(it.packageName, it.longVersionCode, it.signerDigests()) }
-                if (archive == null) { show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
+                if (archive == null) { clearStaged(); show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
                 val code = installedCode()
                 when (verifyPluginArchive(archive, code, source)) {
                     PluginVerification.NotNewer -> { clearStaged(); showChosen(PluginCatalogStatus.Current, code); return@launch }
                     PluginVerification.Verified -> Unit
-                    else -> { show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
+                    else -> { clearStaged(); show(PluginCatalogStatus.Failed, detail = ApkPluginCopy.verificationFailed); return@launch }
                 }
                 java.io.RandomAccessFile(staged, "rw").use { it.fd.sync() }
-                stagedRelease = latest
+                val verifiedRelease = latest.copy(versionCode = archive.versionCode, versionName = info.versionName ?: latest.name.orEmpty())
+                stagedRelease = verifiedRelease
                 if (stagedCode != archive.versionCode) stagedAt = System.currentTimeMillis()
                 stagedCode = archive.versionCode
                 stagedName = info.versionName ?: latest.name.orEmpty()
                 saveStaged()
-                onRelease(latest.copy(versionCode = archive.versionCode, versionName = stagedName))
+                onRelease(verifiedRelease)
                 if (stageOnly) {
                     showChosen(PluginCatalogStatus.UpdateAvailable, code)
                     return@launch
@@ -477,16 +514,22 @@ internal class ApkPluginCatalog(
                 this.session = id
                 automaticSession = automatic
                 saveStaged()
+                val self = (context.applicationContext as? FoldcadeApp)?.takeIf { source == PluginRegistry.foldcade }
+                if (self != null) {
+                    self.componentUpdates.flush()
+                    // Blocking preference IO finishes before the final Main-thread gate reading.
+                    withContext(Dispatchers.IO) { self.store.flush() }
+                }
                 withContext(Dispatchers.Main.immediate) {
                     // Staging can take time. Read the gate again on the same main-thread turn as commit.
-                    if (automatic && !automaticAllowed()) {
+                    // Manual self updates also leave plugin work intact and remain available to retry.
+                    if ((automatic && !automaticAllowed()) || self?.componentUpdates?.pluginWorkInFlight == true) {
                         this@ApkPluginCatalog.session = null
                         attemptedAutomatically = false
                         installer.abandonSession(id)
                         saveStaged()
                         showFor(PluginCatalogStatus.UpdateAvailable, installedCode())
                     } else {
-                        if (source == PluginRegistry.foldcade) (context.applicationContext as FoldcadeApp).store.flush()
                         session.commit(result.intentSender)
                     }
                 }
@@ -494,7 +537,9 @@ internal class ApkPluginCatalog(
         } catch (failure: Exception) {
             // Abandoned: its late report must not count as the attempt still waiting.
             session = null
-            installer.abandonSession(id)
+            automaticSession = false
+            saveStaged()
+            try { installer.abandonSession(id) } catch (_: RuntimeException) { }
             throw failure
         }
     }

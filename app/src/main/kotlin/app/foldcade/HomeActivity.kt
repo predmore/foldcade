@@ -526,10 +526,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             Effect.OpenAllFilesAccess -> openAllFilesAccess()
             is Effect.OpenWhatsNew -> {
-                val update = foldcade.componentUpdates.store.update(effect.packageName, foldcade.componentUpdates.label(effect.packageName), effect.unread)
-                if (update != null) {
-                    openSettingsPage(WhatsNewActivity::class.java) { putUpdate(it, update) }
-                    if (effect.unread) foldcade.dismissNotice(app.foldcade.language.UpdateCopy.updatedPrefix + effect.packageName, byUser = true)
+                foldcade.scope.launch {
+                    val update = foldcade.componentUpdates.update(effect.packageName)
+                    if (update != null) withContext(Dispatchers.Main.immediate) {
+                        openSettingsPage(WhatsNewActivity::class.java) { putUpdate(it, update) }
+                        foldcade.dismissNotice(app.foldcade.language.UpdateCopy.updatedPrefix + effect.packageName, byUser = true)
+                    }
                 }
             }
             Effect.OpenLicenses -> openSettingsPage(LicensesActivity::class.java)
@@ -823,6 +825,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
         if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) foldcade.componentUpdates.playerInput()
         return super.dispatchTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        foldcade.componentUpdates.playerInput()
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onResume() {

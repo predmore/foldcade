@@ -42,18 +42,26 @@ class UpdatesTest {
         assertEquals("plugin", ledger.read(packageName).unread.single().packageName)
         val ready = readyUpdateNotice("plugin", "Foldcade Moonlight", "12.2", 5000)
         assertEquals("foldcade:update-ready:plugin", ready.id)
-        assertEquals("Foldcade Moonlight 12.2 is ready", ready.title)
-        assertEquals(UpdateCopy.readyBody, ready.body)
+        assertEquals("Foldcade Moonlight update ready", ready.title)
+        assertEquals("12.2 · Android asks before it installs", ready.body)
         assertEquals("plugin", ready.installUpdatePackage)
     }
 
-    @Test fun aPluginNeedsFreeScreensAndNoCompetingWorkAndSelfAlsoNeedsAnIdleHomeOrScreenOff() {
+    private fun mayInstallUpdate(self: Boolean, gate: UpdateGate): Boolean =
+        app.foldcade.language.mayInstallUpdate(if (self) packageName else PluginRegistry.moonlight.packageName, self, gate)
+
+    @Test fun aPluginNeedsFreeScreensAndNoCompetingWorkAndSelfAlsoNeedsAnIdleHomeOrFiveMinutesOff() {
         val open = UpdateGate(automatic = true, screensFree = true)
         assertTrue(mayInstallUpdate(false, open))
         assertFalse(mayInstallUpdate(true, open))
         assertFalse(mayInstallUpdate(true, open.copy(idleMillis = SELF_UPDATE_IDLE_MS - 1)))
         assertTrue(mayInstallUpdate(true, open.copy(idleMillis = SELF_UPDATE_IDLE_MS)))
-        assertTrue(mayInstallUpdate(true, open.copy(homeShown = false, screenOff = true)))
+        assertFalse(mayInstallUpdate(true, open.copy(homeShown = false, screenOff = true)))
+        assertFalse(mayInstallUpdate(true, open.copy(screenOff = true, screenOffMillis = SELF_UPDATE_SCREEN_OFF_MS - 1)))
+        assertTrue(mayInstallUpdate(true, open.copy(homeShown = false, screenOff = true, screenOffMillis = SELF_UPDATE_SCREEN_OFF_MS)))
+        assertFalse(mayInstallUpdate(true, open.copy(homeShown = false, screenOffMillis = SELF_UPDATE_SCREEN_OFF_MS)))
+        assertTrue(mayInstallUpdate(true, open.copy(screenOff = true, idleMillis = SELF_UPDATE_IDLE_MS)))
+        assertTrue(mayInstallUpdate(false, open.copy(homeShown = false, screenOff = true)))
         assertFalse(mayInstallUpdate(false, open.copy(homeShown = false)))
         val blocked = listOf(open.copy(automatic = false), open.copy(screensFree = false), open.copy(saveSync = true),
             open.copy(romDownload = true), open.copy(themeInstall = true), open.copy(backup = true), open.copy(launching = true))
@@ -61,6 +69,19 @@ class UpdatesTest {
             assertFalse(mayInstallUpdate(false, gate))
             assertFalse(mayInstallUpdate(true, gate.copy(screenOff = true, idleMillis = SELF_UPDATE_IDLE_MS)))
         }
+    }
+
+    @Test fun aPluginCannotReplaceItsSuspendedGameAndSelfWaitsForPluginWork() {
+        val moonlight = PluginRegistry.moonlight.packageName
+        val open = UpdateGate(automatic = true, screensFree = true, idleMillis = SELF_UPDATE_IDLE_MS,
+            holdingPlayers = setOf(moonlight))
+        assertFalse(app.foldcade.language.mayInstallUpdate(moonlight, false, open))
+        assertFalse(app.foldcade.language.mayInstallUpdate(moonlight, false, open.copy(screenOff = true)))
+        assertTrue(app.foldcade.language.mayInstallUpdate(PluginRegistry.thor.packageName, false, open))
+        // Foldcade's replacement does not kill the separate player process.
+        assertTrue(mayInstallUpdate(true, open))
+        assertFalse(mayInstallUpdate(true, open.copy(pluginWork = true)))
+        assertFalse(mayInstallUpdate(true, open.copy(pluginWork = true, screenOff = true, screenOffMillis = SELF_UPDATE_SCREEN_OFF_MS)))
     }
 
     @Test fun onlyTheCiReleasePackageWithTheReleaseSignerUpdatesItself() {
@@ -106,6 +127,22 @@ class UpdatesTest {
         assertTrue(updateNotesText(update, emptyList()).contains(UpdateCopy.empty))
     }
 
+    @Test fun notesNameThePreviousVersionOnlyWhenItDiffersAndSubheadOnlyMultipleReleases() {
+        val update = ComponentUpdate(packageName, "Foldcade", 1, "same", 2, "same", 0)
+        val release = ReleaseNotes(2, "same", "A change")
+        val single = updateNotesText(update, listOf(release))
+        assertNull(update.updatedFromLine())
+        assertFalse(single.contains("Updated from"))
+        assertFalse(single.contains("## same"))
+        assertNull(update.copy(fromName = null).updatedFromLine())
+        assertNull(update.copy(fromName = "").updatedFromLine())
+        assertEquals("Updated from old", update.copy(fromName = "old").updatedFromLine())
+        val merged = updateNotesText(update.copy(fromName = "old"), listOf(release, release.copy(code = 1, name = "middle")))
+        assertTrue(merged.contains("Updated from old"))
+        assertTrue(merged.contains("## same"))
+        assertTrue(merged.contains("## middle"))
+    }
+
     @Test fun aboutRowsAndCaptionsMatchBuildEligibilityAndHintsNameTheReleaseAction() {
         val debug = PickerModel(1, 1, appPackage = "app.foldcade.debug")
         assertEquals(listOf(Row.AutomaticUpdates, Row.WhatsNew("app.foldcade.debug"), Row.Version, Row.Licenses), settingsRows(SettingsCategory.About, debug))
@@ -128,7 +165,7 @@ class UpdatesTest {
     @Test fun updateNoticesRouteToNotesAndReadyNoticesRouteToTheirStagedApk() {
         val update = ComponentUpdate(packageName, "Foldcade", 1, "one", 2, "two", 100).notice()
         val ready = readyUpdateNotice(packageName, "Foldcade", "two", 100)
-        for ((notice, expected) in listOf(update to Effect.OpenWhatsNew(packageName, unread = true), ready to Effect.InstallPlugin(packageName, staged = true))) {
+        for ((notice, expected) in listOf(update to Effect.OpenWhatsNew(packageName), ready to Effect.InstallPlugin(packageName, staged = true))) {
             val model = PickerModel(1, 1, notices = listOf(notice), askNoticeAccess = false)
             val right = reduce(model, Meaning.RightPanel).first
             val focused = right.copy(panel = right.panel!!.copy(index = panelRows(right.panel!!, right).indexOf(Row.Notice(notice.id))))

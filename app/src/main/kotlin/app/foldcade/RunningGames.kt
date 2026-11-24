@@ -98,6 +98,8 @@ internal class RunningGames {
 
     fun packages(): Set<String> = byPackage.keys.toSet()
 
+    fun holdingPackages(): Set<String> = byPackage.keys + holdingOnly
+
     /** True when [packageName] may still hold a game Foldcade started, in this process or an earlier one. */
     fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)
 

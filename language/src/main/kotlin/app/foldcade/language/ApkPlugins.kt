@@ -99,10 +99,10 @@ fun requireValidRegistry(sources: List<PluginSource>) {
     }
 }
 
-enum class PluginCatalogStatus { Checking, Ready, UpdateAvailable, NotPublished, Unavailable, Downloading, Installing, Installed, Current, NeedsPermission, Failed }
+enum class PluginCatalogStatus { Unchecked, Checking, Ready, UpdateAvailable, NotPublished, Unavailable, Downloading, Installing, Installed, Current, NeedsPermission, Failed }
 
 data class PluginCatalogSetting(
-    val status: PluginCatalogStatus = PluginCatalogStatus.Checking,
+    val status: PluginCatalogStatus = PluginCatalogStatus.Unchecked,
     val installed: Boolean = false,
     val progress: Int? = null,
     val detail: String? = null,
@@ -112,7 +112,7 @@ data class PluginCatalogSetting(
     // Current only holds while the package is there; after an uninstall, Install works again. Installed never
     // installs again: before Android reports the package it is still arriving, and a removal re-offers the release.
     val canInstall: Boolean get() = !busy && status !in setOf(PluginCatalogStatus.NotPublished, PluginCatalogStatus.Unavailable, PluginCatalogStatus.Installed) &&
-        !(installed && status == PluginCatalogStatus.Current)
+        !(installed && status in setOf(PluginCatalogStatus.Current, PluginCatalogStatus.Unchecked))
     val busy: Boolean get() = status in setOf(PluginCatalogStatus.Checking, PluginCatalogStatus.Downloading, PluginCatalogStatus.Installing)
 
     /**
@@ -122,7 +122,7 @@ data class PluginCatalogSetting(
     val arriving: Boolean get() = status == PluginCatalogStatus.Installed && !installed
 }
 
-/** [packageName]'s catalog state. A registry plugin no check has reported on yet is still checking. */
+/** No catalog answer means not checked yet; opening the page starts its stale-only check. */
 fun PickerModel.pluginCatalog(packageName: String): PluginCatalogSetting =
     pluginCatalogs[packageName] ?: PluginCatalogSetting(installed = apkPlugins.any { it.packageName == packageName })
 
@@ -168,6 +168,7 @@ object ApkPluginCopy {
         val take = if (catalog.installed) update else install
         val check = if (catalog.installed) check else checkAgain
         return when (catalog.status) {
+            PluginCatalogStatus.Unchecked -> PluginAction(if (catalog.installed) ApkPluginCopy.check else install, null)
             PluginCatalogStatus.Checking -> PluginAction(check, "Checking…")
             // Installed, with a release that does not say its version: only the download can tell whether it is newer.
             PluginCatalogStatus.Ready -> PluginAction(take, catalog.latest)

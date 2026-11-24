@@ -220,10 +220,26 @@ class ApkPluginSettingsTest {
         assertTrue(PluginCatalogSetting(PluginCatalogStatus.Current, installed = false).canInstall)
     }
 
-    @Test fun aPluginNotYetCheckedIsCheckingAndKnowsWhetherItIsInstalled() {
-        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin.copy(packageName = moonlight)))
-        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true), model.pluginCatalog(moonlight))
-        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = false), PickerModel(count = 4, rowsPerPage = 1).pluginCatalog(moonlight))
+    @Test fun aPluginNotYetCheckedIsNotBusyAndKeepsTheCatalogInstallOffer() {
+        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin.copy(packageName = moonlight, granted = plugin.scopes)))
+        val installed = model.pluginCatalog(moonlight)
+        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Unchecked, installed = true), installed)
+        assertFalse(installed.busy)
+        assertFalse(installed.canInstall)
+        assertFalse(installed.arriving)
+        assertNull(pluginListing(SettingsInner.ApkPlugin(moonlight), model)!!.value)
+        assertEquals(Effect.CheckPluginRelease(moonlight), reduce(model.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
+        val catalogModel = PickerModel(count = 4, rowsPerPage = 1)
+        val unchecked = catalogModel.pluginCatalog(moonlight)
+        assertEquals(PluginCatalogStatus.Unchecked, unchecked.status)
+        assertFalse(unchecked.busy)
+        assertTrue(unchecked.canInstall)
+        val listing = pluginListing(catalogPage, catalogModel)!!
+        assertEquals(ApkPluginCopy.install, listing.value)
+        assertEquals(PluginRegistry.moonlight.detail, listing.line)
+        assertTrue(listing.offer)
+        assertEquals(Effect.CheckPluginRelease(moonlight, onlyIfStale = true), pluginPageCheck(catalogPage, catalogModel))
+        assertEquals(catalogModel, afterApkPluginInstall(catalogModel, catalogModel))
     }
 
     @Test fun onlyAPluginSignedAsItsRegistryEntryPinsReadsVerified() {

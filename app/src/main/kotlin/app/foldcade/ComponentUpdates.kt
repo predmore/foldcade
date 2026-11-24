@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.app.AlarmManager
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -10,6 +11,7 @@ import app.foldcade.language.*
 import app.foldcade.net.PublicHttps
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
@@ -28,8 +30,17 @@ internal fun automaticStartupDelay(now: Long, lastSuccess: Long): Long =
 
 /** One scheduler and one quiet-moment gate for the app and every installed registry plugin. */
 internal class ComponentUpdates(private val app: FoldcadeApp) {
-    val store = UpdateStore(File(app.noBackupFilesDir, "updates/ledger.json"))
+    private var store: UpdateStore? = null
+    private val loading by lazy { app.scope.async {
+        UpdateStore(File(app.noBackupFilesDir, "updates/ledger.json"), app.scope).also { loaded ->
+            observeVersions(loaded)
+            withContext(Dispatchers.Main.immediate) { store = loaded; publishNotices() }
+        }
+    } }
     private val main = Handler(Looper.getMainLooper())
+    private val alarms = app.getSystemService(AlarmManager::class.java)
+    private var screenOffAt: Long? = null
+    private val screenOffAlarm = AlarmManager.OnAlarmListener { reevaluate() }
     private var lastInput = SystemClock.elapsedRealtime()
     private val idle = Runnable { reevaluate() }
     private var started = false
@@ -51,25 +62,31 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
     /** Package broadcasts and startup use the same comparison, including updates installed outside Foldcade. */
     fun observeInstalled() {
         app.scope.launch {
+            val loaded = loading.await()
             observations.withLock {
-                (listOf(app.packageName) + PluginRegistry.sources.map { it.packageName }).forEach { packageName ->
-                    try {
-                        val info = app.packageManager.getPackageInfo(packageName, 0)
-                        store.observe(packageName, label(packageName), info.longVersionCode, info.versionName.orEmpty(), System.currentTimeMillis())
-                    } catch (_: PackageManager.NameNotFoundException) { }
-                }
+                observeVersions(loaded)
                 withContext(Dispatchers.Main.immediate) { publishNotices() }
             }
+        }
+    }
+
+    private fun observeVersions(loaded: UpdateStore) {
+        (listOf(app.packageName) + PluginRegistry.sources.map { it.packageName }).forEach { packageName ->
+            try {
+                val info = app.packageManager.getPackageInfo(packageName, 0)
+                loaded.observe(packageName, label(packageName), info.longVersionCode, info.versionName.orEmpty(), System.currentTimeMillis())
+            } catch (_: PackageManager.NameNotFoundException) { }
         }
     }
 
     fun start() {
         if (started) return
         started = true
-        observeInstalled()
+        screenChanged()
         app.scope.launch {
+            val loaded = loading.await()
             app.awaitPlugins()
-            var nextCheck = SystemClock.elapsedRealtime() + automaticStartupDelay(System.currentTimeMillis(), store.lastAutomaticCheck)
+            var nextCheck = SystemClock.elapsedRealtime() + automaticStartupDelay(System.currentTimeMillis(), loaded.lastAutomaticCheck)
             while (true) {
                 val remaining = nextCheck - SystemClock.elapsedRealtime()
                 if (remaining > 0) {
@@ -84,13 +101,14 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
                         catch (_: PackageManager.NameNotFoundException) { false }
                     if (installed) success = catalog.automaticCheck(enabled) && success
                 }
-                if (success) store.checked(System.currentTimeMillis())
+                if (success) loaded.checked(System.currentTimeMillis())
                 withContext(Dispatchers.Main.immediate) { reevaluate() }
                 nextCheck = SystemClock.elapsedRealtime() + if (success) AUTO_UPDATE_INTERVAL_MS else AUTO_UPDATE_RETRY_MS
             }
         }
         app.scope.launch(Dispatchers.Main.immediate) {
-            snapshotFlow { gate() }.collect { reevaluate() }
+            // Elapsed durations have their own deadlines; model changes should compare only gate state.
+            snapshotFlow { gate().copy(idleMillis = 0, screenOffMillis = 0) }.collect { reevaluate() }
         }
         app.scope.launch(Dispatchers.Main.immediate) {
             var previous = app.shell.model.includePrereleases
@@ -118,6 +136,26 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
         main.postDelayed(idle, SELF_UPDATE_IDLE_MS)
     }
 
+    /** A brief lid close must never authorize a process-killing self update. */
+    fun screenChanged(off: Boolean = app.getSystemService(PowerManager::class.java)?.isInteractive == false) {
+        if (off) {
+            if (screenOffAt == null) {
+                val off = SystemClock.elapsedRealtime()
+                screenOffAt = off
+                alarms?.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, off + SELF_UPDATE_SCREEN_OFF_MS,
+                    "foldcade:self-update", screenOffAlarm, main)
+            }
+        } else {
+            screenOffAt = null
+            alarms?.cancel(screenOffAlarm)
+        }
+        reevaluate()
+    }
+
+    val pluginWorkInFlight: Boolean get() = app.apkPluginCatalogs.values.any {
+        it.source != PluginRegistry.foldcade && it.installInFlight
+    }
+
     private fun gate(): UpdateGate = UpdateGate(
         automatic = app.shell.model.automaticUpdates,
         screensFree = app.store.session.bothScreensFree(),
@@ -131,9 +169,12 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
         screenOff = app.getSystemService(PowerManager::class.java)?.isInteractive == false,
         homeShown = app.updateHomeShown,
         idleMillis = SystemClock.elapsedRealtime() - lastInput,
+        screenOffMillis = screenOffAt?.let { SystemClock.elapsedRealtime() - it } ?: 0,
+        holdingPlayers = app.runningGames.holdingPackages(),
+        pluginWork = pluginWorkInFlight,
     )
 
-    fun mayInstall(self: Boolean): Boolean = mayInstallUpdate(self, gate())
+    fun mayInstall(packageName: String): Boolean = mayInstallUpdate(packageName, packageName == app.packageName, gate())
 
     /** Event driven: a gate change, Home return, screen-off or the idle deadline. */
     fun reevaluate() {
@@ -147,18 +188,24 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
             gate = gate.copy(idleMillis = 0)
         }
         wasHomeReady = homeReady
-        app.apkPluginCatalogs.values.forEach { catalog ->
-            if (mayInstallUpdate(catalog.source == PluginRegistry.foldcade, gate)) catalog.installAutomatically()
+        val catalogs = app.apkPluginCatalogs.values
+        catalogs.filter { it.source != PluginRegistry.foldcade }.forEach { catalog ->
+            if (mayInstallUpdate(catalog.source.packageName, false, gate)) catalog.installAutomatically()
+        }
+        // Starting a plugin above makes its job active immediately. Self goes last and checks again at commit.
+        catalogs.firstOrNull { it.source == PluginRegistry.foldcade }?.let { self ->
+            if (mayInstall(self.source.packageName)) self.installAutomatically()
         }
         main.removeCallbacks(idle)
         if (gate.idleMillis < SELF_UPDATE_IDLE_MS) main.postDelayed(idle, SELF_UPDATE_IDLE_MS - gate.idleMillis)
     }
 
-    fun keepRelease(packageName: String, release: PluginRelease) {
-        store.keepNotes(packageName, listOf(ReleaseNotes(release.versionCode, release.name.orEmpty(), release.body, release.tag == "pre-release", release.tag)))
+    suspend fun keepRelease(packageName: String, release: PluginRelease) {
+        loading.await().keepNotes(packageName, listOf(ReleaseNotes(release.versionCode, release.name.orEmpty(), release.body, release.tag == "pre-release", release.tag)))
     }
 
     fun publishNotices() {
+        val store = store ?: return // Loaded history is observed before any update notice is published.
         val notices = store.unread().map { it.notice() }.toMutableList()
         app.apkPluginCatalogs.values.forEach { catalog ->
             val code = catalog.stagedCode
@@ -169,17 +216,25 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
         app.replaceUpdateNotices(notices)
     }
 
-    fun dismiss(id: String) {
-        when {
-            id.startsWith(UpdateCopy.updatedPrefix) -> store.read(id.removePrefix(UpdateCopy.updatedPrefix))
+    fun dismiss(ids: List<String>) {
+        val store = store ?: return
+        val read = mutableSetOf<String>()
+        val ready = mutableMapOf<String, Long>()
+        ids.forEach { id -> when {
+            id.startsWith(UpdateCopy.updatedPrefix) -> read += id.removePrefix(UpdateCopy.updatedPrefix)
             id.startsWith(UpdateCopy.readyPrefix) -> {
                 val packageName = id.removePrefix(UpdateCopy.readyPrefix)
-                app.apkPluginCatalogs[packageName]?.stagedCode?.let { store.hideReady(packageName, it) }
+                app.apkPluginCatalogs[packageName]?.stagedCode?.let { ready[packageName] = it }
             }
-        }
+        } }
+        if (read.isNotEmpty() || ready.isNotEmpty()) store.dismiss(read, ready)
     }
 
+    suspend fun update(packageName: String): ComponentUpdate? = loading.await().update(packageName, label(packageName))
+    suspend fun flush() = loading.await().flush()
+
     suspend fun notes(update: ComponentUpdate): List<ReleaseNotes> {
+        val store = loading.await()
         store.cached(update)?.let { return it }
         val source = if (update.packageName == app.packageName) PluginRegistry.foldcade else PluginRegistry.source(update.packageName)
             ?: return emptyList()
