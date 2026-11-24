@@ -39,6 +39,7 @@ import org.junit.Test
 class DeviceControlTest {
     private class Plugin : DeviceTransport {
         @Volatile var screens = "top"
+        @Volatile var bottom = 0.5f
         @Volatile var game: String? = null
         @Volatile var blocking: String? = null
         @Volatile var capabilities = arrayOf("fan", "gameFan", "screens", "brightness")
@@ -73,12 +74,15 @@ class DeviceControlTest {
                 "game.end", "fan.set" -> game = null
             }
             returned.incrementAndGet()
-            if (method == "brightness.set") return mapOf("ok" to true, "level" to extras["level"])
+            if (method == "brightness.set") {
+                bottom = extras["level"] as Float
+                return mapOf("ok" to true, "level" to extras["level"])
+            }
             return mapOf(
                 "ok" to true, "protocol" to 1, "device" to "ayn-thor", "root" to "granted",
                 "capabilities" to capabilities,
                 "fan" to (game ?: "balanced"), "fanBaseline" to "balanced", "fanGame" to game,
-                "screens" to screens, "brightnessTop" to 0.5f, "brightnessBottom" to 0.5f,
+                "screens" to screens, "brightnessTop" to 0.5f, "brightnessBottom" to bottom,
             )
         }
     }
@@ -514,5 +518,20 @@ class DeviceControlTest {
         assertEquals("bottom", plugin.screens)
         assertEquals(1, plugin.calls.count { it == "game.end:" })
         assertTrue(plugin.calls.count { it == "screens.set:dual" } > 1)
+    }
+
+    @Test fun aRefreshReadsALevelChangedOutsideFoldcade() = runBlocking {
+        layout.set(ScreenLayout.ShowcaseTop)
+        plugin.screens = "dual"
+        val control = control()
+        control.started()
+        assertEquals(0.5f, control.state!!.brightnessBottom!!, 0.0001f)
+        // Another app sets the bottom panel; R1 opening asks again, with a plain read rather than a probe.
+        plugin.bottom = 0.2f
+        val before = plugin.calls.size
+        onMain { control.refresh() }
+        control.awaitIdle()
+        assertEquals(0.2f, control.state!!.brightnessBottom!!, 0.0001f)
+        assertEquals(listOf("state:"), plugin.calls.drop(before))
     }
 }

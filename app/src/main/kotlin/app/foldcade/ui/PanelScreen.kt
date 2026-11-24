@@ -3212,7 +3212,7 @@ private fun PanelRows(
                     focused = focused,
                     interactive = interactive,
                     onStep = step,
-                    onFraction = { app.shell.touchBrightness((it * 100f).roundToInt()) },
+                    onFraction = { onEffect(app.shell.touchBrightness((it * 100f).roundToInt())) },
                     modifier = place,
                     scale = scale,
                 )

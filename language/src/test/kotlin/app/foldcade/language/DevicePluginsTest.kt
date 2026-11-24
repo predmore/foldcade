@@ -125,8 +125,10 @@ class DevicePluginsTest {
     }
 
     @Test fun r1SplitsBrightnessAndShowsTheFanInForce() {
+        // The screens differ (top 50%, bottom 25%), so R1 shows a slider for each.
         val m = model(extra = mapOf("fan" to "performance", "fanGame" to "performance", "fanBaseline" to "quiet"))
-        val rows = rightRows(m.notices, m.device)
+        assertTrue(m.brightnessSplit())
+        val rows = rightRows(m.notices, m.device, m.brightnessSplit())
         assertEquals(listOf(Row.Brightness, Row.BottomBrightness, Row.FanNow), rows.drop(quickSettings().size))
         // R1 still opens on the top screen's slider.
         assertEquals(Row.Brightness, rows[rightStart()])
@@ -143,7 +145,8 @@ class DevicePluginsTest {
         assertEquals("30%", rowText(Row.BottomBrightness, up).value)
         assertEquals(0.3f, up.device!!.brightnessBottom!!, 0.0001f)
         assertEquals(Effect.SetBottomBrightness(20), reduce(bottom, Meaning.MoveLeft).second)
-        assertNull(reduce(bottom, Meaning.Activate).second)
+        // Link needs the top's Android permission first: A asks.
+        assertEquals(DialogKind.Brightness, reduce(bottom, Meaning.Activate).first.dialog?.kind)
         // The fan row steps from the tier in force, and it ends the override.
         val fan = reduce(up, Meaning.MoveDown).first
         assertEquals(Effect.SetFan(FanTier.Quiet), reduce(fan, Meaning.MoveRight).second)
