@@ -62,6 +62,21 @@ class PlayerSavesTest {
         assertEquals(app.foldcade.language.SpotIssue.NoTitleId, saves.unresolvedSpot(azahar, GAME, target).reason)
     }
 
+    @Test fun uncappedSingleFilesAndMultiFileFoldersUsePlainReads() {
+        val bytes = "save".toByteArray()
+        val reading = object : SaveDocuments by docs {
+            override fun readBounded(uri: String, limit: Int): ByteArray? = error("Uncapped saves use read")
+            override fun read(uri: String): ByteArray = bytes
+            override fun list(folderUri: String, name: String) = listOf(
+                SaveEntry("a.sav", "content://a", false), SaveEntry("b.sav", "content://b", false))
+        }
+        val working = PlayerSaves(reading, marks, backups, backups.resolve("handover"))
+        docs.put(FOLDER, SAVE_NAME, "save")
+        assertArrayEquals(bytes, working.readSpot(SaveSpot("sav", FOLDER, SAVE_NAME))!!.first)
+        val archive = working.readSpot(SaveSpot("sav", FOLDER, "save.zip", folders = listOf(app.foldcade.api.plugin.SaveFolderPart("", "game"))))!!.first
+        assertTrue(archive.isNotEmpty())
+    }
+
     @Test fun aLiveCopyIsDurableAndKeepsItsRecoveryIdentityWithoutChangingMarks() {
         docs.put(FOLDER, SAVE_NAME, "live progress")
         val spot = saves.spots(PLAYER, GAME, LaunchTarget.ContentUri(ROM_URI)).single()

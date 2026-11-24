@@ -822,11 +822,14 @@ internal class PlayerSaves(
             val listed = readableChildren(spot.folderUri, parent) ?: return null
             val file = listed.firstOrNull { it.name == name } ?: return null
             if (file.isFolder) throw SaveNotPlaced()
-            return (docs.readBounded(file.uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt()) ?: throw SaveNotPlaced()) to file.uri
+            return (readSave(file.uri, limit) ?: throw SaveNotPlaced()) to file.uri
         }
         val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
-        return (docs.readBounded(uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt()) ?: return null) to uri
+        return (readSave(uri, limit) ?: return null) to uri
     }
+
+    private fun readSave(uri: String, limit: Long): ByteArray? =
+        if (limit == Long.MAX_VALUE) docs.read(uri) else docs.readBounded(uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt())
 
     /** Distinguish a verified missing folder from one that exists but cannot be listed. */
     private fun readableChildren(folder: String, path: String): List<SaveChild>? {
@@ -865,8 +868,8 @@ internal class PlayerSaves(
                     }
                     if (spot.filter != null && entry.isFolder) continue
                     entries[name] = if (entry.isFolder) null else {
-                        val bytes = docs.readBounded(entry.uri, minOf(remaining, Int.MAX_VALUE.toLong()).toInt()) ?: return Held.Unreadable
-                        remaining -= bytes.size
+                        val bytes = readSave(entry.uri, remaining) ?: return Held.Unreadable
+                        if (limit != Long.MAX_VALUE) remaining -= bytes.size
                         bytes
                     }
                     uris[name] = entry.uri
@@ -1218,11 +1221,35 @@ internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream,
 private const val FIRMWARE_RESTORE_LIMIT = 16 * 1024 * 1024
 internal const val MAX_FIRMWARE_BYTES = 512L * 1024 * 1024
 
+/** Reads at most limit + 1 bytes, growing with the body rather than the caller's ceiling. */
+internal fun readSaveStream(input: InputStream, limit: Int): ByteArray? {
+    require(limit >= 0)
+    val output = ByteArrayOutputStream(minOf(limit, 8192))
+    val buffer = ByteArray(8192)
+    var total = 0L
+    while (total <= limit) {
+        val count = input.read(buffer, 0, minOf(buffer.size.toLong(), limit.toLong() + 1 - total).toInt())
+        if (count < 0) return output.toByteArray()
+        if (count == 0) {
+            val byte = input.read()
+            if (byte < 0) return output.toByteArray()
+            if (++total > limit) return null
+            output.write(byte)
+        } else {
+            total += count
+            if (total > limit) return null
+            output.write(buffer, 0, count)
+        }
+    }
+    return null
+}
+
 /** [SaveDocuments] over a [ContentResolver] and the tree grants the user gave. */
 internal class AndroidSaveDocuments(private val resolver: ContentResolver) : SaveDocuments {
     override val firmwareNewOnly = true
-    override fun readBounded(uri: String, limit: Int): ByteArray? =
-        if (limit < 0) null else head(uri, if (limit == Int.MAX_VALUE) limit else limit + 1)?.takeIf { it.size <= limit }
+    override fun readBounded(uri: String, limit: Int): ByteArray? = try {
+        if (limit < 0) null else resolver.openInputStream(Uri.parse(uri))?.use { readSaveStream(it, limit) }
+    } catch (_: Exception) { null }
     override fun displayName(uri: String): String? = try {
         resolver.query(Uri.parse(uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null
