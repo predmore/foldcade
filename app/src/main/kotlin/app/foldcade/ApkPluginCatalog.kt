@@ -289,7 +289,10 @@ internal class ApkPluginCatalog(
         if (stagedCode == null || needsConfirmation || attemptedAutomatically || state.busy || work?.isActive == true) return
         if (stagedRelease?.tag == "pre-release" && !includePrereleases()) return
         attemptedAutomatically = true
-        install(automatic = true, useStaged = true)
+        // A check since staging (About opening, a channel change) may have found a newer release: take that one.
+        // The gate is read again just before commit, so the download it needs first cannot catch a game.
+        val latest = release
+        install(automatic = true, useStaged = latest == null || mayReuseStagedRelease(stagedRelease, latest))
     }
 
     /** Automatic confirmation is reported by a receiver, so no activity can cover a game. */
@@ -437,7 +440,8 @@ internal class ApkPluginCatalog(
                     showChosen(PluginCatalogStatus.UpdateAvailable, code)
                     return@launch
                 }
-                if (automatic && installedCode() == null) { clearStaged(); return@launch }
+                // Removed since it was staged: an automatic update installs nothing new, and the row offers it again.
+                if (automatic && installedCode() == null) { clearStaged(); showChosen(releaseStatus(latest, null), null); return@launch }
                 show(PluginCatalogStatus.Installing)
                 failureMessage = ApkPluginCopy.installFailed
                 stageInstall(staged, automatic)
@@ -489,7 +493,12 @@ internal class ApkPluginCatalog(
             return parsePluginRelease(response.body.decodeToString(), source, channel)
         }
         val stable = fetch(latestReleaseApi(source), ReleaseChannel.Stable)
-        if (source == PluginRegistry.foldcade && includePrereleases()) chooseRelease(stable, fetch(prereleaseApi(source), ReleaseChannel.Prerelease)) else stable
+        if (source != PluginRegistry.foldcade || !includePrereleases()) return@use stable
+        // The rolling pre-release failing to answer, or answering badly, must not cost the stable update already read.
+        val prerelease = try { fetch(prereleaseApi(source), ReleaseChannel.Prerelease) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { null }
+        chooseRelease(stable, prerelease)
     }
 
     private suspend fun stageInstall(file: File, automatic: Boolean) {
