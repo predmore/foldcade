@@ -358,7 +358,9 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
                 // The save row the player must act on comes first: a hosted player's own folder only holds its BIOS.
                 if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
                 add(Row.PlayerSave(setting.playerId))
-                add(Row.SaveCheck(setting.playerId))
+                // Nothing to check until a folder is bound.
+                if (setting.incident != null || boundFolderLabel(setting.location) != null || setting.chosen || setting.hostedInUse || setting.saveSyncing)
+                    add(Row.SaveCheck(setting.playerId))
                 if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
                 if (setting.thorSetup != null) add(Row.ThorSetup(setting.playerId))
@@ -772,7 +774,17 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
 private fun emulatorRowAttention(row: Row, model: PickerModel, value: String): Boolean = when (row) {
     Row.RetroArchCores -> model.retroArch?.cores == null
     is Row.ThorSetup -> false
-    else -> value == Copy.notSyncing || value in setOf("Wrong folder", "Folder empty", "No access")
+    // An incident lights the folder and what the check found, each in its own words.
+    is Row.PlayerSave, is Row.HostedSaves, is Row.SaveCheck -> value == Copy.notSyncing ||
+        model.playerSaves.firstOrNull { it.playerId == emulatorRowPlayer(row) }?.incident != null
+    else -> value == Copy.notSyncing
+}
+
+private fun emulatorRowPlayer(row: Row): String? = when (row) {
+    is Row.PlayerSave -> row.playerId
+    is Row.HostedSaves -> row.playerId
+    is Row.SaveCheck -> row.playerId
+    else -> null
 }
 
 /** The check: the save folder held, the hosted folder or card in use, the cores seen, Eden's files held, Azahar set for both screens. */

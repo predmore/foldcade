@@ -823,20 +823,22 @@ class ShellController(
 
     private var saveProtectionRequest: DialogState? = null
 
-    internal fun showSaveProtection(incident: SaveIncident, holdsLaunch: Boolean = true, receipt: Long? = null, hasVersions: Boolean = false): DialogState? {
+    internal fun showSaveProtection(incident: SaveIncident, holdsLaunch: Boolean = true, receipt: Long? = null, hasVersions: Boolean = false,
+        style: app.foldcade.language.DateStyle = app.foldcade.language.DateStyle()): DialogState? {
         // Folder-wide receipts are not interchangeable. Launch dialogs get a game receipt from the host.
         if (model.dialog != null) return null
-        val dialog = saveProtectionDialog(incident, model.layout.gridScreen, receipt, hasVersions).copy(holdsLaunch = holdsLaunch)
+        val dialog = saveProtectionDialog(incident, model.layout.gridScreen, receipt, hasVersions, style = style).copy(holdsLaunch = holdsLaunch)
         saveProtectionRequest = dialog
         showDialog(dialog)
         return dialog
     }
 
-    internal fun updateSaveProtection(dialog: DialogState, incident: SaveIncident, receipt: Long?, hasVersions: Boolean) {
+    internal fun updateSaveProtection(dialog: DialogState, incident: SaveIncident, receipt: Long?, hasVersions: Boolean,
+        style: app.foldcade.language.DateStyle = app.foldcade.language.DateStyle()) {
         // Identity also distinguishes a later stop for another game sharing this folder incident.
         val current = model.dialog ?: return
         if (saveProtectionRequest !== dialog || current.kind != DialogKind.SaveProtection || current.subject != incident.id) return
-        publish(model.copy(dialog = current.copy(body = SaveProtectionCopy.body(incident, receipt, hasVersions))))
+        publish(model.copy(dialog = current.copy(body = SaveProtectionCopy.body(incident, receipt, hasVersions, stop = true, style = style))))
     }
 
     internal fun touchSaveFix(index: Int): Effect? {
@@ -846,8 +848,14 @@ class ShellController(
         return onMeaning(Meaning.Activate, page.screen)
     }
 
-    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?) {
-        publish(model.copy(panel = null, dialog = null, saveFix = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId)))
+    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, game: String? = null, offline: Boolean = false) {
+        publish(model.copy(panel = null, dialog = null, saveFix = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = game, offline = offline)))
+    }
+
+    /** Changes the open Fix page, if it is still [incidentId]'s: a RomM copy read late, or the network after a pick. */
+    internal fun updateSaveFix(incidentId: String, change: (SaveFixPage) -> SaveFixPage) {
+        val page = model.saveFix?.takeIf { it.incidentId == incidentId } ?: return
+        publish(model.copy(saveFix = change(page)))
     }
 
     internal fun closeSaveFix() { model = model.copy(saveFix = null) }
@@ -931,14 +939,14 @@ class ShellController(
         val signedIn: List<app.foldcade.language.SignedInBackend>,
     )
 
-    /** R1's not-syncing notice names exactly the emulators [savesDue] counts, as Settings and Set up saves do. */
+    /** R1's not-syncing notice names the emulators [savesDue] counts, less those with an incident notice of their own. */
     private fun publishSavesDue() {
         if (!saveHealthReady) return
         val now = current
         val inputs = SavesDueInputs(now.playerSaves, now.boardEmulators, now.retroArch, now.eden, now.signedIn)
         if (inputs == savesDueRead && savesDuePublished != null) return
         savesDueRead = inputs
-        val due = app.foldcade.language.savesDue(now).associate { it.key to it.label }
+        val due = app.foldcade.language.savesDueNotice(now).associate { it.key to it.label }
         if (due == savesDuePublished) return
         savesDuePublished = due
         onSaveHealthChanged(due)

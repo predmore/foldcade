@@ -155,7 +155,7 @@ internal class SaveProbes(
             is SessionVerdict.SilentStart -> {
                 val bound = after.roots.single { it.bound }.root
                 open(player, bound, null, IncidentKind.WrongFolder,
-                    Evidence(EvidenceKind.FreshLog, SaveProtectionCopy.unchangedLog(player.displayName, bound)), after.atMillis, game)
+                    Evidence(EvidenceKind.FreshLog, SaveProtectionCopy.unchangedLog(player.displayName)), after.atMillis, game)
             }
             SessionVerdict.NoNews -> Unit
         }

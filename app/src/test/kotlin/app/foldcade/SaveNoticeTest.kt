@@ -15,14 +15,15 @@ class SaveNoticeTest {
     @Test fun anUnknownLiveRootUsesTheLastSessionCopyInR1() {
         val root = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
         val evidence = app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog,
-            app.foldcade.language.SaveProtectionCopy.unchangedLog("Azahar", root))
+            app.foldcade.language.SaveProtectionCopy.unchangedLog("Azahar"))
         val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
             "azahar", "Azahar", emptyList(), root, null, evidence, 10)
         val notices = SaveIncidentNotices()
         notices.update(listOf(incident))
         val notice = notices.notices(10).single()
         assertEquals("Azahar is saving somewhere else", notice.title)
-        assertEquals("Azahar didn’t use the folder Azahar last time you played. Fix it first, or this session’s progress isn’t protected.", notice.body)
+        // R1 says what to do; only the launch stop says what this session costs.
+        assertEquals("Azahar didn’t use the folder Azahar last time you played. Fix it before you play.", notice.body)
     }
 
     @Test fun completedIncidentsDoNotKeepAnR1AlarmAndCanReopenLater() {

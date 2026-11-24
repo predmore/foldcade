@@ -10,9 +10,38 @@ class SavePickerTest {
     @Test fun backupDetailsAndRowsNameTheirSourceFolder() {
         val copy = SavePickerSave("99", null, "azahar", null, 1_000, 608, false, null,
             backup = true, origin = SavePickerOrigin("foldcade", "Foldcade", true), folderLabel = "AzaharQA")
-        assertEquals("Backup · from the folder AzaharQA", SavePickerCopy.sourceDetail(copy))
-        assertEquals("Backup · from the folder AzaharQA", SavePickerCopy.row(copy))
-        assertEquals("from the folder AzaharQA", SavePickerCopy.source(copy))
+        assertEquals("From the folder AzaharQA", SavePickerCopy.sourceDetail(copy))
+        assertEquals("Backup · From the folder AzaharQA", SavePickerCopy.row(copy))
+        assertEquals("AzaharQA", SavePickerCopy.source(copy))
+        assertTrue(SavePickerCopy.confirmationBody(SavePickerChoice.Play(copy), "azahar", "Azahar", DateStyle()).startsWith("From the folder AzaharQA, "))
+    }
+
+    @Test fun backupsAreNamedByTheirTimeAndNeverNoSlot() {
+        val zone = ZoneId.of("UTC")
+        val now = Instant.parse("2026-11-24T15:00:00Z").toEpochMilli()
+        val style = DateStyle(is24Hour = true)
+        val head = SavePickerSave("130", "title", "azahar", null, Instant.parse("2026-11-24T13:37:00Z").toEpochMilli(), 569, true, null)
+        val kept = SavePickerSave("133", null, "azahar", "AzaharQA", Instant.parse("2026-11-24T14:24:00Z").toEpochMilli(), 608, false, null,
+            backup = true, folderLabel = "AzaharQA")
+        val names = saveNames(listOf(kept, head), listOf("title"), style, now, zone)
+        assertEquals("Today, 14:24", names["133"])
+        assertEquals("Today, 13:37", names["130"])
+        assertTrue(names.values.none { it == "No slot" || it == SavePickerCopy.backup })
+        assertNotEquals("No slot", SavePickerCopy.slot(save.copy(slot = null)))
+    }
+
+    @Test fun aSaveFromThisDeviceNamesItsEmulatorAndTheDevice() {
+        val zone = ZoneId.systemDefault()
+        val now = System.currentTimeMillis()
+        val made = java.time.ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), zone).withHour(0).withMinute(5).toInstant().toEpochMilli()
+        val here = SavePickerSave("130", "title", "azahar", null, made, 569, true, null,
+            origin = SavePickerOrigin("foldcade", "Foldcade", true), emulatorLabel = "Azahar")
+        val style = DateStyle(is24Hour = true)
+        assertEquals("From Azahar on this Thor, today, 00:05. Your current save stays on RomM.",
+            SavePickerCopy.confirmationBody(SavePickerChoice.Play(here), "azahar", "Azahar", style, device = "Thor", now = now))
+        assertTrue(SavePickerCopy.confirmationBody(SavePickerChoice.Play(here), "azahar", "Azahar", style, now = now).startsWith("From Azahar on this device, "))
+        assertEquals("Thor", SavePickerCopy.thisDeviceName("AYN", "AYN Thor"))
+        assertEquals("Thor", SavePickerCopy.thisDeviceName("AYN", "Thor"))
     }
     private val target = SavePickerTarget("original-game", "romm", "3", "melonds")
     private val save = SavePickerSave("17", "autosave", "melonds", "Steam Deck", 1_000, 32_768, false, null)
@@ -116,7 +145,7 @@ class SavePickerTest {
 
     @Test fun onlyOwnBackupMetadataChangesTheSlotLabel() {
         val archive = save.copy(slot = null)
-        assertEquals("Steam Deck · No slot", SavePickerCopy.row(archive))
+        assertEquals("Steam Deck · Unknown", SavePickerCopy.row(archive))
         assertEquals("Steam Deck · Backup", SavePickerCopy.row(archive.copy(backup = true)))
         assertEquals("Steam Deck · autosave", SavePickerCopy.row(save))
     }
@@ -135,7 +164,9 @@ class SavePickerTest {
             val from = save.copy(origin = origin)
             assertEquals("$short · autosave", SavePickerCopy.row(from))
             assertEquals(detail, SavePickerCopy.sourceDetail(from))
-            assertTrue(SavePickerCopy.confirmationBody(SavePickerChoice.Play(from), "melonds", "melonDS", DateStyle()).startsWith("From $detail, "))
+            // This device's own save names its emulator on this device; other devices keep their name.
+            val from_ = if (origin.thisDevice) "From melonds on this device" else "From $detail"
+            assertTrue(SavePickerCopy.confirmationBody(SavePickerChoice.Play(from), "melonds", "melonDS", DateStyle()).startsWith("$from_, "))
             val choosing = state.copy(saves = listOf(from.copy(slot = "manual")), copying = save)
             assertEquals(short, choosing.destinations().first().source)
         }

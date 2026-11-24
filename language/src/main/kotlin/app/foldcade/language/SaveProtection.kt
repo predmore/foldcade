@@ -199,14 +199,14 @@ fun saveStatusLine(status: SaveStatus, now: Long = System.currentTimeMillis()): 
     is SaveStatus.Unconfirmed -> when (status.why) {
         UnconfirmedWhy.FolderNotChecked -> "Save folder not checked yet"
         UnconfirmedWhy.GameNotChecked -> "Save not checked yet"
-        UnconfirmedWhy.RommUnreachable -> "Can’t reach RomM" + (status.lastReceiptMillis?.let { " · saved there ${saveAge(it, now)}" } ?: "")
+        UnconfirmedWhy.RommUnreachable -> "Can’t reach RomM" + (status.lastReceiptMillis?.let { " · last saved ${saveAge(it, now)}" } ?: "")
         UnconfirmedWhy.PartnerCloud -> (status.keeper as? SaveKeeper.Partner).let { "Saves in ${it?.cloud ?: it?.name ?: "the player"} · not confirmed" }
         UnconfirmedWhy.HostComputer -> "Saves on your computer"
         UnconfirmedWhy.AppKeepsSaves -> "This app keeps its own saves"
         UnconfirmedWhy.NoPlayer -> "No emulator for these saves"
     }
     SaveStatus.NothingYet -> "No saves yet"
-    is SaveStatus.Protected -> "Saved to RomM" + (status.receiptMillis?.let { " · ${saveAge(it, now)}" } ?: "")
+    is SaveStatus.Protected -> "Saved to RomM" + (status.receiptMillis?.let { " ${saveAge(it, now)}" } ?: "")
 }
 
 fun saveAge(at: Long, now: Long): String = when (val days = ((now - at).coerceAtLeast(0) / 86_400_000L)) {
@@ -230,35 +230,52 @@ object SaveProtectionCopy {
     const val folderSet = "Folder set"
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
+    /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
-    const val keptHere = "Your saves on this device are kept."
+    /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */
+    const val guidedDoneOffline = "Folder set. Join Wi-Fi, then choose your save in Y › Saves."
     const val chooseFolder = "Choose folder"
+    const val chooseSave = "Choose save"
     const val thenChoose = "Then choose the same folder here."
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."
     fun emulatorsNeedFix(count: Int) = "$count emulators need a fix"
     fun wrongPick(name: String, folder: String) = "That isn’t the folder $name uses. Choose $folder."
-    const val autoFind = "Auto-find saves"
     const val incidentEmpty = "No saves on RomM yet. Your saves on this device are kept."
     fun fixTitle(name: String) = "Fix $name’s folder"
-    fun bindingTitle(name: String, known: Boolean) = if (known) "Use the folder $name uses" else "Choose $name’s folder"
-    fun liveFolder(name: String, folder: String) = "$name now saves in   $folder"
-    fun watchedFolder(folder: String) = "Foldcade was watching   $folder"
+    /** The Fix page's one step when Foldcade knows the folder: the picker opens there. */
+    fun chooseThere(folder: String) = "Choose $folder, then tap Use this folder › Allow."
+    /** Without the live folder, the emulator's own steps say where it saves. */
+    fun findFolder(name: String) = "Find the folder $name saves in, then choose it here."
     fun fixBeforeChoosing(incident: SaveIncident) = "${title(incident)}. Fix it, then choose a save."
     const val foldersSet = "Folders set. Each is checked the first time a game saves."
-    fun unchangedLog(name: String, bound: FolderRef) = "$name’s log in ${bound.label} didn’t change while you played."
+
+    // The Fix page's top screen.
+    const val safeHeadline = "Your save is safe on RomM."
+    const val safeHeadlineVersions = "Your saves on RomM are safe."
+    fun nowSavesIn(name: String) = "$name now saves in"
+    const val wasWatching = "Foldcade was watching"
+    fun nowWatches(folder: String) = "Foldcade now watches $folder."
+    const val stepKeep = "Keep every copy on RomM"
+    fun stepKept(count: Int) = if (count == 1) "1 kept" else "$count kept"
+    const val stepAlreadyOnRomm = "Already on RomM"
+    const val stepWaiting = "Waiting for RomM"
+    fun stepFolder(name: String, known: Boolean) = if (known) "Use the folder $name uses" else "Choose $name’s folder"
+    const val stepChoose = "Choose which save to play"
+
+    fun unchangedLog(name: String) = "$name didn’t use this folder last time you played."
     fun incidentDetail(incident: SaveIncident): String = with(incident) {
         if (kind == IncidentKind.WrongFolder && live == null && bound != null && evidence.kind == EvidenceKind.FreshLog)
-            unchangedLog(playerName, bound) else evidence.detail
+            unchangedLog(playerName) else evidence.detail
     }
-    fun checkDetail(location: LocationFact.Verified, name: String, now: Long = System.currentTimeMillis()): String {
-        val whenChecked = "${saveAge(location.atMillis, now)} ${java.time.Instant.ofEpochMilli(location.atMillis).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))}"
+    /** Settings › Emulators' Check row, opened: the evidence in words, with one date format. */
+    fun checkDetail(location: LocationFact.Verified, name: String, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String {
+        val whenChecked = saveWhen(location.atMillis, now, style, inSentence = true)
         return when (location.evidence.kind) {
-            EvidenceKind.FreshLog -> "$name’s log in ${location.root.label}, $whenChecked."
-            EvidenceKind.SessionWrite -> "${location.evidence.detail}, $whenChecked."
             EvidenceKind.OwnProvider -> "$name’s own folder."
-            else -> "${location.evidence.detail}, $whenChecked."
+            EvidenceKind.SessionWrite -> "$name saved here $whenChecked."
+            else -> "$name used this folder $whenChecked."
         }
     }
     fun locationSteps(key: String): String? = when (key.substringBefore('.')) {
@@ -279,23 +296,34 @@ object SaveProtectionCopy {
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
         IncidentKind.MaybeNewSave -> "Two saves · choose one"
     } }
-    fun safeOnRomm(receipt: Long?, hasVersions: Boolean): String = when {
-        receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt)}."
-        hasVersions -> "Your saves on RomM are safe."
+    fun safeOnRomm(receipt: Long?, hasVersions: Boolean, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String = when {
+        receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt, now, style, inSentence = true)}."
+        hasVersions -> safeHeadlineVersions
         else -> ""
     }
-    fun saveWhen(at: Long): String = java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
-        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm"))
-    fun body(incident: SaveIncident, receipt: Long? = null, hasVersions: Boolean = false): String = with(incident) {
-        val safe = safeOnRomm(receipt, hasVersions)
+    /**
+     * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it
+     * says what playing now costs. R1 and the other surfaces end with "Fix it before you play."
+     */
+    fun body(
+        incident: SaveIncident,
+        receipt: Long? = null,
+        hasVersions: Boolean = false,
+        stop: Boolean = false,
+        now: Long = System.currentTimeMillis(),
+        style: DateStyle = DateStyle(),
+    ): String = with(incident) {
+        val safe = safeOnRomm(receipt, hasVersions, now, style)
         listOf(when (kind) {
-            IncidentKind.WrongFolder -> if (live != null) "$playerName now uses the folder ${live.label}, not ${bound?.label}." else "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
+            // The folder and the emulator often share a name ("Azahar"), so the folder is called one.
+            IncidentKind.WrongFolder -> if (live != null) "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
+                else "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
             IncidentKind.MaybeWrongFolder -> "Check where it saves."
             IncidentKind.MaybeNewSave -> "Choose which save to play."
         }, safe, when (kind) {
-            IncidentKind.WrongFolder -> "Fix it first, or this session’s progress isn’t protected."
+            IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
             IncidentKind.FolderEmptied -> "Put it back before you play."
             else -> ""
         }).filter { it.isNotEmpty() }.joinToString(" ")

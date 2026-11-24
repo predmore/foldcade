@@ -20,7 +20,7 @@ class SaveProtectionDialogTest {
         shell.updateSaveProtection(request, incident, 10, true)
         assertEquals(focused.index, shell.model.dialog!!.index)
         assertEquals(focused.holdsLaunch, shell.model.dialog!!.holdsLaunch)
-        assertEquals(SaveProtectionCopy.body(incident, 10, true), shell.model.dialog!!.body)
+        assertEquals(SaveProtectionCopy.body(incident, 10, true, stop = true), shell.model.dialog!!.body)
     }
 
     @Test fun aLateReceiptCannotReopenOrUpdateALaterStopForTheSameIncident() {

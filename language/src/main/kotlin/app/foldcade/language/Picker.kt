@@ -1691,6 +1691,14 @@ data class RowText(val label: String, val value: String? = null)
  * so its saves are at stake, and a quiet Not set up while none does, as its tile and Set up
  * saves say (review-B S10).
  */
+/** The folder a player's saves are bound to, by the name the player sees, or null before one is. */
+fun boundFolderLabel(location: LocationFact?): String? = when (location) {
+    is LocationFact.Bound -> location.root.label
+    is LocationFact.Verified -> location.root.label
+    is LocationFact.Mismatch -> location.bound.label
+    else -> null
+}
+
 private fun unsetSaves(playerId: String, model: PickerModel): String =
     if (playerId in model.boardEmulators) Copy.notSyncing else SaveSetupCopy.notSetUp
 
@@ -1763,7 +1771,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
     is Row.SaveCheck -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
-        RowText("Check", setting?.incident?.let { saveFolderState(it) } ?: when (val location = setting?.location) {
+        RowText("Check", setting?.incident?.let { saveCheckState(it) } ?: when (val location = setting?.location) {
             is LocationFact.Verified -> "Checked ${saveAge(location.atMillis, System.currentTimeMillis())}"
             else -> SaveProtectionCopy.notChecked
         })
@@ -1772,7 +1780,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
             setting?.incident != null -> saveFolderState(setting.incident)
-            setting?.chosen == true -> if (setting.location is LocationFact.Verified) setting.foundIn ?: Copy.playerSavesSet else SaveProtectionCopy.folderSet
+            // Checked or not, the row names the folder. Only the check beside it says it was proven.
+            setting?.chosen == true -> setting.foundIn ?: boundFolderLabel(setting.location) ?: Copy.playerSavesSet
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
             else -> unsetSaves(row.playerId, model)
         }
@@ -1784,7 +1793,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val inUse = when {
             setting?.incident != null -> saveFolderState(setting.incident)
-            setting?.hostedInUse == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else SaveProtectionCopy.folderSet
+            // Syncing is a claim only the check makes; until then the folder is set, said as the Save folder row says it.
+            setting?.hostedInUse == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else Copy.playerSavesSet
             setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
@@ -1793,7 +1803,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.SaveSync -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val state = when {
-            setting?.saveSyncing == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else SaveProtectionCopy.folderSet
+            setting?.saveSyncing == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else Copy.playerSavesSet
             setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
@@ -1952,7 +1962,7 @@ sealed interface Effect {
     data object OpenAllFilesAccess : Effect
     data class OpenSaveFix(val incidentId: String) : Effect
     data class PickFixFolder(val incidentId: String) : Effect
-    data class FinishSaveFix(val incidentId: String) : Effect
+    data class FinishSaveFix(val incidentId: String, val openSaves: Boolean = true) : Effect
     data object CancelSaveFix : Effect
     data class ShowSaveCheck(val playerId: String) : Effect
     data class ConfirmSaveLocation(val incidentId: String) : Effect

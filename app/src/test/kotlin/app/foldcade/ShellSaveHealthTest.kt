@@ -51,6 +51,10 @@ class ShellSaveHealthTest {
         shell.openSaveFix(incident, "Choose the folder", player.id)
         shell.setSaveProtection(mapOf(player.saveFolderId() to checked), emptyList(), replace = false)
         assertEquals(RepairState.Done, shell.model.saveFix!!.resolved!!.repair)
+        // Opened with no game to choose a save for, the finished page only closes.
+        assertEquals(Effect.FinishSaveFix(incident.id, openSaves = false), reduce(shell.model, Meaning.Activate).second)
+        shell.openSaveFix(incident, "Choose the folder", player.id, game = game.label)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), listOf(incident.copy(repair = RepairState.Done)))
         assertEquals(Effect.FinishSaveFix(incident.id), reduce(shell.model, Meaning.Activate).second)
     }
 
@@ -130,7 +134,8 @@ class ShellSaveHealthTest {
         val id = homeGameId(game.backendId, game.remoteKey)
         assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
         assertEquals(listOf("eden"), shell.model.playerSaves.map { it.playerId })
-        assertEquals(listOf(Row.PlayerSave("eden"), Row.SaveCheck("eden"), Row.EdenFolder), emulatorShelf(shell.model).single().rows)
+        // No folder yet, so no Check row.
+        assertEquals(listOf(Row.PlayerSave("eden"), Row.EdenFolder), emulatorShelf(shell.model).single().rows)
         entry.player.bindSaveFolder("content://eden/tree/root")
         shell.setEden(EdenSetting(true, pkg))
         assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))

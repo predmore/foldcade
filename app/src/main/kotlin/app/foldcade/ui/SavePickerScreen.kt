@@ -65,7 +65,7 @@ import app.foldcade.language.SaveSetupCopy
 import app.foldcade.language.Theme
 import app.foldcade.language.actionFaces
 import app.foldcade.language.formatSaveSize
-import app.foldcade.language.formatSaveWhen
+import app.foldcade.language.saveWhen
 import app.foldcade.language.needsAttention
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.relativeSaveWhen
@@ -149,7 +149,10 @@ private fun TopArt(app: FoldcadeApp, art: RunningApp?, screenshot: String?, modi
     }
 }
 
-/** The focused save, large: its slot, then when, who made it, and how big, each led by its symbol. */
+/**
+ * The focused save, large: its name (a slot someone named, else its time), its Playing or Backup
+ * chip, then when, where it came from (a Backup's folder), and how big, each led by its symbol.
+ */
 @Composable
 private fun SaveFacts(save: SavePickerSave, name: String, dates: DateStyle, theme: Theme, modifier: Modifier) {
     val design = theme.style
@@ -160,17 +163,19 @@ private fun SaveFacts(save: SavePickerSave, name: String, dates: DateStyle, them
             .padding(CARD_PAD),
         verticalArrangement = Arrangement.spacedBy(design.saves.gapDp.dp),
     ) {
-        if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
-        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
         BasicText(
-            if (save.backup) save.slot?.takeIf { it.isNotBlank() } ?: SavePickerCopy.noSlot else name,
+            name,
             style = saveStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
+        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
         // A save named by its day and time already says when.
-        if (!saveNameSaysTime(name, save.updatedAtMillis, dates)) Fact("clock", formatSaveWhen(save.updatedAtMillis, dates), theme)
-        Fact("handheld", SavePickerCopy.sourceDetail(save), theme, lines = 2)
+        if (!saveNameSaysTime(name, save.updatedAtMillis, dates)) Fact("clock", saveWhen(save.updatedAtMillis, System.currentTimeMillis(), dates), theme)
+        val folder = save.folderLabel
+        if (folder != null) Fact("folder", SavePickerCopy.fromFolder(folder), theme, lines = 2)
+        else Fact("handheld", SavePickerCopy.sourceDetail(save), theme, lines = 2)
         Fact("cartridge", formatSaveSize(save.sizeBytes), theme)
     }
 }
@@ -479,13 +484,14 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenTe
         val meta = Modifier.graphicsLayer { alpha = if (save.backup) rest + (1f - rest) * lit.value else 1f }
         if (save.origin?.thisDevice != true || save.folderLabel != null) {
             Row(meta.widthIn(max = SOURCE_MAX), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.size(MARK_SIZE), contentAlignment = Alignment.Center) { SymbolIcon("handheld", 1f, theme.muted) }
+                Box(Modifier.size(MARK_SIZE), contentAlignment = Alignment.Center) { SymbolIcon(if (save.folderLabel != null) "folder" else "handheld", 1f, theme.muted) }
                 BasicText(SavePickerCopy.source(save), style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         // A save named by its day already says when; "5m ago" beside Today still adds something.
         if (!name.startsWith(whenText)) BasicText(whenText, modifier = meta, style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, softWrap = false)
         if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
+        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
     }
 }
 
@@ -663,7 +669,7 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
     DialogFrame(
         app = app,
         title = SavePickerCopy.confirmationTitle(choice, state.playerName, destination, generic),
-        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current),
+        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current, state.deviceName),
         buttons = listOf(action, SavePickerCopy.cancel),
         focused = state.confirmIndex,
         // B is Cancel, which wears Back's key.

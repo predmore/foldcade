@@ -55,8 +55,9 @@ class SaveSetupTest {
 
     @Test fun aFolderFoundWithoutAskingSaysWhereOnThePageAndInSettings() {
         val found = model.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
-        assertEquals(SaveProtectionCopy.folderSet, rowText(Row.PlayerSave("melonds"), found).value)
-        assertEquals(SaveProtectionCopy.folderSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
+        // The emulator page names the folder, checked or not; "Folder set" is Set up saves' word alone.
+        assertEquals("saves/nds", rowText(Row.PlayerSave("melonds"), found).value)
+        assertEquals(Copy.playerSavesSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
         val tile = found.openSaveSetup(HostScreen.Top).tile("melonds")
         assertEquals("saves/nds", tile.foundIn)
         assertTrue(tile.done)

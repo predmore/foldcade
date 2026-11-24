@@ -203,6 +203,9 @@ fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = ti
 fun savesDue(model: PickerModel, tiles: List<SetupTile> = saveSetupTiles(model, SaveSetupPage())): List<SetupTile> =
     tiles.filter { !it.findSaves && !it.done && it.onHome }
 
+/** R1's not-syncing notice: [savesDue] less the emulators with an open incident, which have a notice of their own. */
+fun savesDueNotice(model: PickerModel): List<SetupTile> = savesDue(model).filter { tile -> tile.steps.none { it is SetupStep.Fix } }
+
 /** Emulators no game on Home plays on that still need a step: Not set up, listed after the rest. */
 fun savesRest(tiles: List<SetupTile>): List<SetupTile> =
     tiles.filter { !it.findSaves && !it.done && !it.onHome }

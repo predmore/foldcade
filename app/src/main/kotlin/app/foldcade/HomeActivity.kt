@@ -357,6 +357,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 }
                             }
                             foldcade.refreshSaveProtection(player)
+                            // The finished page reads offline or not as of now: offline it only closes.
+                            foldcade.shell.updateSaveFix(incident.id) { it.copy(offline = !foldcade.hasValidatedNetwork()) }
                         } catch (cancelled: CancellationException) { throw cancelled
                         } catch (_: Exception) { foldcade.shell.noteSaveFix(Copy.saveNotPlacedBody) }
                     } else pickedSaveFolder(uri, player, ask = false)?.let { rememberSaveFolder(it, player) }
@@ -619,7 +621,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.LoadSavePicker -> loadSavePicker(effect.target)
             is Effect.OpenSaveFix -> openSaveFix(effect.incidentId)
             is Effect.PickFixFolder -> pickFixFolder(effect.incidentId)
-            is Effect.FinishSaveFix -> finishSaveFix(effect.incidentId)
+            is Effect.FinishSaveFix -> finishSaveFix(effect.incidentId, effect.openSaves)
             Effect.CancelSaveFix -> { foldcade.hostedAsk = null; cancelLaunches() }
             is Effect.ShowSaveCheck -> showSaveCheck(effect.playerId)
             is Effect.ConfirmSaveLocation -> foldcade.saveProtection.incidents().firstOrNull { it.id == effect.incidentId }?.let {
@@ -2430,7 +2432,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun showSaveNotPlaced(title: String, pending: PendingBackendLaunch? = null, needsEdenUser: Boolean = false, incompatible: Boolean = false, protection: SaveProtectionStop? = null) {
         if (protection != null) {
-            val dialog = foldcade.shell.showSaveProtection(protection.incident, pending != null) ?: return
+            val style = foldcade.deviceStatus.status.value.dateStyle
+            val dialog = foldcade.shell.showSaveProtection(protection.incident, pending != null, style = style) ?: return
             if (pending != null) {
                 foldcade.hostedAsk = HostedAsk(pending.playerId, pending)
                 foldcade.scope.launch {
@@ -2440,7 +2443,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     val hasVersions = receipts.isNotEmpty() || try { foldcade.plugins.serverSaves(owner.backendId, owner).isNotEmpty() }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
                     withContext(Dispatchers.Main.immediate) {
-                        foldcade.shell.updateSaveProtection(dialog, protection.incident, receipts.values.filterNotNull().minOrNull(), hasVersions)
+                        foldcade.shell.updateSaveProtection(dialog, protection.incident, receipts.values.filterNotNull().minOrNull(), hasVersions, style)
                     }
                 }
             }
@@ -3404,7 +3407,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val player = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player).firstOrNull { it.saveFolderId() == incident.playerKey }
         val steps = (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
             ?: (player as? app.foldcade.api.plugin.HostedSaveFolder)?.hostedFolderSteps
-        foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id)
+        // A held launch or an open Saves page names the game, so the page can say its RomM copy is safe and open its Saves once fixed.
+        val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
+        foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
+            game = route?.saves?.label, offline = !foldcade.hasValidatedNetwork())
+        val owner = route?.saves ?: return
+        foldcade.scope.launch {
+            val receipts = try { foldcade.plugins.library(owner.backendId)?.saveReceipts(owner).orEmpty() }
+                catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { emptyMap() }
+            val hasVersions = receipts.isNotEmpty() || try { foldcade.plugins.serverSaves(owner.backendId, owner).isNotEmpty() }
+                catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
+            val receipt = receipts.values.filterNotNull().minOrNull()
+            // Only a copy Foldcade has seen on RomM is claimed.
+            if (receipt == null && !hasVersions) return@launch
+            withContext(Dispatchers.Main.immediate) {
+                foldcade.shell.updateSaveFix(incident.id) { it.copy(safe = app.foldcade.language.SaveFixSafe(owner.label, receipt)) }
+            }
+        }
     }
 
     private fun pickFixFolder(id: String) {
@@ -3414,13 +3433,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             withContext(Dispatchers.IO) { foldcade.saveProtection.put(incident.copy(repair = app.foldcade.language.RepairState.Binding)) }
             settingsPlayerId = player.id
             folderPurpose = FolderPurpose.Settings
-            val initial = incident.live?.identity?.takeIf { it.startsWith("primary:") }?.let(::storageFolderDocument)
+            val initial = app.foldcade.language.saveFixTarget(incident)?.identity?.takeIf { it.startsWith("primary:") }?.let(::storageFolderDocument)
                 ?: foldcade.saveFolderStart(player)
             launchFolderPicker(initial?.let(Uri::parse))
         }
     }
 
-    private fun finishSaveFix(id: String) {
+    private fun finishSaveFix(id: String, openSaves: Boolean = true) {
         val incident = foldcade.saveProtection.incidents().firstOrNull { it.id == id && it.repair == app.foldcade.language.RepairState.Done }
             ?: foldcade.shell.model.saveFix?.resolved?.takeIf { it.id == id } ?: return
         val tileId = foldcade.hostedAsk?.pending?.route?.tileId ?: foldcade.savePickerRequest?.route?.tileId
@@ -3438,7 +3457,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.shell.closeSaveFix()
             }
             foldcade.refreshSaveProtection()
-            withContext(Dispatchers.Main.immediate) { tileId?.let(::openSaves) }
+            // Offline the page only closes: Saves would just say it can't reach RomM.
+            if (openSaves) withContext(Dispatchers.Main.immediate) { tileId?.let(::openSaves) }
         }
     }
 
@@ -3446,7 +3466,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val setting = foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId } ?: return
         val location = setting.location as? app.foldcade.language.LocationFact.Verified
         val detail = if (location == null) app.foldcade.language.SaveProtectionCopy.checkByPlaying else
-            app.foldcade.language.SaveProtectionCopy.checkDetail(location, setting.label)
+            app.foldcade.language.SaveProtectionCopy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
         foldcade.shell.showDialog(playerNotice("Check", detail, foldcade.shell.model.layout.menuScreen))
     }
 
@@ -4099,6 +4119,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
             target, owner.label, player?.displayName ?: app.foldcade.language.SavePickerCopy.unknown,
             foldcade.shell.saveHealthOf(gameId), ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
+            deviceName = app.foldcade.language.SavePickerCopy.thisDeviceName(Build.MANUFACTURER.orEmpty(), Build.MODEL.orEmpty()),
         ))
         loadSavePicker(target)
     }
