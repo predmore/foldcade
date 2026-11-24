@@ -407,7 +407,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 - **When probes run:**
   - Inside `LaunchSaves.prepare`, before `changedSince`. This is the gate (§3).
   - Right after placement, as the session baseline. The baseline is stored in the pending return (`LibraryReturn` gains `baseline: ProbeSnapshot?`). It is committed with the pending return, as today.
-  - In `reconcileLocked`, after the read-back.
+  - In `reconcileLocked`, judge and publish the return before reconciliation can announce a sync. Live-copy staging and uploads run separately after the normal handoff; either optional step can fail without blocking the bound save.
   - On startup and Home resume, inside `refreshPlayerSaves`. Only `judgeRoots` runs there, once per emulator folder, with no spot hashing. This is what makes Settings, the badge and R1 correct before anyone presses A.
 
 ### 2.5 Each emulator
@@ -496,7 +496,7 @@ Helpers:
 
 - `safeOnRomm(ms)` gives `"Your save on RomM is safe, from ${saveWhen(ms)}."`.
 - When no receipt is known but RomM has versions, it gives `"Your saves on RomM are safe."`.
-- When RomM has nothing for the game, the sentence is left out. The dialog never claims a copy it hasn't seen.
+- When RomM has nothing for the game, the sentence is left out. The dialog never claims a copy it hasn't seen. A receipt lookup updates only the same still-open stop, preserving its focus and launch hold; it cannot reopen a cancelled stop or update a later stop for the same folder incident.
 
 **Play anyway.** The button reads **Play anyway** everywhere the opt-out is about protection. Each body above ends by saying what it costs, so the button can stay short.
 
@@ -515,12 +515,12 @@ Helpers:
 
 ### 4.1 Read-back
 
-`reconcileLocked` keeps its current order: spots, `changedSince`, `reconcile`, then `noteHandedOver`. It adds:
+`reconcileLocked` resolves spots and handles a latched Backup-only return, then judges and publishes the session before a sync result can appear. The normal bound-copy handoff remains `changedSince` → `reconcile` → `noteHandedOver`. Optional live-copy staging and uploads run after that handoff; a probe or capture exception cannot block it. The evidence steps are:
 
 1. Take an `after` snapshot, then run `judgeSession(before, after, sessionMillis)`.
 2. `Wrote(bound)` stores `Verified(SessionWrite, "${game.label} saved")`, and any `Maybe*` incident for this folder closes.
 3. `WroteElsewhere(live)` or `Signalled(UsesOther)` opens a `WrongFolder` incident for this game. Then:
-   - Capture the live root's copy: `readSpot` against the live root goes into `save-handover`.
+   - After the normal bound-copy handoff, capture the live root's copy: `readSpot` against the live root goes into `save-handover`.
    - Call `keepAsBackups`, then record the ids in `incident.kept`. If RomM is unreachable, they go in `incident.staged`.
    - The bound root's bytes go through the normal `reconcile`, unchanged from today.
 4. `SilentStart` opens `WrongFolder`, only for approved signals marked `perStart` on an actual Foldcade launch (§4.2).
@@ -548,7 +548,7 @@ The resume also showed a Loading overlay for at least 51 s and “Missing game d
 
 With all-files access, session return searches primary storage for the optional probe `signatureFile` only when the bound signature did not advance past baseline or did not prove that it names the bound folder. A fresh bound log naming that folder skips the walk. Only roots at depths 0–2 are considered, with an 8,192-entry budget and at most four discovered roots. The signature is read within the probe's bound (Azahar: first 32 KiB); its signal must prove and name that same root, with mtime newer than the session baseline. Only directories, checked without following links, reach canonical path validation; ordinary files are skipped. Links and Android app-data roots are excluded. A discovered live root names the incident and opens Fix's picker there. Without that access, the negative incident still opens with an unknown live root and the user chooses the folder Azahar uses.
 
-A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept. Other per-start probes, including DuckStation's hosted-card rule, remain deferred until their own QA decision.
+A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. Identical bytes already present in a server version reuse that verified id instead of creating another Backup. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept. Other per-start probes, including DuckStation's hosted-card rule, remain deferred until their own QA decision.
 
 ### 4.3 Regression quarantine (PR 2)
 
@@ -753,7 +753,7 @@ These are written as `locationSteps`, one numbered line each, in the voice of `D
   - **The chip** shows the status line (§6.1).
   - **With an incident**, a banner row leads the list: `"Your save is safe on RomM"` / `"$emulator is saving somewhere else. Fix it, then choose a save."` · A opens the Fix saves page.
   - **Playing a save** while a `WrongFolder` is open runs Fix first. The confirmation adds `"Foldcade fixes $emulator’s folder first."`.
-  - **Backups** made by `keepAsBackups` read **Backup**, as today, and their source line names the folder: `"Backup · from the folder Azahar"`. Archives already carry a unique `foldcade-kept-<uuid>` name. The folder label goes in a sidecar map in the RomM plugin, keyed by server id. This is RomM-plugin state, not an API change.
+  - **Backups** made by `keepAsBackups` read **Backup**, as today, and their source line names the folder: `"Backup · from the folder Azahar"`. Archives already carry a unique `foldcade-kept-<uuid>` name. The folder label goes in a sidecar map in the RomM plugin, keyed by server id. This is RomM-plugin state, not a constructor or method change: the existing `ServerSave.source` carries the folder label for library-owned Backups, while `serverSaveOrigins` keeps device provenance separate. A matching head or any existing version satisfies preservation and drains the queue without another Backup; zip equality uses the member-aware server hash rather than compressed byte size.
   - **With nothing on RomM** and an incident, the list's place shows `"No saves on RomM yet. Your saves on this device are kept."` and **Fix it**.
 
 ### 6.7 R1 notices
