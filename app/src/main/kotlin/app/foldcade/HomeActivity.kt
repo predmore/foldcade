@@ -500,7 +500,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.SetPluginRouting -> foldcade.setPluginRouting(effect.packageName, effect.on)
             is Effect.CheckPluginRelease -> foldcade.apkPluginCatalogs[effect.packageName]?.checkRelease(effect.onlyIfStale)
             is Effect.InstallPlugin -> {
-                if (foldcade.shell.model.pluginCatalog(effect.packageName).status == app.foldcade.language.PluginCatalogStatus.NeedsPermission &&
+                // An update ready notice is the player asking to install now. Without install access the
+                // catalog could only say so on a page R1 isn't showing, so A goes to Android's switch at once
+                // and the install carries on when Home returns with it allowed.
+                val fromNotice = effect.staged && !packageManager.canRequestPackageInstalls()
+                if (fromNotice) foldcade.installAfterAccess = effect.packageName
+                if (fromNotice || foldcade.shell.model.pluginCatalog(effect.packageName).status == app.foldcade.language.PluginCatalogStatus.NeedsPermission &&
                     !packageManager.canRequestPackageInstalls()) {
                     val panel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
                     foldcade.store.handoffAndroidSetting(panel) {
@@ -852,6 +857,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setAllFilesPage(false)
         // Android's install-unknown-apps page may have been answered, or a plugin installed meanwhile.
         foldcade.apkPluginCatalogs.values.forEach { it.reassess() }
+        // Back from Android's install switch, asked for by an update ready notice: allowed, that install goes on.
+        foldcade.installAfterAccess?.let { packageName ->
+            foldcade.installAfterAccess = null
+            if (packageManager.canRequestPackageInstalls()) foldcade.apkPluginCatalogs[packageName]?.install(useStaged = true)
+        }
         // Android's all-files page may have been answered, or a card put in: look for ROM folders again.
         foldcade.refreshRomRoots()
         foldcade.refreshEdenSetting()
