@@ -85,6 +85,24 @@ class SaveEvidenceTest {
         assertEquals(SessionVerdict.NoNews, judgeSession(before, named.copy(installFirstMillis = 2), 30_000))
     }
 
+    @Test fun aBoundSaveWriteWinsOverAnUnchangedPerStartLog() {
+        val log = listOf(signal(bound, 50, perStart = true))
+        val before = snap(root(hash = "placed", signals = log), at = 100)
+        val after = snap(root(hash = "played", signals = log), at = 30_100)
+        assertEquals(SessionVerdict.Wrote(bound), judgeSession(before, after, 30_000))
+    }
+
+    @Test fun clockMovementOrADisabledSignalCannotCountAsASilentStart() {
+        val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
+        // Both are below the snapshot's timestamp, but neither is an unchanged file.
+        for (at in listOf(40L, 80L)) {
+            val after = snap(root(signals = listOf(signal(bound, at, perStart = true))), at = 30_100)
+            assertEquals(SessionVerdict.NoNews, judgeSession(before, after, 30_000))
+        }
+        val capped = snap(root(signals = listOf(signal(bound, 50, perStart = false))), at = 30_100)
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, capped, 30_000))
+    }
+
     @Test fun aFreshSelfNamedCustomRootWinsOverTheSilentOldRoot() {
         val custom = FolderRef("primary:AzaharQA", "AzaharQA")
         val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)

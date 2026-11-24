@@ -72,6 +72,23 @@ class SaveProtectionTest {
         assertTrue(saveHealthLeads(fault, TileActivity.Downloading(.5f)))
         assertTrue(saveHealthLeads(SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer), null))
     }
+
+    @Test fun anUnknownLiveRootDescribesTheLastSessionWithoutClaimingAPermanentMove() {
+        val bound = root.copy(identity = "primary:Azahar", label = "Azahar")
+        val unknown = incident.copy(bound = bound, live = null)
+        val opening = "Azahar didn’t use the folder Azahar last time you played."
+        val action = "Fix it first, or this session’s progress isn’t protected."
+        assertEquals("Azahar is saving somewhere else", SaveProtectionCopy.title(unknown))
+        assertEquals("$opening $action", SaveProtectionCopy.body(unknown))
+        assertEquals("$opening ${SaveProtectionCopy.safeOnRomm(10, false)} $action", SaveProtectionCopy.body(unknown, 10))
+        assertEquals("$opening Your saves on RomM are safe. $action", SaveProtectionCopy.body(unknown, hasVersions = true))
+        assertEquals("Azahar’s log in Azahar didn’t change while you played.", SaveProtectionCopy.unchangedLog("Azahar", bound))
+        // An incident saved by the previous build gets the same Check/Fix detail without a migration.
+        assertEquals("Azahar’s log in Azahar didn’t change while you played.",
+            SaveProtectionCopy.incidentDetail(unknown.copy(evidence = evidence.copy(detail = "log/azahar_log.txt did not advance after launch"))))
+        assertEquals(evidence.detail, SaveProtectionCopy.incidentDetail(incident))
+    }
+
     @Test fun folderSetHasNoCheckAndAnIncidentReturnsToTheSetupCount() {
         val setting = PlayerSaveSetting("azahar", "Azahar", true, installed = true, location = LocationFact.Bound(root))
         val model = PickerModel(1, 1, playerSaves = listOf(setting), boardEmulators = setOf("azahar"))

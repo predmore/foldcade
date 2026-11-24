@@ -27,21 +27,12 @@ internal class SaveProbes(
         val grants = android.grants(listOf(holder))
         val finder = android.finder(player, grants)
         val boundIdentity = storageIdentity(boundUri, context.packageName)
-        val discovered = if (discoverAfterMillis != null && probe?.signatureFile != null && grants.any { it.allFiles }) {
-            saveSignatureRoots(Environment.getExternalStorageDirectory(), probe.signatureFile!!, discoverAfterMillis) { id ->
-                finder.reachable(id)?.let { probe.liveSignals(saves.folderAccess(player, it, allowWrite = false)) }.orEmpty()
-            }
-        } else emptyList()
-        val knownLive = store.incidents().filter { it.playerKey == player.saveFolderId() && it.blocksLaunch }.mapNotNull { it.live?.identity }
-        val candidates = discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
-        val uris = listOf(boundUri) + candidates.distinct().mapNotNull(finder::reachable)
-            .filter { storageIdentity(it, context.packageName) != boundIdentity }.distinctBy { storageIdentity(it, context.packageName) }.take(4)
         val installed = player.packageNames.mapNotNull { name ->
             try { context.packageManager.getPackageInfo(name, 0) } catch (_: PackageManager.NameNotFoundException) { null }
         }
         val resolved = installed.firstOrNull { it.packageName == resolvedPackage } ?: installed.firstOrNull()
         val key = player.saveFolderId()
-        val roots = uris.map { uri ->
+        fun readRoot(uri: String): RootReading {
             val ref = FolderRef(storageIdentity(uri, context.packageName), runCatching { folderPathLabel(uri) }.getOrDefault(uri))
             val isBound = ref.identity == boundIdentity
             val access = saves.folderAccess(player, uri, allowWrite = false)
@@ -57,7 +48,7 @@ internal class SaveProbes(
                 if (spots.isEmpty()) readable = false
                 spots.mapNotNull { spot -> saves.readSpot(spot, strict = true, limit = 256L * 1024 * 1024)?.first?.let { spot.slot + ":" + md5Hex(it) } }
             } catch (_: Exception) { readable = false; emptyList() }
-            RootReading(ref, isBound, signals.map { signal -> SignalReading(signal.source,
+            return RootReading(ref, isBound, signals.map { signal -> SignalReading(signal.source,
                 signal.namesUri?.let { storageIdentity(it, context.packageName) }, signal.modifiedAtMillis,
                 provingSignal(signal.strength == SignalStrength.Proves, isBound, installed.size, logVersion, resolved?.versionName),
                 signal.perStart) },
@@ -68,6 +59,18 @@ internal class SaveProbes(
                 // Hosted trees are inside our process and need no persisted grant of our own.
                 (player is HostedSaveFolder || android.holdsGrant(uri, grants)))
         }
+        val bound = readRoot(boundUri)
+        val signature = probe?.signatureFile
+        val discovered = if (discoverAfterMillis != null && signature != null && grants.any { it.allFiles } &&
+            needsSignatureDiscovery(bound, signature, discoverAfterMillis)) {
+            saveSignatureRoots(Environment.getExternalStorageDirectory(), signature, discoverAfterMillis) { id ->
+                finder.reachable(id)?.let { probe.liveSignals(saves.folderAccess(player, it, allowWrite = false)) }.orEmpty()
+            }
+        } else emptyList()
+        val knownLive = store.incidents().filter { it.playerKey == player.saveFolderId() && it.blocksLaunch }.mapNotNull { it.live?.identity }
+        val candidates = discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
+        val roots = listOf(bound) + candidates.distinct().mapNotNull(finder::reachable)
+            .filter { storageIdentity(it, context.packageName) != boundIdentity }.distinctBy { storageIdentity(it, context.packageName) }.take(4).map(::readRoot)
         return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(), roots)
     }
 
@@ -149,8 +152,11 @@ internal class SaveProbes(
             is SessionVerdict.Wrote -> if (!unprotected) apply(player, after, RootVerdict.Uses(verdict.root, Evidence(EvidenceKind.SessionWrite, "${game.label} saved there"), after.atMillis), game)
             is SessionVerdict.WroteElsewhere -> apply(player, after, RootVerdict.UsesOther(verdict.live, Evidence(EvidenceKind.SessionWrite, verdict.live?.let { "${game.label} saved in ${it.label}" } ?: "${game.label} saved in another folder"), after.atMillis), game)
             is SessionVerdict.Signalled -> if (!unprotected || verdict.verdict !is RootVerdict.Uses) apply(player, after, verdict.verdict, game)
-            is SessionVerdict.SilentStart -> open(player, after.roots.single { it.bound }.root, null,
-                IncidentKind.WrongFolder, Evidence(EvidenceKind.FreshLog, "${verdict.source} did not advance after launch"), after.atMillis, game)
+            is SessionVerdict.SilentStart -> {
+                val bound = after.roots.single { it.bound }.root
+                open(player, bound, null, IncidentKind.WrongFolder,
+                    Evidence(EvidenceKind.FreshLog, SaveProtectionCopy.unchangedLog(player.displayName, bound)), after.atMillis, game)
+            }
             SessionVerdict.NoNews -> Unit
         }
     }

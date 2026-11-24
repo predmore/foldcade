@@ -27,12 +27,28 @@ class SaveSignatureRootsTest {
             override fun list(path: String): List<SaveFolderEntry>? = null
             override fun read(path: String, limit: Int): ByteArray? = error("bounded header read required")
             override fun read(path: String, offset: Long, length: Int): ByteArray? =
-                Files.newInputStream(directory.resolve(path)).use { readSaveStream(it, length) }
+                Files.newByteChannel(directory.resolve(path)).use { channel ->
+                    val size = channel.size()
+                    if (offset in 0 until size) channel.position(offset)
+                    readSlice(size, offset, length, channel::read)
+                }
             override fun modifiedAtMillis(path: String): Long? = directory.resolve(path).toFile().lastModified()
             override fun write(path: String, bytes: ByteArray) = error("read only")
             override fun createFolder(path: String) = error("read only")
             override fun moveToBackup(path: String) = error("read only")
         })
+    }
+
+    @Test fun anAdvancingBoundLogSkipsDiscoveryWhileStaleOrMismatchedLogsNeedIt() {
+        val bound = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
+        val log = app.foldcade.language.SignalReading(player.signatureFile, bound.identity, 60_000, true, true)
+        val reading = app.foldcade.language.RootReading(bound, true, listOf(log), null, true, true, true)
+        assertFalse(needsSignatureDiscovery(reading, player.signatureFile, 50_000))
+        for (signal in listOf(log.copy(modifiedAtMillis = 40_000), log.copy(modifiedAtMillis = null),
+            log.copy(names = "primary:AzaharQA"), log.copy(proves = false))) {
+            assertTrue(needsSignatureDiscovery(reading.copy(signals = listOf(signal)), player.signatureFile, 50_000))
+        }
+        assertTrue(needsSignatureDiscovery(reading.copy(signals = emptyList()), player.signatureFile, 50_000))
     }
 
     @Test fun arbitraryNamesAndSecondLevelRootsAreFoundButDepthThreeIsNeverRead() {

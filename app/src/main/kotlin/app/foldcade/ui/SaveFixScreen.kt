@@ -23,7 +23,7 @@ internal fun SaveFixScreen(app: FoldcadeApp, page: SaveFixPage, controls: Boolea
             BasicText(SaveProtectionCopy.title(incident), style = bodyStyle.copy(color = theme.style.colors.attention))
             incident.live?.let { BasicText(SaveProtectionCopy.liveFolder(incident.playerName, it.label), style = bodyStyle) }
             incident.bound?.let { BasicText(SaveProtectionCopy.watchedFolder(it.label), style = bodyStyle) }
-            BasicText(incident.evidence.detail, style = bodyStyle.copy(color = theme.muted))
+            BasicText(SaveProtectionCopy.incidentDetail(incident), style = bodyStyle.copy(color = theme.muted))
             if (incident.staged.isNotEmpty()) BasicText(SaveProtectionCopy.keptHere, style = bodyStyle)
             return@Column
         }

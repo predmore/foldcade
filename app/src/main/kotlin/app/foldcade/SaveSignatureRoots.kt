@@ -2,9 +2,16 @@ package app.foldcade
 
 import app.foldcade.api.plugin.LiveSignal
 import app.foldcade.api.plugin.SignalStrength
+import app.foldcade.language.RootReading
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.util.ArrayDeque
+
+/** A fresh signature already naming the bound root makes a storage walk unnecessary. */
+internal fun needsSignatureDiscovery(bound: RootReading, signature: String, afterMillis: Long): Boolean =
+    bound.signals.none { it.source == signature && it.proves && it.names == bound.root.identity &&
+        it.modifiedAtMillis?.let { at -> at > afterMillis } == true }
 
 /** Root depths 0–2 only; signature reads never cause recursive traversal. Caller holds all-files access. */
 internal fun saveSignatureRoots(
@@ -34,6 +41,7 @@ internal fun saveSignatureRoots(
             Files.newDirectoryStream(directory.toPath()).use { children ->
                 for (child in children) {
                     if (++entries > 8192) break
+                    if (!Files.isDirectory(child, NOFOLLOW_LINKS)) continue
                     val childId = try { storage.childId(id, child.fileName.toString()) } catch (_: Exception) { continue }
                     val folder = try { storage.fileOf(childId) } catch (_: Exception) { continue }
                     if (folder.isDirectory) pending.add(childId to depth + 1)

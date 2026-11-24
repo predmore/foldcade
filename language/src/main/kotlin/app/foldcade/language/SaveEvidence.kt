@@ -75,6 +75,7 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
         return old.spotReadable && root.spotReadable && root.spotHash != null && root.spotHash != old.spotHash
     }
     val oldBound = before.roots.singleOrNull { it.bound && it.root.identity == bound.root.identity } ?: return SessionVerdict.NoNews
+    if (changed(bound)) return SessionVerdict.Wrote(bound.root)
     if (oldBound.spotReadable && bound.spotReadable && oldBound.spotHash == bound.spotHash) {
         val changedCandidates = after.roots.filter { !it.bound && changed(it) }
         if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(changedCandidates.singleOrNull()?.root)
@@ -89,10 +90,9 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
     if (signalled is RootVerdict.UsesOther) return SessionVerdict.Signalled(signalled)
     if (startedByFoldcade && sessionMillis >= SAVE_START_CHECK_MIN_MILLIS) {
         oldBound.signals.firstOrNull { signal -> signal.perStart && signal.modifiedAtMillis != null && signal.modifiedAtMillis <= before.atMillis &&
-            bound.signals.any { it.source == signal.source && it.modifiedAtMillis != null && it.modifiedAtMillis <= before.atMillis }
+            bound.signals.any { it.source == signal.source && it.perStart && it.modifiedAtMillis == signal.modifiedAtMillis }
         }?.let { return SessionVerdict.SilentStart(it.source) }
     }
-    if (changed(bound)) return SessionVerdict.Wrote(bound.root)
     if (signalled != RootVerdict.NoNews) return SessionVerdict.Signalled(signalled)
     return SessionVerdict.NoNews
 }

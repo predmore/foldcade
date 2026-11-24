@@ -412,6 +412,7 @@ class LaunchSavesTest {
         assertEquals(IncidentKind.WrongFolder, incident.kind)
         assertTrue(incident.blocksLaunch)
         assertEquals(null, incident.live)
+        assertEquals("${Melon.displayName}’s log in Azahar didn’t change while you played.", incident.evidence.detail)
         val location = probes.location(Melon, after)
         val facts = SaveFacts(SaveKeeper.Emulator("Azahar"), location, SpotFact.Resolved, OffDeviceFact.OnRomm(100), null, store.incidents(), true)
         val status = deriveSaveStatus(facts)

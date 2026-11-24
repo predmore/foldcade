@@ -247,6 +247,11 @@ object SaveProtectionCopy {
     fun watchedFolder(folder: String) = "Foldcade was watching   $folder"
     fun fixBeforeChoosing(incident: SaveIncident) = "${title(incident)}. Fix it, then choose a save."
     const val foldersSet = "Folders set. Each is checked the first time a game saves."
+    fun unchangedLog(name: String, bound: FolderRef) = "$name’s log in ${bound.label} didn’t change while you played."
+    fun incidentDetail(incident: SaveIncident): String = with(incident) {
+        if (kind == IncidentKind.WrongFolder && live == null && bound != null && evidence.kind == EvidenceKind.FreshLog)
+            unchangedLog(playerName, bound) else evidence.detail
+    }
     fun checkDetail(location: LocationFact.Verified, name: String, now: Long = System.currentTimeMillis()): String {
         val whenChecked = "${saveAge(location.atMillis, now)} ${java.time.Instant.ofEpochMilli(location.atMillis).atZone(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))}"
         return when (location.evidence.kind) {
@@ -284,7 +289,7 @@ object SaveProtectionCopy {
     fun body(incident: SaveIncident, receipt: Long? = null, hasVersions: Boolean = false): String = with(incident) {
         val safe = safeOnRomm(receipt, hasVersions)
         listOf(when (kind) {
-            IncidentKind.WrongFolder -> if (live != null) "$playerName now uses the folder ${live.label}, not ${bound?.label}." else "$playerName stopped using ${bound?.label}."
+            IncidentKind.WrongFolder -> if (live != null) "$playerName now uses the folder ${live.label}, not ${bound?.label}." else "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
             IncidentKind.MaybeWrongFolder -> "Check where it saves."

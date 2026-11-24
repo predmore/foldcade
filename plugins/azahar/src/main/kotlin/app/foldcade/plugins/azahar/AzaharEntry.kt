@@ -90,8 +90,10 @@ class AzaharPlayer : Player, SaveFolderHolder, app.foldcade.api.plugin.SaveLocat
         val uri = log.lineSequence().firstOrNull { "User directory path: " in it }
             ?.substringAfter("User directory path: ")?.trim()?.takeIf { it.startsWith("content://") }
             ?: return emptyList()
+        // Upstream's file backend stops logging after 100 MiB until the process restarts.
+        val perStart = root.read(LOG, 100L * 1024 * 1024 - 1, 1) == null
         return listOf(app.foldcade.api.plugin.LiveSignal(LOG, uri, root.modifiedAtMillis(LOG),
-            app.foldcade.api.plugin.SignalStrength.Proves, perStart = true))
+            app.foldcade.api.plugin.SignalStrength.Proves, perStart = perStart))
     }
 
 
