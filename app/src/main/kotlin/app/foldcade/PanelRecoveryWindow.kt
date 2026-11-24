@@ -1,6 +1,7 @@
 package app.foldcade
 
 import android.app.Presentation
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -125,7 +126,7 @@ internal class PanelRecoveryWindow(
         display: Display,
         private var restoreFocus: Boolean,
         private val savedChild: Boolean,
-    ) : Presentation(activity, display) {
+    ) : Presentation(activity, display, if (Build.VERSION.SDK_INT >= 35) R.style.Theme_Foldcade_Presentation else 0) {
         var focused by mutableStateOf(false)
             private set
 

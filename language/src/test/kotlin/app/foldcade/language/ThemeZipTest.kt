@@ -3,7 +3,9 @@ package app.foldcade.language
 import androidx.compose.ui.graphics.Color
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
@@ -132,6 +134,15 @@ class ThemeZipTest {
         assertNull(readThemeZip(byteArrayOf(1, 2, 3, 4).inputStream()))
         assertNull(readThemeZip(zipBytes("theme.json" to """{"background":"#000000"}""").inputStream()))
         assertNull(readThemeZip(zipBytes("theme.json" to "not json").inputStream()))
+    }
+
+    @Test
+    fun aPlatformZipValidationFailureIsNotATheme() {
+        // Exercise the catch around nextEntry; Android's path validator is absent on the JVM.
+        val input = object : InputStream() {
+            override fun read(): Int = throw ZipException("Invalid ZIP entry path")
+        }
+        assertNull(readThemeZip(input))
     }
 
     @Test

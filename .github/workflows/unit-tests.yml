@@ -82,7 +82,7 @@ jobs:
           yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
           # compileSdk is release(37), so compilation needs platforms;android-37.0.
-          # platforms;android-33 is the min and target platform.
+          # platforms;android-33 is the minimum API; target 35 uses the compile SDK above.
           "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
             "platforms;android-33" \
             "platforms;android-37.0" \
@@ -147,7 +147,7 @@ jobs:
           yes | "$sdkmanager" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           # Do not install the legacy `tools` package. Current cmdline-tools do not ship it.
           # compileSdk is release(37), so compilation needs platforms;android-37.0.
-          # platforms;android-33 is the min and target platform.
+          # platforms;android-33 is the minimum API; target 35 uses the compile SDK above.
           "$sdkmanager" --sdk_root="$SDK_ROOT" --install \
             "platforms;android-33" \
             "platforms;android-37.0" \

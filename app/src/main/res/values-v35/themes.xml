@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keep the existing fullscreen geometry at target 35. Android ignores this opt-out
+         from target 36; raising the target again requires an inset pass on every window. -->
+    <style name="Theme.Foldcade" parent="android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+
+    <style name="Theme.Foldcade.Presentation" parent="android:style/Theme.Material.Dialog.Presentation">
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
