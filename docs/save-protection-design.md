@@ -471,8 +471,8 @@ BOTTOM (1240×1080) — controls
 │                                                              │
 │   Azahar is saving somewhere else                            │
 │                                                              │
-│   Azahar now uses the folder Azahar, not saves/Azahar.       │
-│   Your save on RomM is safe, from 22 Nov, 21:14.             │
+│   Azahar now saves in AzaharQA instead of the Azahar         │
+│   folder. Your save on RomM is safe, from today, 13:37.      │
 │   Fix it first, or this session's progress                   │
 │   isn't protected.                                           │
 │                                                              │
@@ -486,7 +486,7 @@ Copy, as `SaveProtectionCopy`:
 
 | Stop | Title | Body | Buttons |
 |---|---|---|---|
-| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now uses the folder ${live.label}, not ${bound.label}. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` | **Fix it** · **Play anyway** |
+| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now saves in ${live.label} instead of the ${bound.label} folder. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` The folder and the emulator often share a name, so the folder is called one. | **Fix it** · **Play anyway** |
 | WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` | **Fix it** · **Play anyway** |
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"Its saves in ${bound.label} are gone. ${safeOnRomm(receipt)} Put it back before you play."` | **Put it back** · **Play anyway** |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Allow ${bound.label} again so saves reach RomM. ${safeOnRomm(receipt)}"` | **Allow** · **Play anyway** |
@@ -494,7 +494,9 @@ Copy, as `SaveProtectionCopy`:
 
 Helpers:
 
-- `safeOnRomm(ms)` gives `"Your save on RomM is safe, from ${saveWhen(ms)}."`.
+- `safeOnRomm(ms)` gives `"Your save on RomM is safe, from ${saveWhen(ms)}."`, with the one save date format below, lowered mid-sentence: `"…from today, 13:37."`
+- `saveWhen` is the one date format on every save surface (Y › Saves list and detail, the Play confirmation, the stop's RomM line, Backups, the Fix page and the Check detail): `Today, 13:37`, `Yesterday, 13:37`, otherwise `Nov 24, 13:37`, with the year only when it isn't this year. The clock follows the device's 12/24-hour setting.
+- Only the stop ends with "Fix it first, or this session’s progress isn’t protected." R1 and every other surface end the same body with "Fix it before you play."
 - When no receipt is known but RomM has versions, it gives `"Your saves on RomM are safe."`.
 - When RomM has nothing for the game, the sentence is left out. The dialog never claims a copy it hasn't seen. A receipt lookup updates only the same still-open stop, preserving its focus and launch hold; it cannot reopen a cancelled stop or update a later stop for the same folder incident.
 
@@ -639,31 +641,32 @@ The voice follows `SaveSetupCopy`: one or two words for a control, one short sen
 | DeviceOnly PlayerCantSync | `"$emulator saves only on this device"` | amber |
 | Unconfirmed FolderNotChecked | `"Save folder not checked yet"` | quiet |
 | Unconfirmed GameNotChecked | `"Save not checked yet"` | quiet |
-| Unconfirmed RommUnreachable | `"Can’t reach RomM · saved there ${age}"`, or `"Can’t reach RomM"` | quiet |
+| Unconfirmed RommUnreachable | `"Can’t reach RomM · last saved ${age}"`, or `"Can’t reach RomM"` | quiet |
 | Unconfirmed PartnerCloud | `"Saves in ${cloud ?: partner} · not confirmed"`, e.g. "Saves in Steam Cloud · not confirmed" | quiet |
 | Unconfirmed HostComputer | `"Saves on your computer"` | quiet |
 | Unconfirmed AppKeepsSaves | `"This app keeps its own saves"` | quiet |
 | Unconfirmed NoPlayer | `"No emulator for these saves"` | quiet |
 | NothingYet | `"No saves yet"` | quiet |
-| Protected | `"Saved to RomM · ${age}"`, or `"Saved to RomM"` with no time | quiet |
+| Protected | `"Saved to RomM ${age}"`: `Saved to RomM today`, `yesterday`, `3 days ago`; plain `"Saved to RomM"` with no time | quiet |
 
 `saveHealthLeads`/`heroActivityLine` keep their rules, with "has an attention line" in place of "is a warning". Downloads and sync progress still show beside a standing fault. `Copy.savesDeviceOnly` changes from "Saves stay on this device" to "Saves only on this device". The new wording says it is a risk, not a feature.
 
 ### 6.2 Settings › Emulators and Set up saves
 
-- **The tile check** (the check beside set rows, and the `Syncing` chip on Set up saves) appears only while the folder's location is `Verified`. A bound but unverified folder reads **Folder set**, with no check and no amber. An incident reads **Wrong folder**, **Folder empty** or **No access**, in amber.
-- **The emulator page** gets one new row under Save folder, `Row.SaveCheck(playerId)`. Label **Check**. Values:
+- **The tile check** (the check beside set rows, and the `Syncing` chip on Set up saves) appears only while the folder's location is `Verified`. On Set up saves, a bound but unverified folder reads **Folder set**, with no check and no amber. **Folder set** is Set up saves' word only.
+- **The emulator page's Save folder row** names the bound folder, checked or not (e.g. `MD.emu`); only the check beside it says it was proven. During an incident it names the bound folder (`Azahar`) in amber and opens the Fix saves page. Hosted folders and memory cards read **Syncing** only once checked, **Set** before.
+- **The emulator page** gets one new row under Save folder, `Row.SaveCheck(playerId)`, shown only once a folder is bound. Label **Check**. Values:
   - `"Checked ${relative}"`, e.g. "Checked today"
   - `"Not checked yet"`
-  - amber `"Wrong folder"`
+  - during an incident, in amber, what the evidence found, said once: `"Saving in ${live.label}"`, or `"Not saving here"` when the live folder is unknown. `"May save elsewhere"`, `"Folder empty"`, `"No access"`, `"Two saves"` for the other kinds.
   
-  A on the row shows its detail line on the top screen. That line is the evidence, in words:
-  - `"Azahar’s log in saves/Azahar, today 10:41."`
-  - `"Sonic Boom saved there, today 10:52."`
+  A on the row shows its detail line on the top screen. That line is the evidence, in words, with the one date format:
+  - Positive log evidence: `"Azahar used this folder today, 13:27."` (Config, hosted and pinned evidence read the same way.)
+  - A session write: `"Azahar saved here today, 13:27."`
   - `"Azahar’s own folder."`
   - `"Play a game and save in it to check."`
-  - With an incident, the row opens the Fix saves page instead. A silent-start incident's evidence reads `"$emulator’s log in ${bound.label} didn’t change while you played."`.
-- **Set up saves.** An incident makes its emulator's tile need you again. The step is `SetupStep.Fix(incidentId)`, the title is `"Fix $emulator’s folder"`, and the body is `"Your save is safe on RomM."`. `savesDue` counts incidents, so R1, the **3 to go** chip and Set up saves still count the same set. `SaveSetupCopy.endTitle` can't say **All set** while an incident is open.
+  - With an incident, the row opens the Fix saves page instead. A silent-start incident's evidence reads `"$emulator didn’t use this folder last time you played."`.
+- **Set up saves.** An incident makes its emulator's tile need you again. The step is `SetupStep.Fix(incidentId)`, the title is `"Fix $emulator’s folder"`, and the body is `"Your save is safe on RomM."`. `savesDue` counts incidents for the **3 to go** chip and Set up saves. R1's "Saves not syncing · N emulators need setup" notice (`savesDueNotice`) leaves them out, because each incident has its own R1 notice. `SaveSetupCopy.endTitle` can't say **All set** while an incident is open.
   - `SetupStatus.Syncing` gains a sibling, `FolderSet`, label **Folder set**. **All set** requires that every due emulator is `Syncing`, meaning verified. Until then the end reads `"Folders set. Each is checked the first time a game saves."`.
 
 ### 6.3 Why a game's save has no place
@@ -686,44 +689,56 @@ The `SpotIssue` sentences, shown on Y › Saves and in the gate:
 ```
 TOP (1920×1080)
 ┌────────────────────────────────────────────────────────────────────────────────────────────┐
-│  [ Azahar icon ]  Fix Azahar’s folder                                                       │
+│  Fix Azahar’s folder                                                                       │
+│  Azahar is saving somewhere else                                                  (amber)  │
 │                                                                                            │
-│  Your save is safe on RomM.                                                                │
-│  Sonic Boom: Fire & Ice · 22 Nov, 21:14 · Thor                                      │
+│  Your save is safe on RomM.                     (only when a RomM copy is known)           │
+│  Picross 3D: Round 2 · Today, 13:37                                                        │
 │                                                                                            │
-│  Azahar now saves in   Azahar          log today 10:41                                     │
-│  Foldcade was watching saves/Azahar    log 22 Nov                                          │
+│  ✓  Keep every copy on RomM        2 kept                                                  │
+│  ▸  Use the folder Azahar uses                                                             │
+│  ○  Choose which save to play                                                              │
 │                                                                                            │
-│  Foldcade keeps both folders’ saves on RomM, then puts your save                           │
-│  where Azahar looks.                                                                       │
-│                                                                                     Ⓐ Allow │
+│  Azahar now saves in       AzaharQA                                                        │
+│  Foldcade was watching     Azahar                                                          │
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 
-BOTTOM (1240×1080) — the steps, focus on the current one
+BOTTOM (1240×1080) — one card in the dialog look: the step to do now and its pills
 ┌──────────────────────────────────────────────────────────────┐
-│  ✓  Keep every copy on RomM        2 kept                    │
-│  ▸  Use the folder Azahar uses                               │
-│        Tap Use this folder, then Allow.                      │
-│  ○  Put your save back                                       │
+│  Fix Azahar’s folder                                         │
+│  Choose AzaharQA, then tap Use this folder › Allow.          │
 │                                                              │
-│  ┌──────────┐                                                │
-│  │  Allow   │     Ⓑ Later                                    │
-│  └──────────┘                                                │
+│  ( Choose folder )                            Ⓑ Later        │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Step titles and bodies:
+The bottom card is `DialogFrame`, the stop dialog's look: pills with the focus ring, then the key hints at the right. B is always named **Later**. No file paths appear on either screen.
 
-| Step | Title | Body (current) / done value |
+Bottom card, by state (`saveFixActions`, `saveFixCard`):
+
+| State | Body | Buttons |
 |---|---|---|
-| Keeping | `"Keep every copy on RomM"` | `"Keeping your saves…"` (= `SavePickerCopy.working`) / `"$n kept"`, `"Already on RomM"` |
-| WaitingForRomm | same | `"Can’t reach RomM. Your saves stay here until it’s back."` with **Wi-Fi** when offline |
-| WaitingForClose | `"Quit the game first"` | `"Quit $game in $emulator, then come back."` · button **Open $emulator** |
-| Binding (known) | `"Use the folder $emulator uses"` | `SaveSetupCopy.useThisFolder` · button **Allow** |
-| Binding (guided) | `"Choose $emulator’s folder"` | the emulator's `locationSteps` (§6.5), then `"Then choose the same folder here."` · buttons **Open $emulator**, **Choose folder** |
-| Choosing | `"Choose which save to play"` | opens the two-saves card (§6.6) |
-| Placing | `"Put your save back"` | `"Loading your RomM save…"` / `"Your save from ${when} is back"` |
-| Done | `"Fixed"` | `"$game will load your save."` + `"The other copy is a Backup in Y › Saves."` when one was kept · button **Play** if a launch was held, otherwise **Done** |
+| Folder known: `live`, or `bound` for LostAccess (`saveFixTarget`) | `"Choose ${folder}, then tap Use this folder › Allow."` | **Choose folder**, which opens the picker in that folder |
+| Folder unknown | the emulator's `locationSteps` (§6.5) as numbered steps, then `"Then choose the same folder here."` (`"Find the folder $emulator saves in, then choose it here."` without steps) | **Open $emulator** · **Choose folder** |
+| Done, online, with a game | `"Folder set. Choose your RomM save in Y › Saves."` | **Choose save**, which opens that game's Y › Saves |
+| Done, offline | `"Folder set. Join Wi-Fi, then choose your save in Y › Saves."` | **Done**, which only closes: Saves would be a dead end |
+| Done, no game (opened from Settings or R1) | `"Folder set. Choose your RomM save in Y › Saves."` | **Done** |
+
+The in-emulator steps show only when the live folder is unknown: with it known, they would send the player to change the emulator's folder again. Auto-find isn't offered here.
+
+Top screen:
+
+- Title `"Fix $emulator’s folder"`, then the incident's title in amber. Once done, the amber line is replaced by `"Foldcade now watches ${folder}."` in the normal colour.
+- `"Your save is safe on RomM."` and `"$game · ${saveWhen}"`, only once the host has read a receipt for the held launch's or open Saves page's game. With versions but no receipt: `"Your saves on RomM are safe."` and the game. Nothing otherwise.
+- The checklist (`saveFixSteps`):
+
+| Step | Title | Value |
+|---|---|---|
+| Keep | `"Keep every copy on RomM"` | ✓ `"$n kept"`; ▸ `"Waiting for RomM"` while copies wait offline; ✓ `"Already on RomM"` with nothing to keep |
+| Folder | `"Use the folder $emulator uses"` (known) / `"Choose $emulator’s folder"` (unknown) | ▸ until bound, then ✓ |
+| Choose | `"Choose which save to play"` | ○ until bound, then ▸ |
+
+- Two real columns: `"$emulator now saves in"` | `live.label`, and `"Foldcade was watching"` | `bound.label`. With no live folder, the evidence in words follows, e.g. `"Azahar didn’t use this folder last time you played."`
 
 Controls: B is **Later**. It closes the page, and the incident and gate stay. The bottom face button does nothing here, because there is no skip: a fix either happens or waits. For the `Maybe*` kinds only, Y opens **It's fine**, with the confirmation `"Keep watching ${bound.label}?"` / `"Only if $emulator saves there. Foldcade checks again next time."`.
 
@@ -753,7 +768,7 @@ These are written as `locationSteps`, one numbered line each, in the voice of `D
   - **The chip** shows the status line (§6.1).
   - **With an incident**, a banner row leads the list: `"Your save is safe on RomM"` / `"$emulator is saving somewhere else. Fix it, then choose a save."` · A opens the Fix saves page.
   - **Playing a save** while a `WrongFolder` is open runs Fix first. The confirmation adds `"Foldcade fixes $emulator’s folder first."`.
-  - **Backups** made by `keepAsBackups` read **Backup**, as today, and their source line names the folder: `"Backup · from the folder Azahar"`. Archives already carry a unique `foldcade-kept-<uuid>` name. The folder label goes in a sidecar map in the RomM plugin, keyed by server id. This is RomM-plugin state, not a constructor or method change: the existing `ServerSave.source` carries the folder label for library-owned Backups, while `serverSaveOrigins` keeps device provenance separate. A matching head or any existing version satisfies preservation and drains the queue without another Backup; zip equality uses the member-aware server hash rather than compressed byte size.
+  - **Backups** made by `keepAsBackups` are named by their time like every dated row (`Today, 14:24`), with a **Backup** chip where **Playing** sits. Their row shows the folder's name beside a folder mark. The detail's headline is the time; under it go the **Backup** chip and `"From the folder AzaharQA"`. No surface says "No slot". Playing a Backup confirms `"From the folder AzaharQA, today, 14:24."`; a save from this device, `"From Azahar on this Thor, today, 13:37."`; another device keeps its name. Archives already carry a unique `foldcade-kept-<uuid>` name. The folder label goes in a sidecar map in the RomM plugin, keyed by server id. This is RomM-plugin state, not a constructor or method change: the existing `ServerSave.source` carries the folder label for library-owned Backups, while `serverSaveOrigins` keeps device provenance separate. A matching head or any existing version satisfies preservation and drains the queue without another Backup; zip equality uses the member-aware server hash rather than compressed byte size.
   - **With nothing on RomM** and an incident, the list's place shows `"No saves on RomM yet. Your saves on this device are kept."` and **Fix it**.
 
 ### 6.7 R1 notices
@@ -762,8 +777,8 @@ New class `SaveIncidentNotices` in `SaveNotices.kt`. It shows one notice per inc
 
 | Incident | Title | Body | A |
 |---|---|---|---|
-| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now uses the folder ${live.label}, not ${bound.label}. Fix it first, or this session’s progress isn’t protected."` | Fix saves page |
-| WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. Fix it first, or this session’s progress isn’t protected."` | Fix saves page |
+| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now saves in ${live.label} instead of the ${bound.label} folder. Fix it before you play."` | Fix saves page |
+| WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. Fix it before you play."` | Fix saves page |
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"Your save is safe on RomM. Put it back before you play."` | Fix saves page |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Allow its folder again so saves reach RomM."` | picker |
 | MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"Check where it saves."` | Fix saves page |
@@ -987,7 +1002,7 @@ These are drafted, not sent; the user approves before anything goes out.
    - The recommendation: accept this, and say so in the release notes: "Each emulator gets its check back the first time a game saves." The alternative keeps today's false greens.
 3. **How to confirm the live folder when Foldcade can't read it.**
    - The recommendation: open the picker at the suspected folder. One grant both proves the folder and rebinds it.
-   - Offer **Auto-find saves** (all-files access) as a secondary row on the Fix page, not the default.
+   - Auto-find saves (all-files access) stays on Set up saves and Settings, not the Fix page: with the live folder known, the picker in that folder is the whole fix, and a second way only adds a choice (UX review after Thor QA run 3).
 4. **What "Play anyway" captures.**
    - The recommendation: capture the live copy as a Backup on every return while a `WrongFolder` is open, so playing anyway is never device-only.
 5. **`perStart` and the emulator-grant rule.**
