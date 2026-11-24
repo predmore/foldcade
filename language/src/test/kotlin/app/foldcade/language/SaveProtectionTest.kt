@@ -34,6 +34,7 @@ class SaveProtectionTest {
         assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.RommUnreachable, 10), deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unreachable(10))))
         assertEquals(SaveStatus.NothingYet, deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.NothingYet)))
         assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts))
+        assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts.copy(incidents = listOf(incident.copy(repair = RepairState.Done)))))
         assertTrue(deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unknown)) is SaveStatus.Unconfirmed)
     }
 

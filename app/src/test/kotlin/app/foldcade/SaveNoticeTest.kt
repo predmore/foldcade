@@ -12,6 +12,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveNoticeTest {
+    @Test fun completedIncidentsDoNotKeepAnR1AlarmAndCanReopenLater() {
+        val notices = SaveIncidentNotices()
+        val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
+            "azahar", "Azahar", emptyList(), null, null, app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.SessionWrite, "elsewhere"), 10)
+        notices.update(listOf(incident))
+        val notice = notices.notices(10).single()
+        notices.dismiss(notice.id)
+        notices.update(listOf(incident.copy(repair = app.foldcade.language.RepairState.Done, staged = listOf("file:///queued"))))
+        assertTrue(notices.notices(20).isEmpty())
+        notices.update(listOf(incident.copy(openedAtMillis = 30)))
+        assertEquals(1, notices.notices(30).size)
+    }
+
     @Test
     fun ledgerNoticeCleanupRemovesOnlyNoticesItPosted() {
         val ledger = WaitingSaveNotices(patienceMillis = 100)

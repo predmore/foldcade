@@ -147,8 +147,9 @@ sealed interface RepairState {
 fun deriveSaveStatus(facts: SaveFacts): SaveStatus = with(facts) {
     val emulator = keeper is SaveKeeper.Emulator
     val destination = (offDevice as? OffDeviceFact.NoDestination)?.why
+    val activeIncidents = incidents.filter { it.repair != RepairState.Done }
     when {
-        incidents.isNotEmpty() -> SaveStatus.Problem(incidents.first())
+        activeIncidents.isNotEmpty() -> SaveStatus.Problem(activeIncidents.first())
         location is LocationFact.Mismatch -> SaveStatus.Problem(SaveIncident(
             "WrongFolder:${location.bound.identity}", IncidentKind.WrongFolder, location.bound.identity,
             (keeper as? SaveKeeper.Emulator)?.name.orEmpty(), emptyList(), location.bound, location.live,

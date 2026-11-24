@@ -868,7 +868,7 @@ class ShellController(
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()],
             offDevice = saveDestination(route.saves),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() },
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done },
             playedHere = lastPlayedMillis(playId(route.tileId)) != null,
         )
     }
@@ -3508,7 +3508,7 @@ class ShellController(
             reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
     }
 
     private fun refreshSavePickerHealth() {
@@ -4370,7 +4370,7 @@ class ShellController(
                 chosen = player.hasSaveFolder(),
                 thorSetup = thorSetups[player.id],
                 location = saveLocations[player.saveFolderId()],
-                incident = saveIncidents.firstOrNull { it.playerKey == player.saveFolderId() },
+                incident = saveIncidents.firstOrNull { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done },
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,

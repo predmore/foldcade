@@ -204,8 +204,9 @@ internal class SaveIncidentNotices {
     private var incidents = emptyList<app.foldcade.language.SaveIncident>()
     private val dismissed = mutableSetOf<String>()
     fun update(next: List<app.foldcade.language.SaveIncident>) {
-        dismissed.retainAll(next.map { it.id }.toSet())
-        incidents = next
+        val active = next.filter { it.repair != app.foldcade.language.RepairState.Done }
+        dismissed.retainAll(active.map { it.id }.toSet())
+        incidents = active
     }
     fun launch(key: String) { incidents.filter { it.playerKey == key }.forEach { dismissed.remove(it.id) } }
     fun dismiss(id: String) {
