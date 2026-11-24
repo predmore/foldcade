@@ -1708,15 +1708,22 @@ class FoldcadeApp : Application() {
                     location?.let { picked.saveFolderId() to it }
                 }.toMap()
         }
-        withContext(Dispatchers.Main.immediate) {
-            shell.setSaveProtection(locations, saveProtection.incidents(), replace = player == null)
-            saveIncidentNotices.update(saveProtection.incidents())
-            publishNotices()
-        }
+        publishSaveProtection(locations, replace = player == null)
         // Home refreshes invalidate receipts after play outside Foldcade. Gates only check their player.
         if (player == null) withContext(Dispatchers.IO) {
             receiptSpots.forEach { (game, reading) -> refreshSaveReceipt(game, reading.first, reading.second) }
         }
+    }
+
+    internal suspend fun publishSaveGate(player: Player, reading: app.foldcade.language.ProbeSnapshot?) {
+        val locations = reading?.let { mapOf(player.saveFolderId() to saveProbes.location(player, it)) }.orEmpty()
+        publishSaveProtection(locations, replace = false)
+    }
+
+    private suspend fun publishSaveProtection(locations: Map<String, app.foldcade.language.LocationFact>, replace: Boolean) = withContext(Dispatchers.Main.immediate) {
+        shell.setSaveProtection(locations, saveProtection.incidents(), replace)
+        saveIncidentNotices.update(saveProtection.incidents())
+        publishNotices()
     }
 
     private val saveFolderFindLock = Mutex()
@@ -1906,6 +1913,9 @@ class FoldcadeApp : Application() {
                         catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { app.foldcade.api.plugin.SaveServiceState.Unknown }
                     if (service != null) shell.setSaveService(id, service)
+                    if (service == app.foldcade.api.plugin.SaveServiceState.Ready) withContext(Dispatchers.IO) {
+                        saveFlow.withLock { saveIncidentCopies.keepAll(id) }
+                    }
                     val keys = try {
                         plugins.unsyncedSaves(id)
                     } catch (cancelled: CancellationException) {

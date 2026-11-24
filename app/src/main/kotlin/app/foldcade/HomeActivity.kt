@@ -344,9 +344,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                         Triple(game, spots, observed)
                                     }
                                 }
+                                // Fence every game before the new binding can become visible, including after process death.
+                                withContext(Dispatchers.IO) { foldcade.saveProtection.rebound(player.saveFolderId()) }
                                 if (rememberSaveFolder(folder, player)) withContext(Dispatchers.IO) {
                                     preserved.forEach { (game, spots, observed) ->
                                         foldcade.playerSaves.noteHandedOver(game.backendId, game, player, spots, observed)
+                                        if (observed.slots.isNotEmpty()) foldcade.saveProtection.handled(player.saveFolderId(), game)
                                         foldcade.refreshSaveReceipt(game, player, spots)
                                     }
                                     foldcade.saveProtection.incidents().filter { it.playerKey == incident.playerKey }
@@ -1346,7 +1349,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val prepared = try {
                     val local = foldcade.plugins.ensureLocal(libraryId, apiGame)
                     withContext(Dispatchers.Main.immediate) { foldcade.shell.noteOnDevice(libraryId, remoteKey) }
-                    prepareSaves(GameRoute(game.id, apiGame, apiGame), player, local, saveSyncDeclinedFor)
+                    val chosenPackage = saveProbePackage(player, apiGame, local, installedPackages(player.packageNames), foldcade.sharedPaths::target)
+                    prepareSaves(GameRoute(game.id, apiGame, apiGame), player, local, saveSyncDeclinedFor, chosenPackage)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (fatal: VirtualMachineError) {
@@ -1910,7 +1914,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     generation, game,
                     saves = {
                         try {
-                            prepareSaves(route, plan.player, local, saveSyncDeclinedFor, plan.packageName)
+                            prepareSaves(route, plan.player, local, saveSyncDeclinedFor,
+                                saveProbePackage(plan.player, game, target, setOf(plan.packageName), foldcade.sharedPaths::target))
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (failure: SaveNotPlaced) {
@@ -1999,6 +2004,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 spots,
                                 (target as? LaunchTarget.ContentUri)?.uri ?: (target as? LaunchTarget.SharedFile)?.uri,
                                 saveBaseline, !saveSyncForLaunch(plan.player, saveSyncDeclinedFor),
+                                preserveAsBackup = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor) && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
                             )
                             rememberReturn(saves)
                             noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, playerIntent?.flags.orEmpty())
@@ -2506,18 +2512,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * [route]'s saves into the player's folder, see [LaunchSaves.prepare]. One save flow
      * runs at a time, so a second launch or a return read-back waits rather than racing this one.
      */
-    private suspend fun prepareSaves(route: GameRoute, player: Player, local: LaunchTarget, declinedFor: String? = null, resolvedPackage: String? = player.packageNames.firstOrNull(::packageInstalled)): PreparedLaunch =
+    private suspend fun prepareSaves(route: GameRoute, player: Player, local: LaunchTarget, declinedFor: String?, resolvedPackage: String?): PreparedLaunch =
         foldcade.saveFlow.withLock {
-            if (!saveSyncForLaunch(player, declinedFor)) foldcade.saveIncidentCopies.beginUnprotected(player)
             LaunchSaves(
                 foldcade.playerSaves,
                 foldcade.plugins,
                 protectionGate = { route, player, target ->
                     val known = try { foldcade.plugins.saves(route.saves.backendId, route.saves).slots.isNotEmpty() }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
-                    try { foldcade.saveProbes.gate(player, route.saves, known, resolvedPackage) }
+                    var reading: app.foldcade.language.ProbeSnapshot? = null
+                    try { foldcade.saveProbes.gate(player, route.saves, known, resolvedPackage) { reading = it } }
                     finally {
-                        try { foldcade.refreshSaveProtection(player, flowHeld = true, hasKnownSave = known) }
+                        try { foldcade.publishSaveGate(player, reading) }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
                     }
                 },
@@ -2525,6 +2531,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     try { foldcade.saveProbes.snapshot(player, game, target, resolvedPackage = resolvedPackage) }
                     catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
                 },
+                preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
                 firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
                 onSpots = { game, picked, spots ->
@@ -2724,7 +2731,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.noteExternalPlayerOpened()
             foldcade.notePlayScreen()
             if (game.libraryId != null) {
-                rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, saveReadUri, baseline, !syncing))
+                rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, saveReadUri, baseline, !syncing,
+                    preserveAsBackup = !syncing && foldcade.saveIncidentCopies.beginUnprotected(apiGame, player)))
             }
             game.platformId?.let { platform -> foldcade.notePlayerChoiceLaunch(game.id, platform, foldcade.playerResolution(game.id, platform).copy(player = player)) }
         } catch (cancelled: CancellationException) {
@@ -4251,7 +4259,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val reachable = spots.isNotEmpty() && pending.player.saveDeclarations(pending.game).all { declaration -> spots.any { it.slot == declaration.slot } }
             val issue = if (reachable || pending.targetUri == null) null else saves.unresolvedSpot(pending.player, pending.game, LaunchTarget.ContentUri(pending.targetUri))
             withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, reachable, issue) }
-            val preserved = foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.unprotectedSession)
+            val preserved = try {
+                foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.
+                return false
+            }
             val observed = if (preserved) app.foldcade.api.plugin.ObservedSaves(emptyList()) else saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
             if (!preserved) {
                 // The library may finish its sync before reconcile returns. The notice waits for either.
@@ -4432,6 +4446,8 @@ internal data class LibraryReturn(
     val targetUri: String? = null,
     val baseline: app.foldcade.language.ProbeSnapshot? = null,
     val unprotectedSession: Boolean = false,
+    /** Decided after the successful start; later incident closure cannot authorize promotion. */
+    val preserveAsBackup: Boolean = false,
 )
 
 /**
@@ -4475,6 +4491,7 @@ internal fun LibraryReturn.encode(): String = JSONObject().apply {
     targetUri?.let { put("target", it) }
     baseline?.let { put("baseline", it.toJson()) }
     put("unprotectedSession", unprotectedSession)
+    put("preserveAsBackup", preserveAsBackup)
     put(
         "spots",
         JSONArray(
@@ -4545,6 +4562,8 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
         targetUri = json.optString("target", "").takeIf { it.isNotEmpty() },
         baseline = json.optJSONObject("baseline")?.let { runCatching { snapshotFromJson(it) }.getOrNull() },
         unprotectedSession = json.optBoolean("unprotectedSession"),
+        // Old opt-outs conservatively preserve, since they did not persist the launch's incident decision.
+        preserveAsBackup = json.optBoolean("preserveAsBackup", json.optBoolean("unprotectedSession")),
     )
 }
 

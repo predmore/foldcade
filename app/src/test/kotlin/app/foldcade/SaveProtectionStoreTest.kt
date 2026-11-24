@@ -38,6 +38,28 @@ class SaveProtectionStoreTest {
         assertTrue(judgeRoots(ProbeSnapshot(200, 10, "azahar.app", listOf(reading.copy(signals = listOf(SignalReading("log", root.identity, 150, true, false))))), bound) is RootVerdict.Uses)
     }
 
+    @Test fun reboundFencesAndPendingBypassesSurviveBindingVerificationAndIncidentClosure() {
+        val dir = Files.createTempDirectory("save-handovers")
+        val store = SaveProtectionStore(dir)
+        val game = app.foldcade.api.plugin.Game("romm", "37", "nintendo-3ds", app.foldcade.api.plugin.Availability.Cached, "Game")
+        val other = game.copy(remoteKey = "38")
+        assertFalse(store.needsBackup("azahar", game))
+        store.rebound("azahar", 100)
+        store.handled("azahar", game)
+        store.bound("azahar", live, "azahar.app", 1, 100)
+        store.verified("azahar", live, evidence, 200, "azahar.app", 1, true)
+        store.requireBackup("azahar", game)
+        val restored = SaveProtectionStore(dir)
+        assertTrue(restored.pendingBackup("azahar", game))
+        assertTrue(restored.needsBackup("azahar", other))
+        restored.handled("azahar", game)
+        assertFalse(restored.pendingBackup("azahar", game))
+        assertFalse(restored.needsBackup("azahar", game))
+        assertTrue(restored.needsBackup("azahar", other))
+        restored.rebound("azahar", 100) // a repeated timestamp is still a new binding generation
+        assertTrue(SaveProtectionStore(dir).needsBackup("azahar", game))
+    }
+
     @Test fun corruptFilesAreMovedAsideWithoutManufacturingProof() {
         val dir = Files.createTempDirectory("save-protection")
         Files.writeString(dir.resolve("locations.json"), "{not json")

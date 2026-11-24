@@ -132,6 +132,11 @@ fun planPlayerLaunch(
     )
 }
 
+/** Probe the package the player's actual launch intent chooses, using the same path adaptation. */
+internal fun saveProbePackage(player: Player, game: Game, target: LaunchTarget, installed: Set<String>, sharedFile: (String) -> LaunchTarget.SharedFile?): String? =
+    (planPlayerLaunch(player, game, target, installed, anotherBothPanelRunning = false, closeConfirmed = true,
+        saveFolderSettled = true, sharedFile = sharedFile) as? PlayerLaunch.Ready)?.intent?.packageName
+
 /** A key for [intent], kept to tell whether the next start is the same one. */
 internal fun startKey(intent: PlayerIntent): String =
     MessageDigest.getInstance("SHA-256").digest(intent.toString().toByteArray())

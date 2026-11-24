@@ -1,6 +1,7 @@
 package app.foldcade
 
 import app.foldcade.language.*
+import app.foldcade.api.plugin.Game
 import app.foldcade.romm.writeDurably
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,8 +13,10 @@ import java.nio.file.Path
 internal class SaveProtectionStore(private val directory: Path) {
     private val locationsFile = directory.resolve("locations.json")
     private val incidentsFile = directory.resolve("incidents.json")
+    private val handoversFile = directory.resolve("handovers.json")
     private var locations = read(locationsFile)
     private var incidentRows = read(incidentsFile)
+    private var handovers = read(handoversFile)
 
     @Synchronized fun location(key: String, root: FolderRef, packageName: String, installFirstMillis: Long?): LocationFact {
         val row = locations.optJSONObject(key) ?: return LocationFact.Bound(root)
@@ -59,13 +62,50 @@ internal class SaveProtectionStore(private val directory: Path) {
         incidentRows = next
     }
 
+    /** Written before binding, so even games never opened in this process get RomM-first recovery. */
+    @Synchronized fun rebound(key: String, atMillis: Long = System.currentTimeMillis()) = editHandover(key) { row ->
+        row.put("reboundAtMillis", maxOf(atMillis, row.getLong("reboundAtMillis") + 1)).put("handled", JSONObject())
+    }
+
+    @Synchronized fun requireBackup(key: String, game: Game) = editHandover(key) { row ->
+        row.getJSONObject("pending").put(gameKey(game), true)
+    }
+
+    @Synchronized fun pendingBackup(key: String, game: Game): Boolean =
+        handovers.optJSONObject(key)?.optJSONObject("pending")?.optBoolean(gameKey(game)) == true
+
+    @Synchronized fun needsBackup(key: String, game: Game): Boolean {
+        if (pendingBackup(key, game)) return true
+        val row = handovers.optJSONObject(key) ?: return false
+        val at = row.getLong("reboundAtMillis")
+        return at > 0 && row.getJSONObject("handled").optLong(gameKey(game), -1) != at
+    }
+
+    @Synchronized fun handled(key: String, game: Game) = editHandover(key) { row ->
+        row.getJSONObject("handled").put(gameKey(game), row.getLong("reboundAtMillis"))
+        row.getJSONObject("pending").remove(gameKey(game))
+    }
+
+    private fun editHandover(key: String, change: (JSONObject) -> Unit) {
+        val next = JSONObject(handovers.toString())
+        val row = next.optJSONObject(key) ?: JSONObject().put("reboundAtMillis", 0).put("handled", JSONObject()).put("pending", JSONObject())
+        change(row)
+        next.put(key, row)
+        writeDurably(handoversFile, next.toString().toByteArray())
+        handovers = next
+    }
+
+    private fun gameKey(game: Game) = "${game.backendId}\u0000${game.remoteKey}"
+
     private fun read(file: Path): JSONObject {
         val text = try { Files.readAllBytes(file).toString(Charsets.UTF_8) } catch (_: NoSuchFileException) { return JSONObject() }
         return try {
             JSONObject(text).also { json ->
                 json.keys().forEach { key ->
                     val row = json.getJSONObject(key)
-                    if (file == incidentsFile) incidentFromJson(row) else {
+                    if (file == incidentsFile) incidentFromJson(row) else if (file == handoversFile) {
+                        row.getLong("reboundAtMillis"); row.getJSONObject("handled"); row.getJSONObject("pending")
+                    } else {
                         row.getString("identity"); row.getString("label"); row.getString("packageName")
                         EvidenceKind.valueOf(row.getString("evidenceKind")); row.getString("detail"); row.getLong("atMillis")
                     }

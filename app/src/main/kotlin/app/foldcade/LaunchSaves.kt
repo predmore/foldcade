@@ -23,6 +23,7 @@ internal class LaunchSaves(
     private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
     private val protectionGate: suspend (GameRoute, Player, LaunchTarget) -> Unit = { _, _, _ -> },
     private val baseline: (Player, Game, LaunchTarget) -> app.foldcade.language.ProbeSnapshot? = { _, _, _ -> null },
+    private val preserveOutside: suspend (Game, Player, List<SaveSpot>, app.foldcade.api.plugin.ObservedSaves) -> Boolean = { _, _, _, _ -> false },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -158,7 +159,8 @@ internal class LaunchSaves(
         val syncingPlayer = playerForSaveSpots(player, owner, spots, allowFirmware = available)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
-            if (outside.slots.isNotEmpty()) {
+            val preserved = preserveOutside(owner, player, spots, outside)
+            if (outside.slots.isNotEmpty() && !preserved) {
                 plugins.reconcile(libraryId, owner, syncingPlayer, outside)
                 saves.noteHandedOver(libraryId, owner, player, spots, outside)
             }

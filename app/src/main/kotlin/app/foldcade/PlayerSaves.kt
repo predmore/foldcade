@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.FirmwareOffer
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameFileReader
@@ -51,6 +52,8 @@ internal data class SaveSpot(
     val search: SaveFolderSearch? = null,
     val filter: SaveArchiveFilter? = null,
 )
+
+internal data class StagedSaveCopy(val game: Game, val playerKey: String, val playerId: String, val slot: ObservedSlot)
 
 /**
  * Held while the shell checks a save file and writes it, and while a player
@@ -307,15 +310,32 @@ internal class PlayerSaves(
         ObservedSlot(spot.slot, md5Hex(bytes), player.id, stageCopy(game, player, spot, bytes))
     })
 
-    fun stagedCopies(game: Game, player: Player, uris: List<String>): ObservedSaves = ObservedSaves(uris.mapNotNull { uri ->
-        val file = java.nio.file.Paths.get(java.net.URI(uri))
+    /** Sidecars are the queue; incidents are only presentation and may close at any time. */
+    fun queuedCopies(): List<StagedSaveCopy> {
+        if (!Files.isDirectory(handover)) return emptyList()
+        return Files.newDirectoryStream(handover, "live-*.save.json").use { paths ->
+            paths.mapNotNull { sidecar ->
+                try {
+                    val file = sidecar.resolveSibling(sidecar.fileName.toString().removeSuffix(".json"))
+                    if (!Files.isRegularFile(file)) return@mapNotNull null
+                    val json = org.json.JSONObject(Files.readAllBytes(sidecar).toString(Charsets.UTF_8))
+                    val game = Game(json.getString("library"), json.getString("game"), json.getString("platform"), Availability.Cached, json.getString("label"))
+                    val hash = json.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
+                    StagedSaveCopy(game, json.getString("playerKey"), json.getString("player"),
+                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), file.toUri().toString()))
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: Exception) { null } // An unreadable row cannot hide the rest of the queue.
+            }.toList()
+        }
+    }
+
+    fun removeQueuedCopy(copy: StagedSaveCopy) {
+        val file = java.nio.file.Paths.get(java.net.URI(copy.slot.contentUri!!))
         require(file.toAbsolutePath().normalize().parent == handover.toAbsolutePath().normalize())
-        val metadata = org.json.JSONObject(Files.readAllBytes(file.resolveSibling("${file.fileName}.json")).toString(Charsets.UTF_8))
-        if (metadata.getString("library") != game.backendId || metadata.getString("game") != game.remoteKey ||
-            metadata.getString("playerKey") != player.saveFolderId()) return@mapNotNull null
-        val hash = metadata.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
-        ObservedSlot(metadata.getString("slot"), hash, player.id, uri)
-    })
+        // Both removals follow verification. A crash between them leaves only already-uploaded bytes.
+        Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
+        Files.deleteIfExists(file)
+    }
 
     private fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray): String {
         val name = "live-${md5Hex((game.backendId + ":" + game.remoteKey + ":" + player.saveFolderId() + ":" + spot.slot + ":" + storageIdentity(spot.folderUri)).toByteArray())}-${md5Hex(bytes)}.save"

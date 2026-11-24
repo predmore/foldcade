@@ -110,11 +110,11 @@ class LaunchSavesTest {
             val store = SaveProtectionStore(Files.createTempDirectory("incident"))
             store.put(incident(kind))
             val copies = SaveIncidentCopies(saves, plugins, store)
-            copies.beginUnprotected(Melon)
+            copies.beginUnprotected(owner, Melon)
             val spots = saves.spots(Melon, owner, local)
             for (progress in listOf("fresh", "more progress")) {
                 docs.files["$SAVES/Tetris DS (USA).sav"] = progress.toByteArray()
-                assertTrue(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+                assertTrue(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = true))
                 assertTrue(saves.changedSince(owner.backendId, owner, Melon, spots).slots.isEmpty())
                 val open = store.incidents().single()
                 assertTrue(open.recoveryRequired)
@@ -135,7 +135,7 @@ class LaunchSavesTest {
         store.put(incident)
         val copies = SaveIncidentCopies(saves, plugins, store)
         val spots = saves.spots(Melon, owner, local)
-        assertTrue(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+        assertTrue(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = true))
         val staged = store.incidents().single().staged.single()
         assertEquals("live", Files.readString(java.nio.file.Paths.get(java.net.URI(staged))))
         assertTrue(saves.changedSince(owner.backendId, owner, Melon, spots).slots.isEmpty())
@@ -149,9 +149,126 @@ class LaunchSavesTest {
         val store = SaveProtectionStore(Files.createTempDirectory("incident"))
         val copies = SaveIncidentCopies(saves, plugins, store)
         val spots = saves.spots(Melon, owner, local)
-        assertFalse(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+        val ordinary = copies.beginUnprotected(owner, Melon)
+        assertFalse(ordinary)
+        assertFalse(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = ordinary))
         store.put(incident(IncidentKind.WrongFolder))
-        assertFalse(copies.preserveReturn(owner, Melon, spots, unprotected = false))
+        assertFalse(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = false))
+    }
+
+    @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {
+        val directory = Files.createTempDirectory("incident")
+        val store = SaveProtectionStore(directory)
+        val incident = incident(IncidentKind.WrongFolder)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val spots = saves.spots(Melon, owner, local)
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "live before Fix".toByteArray()
+        server.backupsFail = true
+        copies.stage(owner, Melon, spots, incident, mark = true)
+        copies.keep(owner, Melon)
+        val queued = saves.queuedCopies().single()
+        val file = java.nio.file.Paths.get(java.net.URI(queued.slot.contentUri!!))
+        val sidecar = file.resolveSibling("${file.fileName}.json")
+        store.put(store.incidents().single().copy(repair = RepairState.Done))
+        server.toPlace = "RomM head"
+        LaunchSaves(saves, plugins, preserveOutside = copies::preserveBeforeLaunch) { awaiting += it }
+            .prepare(GameRoute("tile", play, owner), Melon, local)
+        assertEquals("RomM head", docs.files.getValue("$SAVES/Tetris DS (USA).sav").toString(Charsets.UTF_8))
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "normal progress".toByteArray()
+        val observed = saves.changedSince(owner.backendId, owner, Melon, spots)
+        plugins.reconcile(owner.backendId, owner, Melon, observed)
+        saves.noteHandedOver(owner.backendId, owner, Melon, spots, observed)
+        copies.keep(owner, Melon) // still offline
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val reading = RootReading(incident.bound!!, true, emptyList(), "normal", true, true, true)
+        probes.apply(Melon, ProbeSnapshot(200, 1, "emulator", listOf(reading)), RootVerdict.Uses(reading.root, incident.evidence, 200))
+        assertTrue(store.incidents().isEmpty())
+        assertTrue(Files.exists(file))
+        assertTrue(Files.exists(sidecar))
+        val restartedSaves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("backups"), handover)
+        val restarted = SaveIncidentCopies(restartedSaves, plugins, SaveProtectionStore(directory))
+        server.backupsFail = false
+        restarted.keepAll(owner.backendId)
+        assertEquals(listOf(md5Hex("live before Fix".toByteArray())), server.backups)
+        assertEquals(listOf(md5Hex("normal progress".toByteArray())), server.observed)
+        assertTrue(restartedSaves.queuedCopies().isEmpty())
+        assertFalse(Files.exists(file))
+        assertFalse(Files.exists(sidecar))
+    }
+
+    @Test fun aReboundFenceBacksUpGameBFirstSeenAfterRestartInsteadOfPromotingIt() = runBlocking {
+        val directory = Files.createTempDirectory("handover-fence")
+        val store = SaveProtectionStore(directory)
+        store.rebound(Melon.id, 100)
+        store.handled(Melon.id, owner) // Fix only saw game A in the previous process.
+        val gameB = owner.copy(remoteKey = "other", label = "Other")
+        val target = LaunchTarget.ContentUri("content://other")
+        docs.names[target.uri] = "Other.nds"
+        docs.files["$SAVES/Other.sav"] = "live B".toByteArray()
+        server.toPlace = "RomM B head"
+        val restored = SaveProtectionStore(directory)
+        val copies = SaveIncidentCopies(saves, plugins, restored)
+        val launch = LaunchSaves(saves, plugins, preserveOutside = copies::preserveBeforeLaunch) { awaiting += it }
+        launch.prepare(GameRoute("other-tile", gameB, gameB), Melon, target)
+        assertEquals(listOf("prepareLaunch:other"), server.calls)
+        assertTrue(server.observed.isEmpty())
+        assertEquals(listOf(md5Hex("live B".toByteArray())), server.backups)
+        assertEquals("RomM B head", docs.files.getValue("$SAVES/Other.sav").toString(Charsets.UTF_8))
+        assertFalse(SaveProtectionStore(directory).needsBackup(Melon.id, gameB))
+        launch.prepare(GameRoute("other-tile", gameB, gameB), Melon, target)
+        assertEquals(1, server.backups.size)
+    }
+
+    @Test fun aStartedBypassRemainsBackupOnlyIfFixClosesItsIncidentBeforeReturn() = runBlocking {
+        val directory = Files.createTempDirectory("bypass-return")
+        val store = SaveProtectionStore(directory)
+        val incident = incident(IncidentKind.WrongFolder)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", owner, owner), Melon, local, syncing = false)
+        // Preparation, cancelling, or a refused Android start cannot set this latch.
+        assertFalse(store.incidents().single().recoveryRequired)
+        assertFalse(store.pendingBackup(Melon.id, owner))
+        val backupOnly = copies.beginUnprotected(owner, Melon) // actual successful start
+        assertTrue(backupOnly)
+        val pending = LibraryReturn(owner.backendId, owner, Melon, targetUri = local.uri, unprotectedSession = true, preserveAsBackup = backupOnly)
+        store.close(incident.id) // guided Fix completed from R1 while the emulator remained open
+        val restored = SaveProtectionStore(directory)
+        val returned = decodeLibraryReturn(pending.encode()) { Melon }!!
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "bypass progress".toByteArray()
+        val restarted = SaveIncidentCopies(saves, plugins, restored)
+        assertTrue(restarted.preserveReturn(returned.game, returned.player, returnSpots(saves, returned), returned.preserveAsBackup))
+        assertEquals(listOf(md5Hex("bypass progress".toByteArray())), server.backups)
+        assertTrue(server.calls.isEmpty())
+        assertTrue(server.observed.isEmpty())
+        assertFalse(restored.pendingBackup(Melon.id, owner))
+    }
+
+    @Test fun aFailedStrictBypassReadKeepsItsLatchAndStopsTheNextPlacementUntilItCanStage() = runBlocking {
+        val directory = Files.createTempDirectory("bypass-retry")
+        val store = SaveProtectionStore(directory)
+        store.put(incident(IncidentKind.WrongFolder))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val backupOnly = copies.beginUnprotected(owner, Melon)
+        val spots = saves.spots(Melon, owner, local)
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "unread progress".toByteArray()
+        docs.unreadable = true
+        assertTrue(runCatching { copies.preserveReturn(owner, Melon, spots, backupOnly) }.exceptionOrNull() is SaveNotPlaced)
+        store.close(store.incidents().single().id)
+        val restored = SaveProtectionStore(directory)
+        val restarted = SaveIncidentCopies(saves, plugins, restored)
+        server.toPlace = "RomM head"
+        val launch = LaunchSaves(saves, plugins, preserveOutside = restarted::preserveBeforeLaunch) { awaiting += it }
+        assertTrue(runCatching { launch.prepare(GameRoute("tile", play, owner), Melon, local) }.exceptionOrNull() is SaveNotPlaced)
+        assertTrue(restored.pendingBackup(Melon.id, owner))
+        assertTrue(server.calls.isEmpty())
+        assertEquals("unread progress", docs.files.getValue("$SAVES/Tetris DS (USA).sav").toString(Charsets.UTF_8))
+        docs.unreadable = false
+        launch.prepare(GameRoute("tile", play, owner), Melon, local)
+        assertEquals(listOf(md5Hex("unread progress".toByteArray())), server.backups)
+        assertTrue(server.observed.isEmpty())
+        assertFalse(restored.pendingBackup(Melon.id, owner))
     }
 
     @Test fun storedIncidentsStillGateWhenProbingThrowsButDoneDoesNot() {
@@ -162,7 +279,9 @@ class LaunchSavesTest {
             override fun hasSaveFolder() = true
         }
         val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies)
-        probes.gate(player, owner)
+        var publications = 0
+        probes.gate(player, owner) { publications++; assertEquals(null, it) }
+        assertEquals(1, publications)
         store.put(incident(IncidentKind.WrongFolder))
         assertTrue(runCatching { probes.gate(player, owner) }.exceptionOrNull() is SaveProtectionStop)
         store.put(incident(IncidentKind.WrongFolder).copy(repair = RepairState.Done))
@@ -384,7 +503,8 @@ class LaunchSavesTest {
     private val server = RecordingLibrary("server")
     private val docs = Documents()
     private val marks = HashMap<String, String>()
-    private val saves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("launch-saves"), Files.createTempDirectory("launch-handover"))
+    private val handover = Files.createTempDirectory("launch-handover")
+    private val saves = PlayerSaves(docs, Marks(marks), Files.createTempDirectory("launch-saves"), handover)
     private val awaiting = mutableListOf<String>()
     private val firmwarePasses = mutableListOf<Pair<LaunchTarget, String>>()
     private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
@@ -392,6 +512,7 @@ class LaunchSavesTest {
             override val apiVersion = PLUGIN_API_VERSION
             override val apiMinor = PLUGIN_API_MINOR
             override val libraries: List<LibraryBackend> = listOf(folder, server)
+            override val players: List<Player> = listOf(Melon)
         })
     }
     private val play = Game("folder", "content://rf4", "nintendo-ds", Availability.LocalOnly, "Tetris")
@@ -732,6 +853,7 @@ class LaunchSavesTest {
         val files = HashMap<String, ByteArray>()
         var firmwarePublications = 0
         var failWrites = false
+        var unreadable = false
         override fun list(folderUri: String, name: String) = files.keys.filter { it.startsWith("$folderUri/") }.map {
             SaveEntry(it.removePrefix("$folderUri/"), it, false)
         }
@@ -740,9 +862,10 @@ class LaunchSavesTest {
         override fun find(folderUri: String, name: String): String? = "$folderUri/$name".takeIf { it in files }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = ByteArray(0) }
         override fun read(uri: String): ByteArray? =
-            if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.let { it.archiveToPlace ?: it.toPlace?.toByteArray() } else files[uri]
+            if (unreadable) null else if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.let { it.archiveToPlace ?: it.toPlace?.toByteArray() } else files[uri]
         override fun head(uri: String, size: Int): ByteArray? = read(uri)?.take(size)?.toByteArray()
-        override fun children(folderUri: String, path: String): List<SaveChild> {
+        override fun children(folderUri: String, path: String): List<SaveChild>? {
+            if (unreadable) return null
             val prefix = folderUri + "/" + if (path.isEmpty()) "" else "$path/"
             return files.filterKeys { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
                 .map { (uri, bytes) -> SaveChild(uri.substringAfterLast('/'), uri, false, bytes.size.toLong()) }

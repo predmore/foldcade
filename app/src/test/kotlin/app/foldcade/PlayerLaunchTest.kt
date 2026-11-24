@@ -38,6 +38,15 @@ class PlayerLaunchTest {
     )
     private val uri = LaunchTarget.ContentUri("content://games/title.cci")
 
+    @Test fun theSaveProbeUsesThePackageChosenByTheLaunchIntent() {
+        val original = AzaharPlayer()
+        val selected = object : app.foldcade.api.plugin.Player by original {
+            override fun launchIntent(request: app.foldcade.api.plugin.LaunchRequest): app.foldcade.api.plugin.PlayerIntent =
+                original.launchIntent(request).copy(packageName = "chosen.flavor")
+        }
+        assertEquals("chosen.flavor", saveProbePackage(selected, game, uri, original.packageNames.toSet()) { null })
+    }
+
     @Test
     fun missingInstallIsReportedBeforeTheFile() {
         val decision = planPlayerLaunch(

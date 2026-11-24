@@ -124,12 +124,15 @@ internal class SaveProbes(
             old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false))
     }
 
-    @Synchronized fun gate(player: Player, game: Game, hasKnownSave: Boolean = false, resolvedPackage: String? = null) {
+    @Synchronized fun gate(player: Player, game: Game, hasKnownSave: Boolean = false, resolvedPackage: String? = null, onReading: (ProbeSnapshot?) -> Unit = {}) {
+        var reading: ProbeSnapshot? = null
         try {
             // Root judgement needs no game hashes. A failed optional probe is not a positive fact.
-            snapshot(player, hasKnownSave = hasKnownSave, resolvedPackage = resolvedPackage)?.let { check(player, it, game) }
+            reading = snapshot(player, hasKnownSave = hasKnownSave, resolvedPackage = resolvedPackage)
+            reading?.let { check(player, it, game) }
         } catch (cancelled: CancellationException) { throw cancelled
-        } catch (_: Exception) { Unit }
+        } catch (_: Exception) { Unit
+        } finally { onReading(reading) }
         store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch }?.let { throw SaveProtectionStop(it) }
     }
 
