@@ -278,6 +278,13 @@ internal class DeviceControl(
         signal()
     }
 
+    /** Read the device again (`state`, no probe), as when R1 opens: something outside Foldcade may have changed it. */
+    fun refresh() {
+        if (target == null) return
+        owe(READ)
+        signal()
+    }
+
     /** The screens changed hands, the layout changed, or a game's tier did. */
     fun reconcile() {
         if (target != null) signal()

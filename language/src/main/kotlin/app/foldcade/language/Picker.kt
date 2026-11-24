@@ -1600,7 +1600,9 @@ fun retainMenuRows(previous: PickerModel, before: PickerModel): PickerModel {
         val rows = panelRows(panel, stable)
         if (oldRows != rows) {
             val selected = oldRows.getOrNull(oldPanel.index)
+            // Bottom's slider gone, as when its screen came to match the top's: the one slider takes the focus.
             val index = rows.indexOf(selected).takeIf { it >= 0 }
+                ?: rows.indexOf(Row.Brightness).takeIf { selected == Row.BottomBrightness && it >= 0 }
                 ?: panel.index.coerceIn(0, rows.lastIndex.coerceAtLeast(0))
             return stable.copy(panel = panel.copy(index = index))
         }
@@ -2381,6 +2383,9 @@ fun reduce(
         // A held A flips a switch once. The menu stays open under it, so each repeat would flip it back.
         if (repeatCount > 0 && meaning == Meaning.Activate &&
             panelRows(panel, coerced).getOrNull(panel.index) == Row.OpenWith) return coerced to null
+        // Split and Link flip the sliders once, as a switch does.
+        if (repeatCount > 0 && meaning == Meaning.Activate &&
+            panelRows(panel, coerced).getOrNull(panel.index).let { it == Row.Brightness || it == Row.BottomBrightness }) return coerced to null
         if (repeatCount > 0 && meaning == Meaning.Activate &&
             panelRows(panel, coerced).getOrNull(panel.index)?.let { rowControl(it, coerced) is RowControl.Toggle } == true
         ) return coerced to null
@@ -2887,7 +2892,9 @@ private fun deviceStep(model: PickerModel, row: Row, direction: Int): Pair<Picke
         }
         Row.BottomBrightness -> device?.takeIf { it.has(DeviceCapability.Brightness) }?.let {
             val position = steppedBrightness(bottomBrightnessPosition(it.brightnessBottom ?: 0f), direction)
-            model.copy(device = it.copy(brightnessBottom = bottomBrightnessLevel(position))) to Effect.SetBottomBrightness(position)
+            // Adjusting one screen keeps the sliders split for this visit, even as the levels meet: only Link joins them.
+            model.copy(device = it.copy(brightnessBottom = bottomBrightnessLevel(position)), brightnessUnlinked = true) to
+                Effect.SetBottomBrightness(position)
         }
         Row.GameFan -> model.tileActions?.let { tile ->
             val game = tile.game ?: return null
@@ -2925,7 +2932,8 @@ private fun stepRow(model: PickerModel, row: Row, direction: Int): PickerModel? 
     return when (row) {
         Row.MusicVolume -> model.copy(music = model.music.nudged(direction))
         Row.Brightness -> if (model.brightnessAllowed) {
-            model.copy(brightness = steppedBrightness(model.brightness, direction))
+            // Top, split: adjusting it keeps the sliders split for this visit, even as the levels meet.
+            model.copy(brightness = steppedBrightness(model.brightness, direction), brightnessUnlinked = model.brightnessUnlinked || model.brightnessSplit())
         } else {
             model.copy(dialog = brightnessPrompt(model.panel?.screen ?: model.layout.menuScreen))
         }

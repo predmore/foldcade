@@ -1137,6 +1137,7 @@ class FoldcadeApp : Application() {
         artChoices.adopt(shell.sameGroups()).takeIf { it != artChoices }?.let(::saveArtChoices)
         plays.onChanged = shell::notePlayChanged
         shell.onGameFanChanged = { if (shell.model.device != null) deviceControl.reconcile() }
+        shell.onRightOpened = { if (shell.model.device != null) deviceControl.refresh() }
         commandCenter = CommandCenter(
             store = store,
             scope = scope,

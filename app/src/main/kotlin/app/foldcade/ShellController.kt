@@ -74,6 +74,7 @@ import app.foldcade.language.findResultHints
 import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
 import app.foldcade.language.brightnessLinked
+import app.foldcade.language.brightnessSplit
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.scrolledShelf
@@ -504,6 +505,7 @@ class ShellController(
     var model: PickerModel
         get() = current
         private set(next) {
+            val previousPanelSide = current.panel?.side
             val changedView = next.homeGrid != current.homeGrid || next.libraryGrid != current.libraryGrid ||
                 next.gridKind != current.gridKind || next.layout != current.layout ||
                 (next.settings != null && current.settings == null) ||
@@ -545,6 +547,7 @@ class ShellController(
                 deleteProgress = if (canceled) 0f else next.deleteProgress,
                 deleteShake = next.deleteShake + if (canceled) 1 else 0)
             if (canceled) cue(next.themeIndex, "back")
+            if (stable.panel?.side == Side.Right && previousPanelSide != Side.Right) onRightOpened()
             publishSavesDue()
             if (stable.saveSetup != null) saveSetupSeen = true
             closeArtAfterFocusChange()
@@ -675,6 +678,9 @@ class ShellController(
 
     /** A game's own fan tier changed. A game open now takes it at once. */
     internal var onGameFanChanged: () -> Unit = {}
+
+    /** R1 opened: its brightness reads the device afresh, since another app may have moved a screen's level. */
+    internal var onRightOpened: () -> Unit = {}
     internal var onPlayerChoiceChanged: (String) -> Unit = {}
     internal var onPlayerAvailabilityChanged: () -> Unit = {}
 
@@ -2676,7 +2682,8 @@ class ShellController(
     fun touchBottomBrightness(position: Int): Effect? {
         val device = model.device?.takeIf { it.has(app.foldcade.language.DeviceCapability.Brightness) } ?: return null
         val clamped = position.coerceIn(0, 100)
-        publish(model.copy(device = device.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped))))
+        // As with the D-pad: a split stays split for this visit while it is adjusted.
+        publish(model.copy(device = device.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped)), brightnessUnlinked = true))
         return Effect.SetBottomBrightness(clamped)
     }
 
@@ -4297,7 +4304,8 @@ class ShellController(
         }
         val clamped = position.coerceIn(0, 100)
         val device = model.device?.takeIf { model.brightnessLinked() }
-        publish(model.copy(brightness = clamped, device = device?.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped)) ?: model.device))
+        publish(model.copy(brightness = clamped, device = device?.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped)) ?: model.device,
+            brightnessUnlinked = model.brightnessUnlinked || model.brightnessSplit()))
         return if (device != null) Effect.SetBottomBrightness(clamped) else null
     }
 

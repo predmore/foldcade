@@ -126,4 +126,54 @@ class LinkedBrightnessTest {
         // Still open, it stays split.
         assertTrue(retainMenuRows(split, reduce(split, Meaning.MoveDown).first).brightnessUnlinked)
     }
+
+    @Test fun adjustingASplitSliderKeepsItSplitEvenAsTheLevelsMeet() {
+        // Opened split because the screens differ: top 50%, bottom 55%. Hold Left on Bottom.
+        val bottom = reduce(r1(top = 50, bottom = 0.55f), Meaning.MoveDown).first
+        assertEquals(Row.BottomBrightness, bottom.focused())
+        val met = reduce(bottom, Meaning.MoveLeft, repeatCount = 1).first
+        assertEquals(50, bottomBrightnessPosition(met.device!!.brightnessBottom!!))
+        // Still split, still on Bottom: the next repeat moves Bottom again, never the fan under it.
+        assertEquals(listOf(Row.Brightness, Row.BottomBrightness), met.rows())
+        assertEquals(Row.BottomBrightness, met.focused())
+        assertEquals(Effect.SetBottomBrightness(45), reduce(met, Meaning.MoveLeft, repeatCount = 2).second)
+        // The same on Top.
+        val top = reduce(r1(top = 55, bottom = 0.5f), Meaning.MoveLeft).first
+        assertEquals(listOf(Row.Brightness, Row.BottomBrightness), top.rows())
+        // Only Link, or the next R1, joins them.
+        assertEquals(listOf(Row.Brightness), reduce(met, Meaning.Activate).first.rows())
+    }
+
+    @Test fun bottomGoneByItselfHandsTheFocusToTheOneSlider() {
+        // Something else brought the screens together while Bottom had the focus and nothing was adjusted here.
+        val bottom = reduce(r1(top = 50, bottom = 0.6f), Meaning.MoveDown).first
+        val matched = retainMenuRows(bottom, bottom.copy(device = bottom.device!!.copy(brightnessBottom = 0.5f)))
+        assertEquals(listOf(Row.Brightness), matched.rows())
+        assertEquals(Row.Brightness, matched.focused())
+    }
+
+    @Test fun aHeldASplitsOrLinksOnce() {
+        val split = reduce(r1(), Meaning.Activate).first
+        assertTrue(split.brightnessUnlinked)
+        val held = reduce(split, Meaning.Activate, repeatCount = 1)
+        assertEquals(split, held.first)
+        assertNull(held.second)
+        val linked = reduce(split, Meaning.Activate).first
+        assertEquals(linked, reduce(linked, Meaning.Activate, repeatCount = 3).first)
+    }
+
+    @Test fun aFreshReadThatShowsTheScreensDifferSplitsWithoutMovingTheFocus() {
+        // Linked at 65%, the focus on the fan under the slider.
+        val linked = reduce(r1(top = 65, bottom = 0.65f), Meaning.MoveDown).first
+        assertEquals(Row.FanNow, linked.focused())
+        // R1's read comes back: the bottom was set to 20% from outside.
+        val read = retainMenuRows(linked, linked.copy(device = linked.device!!.copy(brightnessBottom = 0.2f)))
+        assertEquals(listOf(Row.Brightness, Row.BottomBrightness), read.rows())
+        assertEquals(Row.FanNow, read.focused())
+        // On the slider itself, it stays there, now named Top.
+        val onSlider = r1(top = 65, bottom = 0.65f)
+        val split = retainMenuRows(onSlider, onSlider.copy(device = onSlider.device!!.copy(brightnessBottom = 0.2f)))
+        assertEquals(Row.Brightness, split.focused())
+        assertEquals(DeviceCopy.top, rowText(Row.Brightness, split).label)
+    }
 }
