@@ -255,6 +255,8 @@ class RomFolderTest {
         try {
             val rom = dir.resolve(set.fileName)
             Files.writeString(rom, "cue")
+            assertEquals(rom, cachedBootFile(rom, set, "playstation"))
+            assertFalse(Files.exists(dir.resolve("Final Fantasy VII (USA).m3u")))
             val boot = bootFile(rom, set, "playstation")
             assertEquals(dir.resolve("Final Fantasy VII (USA).m3u"), boot)
             assertEquals(discs.joinToString("\n", postfix = "\n"), Files.readString(boot))
@@ -263,8 +265,14 @@ class RomFolderTest {
             pruneRomFolder(rom, set)
             assertTrue(Files.exists(boot))
             assertEquals(boot, bootFile(rom, set, "playstation"))
+            assertEquals(boot, cachedBootFile(rom, set, "playstation"))
             // Players of other platforms keep getting Disc 1.
             assertEquals(rom, bootFile(rom, set, "saturn"))
+            assertEquals(rom, cachedBootFile(rom, set, "saturn"))
+            val marker = boot.resolveSibling("${boot.fileName}.verified")
+            Files.delete(marker)
+            assertEquals(rom, cachedBootFile(rom, set, "playstation"))
+            assertFalse(Files.exists(marker))
         } finally {
             dir.toFile().deleteRecursively()
         }

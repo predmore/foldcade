@@ -594,6 +594,28 @@ class RommLibraryTest {
         }
     }
 
+    @Test fun backgroundSaveChecksSkipAnActiveRomDownloadInsteadOfWaitingForItsLock() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val started = CompletableDeferred<Unit>()
+        ops.onDownload = { _, _, _, _, _, _ -> started.complete(Unit); CompletableDeferred<Path>().await() }
+        val harness = harness(ops)
+        val game = harness.library.listGames("3ds", GameQuery()).games.single()
+        val download = launch { harness.library.ensureLocal(game) }
+        try {
+            withTimeout(2_000) { started.await() }
+            assertNull(withTimeout(2_000) { cachedRommSaveTarget(harness.library, game) })
+            assertTrue(download.isActive)
+            download.cancelAndJoin()
+            assertNull(withTimeout(2_000) { cachedRommSaveTarget(harness.library, game) })
+        } finally {
+            download.cancelAndJoin()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun systemsLastReportedEmptyDoNotResurrectOldCachedGames() = runBlocking {
         val ops = ScriptedOps()

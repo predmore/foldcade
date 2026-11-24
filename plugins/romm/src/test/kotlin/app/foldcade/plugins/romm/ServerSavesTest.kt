@@ -126,7 +126,7 @@ class ServerSavesTest {
         assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
     }
 
-    @Test fun preservationReusesTheHeadOrAnOlderVersionWithTheSameMemberAwareHash() = runBlocking {
+    @Test fun preservationArchivesSlotMatchesAndOnlyReusesUnslottedMemberAwareCopies() = runBlocking {
         hold("RomM head")
         val head = server.single()
         val zipped = add(zip(), "sav", player.id, at = -1)
@@ -136,16 +136,31 @@ class ServerSavesTest {
         assertEquals(zipped.contentHash, rommSaveHash(sameMembers))
         val before = server.toList()
         val ledger = data.ledger(ROM).slots()
+        val archiveIds = mutableListOf<Long>()
+        val library = library()
         for ((body, expected) in listOf("RomM head".toByteArray() to head, sameMembers to zipped)) {
             val file = root.resolve("live.save")
             writeDurably(file, body)
-            val ids = library().keepAsBackups(GAME, player,
+            val ids = library.keepAsBackups(GAME, player,
                 ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString()))))
-            assertEquals(listOf(expected.id.toString()), ids)
+            val kept = server.single { it.id.toString() == ids.single() }
+            assertNull(kept.slot)
+            assertNotEquals(expected.id, kept.id)
+            assertEquals(expected.contentHash, kept.contentHash)
+            archiveIds += kept.id
         }
-        assertEquals(before, server)
+        assertEquals(before, server.filter { it.slot != null })
+        assertEquals(2, events.count { it.startsWith("archive:") })
+        // Slot retention can remove both matches without losing either preserved copy.
+        server.removeAll { it.slot != null }
+        assertTrue(server.map { it.id }.containsAll(archiveIds))
+        val file = root.resolve("live.save")
+        writeDurably(file, zip())
+        assertEquals(listOf(archiveIds.last().toString()), library.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))))
+        assertEquals(2, events.count { it.startsWith("archive:") })
         assertEquals(ledger, data.ledger(ROM).slots())
-        assertFalse(events.any { it.startsWith("archive:") || it.startsWith("upload:") || it == "sync" })
+        assertFalse(events.any { it.startsWith("upload:") || it == "sync" })
     }
 
     @Test fun aBackupRemembersItsFolderAcrossRestartAndKeepsOtherServersAndRomsSeparate() = runBlocking {
@@ -159,13 +174,18 @@ class ServerSavesTest {
         val listed = restored.serverSaves(GAME, player)
         assertEquals("AzaharQA", listed.single { it.id == id }.source)
         assertTrue(id in restored.serverSaveBackups(GAME))
-        // Older durable queues recorded only storage identity; reconnect still recovers the folder label.
-        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"identity\":\"primary:AzaharQA\"}")
+        // A reused Backup retains its original folder instead of inheriting a later copy's origin.
+        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"identity\":\"primary:Elsewhere\"}")
         assertEquals(listOf(id), restored.keepAsBackups(GAME, player,
             ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))))
         assertEquals(mapOf(id to "AzaharQA"), RommData(root.resolve("data"), ORIGIN).backupFolders(ROM))
         assertTrue(RommData(root.resolve("data"), "https://other.example").backupFolders(ROM).isEmpty())
         assertTrue(data.backupFolders(ROM + 1).isEmpty())
+        // A still-unlabelled legacy queue entry can fill the origin from storage identity.
+        writeDurably(file, "legacy copy".toByteArray())
+        val legacy = restored.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))).single()
+        assertEquals("Elsewhere", data.backupFolders(ROM)[legacy])
     }
 
     @Test fun listsEverySlotAndUsesTheOriginsDeviceNameAndTheHeldHash() = runBlocking {

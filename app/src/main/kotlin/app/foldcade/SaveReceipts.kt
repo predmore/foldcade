@@ -8,8 +8,15 @@ import app.foldcade.language.OffDeviceFact
 
 /** No launch or setup: only games with held saves need their readable local ROM resolved. */
 internal suspend fun resolveReceiptSpots(saves: PlayerSaves, backend: LibraryBackend, game: Game, player: Player,
+    cached: List<SaveSpot>? = null,
     local: suspend () -> LaunchTarget?): List<SaveSpot>? {
-    if (backend.saves(game).slots.isEmpty()) return null
+    if (backend.saves(game).slots.isEmpty()) {
+        val known = cached ?: return null
+        val declarations = player.saveDeclarations(game)
+        return known.takeIf { spots -> spots.all { spot -> declarations.any { declaration ->
+            declaration.slot == spot.slot && declaration.locationUri?.let { storageIdentity(it) } == storageIdentity(spot.folderUri)
+        } } }
+    }
     val target = local() ?: return null
     return saves.spots(player, game, target, forLaunch = false)
 }

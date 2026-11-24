@@ -1675,17 +1675,20 @@ class FoldcadeApp : Application() {
             shell.protectionRoutes().mapNotNull { route -> shell.savePlayer(route)?.let { route to it } }
         }
         val seen = mutableSetOf<Pair<String, String>>()
+        val cached = receiptSpots.entries.associateBy { it.key.backendId to it.key.remoteKey }
         for ((route, player) in routes) for (game in (listOf(route.saves) + route.servers).distinct()) {
             if (libraryId != null && game.backendId != libraryId || !seen.add(game.backendId to game.remoteKey)) continue
             val backend = plugins.library(game.backendId) ?: continue
+            val previous = cached[game.backendId to game.remoteKey]
             val spots = try {
-                resolveReceiptSpots(playerSaves, backend, game, player) {
+                resolveReceiptSpots(playerSaves, backend, game, player, cached = previous?.value?.takeIf { it.first.id == player.id }?.second) {
                     app.foldcade.plugins.romm.cachedRommSaveTarget(backend, game)
                         ?: if (route.play.backendId == LocalFolderBackend.ID) plugins.ensureLocal(route.play.backendId, route.play) else null
                 }
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
             if (spots == null) {
-                receiptSpots.keys.filter { it.backendId == game.backendId && it.remoteKey == game.remoteKey }.forEach(receiptSpots::remove)
+                if (previous == null) continue // No held save or prior receipt: no per-game Main hop or state write.
+                receiptSpots.remove(previous.key)
                 withContext(Dispatchers.Main.immediate) { shell.setSaveDestination(game, app.foldcade.language.OffDeviceFact.Unknown) }
                 continue
             }

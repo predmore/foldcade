@@ -97,7 +97,7 @@ interface LibraryBackend {
     /** Whether saves can reach this backend now. Added in API minor 26. */
     suspend fun saveServiceState(): SaveServiceState = SaveServiceState.Unknown
 
-    /** Keep and verify copies, returning server IDs. Reuse identical server versions instead of uploading. Minor 26. */
+    /** Keep and verify unslotted Backups, returning server IDs. Reuse identical unslotted copies. Minor 26. */
     suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> =
         throw PluginException.Unavailable("Backups are not supported")
 

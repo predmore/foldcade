@@ -60,21 +60,43 @@ class LaunchSavesTest {
     }
 
     @Test fun backgroundReceiptResolutionSkipsGamesWithoutHeldSavesAndMissingLocalRoms() = runBlocking {
-        assertEquals(null, resolveReceiptSpots(saves, server, owner, Melon) { error("Must not resolve a game without held saves") })
+        val untracked = object : Player by Melon {
+            override fun saveDeclarations(game: Game): List<SaveDeclaration> = error("Do not resolve an untracked game without held saves")
+        }
+        assertEquals(null, resolveReceiptSpots(saves, server, owner, untracked) { error("Must not resolve a game without held saves") })
         server.held = listOf("sav")
         assertEquals(null, resolveReceiptSpots(saves, server, owner, Melon) { null })
         assertTrue(docs.files.isEmpty())
         assertTrue(server.calls.isEmpty())
     }
 
-    @Test fun aVerifiedExistingServerVersionDrainsTheQueueWithoutAnExtraBackup() = runBlocking {
+    @Test fun aTrackedGameWithoutHeldSavesKeepsNothingYetByRereadingItsWorkingSpots() = runBlocking {
+        val spots = saves.spots(Melon, owner, local)
+        val resolved = resolveReceiptSpots(saves, server, owner, Melon, cached = spots) {
+            error("A known empty save needs no ROM lookup")
+        }!!
+        assertEquals(spots, resolved)
+        val destination = readSaveReceipt(saves, server, owner, resolved)
+        assertEquals(OffDeviceFact.NothingYet, destination)
+        val root = FolderRef("primary:saves", "saves")
+        assertEquals(SaveStatus.NothingYet, deriveSaveStatus(SaveFacts(SaveKeeper.Emulator(Melon.displayName),
+            LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "saved"), 200), SpotFact.Resolved,
+            destination, null, emptyList(), true)))
+        val rebound = object : Player by Melon {
+            override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("sav", "content://another-folder"))
+        }
+        assertEquals(null, resolveReceiptSpots(saves, server, owner, rebound, cached = spots) { error("No held save") })
+        assertTrue(server.calls.isEmpty())
+    }
+
+    @Test fun aVerifiedExistingBackupDrainsTheQueueWithoutAnExtraBackup() = runBlocking {
         docs.files["$SAVES/Tetris DS (USA).sav"] = "already on RomM".toByteArray()
         val store = SaveProtectionStore(Files.createTempDirectory("duplicate-copy"))
         val incident = incident(IncidentKind.WrongFolder)
         store.put(incident)
         val copies = SaveIncidentCopies(saves, plugins, store)
         copies.stage(owner, Melon, saves.spots(Melon, owner, local), incident, mark = true)
-        server.existingVersionId = "head-130"
+        server.existingVersionId = "backup-131"
         copies.keep(owner, Melon)
         assertTrue(saves.queuedCopies().isEmpty())
         assertTrue(store.incidents().single().staged.isEmpty())

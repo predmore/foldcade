@@ -94,7 +94,9 @@ internal class RommData(val root: Path, origin: String) {
     } catch (_: Exception) { emptyMap() }
 
     fun rememberBackupFolder(romId: Long, id: String, label: String) {
-        val next = backupFolders(romId) + (id to label)
+        val previous = backupFolders(romId)
+        if (!previous[id].isNullOrBlank()) return
+        val next = previous + (id to label)
         writeDurably(romSaves(romId).resolve("backup-folders.json"),
             JsonObject(next.mapValues { JsonPrimitive(it.value) }).toString().toByteArray())
     }

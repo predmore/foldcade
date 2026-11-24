@@ -501,14 +501,18 @@ internal class RommLibrary internal constructor(
         }
     }
 
-    internal suspend fun cachedSaveTarget(game: Game): LaunchTarget? = fileLock(game.romId()).withLock {
-        val wiring = gate.wiring()
-        val catalog = gate.restoreCatalog(wiring)
-        runInterruptible(Dispatchers.IO) {
-            val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, game.romId())
-            if (spec == null) return@runInterruptible null
-            verifiedRom(wiring.romRoot, game.romId(), spec)?.let { launchTarget(wiring, it) }
-        }
+    internal suspend fun cachedSaveTarget(game: Game): LaunchTarget? {
+        val lock = fileLock(game.romId())
+        if (!lock.tryLock()) return null
+        try {
+            val wiring = gate.wiring()
+            val catalog = gate.restoreCatalog(wiring)
+            return runInterruptible(Dispatchers.IO) {
+                val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, game.romId())
+                if (spec == null) return@runInterruptible null
+                verifiedRom(wiring.romRoot, game.romId(), spec)?.let { launchTarget(wiring, cachedBootFile(it, spec, game.platformId)) }
+            }
+        } finally { lock.unlock() }
     }
 
     /**
@@ -906,16 +910,17 @@ internal class RommLibrary internal constructor(
                     val hash = app.foldcade.romm.rommSaveHash(bytes) ?: throw PluginException.Unavailable("The copy cannot be verified")
                     val zip = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
                     val existing = ops.listSaves(romId, device).firstOrNull {
-                        it.romId == romId && it.contentHash?.lowercase() == hash
+                        it.romId == romId && it.slot == null && it.contentHash?.lowercase() == hash
                     }
                     val id = existing?.id ?: ops.uploadArchive(app.foldcade.romm.RommSave(
                         0, romId, if (zip) "save.zip" else "save.sav", null, player.id, hash,
                         java.time.Instant.now(), bytes.size.toLong(), null, emptyList(), null,
                     ), device, hash, bytes)
                     val verified = ops.listSaves(romId, device).singleOrNull { it.id == id && it.romId == romId }
-                    if (verified == null || verified.contentHash?.lowercase() != hash ||
-                        existing == null && (verified.slot != null || verified.sizeBytes != bytes.size.toLong()))
+                    if (verified == null || verified.slot != null || verified.contentHash?.lowercase() != hash)
                         throw PluginException.Unavailable("The Backup did not verify")
+                    // New uploads must match their byte size; an existing ZIP can have the same members in a different container.
+                    if (existing == null && verified.sizeBytes != bytes.size.toLong()) throw PluginException.Unavailable("The Backup size did not verify")
                     if (verified.slot == null && local != null) {
                         val label = runInterruptible(Dispatchers.IO) {
                             try {
@@ -1511,6 +1516,15 @@ internal fun bootFile(rom: Path, spec: RomBytes, platformId: String): Path {
         if (!RommClient.adoptLocalRom(playlist, bytes.size.toLong(), md5)) return rom
     }
     return playlist
+}
+
+/** The launch playlist only when it was already written and verified. Background checks never create it. */
+internal fun cachedBootFile(rom: Path, spec: RomBytes, platformId: String): Path {
+    if (platformId !in PLAYLIST_PLATFORMS) return rom
+    val (name, discs) = discPlaylist(spec) ?: return rom
+    val playlist = rom.resolveSibling(name)
+    val bytes = discs.joinToString("\n", postfix = "\n") { RommClient.besideRom(rom, it).fileName.toString() }.toByteArray(Charsets.UTF_8)
+    return if (RommClient.isVerifiedRom(playlist, bytes.size.toLong(), md5Hex(bytes))) playlist else rom
 }
 
 /** The downloaded game file for [spec] when it and its add-ons still match their verified markers, else null. */
