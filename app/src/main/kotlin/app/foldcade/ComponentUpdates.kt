@@ -47,6 +47,8 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
     private var wasHomeReady = false
     private val observations = Mutex()
     private val checkWake = Channel<Unit>(Channel.CONFLATED)
+    /** A setting the player just changed asks for the scheduled check now, so what it selects is staged without waiting hours. */
+    @Volatile private var checkSoon = false
 
     val selfEligible: Boolean by lazy {
         val signers = try { app.packageManager.getPackageInfo(app.packageName, PackageManager.GET_SIGNING_CERTIFICATES).signerDigests() }
@@ -88,6 +90,7 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
             app.awaitPlugins()
             var nextCheck = SystemClock.elapsedRealtime() + automaticStartupDelay(System.currentTimeMillis(), loaded.lastAutomaticCheck)
             while (true) {
+                if (checkSoon) { checkSoon = false; nextCheck = SystemClock.elapsedRealtime() }
                 val remaining = nextCheck - SystemClock.elapsedRealtime()
                 if (remaining > 0) {
                     // Screen-on wakes this wait too: time asleep counts on the elapsed clock.
@@ -116,7 +119,16 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
                 if (include != previous && selfEligible) {
                     previous = include
                     app.apkPluginCatalogs[PluginRegistry.foldcade.packageName]?.channelChanged()
+                    checkNow()
                 }
+            }
+        }
+        app.scope.launch(Dispatchers.Main.immediate) {
+            var previous = app.shell.model.automaticUpdates
+            snapshotFlow { app.shell.model.automaticUpdates }.collect { on ->
+                // Turned back on: a release a check found while it was off is downloaded now, not at the next tick.
+                if (on && !previous) checkNow()
+                previous = on
             }
         }
         // About opens directly from the category list, unlike a plugin's inner page.
@@ -127,6 +139,11 @@ internal class ComponentUpdates(private val app: FoldcadeApp) {
                 if (about == true && selfEligible) app.apkPluginCatalogs[PluginRegistry.foldcade.packageName]?.checkRelease(onlyIfStale = true)
             }
         }
+    }
+
+    private fun checkNow() {
+        checkSoon = true
+        checkWake.trySend(Unit)
     }
 
     /** Called for Home input and taps; a new deadline replaces the old one. */
