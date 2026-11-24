@@ -15,6 +15,12 @@ interface SaveLocationProbe {
     val probePlaces: List<String> get() = emptyList()
 
     /**
+     * Optional relative signature for shallow all-files discovery of custom roots. The host
+     * accepts only a fresh Proves signal from this file naming its own root. Minor 26.
+     */
+    val signatureFile: String? get() = null
+
+    /**
      * The save's name beside the game file, for a player that can be set to save
      * next to the content (melonDS, RetroArch, EX). The host checks it only when the
      * game file sits in a folder Foldcade can read, such as its own RomM downloads.

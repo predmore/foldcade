@@ -14,7 +14,8 @@ class AzaharProbeTest {
         assertEquals("content://com.android.externalstorage.documents/tree/primary%3AAzahar", signal.namesUri)
         assertEquals(200L, signal.modifiedAtMillis)
         assertEquals(SignalStrength.Proves, signal.strength)
-        assertTrue(signal.perStart) // The host’s negative-evidence constant remains off.
+        assertTrue(signal.perStart) // Enabled for Foldcade starts; emulator-grant evidence stays off.
+        assertEquals(AzaharPlayer.LOG, player.signatureFile)
         val encoded = fixture.replace("primary%3AAzahar", "primary%3Asaves%2FAzahar")
         assertEquals("content://com.android.externalstorage.documents/tree/primary%3Asaves%2FAzahar",
             player.liveSignals(Folder(mapOf(AzaharPlayer.LOG to encoded))).single().namesUri)

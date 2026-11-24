@@ -63,16 +63,35 @@ class SaveEvidenceTest {
         assertEquals(SessionVerdict.WroteElsewhere(null), judgeSession(before, after, 400))
     }
 
-    @Test fun freshSignalsAfterBaselineAndDisabledNegativeRule() {
+    @Test fun anApprovedPerStartSignalCatchesColdStartsWithoutLogMovement() {
         val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
-        val after = snap(root(signals = listOf(signal(live, 300))))
-        assertTrue(judgeSession(before, after, 400) is SessionVerdict.Signalled)
-        val unchanged = snap(root(signals = listOf(signal(bound, 50, perStart = true))))
-        assertEquals(SessionVerdict.NoNews, judgeSession(before, unchanged, 59_999, true))
-        assertEquals(SessionVerdict.SilentStart("log/azahar_log.txt"), judgeSession(before, unchanged, 60_000, true))
-        assertEquals(SessionVerdict.NoNews, judgeSession(before, unchanged, 60_000))
-        assertFalse(SAVE_NEGATIVE_EVIDENCE_ENABLED)
-        assertEquals(SessionVerdict.NoNews, judgeSession(before, after.copy(installFirstMillis = 2), 400))
+        val after = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 30_100)
+        assertEquals(SessionVerdict.SilentStart("log/azahar_log.txt"), judgeSession(before, after, 30_000))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, after, SAVE_START_CHECK_MIN_MILLIS - 1))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, after, 30_000, startedByFoldcade = false))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, after.copy(roots = listOf(root(signals = emptyList()))), 30_000))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before.copy(roots = listOf(root(signals = listOf(signal(bound, null, perStart = true))))), after, 30_000))
+        assertFalse(SAVE_NEGATIVE_EVIDENCE_ENABLED) // Emulator-grant evidence remains off.
+    }
+
+    @Test fun aWarmLaunchWhoseLogAdvancedHasNoNegativeVerdict() {
+        val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
+        // Activity without a fresh directory declaration cannot verify a root by itself.
+        val moved = SignalReading("log/azahar_log.txt", null, 300, false, true)
+        val after = snap(root(signals = listOf(moved)), at = 30_100)
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, after, 30_000))
+        val named = after.copy(roots = listOf(root(signals = listOf(signal(bound, 300, perStart = true)))))
+        assertTrue(judgeSession(before, named, 30_000) is SessionVerdict.Signalled)
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, named.copy(installFirstMillis = 2), 30_000))
+    }
+
+    @Test fun aFreshSelfNamedCustomRootWinsOverTheSilentOldRoot() {
+        val custom = FolderRef("primary:AzaharQA", "AzaharQA")
+        val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
+        val after = snap(root(signals = listOf(signal(bound, 50, perStart = true))),
+            root(custom, hash = "fresh game", signals = listOf(signal(custom, 20_100, perStart = true))), at = 30_100)
+        val verdict = judgeSession(before, after, 30_000) as SessionVerdict.Signalled
+        assertEquals(custom, (verdict.verdict as RootVerdict.UsesOther).live)
     }
 
     @Test fun anotherInstalledFlavorNeedsAnExactVersionMatch() {

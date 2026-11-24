@@ -394,6 +394,54 @@ class LaunchSavesTest {
     private fun incident(kind: IncidentKind) = SaveIncident("$kind:melonds", kind, "melonds", "melonDS", emptyList(),
         FolderRef("primary:saves", "saves"), null, Evidence(EvidenceKind.SessionWrite, "saved elsewhere"), 1)
 
+    @Test fun anUnmovedLaunchLogOpensAWrongFolderIncidentImmediatelyButAResumeDoesNot() {
+        val store = SaveProtectionStore(Files.createTempDirectory("silent-start"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val root = FolderRef("primary:Azahar", "Azahar")
+        val signal = SignalReading("log/azahar_log.txt", root.identity, 50, true, true)
+        val reading = RootReading(root, true, listOf(signal), "unchanged", true, true, true)
+        val before = ProbeSnapshot(100, 1, "azahar", listOf(reading))
+        val after = before.copy(atMillis = 30_100)
+        probes.noteSession(Melon, owner, before, after, startedByFoldcade = false)
+        assertTrue(store.incidents().isEmpty())
+        probes.noteSession(Melon, owner, before, after, sessionMillis = 5_000)
+        assertTrue(store.incidents().isEmpty()) // Preparation time does not count as time in the game.
+        probes.noteSession(Melon, owner, before, after)
+        val incident = store.incidents().single()
+        assertEquals(IncidentKind.WrongFolder, incident.kind)
+        assertTrue(incident.blocksLaunch)
+        assertEquals(null, incident.live)
+        val location = probes.location(Melon, after)
+        val facts = SaveFacts(SaveKeeper.Emulator("Azahar"), location, SpotFact.Resolved, OffDeviceFact.OnRomm(100), null, store.incidents(), true)
+        val status = deriveSaveStatus(facts)
+        assertTrue(status is SaveStatus.Problem)
+        val hero = HeroSubject.Item(HeroItem("game", "Game", "Nintendo 3DS"))
+        assertFalse(heroFactText(hero, status).text.contains("Saved to RomM"))
+    }
+
+    @Test fun aNewlyDiscoveredLiveRootIsKeptAsABackupWithoutChangingTheHead() = runBlocking {
+        val store = SaveProtectionStore(Files.createTempDirectory("discovered-copy"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val bound = FolderRef("primary:Azahar", "Azahar")
+        val live = FolderRef("primary:AzaharQA", "AzaharQA")
+        val root = RootReading(bound, true, listOf(SignalReading("log", bound.identity, 50, true, true)), "old", true, true, true)
+        val before = ProbeSnapshot(100, 1, "azahar", listOf(root))
+        val after = before.copy(atMillis = 30_100, roots = listOf(root, root.copy(root = live, bound = false,
+            signals = listOf(SignalReading("log", live.identity, 20_100, true, true)), spotHash = "live progress")))
+        probes.noteSession(Melon, owner, before, after)
+        assertEquals(live, store.incidents().single().live)
+        val uri = "content://live"
+        docs.files["$uri/Tetris DS (USA).sav"] = "live progress".toByteArray()
+        val spot = SaveSpot("sav", uri, "Tetris DS (USA).sav")
+        copies.stage(owner, Melon, listOf(spot), store.incidents().single(), mark = false)
+        copies.keep(owner, Melon)
+        assertEquals(listOf(md5Hex("live progress".toByteArray())), server.backups)
+        assertTrue(server.calls.isEmpty())
+        assertTrue(server.observed.isEmpty())
+    }
+
     @Test fun baselineIsTakenAfterFoldcadesOwnPlacement() = runBlocking {
         server.toPlace = "placed"
         var snapshotted = false

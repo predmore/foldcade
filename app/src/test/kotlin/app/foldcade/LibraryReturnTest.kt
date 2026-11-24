@@ -105,19 +105,25 @@ class LibraryReturnTest {
     @Test fun baselineAndUnprotectedChoiceSurviveProcessDeath() {
         val root = app.foldcade.language.FolderRef("primary:saves", "saves")
         val baseline = app.foldcade.language.ProbeSnapshot(100, 1, "emulator", listOf(app.foldcade.language.RootReading(root, true, emptyList(), "hash", true, true, null)))
-        val pending = LibraryReturn("romm", game, player, emptyList(), "content://roms/game.iso", baseline, true, preserveAsBackup = true)
+        val pending = LibraryReturn("romm", game, player, emptyList(), "content://roms/game.iso", baseline, true, preserveAsBackup = true,
+            sessionStartedAtMillis = 150, sessionEndedAtMillis = 5_150)
         val restored = decodeLibraryReturn(pending.encode()) { player }!!
         assertEquals(baseline, restored.baseline)
         assertEquals(true, restored.unprotectedSession)
         assertEquals(true, restored.preserveAsBackup)
+        assertEquals(true, restored.startedByFoldcade)
+        assertEquals(150L, restored.sessionStartedAtMillis)
+        assertEquals(5_150L, restored.sessionEndedAtMillis)
+        assertFalse(decodeLibraryReturn(pending.copy(startedByFoldcade = false).encode()) { player }!!.startedByFoldcade)
         assertEquals(pending.targetUri, restored.targetUri)
-        val old = org.json.JSONObject(pending.encode()).apply { remove("baseline"); remove("unprotectedSession"); remove("preserveAsBackup") }
+        val old = org.json.JSONObject(pending.encode()).apply { remove("baseline"); remove("unprotectedSession"); remove("preserveAsBackup"); remove("startedByFoldcade"); remove("sessionStartedAtMillis"); remove("sessionEndedAtMillis") }
         val legacy = decodeLibraryReturn(old.toString()) { player }!!
         val corrupt = org.json.JSONObject(pending.encode()).put("baseline", org.json.JSONObject().put("atMillis", 50))
         assertEquals(null, decodeLibraryReturn(corrupt.toString()) { player }!!.baseline)
         assertEquals(null, legacy.baseline)
         assertFalse(legacy.unprotectedSession)
         assertFalse(legacy.preserveAsBackup)
+        assertFalse(legacy.startedByFoldcade)
         val oldOptOut = org.json.JSONObject(pending.encode()).apply { remove("preserveAsBackup") }
         assertEquals(true, decodeLibraryReturn(oldOptOut.toString()) { player }!!.preserveAsBackup)
     }

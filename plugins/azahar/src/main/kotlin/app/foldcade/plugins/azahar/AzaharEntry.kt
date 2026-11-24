@@ -82,6 +82,7 @@ enum class ExtensionAcceptance {
  * invent a directory and does not read private storage.
  */
 class AzaharPlayer : Player, SaveFolderHolder, app.foldcade.api.plugin.SaveLocationProbe {
+    override val signatureFile: String = LOG
     override val locationSteps: String = "1. In Azahar, choose Select User Folder.\n2. Choose the folder that should keep your saves, then Use this folder › Allow."
 
     override fun liveSignals(root: app.foldcade.api.plugin.SaveFolderAccess): List<app.foldcade.api.plugin.LiveSignal> {

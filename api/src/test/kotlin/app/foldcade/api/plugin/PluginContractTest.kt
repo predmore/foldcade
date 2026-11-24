@@ -125,6 +125,8 @@ class PluginContractTest {
         for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave", "firmwareDestination", "getFirmwareKeepsFolders", "missingFirmware")) {
             assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
         }
+        assertTrue(SaveLocationProbe::class.java.methods.single { it.name == "getSignatureFile" }.isDefault)
+        assertNull(object : SaveLocationProbe {}.signatureFile)
         assertTrue(SaveFolderAccess::class.java.methods.single { it.name == "modifiedAtMillis" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPickedInPlayer" }.isDefault)

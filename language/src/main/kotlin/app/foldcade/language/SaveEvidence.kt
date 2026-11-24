@@ -1,7 +1,8 @@
 package app.foldcade.language
 
-/** Thor QA must confirm log flushing and emulator grant behaviour before enabling these. */
+/** Generic negative evidence (including emulator grants) stays off. perStart is a probe opt-in. */
 const val SAVE_NEGATIVE_EVIDENCE_ENABLED = false
+const val SAVE_START_CHECK_MIN_MILLIS = 20_000L
 
 data class SignalReading(val source: String, val names: String?, val modifiedAtMillis: Long?, val proves: Boolean, val perStart: Boolean)
 data class RootReading(
@@ -66,14 +67,13 @@ fun judgeRoots(now: ProbeSnapshot, last: LocationFact, negativeEvidence: Boolean
     return RootVerdict.NoNews
 }
 
-fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Long, negativeEvidence: Boolean = SAVE_NEGATIVE_EVIDENCE_ENABLED): SessionVerdict {
+fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Long, startedByFoldcade: Boolean = true): SessionVerdict {
     if (before.packageName != after.packageName || before.installFirstMillis != after.installFirstMillis) return SessionVerdict.NoNews
     val bound = after.roots.singleOrNull { it.bound } ?: return SessionVerdict.NoNews
     fun changed(root: RootReading): Boolean {
         val old = before.roots.singleOrNull { it.root.identity == root.root.identity } ?: return false
         return old.spotReadable && root.spotReadable && root.spotHash != null && root.spotHash != old.spotHash
     }
-    if (changed(bound)) return SessionVerdict.Wrote(bound.root)
     val oldBound = before.roots.singleOrNull { it.bound && it.root.identity == bound.root.identity } ?: return SessionVerdict.NoNews
     if (oldBound.spotReadable && bound.spotReadable && oldBound.spotHash == bound.spotHash) {
         val changedCandidates = after.roots.filter { !it.bound && changed(it) }
@@ -84,15 +84,16 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
             before.roots.firstOrNull { it.root.identity == root.root.identity }?.signals
                 ?.firstOrNull { it.source == signal.source }?.modifiedAtMillis != signal.modifiedAtMillis
     } }
-    if (advanced) {
-        val verdict = judgeRoots(after, LocationFact.Verified(bound.root, Evidence(EvidenceKind.FreshLog, "Session baseline"), before.atMillis))
-        if (verdict != RootVerdict.NoNews) return SessionVerdict.Signalled(verdict)
-    }
-    if (negativeEvidence && sessionMillis >= 60_000) {
-        oldBound.signals.firstOrNull { signal -> signal.perStart && signal.modifiedAtMillis != null &&
-            bound.signals.any { it.source == signal.source && it.modifiedAtMillis == signal.modifiedAtMillis }
+    val signalled = if (advanced) judgeRoots(after,
+        LocationFact.Verified(bound.root, Evidence(EvidenceKind.FreshLog, "Session baseline"), before.atMillis)) else RootVerdict.NoNews
+    if (signalled is RootVerdict.UsesOther) return SessionVerdict.Signalled(signalled)
+    if (startedByFoldcade && sessionMillis >= SAVE_START_CHECK_MIN_MILLIS) {
+        oldBound.signals.firstOrNull { signal -> signal.perStart && signal.modifiedAtMillis != null && signal.modifiedAtMillis <= before.atMillis &&
+            bound.signals.any { it.source == signal.source && it.modifiedAtMillis != null && it.modifiedAtMillis <= before.atMillis }
         }?.let { return SessionVerdict.SilentStart(it.source) }
     }
+    if (changed(bound)) return SessionVerdict.Wrote(bound.root)
+    if (signalled != RootVerdict.NoNews) return SessionVerdict.Signalled(signalled)
     return SessionVerdict.NoNews
 }
 

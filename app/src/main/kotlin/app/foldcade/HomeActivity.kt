@@ -2005,6 +2005,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 (target as? LaunchTarget.ContentUri)?.uri ?: (target as? LaunchTarget.SharedFile)?.uri,
                                 saveBaseline, !saveSyncForLaunch(plan.player, saveSyncDeclinedFor),
                                 preserveAsBackup = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor) && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
+                                sessionStartedAtMillis = System.currentTimeMillis(),
                             )
                             rememberReturn(saves)
                             noteRunning(id, title, game.platformId, plan.player, installedIntent, saves, playerIntent?.flags.orEmpty())
@@ -2144,9 +2145,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             return false
         }
         if (!started) return false
-        running.saves?.let(::rememberReturn)
-        // A busy screen sends it to the other one; the next resume looks for it there.
-        landedPanel()?.takeIf { it != running.panel }?.let { foldcade.runningGames.note(running.copy(panel = it)) }
+        val resumed = running.copy(saves = running.saves?.copy(startedByFoldcade = false), panel = landedPanel() ?: running.panel)
+        resumed.saves?.let(::rememberReturn)
+        // Later close/move read-backs must retain the resume flag too.
+        foldcade.runningGames.note(resumed)
         // The same start opens the game anew by itself when it had closed, so there is nothing to look for.
         if (running.resumeStart == null) checkResume(running, sentAt, front.component?.className)
         return true
@@ -2733,7 +2735,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.notePlayScreen()
             if (game.libraryId != null) {
                 rememberReturn(LibraryReturn(game.libraryId, apiGame, player, spots, saveReadUri, baseline, !syncing,
-                    preserveAsBackup = !syncing && foldcade.saveIncidentCopies.beginUnprotected(apiGame, player)))
+                    preserveAsBackup = !syncing && foldcade.saveIncidentCopies.beginUnprotected(apiGame, player),
+                    sessionStartedAtMillis = System.currentTimeMillis()))
             }
             game.platformId?.let { platform -> foldcade.notePlayerChoiceLaunch(game.id, platform, foldcade.playerResolution(game.id, platform).copy(player = player)) }
         } catch (cancelled: CancellationException) {
@@ -4249,14 +4252,21 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Reads back what the player wrote and gives it to the library. */
     private fun reconcile(pending: LibraryReturn) {
+        val returned = pending.copy(sessionEndedAtMillis = pending.sessionEndedAtMillis ?: System.currentTimeMillis())
+        pending.player.packageNames.firstNotNullOfOrNull { name -> foldcade.runningGames.forPackage(name)?.takeIf { it.saves == pending } }?.let {
+            foldcade.runningGames.note(it.copy(saves = returned))
+        }
         foldcade.scope.launch {
-            foldcade.saveFlow.withLock { reconcileLocked(pending) }
+            foldcade.saveFlow.withLock { reconcileLocked(returned) }
         }
     }
 
     /** The caller holds saveFlow, including any shutdown settling time before this read. */
     private suspend fun reconcileLocked(pending: LibraryReturn): Boolean {
         return try {
+            // Keep upload, lock and retry time out of the launch's minimum session duration.
+            val endedAtMillis = pending.sessionEndedAtMillis ?: System.currentTimeMillis()
+            foldcade.store.setPendingSaveReturn(pending.storeKey, pending.copy(sessionEndedAtMillis = endedAtMillis).encode())
             val saves = foldcade.playerSaves
             // Read the card again, and do not set one up: the player has just been holding it.
             val spots = returnSpots(saves, pending)
@@ -4298,8 +4308,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             // Optional evidence and live-copy capture cannot prevent the bound save reaching RomM.
             try {
+                foldcade.saveProbes.returned(pending.player, pending.game, pending.targetUri?.let { LaunchTarget.ContentUri(it) }, pending.baseline,
+                    unprotected = preserved, startedByFoldcade = pending.startedByFoldcade, sessionStartedAtMillis = pending.sessionStartedAtMillis,
+                    sessionEndedAtMillis = endedAtMillis,
+                    onJudged = { foldcade.publishSaveGate(pending.player, it) })
                 foldcade.saveIncidentCopies.keep(pending.game, pending.player)
-                foldcade.saveProbes.returned(pending.player, pending.game, pending.targetUri?.let { LaunchTarget.ContentUri(it) }, pending.baseline, unprotected = preserved)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
             foldcade.refreshSaveProtection(pending.player, flowHeld = true)
             foldcade.refreshSaveReceipt(pending.game, pending.player, spots)
@@ -4452,6 +4465,9 @@ internal data class LibraryReturn(
     val unprotectedSession: Boolean = false,
     /** Decided after the successful start; later incident closure cannot authorize promotion. */
     val preserveAsBackup: Boolean = false,
+    val startedByFoldcade: Boolean = true,
+    val sessionStartedAtMillis: Long? = null,
+    val sessionEndedAtMillis: Long? = null,
 )
 
 /**
@@ -4496,6 +4512,9 @@ internal fun LibraryReturn.encode(): String = JSONObject().apply {
     baseline?.let { put("baseline", it.toJson()) }
     put("unprotectedSession", unprotectedSession)
     put("preserveAsBackup", preserveAsBackup)
+    put("startedByFoldcade", startedByFoldcade)
+    put("sessionStartedAtMillis", sessionStartedAtMillis ?: JSONObject.NULL)
+    put("sessionEndedAtMillis", sessionEndedAtMillis ?: JSONObject.NULL)
     put(
         "spots",
         JSONArray(
@@ -4568,6 +4587,9 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
         unprotectedSession = json.optBoolean("unprotectedSession"),
         // Old opt-outs conservatively preserve, since they did not persist the launch's incident decision.
         preserveAsBackup = json.optBoolean("preserveAsBackup", json.optBoolean("unprotectedSession")),
+        startedByFoldcade = json.optBoolean("startedByFoldcade", false),
+        sessionStartedAtMillis = json.nullableLong("sessionStartedAtMillis"),
+        sessionEndedAtMillis = json.nullableLong("sessionEndedAtMillis"),
     )
 }
 
