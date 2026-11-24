@@ -534,7 +534,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.scope.launch {
                     val update = foldcade.componentUpdates.update(effect.packageName)
                     if (update != null) withContext(Dispatchers.Main.immediate) {
-                        openSettingsPage(WhatsNewActivity::class.java) { putUpdate(it, update) }
+                        // From R1 no Settings page is open, and the key came from the grid's screen: a full page
+                        // still opens where the layout puts pages, as Settings itself would.
+                        val model = foldcade.shell.model
+                        openSettingsPage(WhatsNewActivity::class.java, model.settings?.screen ?: model.layout.pageScreen) { putUpdate(it, update) }
                         foldcade.dismissNotice(app.foldcade.language.UpdateCopy.updatedPrefix + effect.packageName, byUser = true)
                     }
                 }
@@ -3306,9 +3309,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun openSettingsPage(page: Class<*>, configure: (Intent) -> Unit = {}) {
+    private fun openSettingsPage(page: Class<*>, on: HostScreen? = null, configure: (Intent) -> Unit = {}) {
         // A key received on the grid still opens this page on Settings' screen.
-        val screen = foldcade.shell.model.settingsActivityScreen(hostScreen())
+        val screen = on ?: foldcade.shell.model.settingsActivityScreen(hostScreen())
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
         val displayId = if (screen == HostScreen.Top) assignment.topDisplayId else assignment.bottomDisplayId
         val host = displayId?.let(foldcade::homeOnDisplay) ?: this
