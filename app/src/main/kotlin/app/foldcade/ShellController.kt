@@ -73,6 +73,7 @@ import app.foldcade.language.findKeyboardHints
 import app.foldcade.language.findResultHints
 import app.foldcade.language.KeyFocus
 import app.foldcade.language.brightnessPrompt
+import app.foldcade.language.brightnessLinked
 import app.foldcade.language.brightnessPosition
 import app.foldcade.language.settingsCategories
 import app.foldcade.language.scrolledShelf
@@ -4288,12 +4289,16 @@ class ShellController(
     }
 
     /** A touch on the brightness slider. Without access it asks, as the keys do. */
-    fun touchBrightness(position: Int) {
+    /** A drag on R1's brightness. The one slider moves the bottom screen with the top, through the device plugin. */
+    fun touchBrightness(position: Int): Effect? {
         if (!model.brightnessAllowed) {
             present(brightnessPrompt(model.layout.menuScreen))
-            return
+            return null
         }
-        publish(model.copy(brightness = position.coerceIn(0, 100)))
+        val clamped = position.coerceIn(0, 100)
+        val device = model.device?.takeIf { model.brightnessLinked() }
+        publish(model.copy(brightness = clamped, device = device?.copy(brightnessBottom = app.foldcade.language.bottomBrightnessLevel(clamped)) ?: model.device))
+        return if (device != null) Effect.SetBottomBrightness(clamped) else null
     }
 
     /**

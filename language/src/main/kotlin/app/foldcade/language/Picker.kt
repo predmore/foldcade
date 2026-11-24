@@ -1374,17 +1374,17 @@ fun rommWaitsForPhone(busy: Boolean, tokenTyped: Boolean, originTyped: Boolean, 
  * R1 opens on brightness ([rightStart]), so R1 then left or right changes it.
  * Notification access is asked from Settings, not here.
  */
-fun rightRows(notices: List<FoldNotice>, device: DeviceState? = null): List<Row> = buildList {
+fun rightRows(notices: List<FoldNotice>, device: DeviceState? = null, split: Boolean = false): List<Row> = buildList {
     quickSettings().forEach { add(Row.QuickTile(it)) }
-    // Top first, where R1 opens, then the bottom screen's own level, then the fan in force.
+    // One slider for both screens, or, split ([brightnessSplit]), Top where R1 opens, then Bottom. Then the fan in force.
     add(Row.Brightness)
-    if (device?.has(DeviceCapability.Brightness) == true) add(Row.BottomBrightness)
+    if (split && device?.has(DeviceCapability.Brightness) == true) add(Row.BottomBrightness)
     if (device?.has(DeviceCapability.Fan) == true) add(Row.FanNow)
     notices.forEach { add(Row.Notice(it.id)) }
     if (notices.count { it.dismissable } >= 2) add(Row.ClearNotices)
 }
 
-/** Where R1 opens: the brightness slider, under the tiles. With two, the top screen's. */
+/** Where R1 opens: the brightness slider, under the tiles. Split, the top screen's. */
 fun rightStart(): Int = quickSettings().size
 
 /** A choice Add to lists, Home ([HOME_ROOT]) or a collection, and whether the focused game is in it. */
@@ -1519,10 +1519,19 @@ fun panelHints(model: PickerModel): List<HintKey>? {
     val verb = listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, menuVerb(row, model)), back)
     return when (row) {
         Row.RemoveDownload, Row.DeleteShortcut -> listOf(HintKey(model.deleteHold?.key ?: promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, ""), back)
-        Row.Brightness -> if (model.brightnessAllowed) listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
-            else listOf(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, BrightnessCopy.allow), back)
-        // The plugin's slider needs no Android permission.
-        Row.BottomBrightness -> listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
+        Row.Brightness, Row.BottomBrightness -> {
+            val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
+            when {
+                // The top screen's level is Android's: until it may be written, A asks, whatever else the slider does.
+                // The bottom's own slider is the plugin's, and moves meanwhile.
+                !model.brightnessAllowed && row == Row.BottomBrightness ->
+                    listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), HintKey(confirm, BrightnessCopy.allow), back)
+                !model.brightnessAllowed -> listOf(HintKey(confirm, BrightnessCopy.allow), back)
+                !model.deviceHas(DeviceCapability.Brightness) -> listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust), back)
+                else -> listOf(HintKey(PromptKey.DpadSides, BrightnessCopy.adjust),
+                    HintKey(confirm, if (model.brightnessSplit()) BrightnessCopy.link else BrightnessCopy.split), back)
+            }
+        }
         is Row.Notice -> {
             val notice = model.notices.firstOrNull { it.id == row.id } ?: return null
             buildList {
@@ -1567,7 +1576,8 @@ data class MenuRows(val page: SidePanel, val rows: List<Row>)
 
 private fun SidePanel.page() = copy(index = 0, retiring = false, pendingSide = null, tileColumn = null, parentTileColumn = null)
 
-fun retainMenuRows(previous: PickerModel, next: PickerModel): PickerModel {
+fun retainMenuRows(previous: PickerModel, before: PickerModel): PickerModel {
+    val next = before.brightnessSplitSettled()
     val panel = next.panel ?: return next.copy(menuRows = emptyList())
     // Sorting the folder changes what its menu offers: Move and Tidy mean something only in Custom.
     fun changed(was: FolderSortChoice?, now: FolderSortChoice?) =
@@ -1619,7 +1629,7 @@ private fun livePanelRows(panel: SidePanel, model: PickerModel): List<Row> = whe
     PanelLevel.EditHome -> editHomeRows(model)
     PanelLevel.Root -> when (panel.side) {
         Side.Left -> leftRows()
-        Side.Right -> rightRows(model.notices, model.device)
+        Side.Right -> rightRows(model.notices, model.device, model.brightnessSplit())
         Side.Tile -> emptyList()
     }
 }
@@ -1705,7 +1715,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         },
     )
     Row.Brightness -> RowText(
-        if (model.deviceHas(DeviceCapability.Brightness)) DeviceCopy.top else BrightnessCopy.row,
+        if (model.brightnessSplit()) DeviceCopy.top else BrightnessCopy.row,
         if (model.brightnessAllowed) BrightnessCopy.percent(model.brightness) else BrightnessCopy.allow,
     )
     Row.BottomBrightness -> RowText(DeviceCopy.bottom, BrightnessCopy.percent(model.device?.brightnessBottom?.let(::bottomBrightnessPosition) ?: 0))
@@ -2228,6 +2238,8 @@ data class PickerModel(
     val brightness: Int = 50,
     /** Android lets Foldcade write the brightness setting. */
     val brightnessAllowed: Boolean = false,
+    /** The player split R1's brightness while this R1 was open ([brightnessSplit]). It lasts until R1 closes. */
+    val brightnessUnlinked: Boolean = false,
     /** R1 shows the row that asks for notification access. */
     val askNoticeAccess: Boolean = false,
     /** The Play activity page. Null while it is closed. */
@@ -2868,6 +2880,11 @@ private fun deviceStep(model: PickerModel, row: Row, direction: Int): Pair<Picke
             val mode = steppedLights(it.lights, direction, offeredLights(it))
             model.copy(device = it.copy(lights = mode)) to Effect.SetStickLights(mode)
         }
+        // The one slider: the top through Android, as ever, and the bottom through the plugin, at the same position.
+        Row.Brightness -> device?.takeIf { model.brightnessAllowed && model.brightnessLinked() }?.let {
+            val position = steppedBrightness(model.brightness, direction)
+            model.copy(brightness = position, device = it.copy(brightnessBottom = bottomBrightnessLevel(position))) to Effect.SetBottomBrightness(position)
+        }
         Row.BottomBrightness -> device?.takeIf { it.has(DeviceCapability.Brightness) }?.let {
             val position = steppedBrightness(bottomBrightnessPosition(it.brightnessBottom ?: 0f), direction)
             model.copy(device = it.copy(brightnessBottom = bottomBrightnessLevel(position))) to Effect.SetBottomBrightness(position)
@@ -3109,7 +3126,7 @@ private fun activateRow(
             } else {
                 deviceStep(model, row, 1)?.let { (stepped, effect) -> stepped.copy(panel = panel) to effect } ?: (model.copy(panel = panel) to null)
             }
-        Row.BottomBrightness -> model.copy(panel = panel) to null
+        Row.BottomBrightness -> linkBrightness(model, panel, fromBottom = true)
         // Where Magisk opens, A goes there, and Home's return reads root again; otherwise A asks the plugin again.
         is Row.DeviceRoot -> model.copy(panel = panel) to
             if (rootOpensMagisk(row, model)) Effect.OpenAndroidSetting(AndroidSetting.RootManager) else Effect.CheckDevice(row.packageName)
@@ -3137,10 +3154,12 @@ private fun activateRow(
         Row.DefaultHomeApp -> model.copy(panel = panel) to Effect.OpenAndroidSetting(AndroidSetting.Home)
         is Row.QuickTile -> model.copy(panel = null, focus = panel.grid) to Effect.OpenAndroidSetting(row.setting.androidSetting())
         // Left and right move the slider. A asks for access, and does nothing once it is granted.
-        Row.Brightness -> if (model.brightnessAllowed) {
-            model.copy(panel = panel) to null
-        } else {
-            model.copy(panel = panel, dialog = brightnessPrompt(panel.screen)) to null
+        Row.Brightness -> when {
+            !model.brightnessAllowed -> model.copy(panel = panel, dialog = brightnessPrompt(panel.screen)) to null
+            // Split: a slider for each screen, the focus staying where it is, now on Top.
+            model.brightnessLinked() -> model.copy(panel = panel, brightnessUnlinked = true) to null
+            model.brightnessSplit() -> linkBrightness(model, panel, fromBottom = false)
+            else -> model.copy(panel = panel) to null
         }
         Row.AddFolder -> addFolder(model, screen)
         // The row stays in view and reads Syncing until every library has answered.
@@ -3288,6 +3307,23 @@ private fun activateRow(
             model.copy(capturingConfirm = true) to null
         }
     }
+}
+
+/**
+ * Link: one slider again, both screens at the level of the slider A was pressed on, Top or
+ * Bottom. The focus goes to the one slider. The top's level is Android's, so until Android lets
+ * Foldcade write it, A asks for that first.
+ */
+private fun linkBrightness(model: PickerModel, panel: SidePanel, fromBottom: Boolean): Pair<PickerModel, Effect?> {
+    val device = model.device?.takeIf { it.has(DeviceCapability.Brightness) } ?: return model.copy(panel = panel) to null
+    if (!model.brightnessAllowed) return model.copy(panel = panel, dialog = brightnessPrompt(panel.screen)) to null
+    val position = if (fromBottom) bottomBrightnessPosition(device.brightnessBottom ?: 0f) else model.brightness
+    return model.copy(
+        panel = panel.copy(index = rightStart()),
+        brightness = position,
+        brightnessUnlinked = false,
+        device = device.copy(brightnessBottom = bottomBrightnessLevel(position)),
+    ) to Effect.SetBottomBrightness(position)
 }
 
 private fun TileActions.toggled(folderId: String): TileActions = copy(
