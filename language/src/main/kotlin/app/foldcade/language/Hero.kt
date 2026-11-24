@@ -37,6 +37,7 @@ data class HeroFolder(
     val apps: Boolean = false,
     /** The line under the name when there is no [count] to show, as Hidden's "Nothing hidden". */
     val note: String? = null,
+    val availability: String? = null,
 )
 
 sealed interface HeroSubject {
@@ -94,6 +95,35 @@ fun heroGameFacts(
         if (fits(line)) return line
     }
     return line
+}
+
+/** The same text composition feeds the styled hero and tests of real shell subjects. */
+data class HeroFactText(val save: String?, val live: String?, val facts: String) {
+    val text: String get() = listOfNotNull(save, live, facts.takeIf { it.isNotEmpty() }).joinToString(" · ")
+}
+
+fun heroFactText(
+    subject: HeroSubject,
+    health: SaveStatus?,
+    activity: TileActivity? = null,
+    stopped: Boolean = false,
+    year: Int? = null,
+    genre: String? = null,
+    rest: List<String?> = emptyList(),
+    fits: (String) -> Boolean = { true },
+): HeroFactText {
+    val copy = heroCopy(subject)
+    val item = (subject as? HeroSubject.Item)?.item
+    if (item == null) return HeroFactText(null, null,
+        heroFacts(copy.title, copy.detail, (subject as HeroSubject.Folder).folder.availability, *rest.toTypedArray()))
+    if (item.emptyShelfHint) return HeroFactText(null, null, copy.detail)
+    val save = health?.takeIf { saveHealthLeads(it, activity) }?.let(::saveHealthLine)
+    val live = if (stopped) Copy.downloadStopped else activity?.let { if (health == null) activityLine(it) else heroActivityLine(health, it) }
+    val lead = listOfNotNull(save, live).joinToString(" · ")
+    val facts = heroGameFacts(copy.title, copy.detail, year, genre, listOf(item.availability.takeIf { live == null }) + rest) { line ->
+        fits(listOfNotNull(lead.takeIf { it.isNotEmpty() }, line.takeIf { it.isNotEmpty() }).joinToString(" · "))
+    }
+    return HeroFactText(save, live, facts)
 }
 
 /** Where a remote game is. Download size belongs in About. */

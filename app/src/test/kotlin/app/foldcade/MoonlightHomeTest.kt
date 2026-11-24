@@ -38,6 +38,25 @@ class MoonlightHomeTest {
         Shelf.moonlightGames = emptyList()
     }
 
+    @Test fun containersRenderOnlyTheirCountThroughTheHerosActualTextComposer() {
+        Shelf.moonlightGames = (1..8).map { tile("$host|$it", "Game $it") }
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins())
+        shell.settleMoonlight()
+        shell.noteShelfChanged()
+        for (id in listOf(app.foldcade.language.HOME_ALL, HOME_MOONLIGHT)) {
+            val index = (0 until shell.model.count).single { shell.homeFace(it)?.id == id }
+            val expected = shell.homeFace(index)!!.shortText
+            focus(shell, index)
+            val subject = shell.focusedHero()!!
+            assertTrue(subject is HeroSubject.Folder)
+            val line = app.foldcade.language.heroFactText(subject,
+                app.foldcade.language.SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.NoPlayer))
+            assertEquals(expected, line.text)
+            assertNull(line.save)
+            assertFalse(line.text.contains("No emulator"))
+        }
+    }
+
     @Test
     fun moonlightTilesWaitForTheFirstShortcutRead() {
         val store = SessionStore(MemoryPrefs())

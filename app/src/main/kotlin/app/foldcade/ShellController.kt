@@ -1611,7 +1611,8 @@ class ShellController(
     private fun folderHero(folder: HomeFolder, count: Int = folderCount(home.board, folder.id)): HeroSubject {
         val mark = collectionLook(folder)?.mark ?: folder.mark
         return HeroSubject.Folder(
-            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark, apps = app.foldcade.language.countsApps(folder) { home.item(it)?.kind }),
+            HeroFolder(key = folder.id, name = folder.name, count = count, mark = mark,
+                apps = app.foldcade.language.countsApps(folder) { home.item(it)?.kind }, availability = folderLine(folder.id)),
         )
     }
 
@@ -3920,18 +3921,23 @@ class ShellController(
         if (stoppedDownload == notice) stoppedDownload = null
     }
 
-    private fun heroItem(game: ShelfGame): HeroSubject = HeroSubject.Item(
-        HeroItem(
-            key = game.id,
-            title = displayTitle(game),
-            detail = libraryPlatformName(game.platformId) ?: game.shortText,
-            mark = game.mark,
-            packageName = game.androidPackage,
-            emptyShelfHint = game.emptyShelfHint,
-            game = !nonGameApp(game),
-            availability = game.availabilityLabel ?: folderLine(game.id) ?: streamLine(game) ?: downloadLine(game.id),
-        ),
-    )
+    private fun heroItem(game: ShelfGame): HeroSubject {
+        val face = home.faceOf(game.id)
+        if (face.allTile) return HeroSubject.Folder(HeroFolder(game.id, face.title, app.foldcade.language.allCount(home.catalog()), face.mark))
+        home.board.folders[game.id]?.let { return folderHero(it) }
+        return HeroSubject.Item(
+            HeroItem(
+                key = game.id,
+                title = displayTitle(game),
+                detail = libraryPlatformName(game.platformId) ?: game.shortText,
+                mark = game.mark,
+                packageName = game.androidPackage,
+                emptyShelfHint = game.emptyShelfHint,
+                game = !nonGameApp(game),
+                availability = game.availabilityLabel ?: streamLine(game) ?: downloadLine(game.id),
+            ),
+        )
+    }
 
     /** In Folders, that a folder's tile is not on Home. Null on Home, or anywhere else. */
     private fun folderLine(id: String): String? =

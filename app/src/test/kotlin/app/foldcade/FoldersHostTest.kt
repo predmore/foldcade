@@ -36,9 +36,10 @@ class FoldersHostTest {
         assertEquals(listOf("Android Games", "Apps"), (0 until shell.model.count).map { shell.homeFace(it)?.title })
         assertEquals(listOf(false, true), (0 until shell.model.count).map { shell.homeFace(it)?.onGrid })
         focus(shell, 0)
-        val hero = shell.focusedHero() as HeroSubject.Item
-        assertEquals("Android Games", hero.item.title)
-        assertEquals(FindCopy.notOnHome, hero.item.availability)
+        val hero = shell.focusedHero() as HeroSubject.Folder
+        assertEquals("Android Games", hero.folder.name)
+        assertEquals(FindCopy.notOnHome, hero.folder.availability)
+        assertEquals("1 game · ${FindCopy.notOnHome}", heroFactText(hero, null).text)
 
         // Y › On Home, which flips in place and leaves the menu open on it.
         shell.onMeaning(Meaning.Options, HostScreen.Bottom)
