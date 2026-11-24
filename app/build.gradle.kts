@@ -44,7 +44,7 @@ android {
     defaultConfig {
         applicationId = "app.foldcade"
         minSdk = 33
-        targetSdk = 33
+        targetSdk = 35
         resValue("string", "foldcade_build_origin", if (ciBuild) "ci" else "local")
         // Local fallback. CI passes -PfoldcadeVersionCode from git rev-list --count HEAD.
         // A stable tag is cut only when versionName changes.

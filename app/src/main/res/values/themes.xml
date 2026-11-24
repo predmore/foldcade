@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Foldcade" parent="android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+    <!-- Public parent of Android's default DeviceDefault presentation theme. The window
+         hosts the same Compose panel as Home and supplies its own background and bars. -->
+    <style name="Theme.Foldcade.Presentation" parent="android:style/Theme.Material.Dialog.Presentation" />
+</resources>

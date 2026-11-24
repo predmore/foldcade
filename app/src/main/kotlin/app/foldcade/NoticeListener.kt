@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -84,7 +85,16 @@ class NoticeListener : NotificationListenerService() {
         val sbn = activeNotifications.orEmpty().firstOrNull { it.key == key } ?: return
         val intent = sbn.notification.contentIntent ?: return
         if (intent.isActivity) placing()
-        val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
+        @Suppress("DEPRECATION") // ALLOWED is the opt-in on API 34–35; 36 adds the visible-only mode.
+        val options = ActivityOptions.makeBasic().apply {
+            launchDisplayId = displayId
+            // R1 opens a notice on the player's behalf while Foldcade is visible on a panel.
+            if (Build.VERSION.SDK_INT >= 36) {
+                setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_IF_VISIBLE)
+            } else if (Build.VERSION.SDK_INT >= 34) {
+                setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+            }
+        }
         try {
             intent.send(this, 0, null, null, null, null, options.toBundle())
         } catch (_: PendingIntent.CanceledException) {

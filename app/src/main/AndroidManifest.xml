@@ -109,7 +109,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:resizeableActivity="true"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        android:theme="@style/Theme.Foldcade">
 
         <provider
             android:name=".ApkPluginBroker"

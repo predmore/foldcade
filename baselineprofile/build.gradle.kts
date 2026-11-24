@@ -8,7 +8,7 @@ android {
     buildToolsVersion = "37.0.0"
     defaultConfig {
         minSdk = 33
-        targetSdk = 33
+        targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     targetProjectPath = ":app"

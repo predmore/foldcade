@@ -2,6 +2,8 @@
 
 Foldcade is an Android launcher for the AYN Thor. The shell is Compose. Plugins supply libraries, players, and metadata. Display ids are discovered at runtime. Nothing in the display map is a Thor panel id.
 
+The app targets API 35 and supports API 33 onward. Fullscreen activities inherit `Theme.Foldcade`, which preserves the existing platform parent and opts out of edge-to-edge enforcement on API 35+. The recovery Presentation uses the same opt-out on API 35; recovery is disabled from API 36. Android ignores the opt-out for apps targeting 36, so the next target increase needs an inset pass. The translucent restart activity and no-display callbacks retain their explicit Android themes.
+
 ## Modules
 
 | Module | Role |
@@ -73,7 +75,7 @@ Installed APK plugins use the separate [protocol 1](apk-plugins.md). `ApkPlugins
 
 `PluginRegistry` names the plugins Foldcade can install: a package, a GitHub repository, an asset name, and pinned signers, but no version. There is one `ApkPluginCatalog` per entry. It reads the repository's latest release through `PublicHttps`, reads the release notes' `versionCode` hint to tell an update from a current install, stages a bounded APK under no-backup storage, verifies package, increasing version code and the entry’s exact signer set, and uses `PackageInstaller`. Automatic updates wait for free screens and idle save, download, theme, backup and launch work; Android confirmation becomes an R1 ready notice. A device-owned ledger detects upgrades from any installer and keeps unread notices; a separate notes cache retains offline release notes. Both load and save on IO. Unknown-source access belongs to Android. No APK code is loaded into the launcher.
 
-CI release builds signed with the pinned Foldcade certificate use the same catalog for self-update, after five continuous screen-off minutes or ten idle Home minutes, once plugin work has settled. Plugin updates also wait while their package may hold a suspended game or stream. Debug and local builds update plugins only. Settings › About owns the automatic-update and pre-release choices and opens the shared What’s new page.
+CI release builds signed with the pinned Foldcade certificate use the same catalog for self-update, after five continuous screen-off minutes or ten idle Home minutes, once plugin work has settled. The API 35 target meets Android 17's target requirement for silent updates, including when Foldcade installed the running copy itself. Plugin updates also wait while their package may hold a suspended game or stream. Debug and local builds update plugins only. Settings › About owns the automatic-update and pre-release choices and opens the shared What’s new page.
 
 ## CI
 

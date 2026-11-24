@@ -3,8 +3,10 @@ package app.foldcade.host.backup
 import app.foldcade.host.play.*
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.nio.file.Files
 import java.util.zip.ZipEntry
+import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.*
@@ -109,6 +111,16 @@ class SetupArchiveTest {
         refusal(zip(base + ("settings.json" to "{\"music_enabled\":{\"type\":\"string\",\"value\":\"false\"}}".encodeToByteArray())), BackupRefusal.Unreadable)
         val unknown = "{\"future_key\":{\"type\":\"alien\",\"value\":{}}}"
         assertEquals(emptyMap<String, Any>(), SetupArchive.read(zip(base + ("settings.json" to unknown.encodeToByteArray())).inputStream()).settings)
+    }
+
+    @Test fun aPlatformZipValidationFailureBecomesAnUnreadableBackup() {
+        // Android 14+ may throw while nextEntry reads a path, before our name checks run.
+        // The desktop JVM has no Android path validator; inject its exception at that boundary.
+        val input = object : InputStream() {
+            override fun read(): Int = throw ZipException("Invalid ZIP entry path")
+        }
+        try { SetupArchive.read(input); fail("Accepted refused archive") }
+        catch (refused: SetupArchiveException) { assertEquals(BackupRefusal.Unreadable, refused.reason) }
     }
 
     @Test fun entriesAndSkippedInflationAreBounded() {

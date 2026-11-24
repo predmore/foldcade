@@ -1,12 +1,14 @@
 package app.foldcade
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
@@ -523,7 +525,22 @@ internal class ApkPluginCatalog(
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                val result = if (automatic) PendingIntent.getBroadcast(context, id, callback, flags) else PendingIntent.getActivity(context, id, callback, flags)
+                val result = if (automatic) {
+                    // This receiver never opens Android's confirmation, so it needs no activity-start grant.
+                    PendingIntent.getBroadcast(context, id, callback, flags)
+                } else {
+                    @Suppress("DEPRECATION") // ALLOW_ALWAYS replaces ALLOWED on API 36+.
+                    val options = if (Build.VERSION.SDK_INT >= 35) ActivityOptions.makeBasic().apply {
+                        // PackageInstaller does not donate its own BAL rights. The manual path is
+                        // opened from Home, and the callback immediately opens Android's confirmation.
+                        // Its final result must also arrive while that confirmation covers Home.
+                        setPendingIntentCreatorBackgroundActivityStartMode(
+                            if (Build.VERSION.SDK_INT >= 36) ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                            else ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+                        )
+                    }.toBundle() else null
+                    PendingIntent.getActivity(context, id, callback, flags, options)
+                }
                 this.session = id
                 automaticSession = automatic
                 saveStaged()
