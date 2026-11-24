@@ -1983,11 +1983,11 @@ private fun heroFactLine(
     if (item?.emptyShelfHint == true) {
         return AnnotatedString(copy.detail)
     } else {
-        val focusedGame = game?.takeIf { it.id == item?.key }
+        val focusedGame = game?.takeIf { item?.game == true && it.id == item.key }
         // What the library is doing with this game leads the line, in the focus colour.
         val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
         val activity = focusedGame?.let { app.shell.activityFor(it.id) }
-        val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
+        val saveLine = if (focusedGame != null && saveHealthLeads(health, activity)) saveHealthLine(health) else null
         val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
         val live = stopped?.let { Copy.downloadStopped } ?: activity?.let { heroActivityLine(health, it) }
         val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }

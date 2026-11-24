@@ -163,7 +163,7 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
                 rest > 0 || tiles.any { !it.findSaves && !it.verified } -> StatusLook.Quiet
                 else -> StatusLook.Syncing
             }
-            SlideSwap(target = (if (due == 0 && rest == 0 && tiles.any { !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.head(due, rest)) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
+            SlideSwap(target = SaveSetupCopy.head(due, rest, tiles.any { it.onHome && !it.findSaves && !it.verified }) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
                 Chip(word, shown, theme)
             }
         }

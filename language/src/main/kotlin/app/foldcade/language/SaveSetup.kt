@@ -472,8 +472,9 @@ object SaveSetupCopy {
      * The head's chip: how many emulators Home's games play on still need you ([savesDue]), the
      * count R1 says too. Then that those sync while others wait, and All set only once all do.
      */
-    fun head(due: Int, rest: Int): String = when {
+    fun head(due: Int, rest: Int, unverified: Boolean = false): String = when {
         due > 0 -> toGo(due)
+        unverified -> SaveProtectionCopy.folderSet
         rest > 0 -> gamesSync
         else -> allSet
     }

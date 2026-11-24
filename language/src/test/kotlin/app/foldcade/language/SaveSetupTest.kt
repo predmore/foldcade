@@ -37,6 +37,12 @@ class SaveSetupTest {
     private fun PickerModel.saves(id: String, change: (PlayerSaveSetting) -> PlayerSaveSetting) =
         copy(playerSaves = playerSaves.map { if (it.playerId == id) change(it) else it })
 
+    @Test fun unverifiedHomeEmulatorsNeverClaimTheGamesSync() {
+        assertEquals(SaveProtectionCopy.folderSet, SaveSetupCopy.head(0, 2, unverified = true))
+        assertEquals(SaveProtectionCopy.folderSet, SaveSetupCopy.head(0, 0, unverified = true))
+        assertEquals(SaveSetupCopy.toGo(1), SaveSetupCopy.head(1, 2, unverified = true))
+    }
+
     @Test fun exLaunchModeIsVisibleBeforeAndAfterPickingItsFolder() {
         for (key in listOf("gba-emu.game-boy-advance", "gbc-emu.game-boy", "nes-emu.nes", "snes9x-ex.snes", "md-emu.genesis")) {
             for (done in listOf(false, true)) {

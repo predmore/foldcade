@@ -70,6 +70,11 @@ class SettingsTilesTest {
         assertEquals("com.retroarch.aarch64", shelf.single { it.key == "retroarch.nes" }.packageName)
     }
 
+    @Test fun edenKeepsItsAddUserStepOnTheOwnedEntry() {
+        val model = emulators.copy(eden = emulators.eden!!.copy(setupSteps = "Add a user in Eden"))
+        assertTrue(Row.EdenUser in emulatorShelf(model).single { it.key == "eden" }.rows)
+    }
+
     @Test
     fun retroArchAndEdenWithoutASaveFolderStillGetATile() {
         val loose = emulators.copy(playerSaves = listOf(azahar))

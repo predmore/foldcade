@@ -363,7 +363,10 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
                 if (setting.thorSetup != null) add(Row.ThorSetup(setting.playerId))
                 if (setting === retroArchOwner) add(Row.RetroArchCores)
-                if (setting === edenOwner) add(Row.EdenFolder)
+                if (setting === edenOwner) {
+                    add(Row.EdenFolder)
+                    if (eden?.fromRomm == true && eden.setupSteps != null) add(Row.EdenUser)
+                }
             },
         )
     }
