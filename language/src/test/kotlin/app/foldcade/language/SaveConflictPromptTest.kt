@@ -98,16 +98,27 @@ class SaveConflictPromptTest {
 
     @Test
     fun aStampAndASizeReadAsAPersonWould() {
+        val now = Instant.parse("2027-01-01T00:00:00Z").toEpochMilli()
         // en-US on a 12-hour clock, the Thor's default.
-        assertEquals("Apr 18, 2026, 9:12 AM", formatSaveWhen(prompt.local.updatedAtMillis, DateStyle(), ZoneOffset.UTC))
-        assertEquals("Apr 18, 2026, 10:40 AM", formatSaveWhen(prompt.remote.updatedAtMillis, DateStyle(), ZoneOffset.UTC))
+        assertEquals("Apr 18, 2026, 9:12 AM", formatSaveWhen(prompt.local.updatedAtMillis, DateStyle(), ZoneOffset.UTC, now))
+        assertEquals("Apr 18, 2026, 10:40 AM", formatSaveWhen(prompt.remote.updatedAtMillis, DateStyle(), ZoneOffset.UTC, now))
         // A day-first locale on a 24-hour clock, from Android's en-GB patterns.
         val gb = DateStyle(Locale.UK, monthDayPattern = "d MMM", monthDayYearPattern = "d MMM y", is24Hour = true, timePattern = "HH:mm")
-        assertEquals("18 Apr 2026, 09:12", formatSaveWhen(prompt.local.updatedAtMillis, gb, ZoneOffset.UTC))
+        assertEquals("18 Apr 2026, 09:12", formatSaveWhen(prompt.local.updatedAtMillis, gb, ZoneOffset.UTC, now))
         // The 24-hour setting alone changes only the clock.
-        assertEquals("Apr 18, 2026, 21:12", formatSaveWhen(prompt.local.updatedAtMillis + 12 * 3_600_000L, DateStyle(is24Hour = true), ZoneOffset.UTC))
+        assertEquals("Apr 18, 2026, 21:12", formatSaveWhen(prompt.local.updatedAtMillis + 12 * 3_600_000L, DateStyle(is24Hour = true), ZoneOffset.UTC, now))
         assertEquals("32 KB", formatSaveSize(prompt.local.sizeBytes))
         assertEquals("30.5 KB", formatSaveSize(prompt.remote.sizeBytes))
+    }
+
+    @Test fun conflictDatesUseTheSharedTodayAndCalendarLanguage() {
+        val now = Instant.parse("2026-11-26T15:00:00Z").toEpochMilli()
+        val style = DateStyle(is24Hour = true)
+        val today = Instant.parse("2026-11-26T13:37:00Z").toEpochMilli()
+        val earlier = Instant.parse("2026-11-24T13:37:00Z").toEpochMilli()
+        assertEquals("Today, 13:37", formatSaveWhen(today, style, ZoneOffset.UTC, now))
+        assertEquals("Nov 24, 13:37", formatSaveWhen(earlier, style, ZoneOffset.UTC, now))
+        assertEquals(saveWhen(earlier, now, style, ZoneOffset.UTC), formatSaveWhen(earlier, style, ZoneOffset.UTC, now))
     }
 
     @Test

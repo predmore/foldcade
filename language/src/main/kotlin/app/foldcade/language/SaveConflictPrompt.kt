@@ -130,11 +130,9 @@ fun previewSaveConflict(): SaveConflictPrompt = SaveConflictPrompt(
     preview = true,
 )
 
-/** When a save was written, in the device's date order and clock. */
-fun formatSaveWhen(millis: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault()): String {
-    val at = Instant.ofEpochMilli(millis).atZone(zone)
-    return "${style.monthDayYear(at)}, ${style.time(at)}"
-}
+/** Conflict cards use the same date language as the other save surfaces. */
+fun formatSaveWhen(millis: Long, style: DateStyle, zone: ZoneId = ZoneId.systemDefault(), now: Long = System.currentTimeMillis()): String =
+    saveWhen(millis, now, style, zone)
 
 fun formatSaveSize(bytes: Long): String {
     val size = bytes.coerceAtLeast(0L)
