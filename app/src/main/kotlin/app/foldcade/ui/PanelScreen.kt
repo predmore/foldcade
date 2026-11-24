@@ -671,7 +671,7 @@ private fun PanelBody(
         // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
         // Play activity and Settings name their keys here, for the row in focus; a connect form shows its own.
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
-            CommandCenterScreen(app, subject, hints = !subject.settings || (model.settings != null && !model.connectOpen)) {
+            CommandCenterScreen(app, subject, hints = !subject.settings || subject.hints != null || (model.settings != null && !model.connectOpen)) {
                 when {
                     model.connectOpen -> app.shell.closeConnect(returnToPage = false)
                     subject.settings -> {

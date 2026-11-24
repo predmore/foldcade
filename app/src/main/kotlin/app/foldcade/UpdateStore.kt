@@ -102,8 +102,9 @@ internal class UpdateStore(private val file: File, scope: CoroutineScope) {
                 val notes = if (notesDirty) notesJson().toString().also { notesDirty = false } else null
                 ledger to notes
             }
-            pending.first?.let { save(file, it) }
+            // Notes first: migrating a ledger that still carried them inline must not drop them if the process dies between the two.
             pending.second?.let { save(notesFile, it) }
+            pending.first?.let { save(file, it) }
             Unit
         }
     }

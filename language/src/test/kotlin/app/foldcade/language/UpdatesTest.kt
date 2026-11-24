@@ -43,7 +43,7 @@ class UpdatesTest {
         val ready = readyUpdateNotice("plugin", "Foldcade Moonlight", "12.2", 5000)
         assertEquals("foldcade:update-ready:plugin", ready.id)
         assertEquals("Foldcade Moonlight update ready", ready.title)
-        assertEquals("12.2 · Android asks before it installs", ready.body)
+        assertEquals("12.2 · Android asks first", ready.body)
         assertEquals("plugin", ready.installUpdatePackage)
     }
 

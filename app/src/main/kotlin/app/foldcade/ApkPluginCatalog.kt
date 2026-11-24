@@ -162,8 +162,12 @@ internal class ApkPluginCatalog(
     private val publish: (PluginCatalogSetting) -> Unit,
 ) {
     @Volatile private var work: Job? = null
-    /** Self-update waits for plugin downloads, staging, commits and their Android results. */
-    val installInFlight: Boolean get() = work?.isActive == true || session != null
+    /**
+     * Self-update waits for plugin downloads, staging, automatic commits and their Android results. A manual
+     * confirmation the player left open does not hold it: that can wait for weeks, and the installed version
+     * settles it after a restart anyway.
+     */
+    val installInFlight: Boolean get() = work?.isActive == true || (session != null && automaticSession)
     private var release: PluginRelease? = null
     private var stagedRelease: PluginRelease? = null
     private var state = PluginCatalogSetting()

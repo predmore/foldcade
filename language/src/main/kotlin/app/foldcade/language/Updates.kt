@@ -16,7 +16,7 @@ object UpdateCopy {
     fun updated(label: String) = "$label updated"
     fun body(version: String) = "$version · See what’s new"
     fun ready(label: String) = "$label update ready"
-    fun readyBody(version: String) = "$version · Android asks before it installs"
+    fun readyBody(version: String) = "$version · Android asks first"
     fun from(version: String) = "Updated from $version"
 }
 
