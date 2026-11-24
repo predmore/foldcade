@@ -109,7 +109,7 @@ fun screenHints(confirm: PromptKey, other: PromptKey, playOn: HostScreen): List<
 fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
     val lit = listOf(layout.menuScreen, layout.gridScreen, HostScreen.Top, HostScreen.Bottom).firstOrNull(shown) ?: return this
     val page = layout.pageScreen.takeIf(shown) ?: lit
-    val pageOpen = settings != null || playActivity != null || gameAbout != null || connectOpen || saveSetup != null
+    val pageOpen = settings != null || playActivity != null || gameAbout != null || connectOpen || saveSetup != null || saveFix != null
     val next = copy(
         dialog = dialog?.let {
             val preferred = if (pageOpen) layout.pageScreen else it.preferredScreen
@@ -122,6 +122,7 @@ fun PickerModel.onShownScreens(shown: (HostScreen) -> Boolean): PickerModel {
         gameAbout = gameAbout?.copy(screen = page),
         connectScreen = connectScreen?.let { page },
         saveSetup = saveSetup?.copy(screen = page),
+        saveFix = saveFix?.copy(screen = page),
     )
     return if (next == this) this else next
 }
@@ -133,7 +134,7 @@ fun PickerModel.offTheDarkScreen(): PickerModel = onShownScreens { it != layout.
  * True while one of Foldcade's own pages or dialogs is on [screen], over whatever the screen
  * shows under it, such as the command center beside an app. Its keys are the page's.
  */
-fun PickerModel.pageOn(screen: HostScreen): Boolean = dialog?.screen == screen || fullPageOn(screen)
+fun PickerModel.pageOn(screen: HostScreen): Boolean = dialog?.screen == screen || saveFix?.screen == screen || fullPageOn(screen)
 
 /** True while one of Foldcade's full pages is on [screen]: Settings, the connect form, Play activity, or About. */
 fun PickerModel.fullPageOn(screen: HostScreen): Boolean =

@@ -286,7 +286,9 @@ import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
-import app.foldcade.language.SaveHealth
+import app.foldcade.language.UnconfirmedWhy
+import app.foldcade.language.SaveStatus
+import app.foldcade.language.attentionLine
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
 import app.foldcade.language.heroActivityLine
@@ -387,7 +389,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         snap = heldBlur != null,
     )
     // Set up saves beside an emulator shows that emulator's steps, so it stays at the panel's own brightness.
-    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null && model.folderGuide == null
+    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null && model.saveFix == null && model.folderGuide == null
     val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
     // Either panel's level can move while dimmed, and a darker one still wins.
     LaunchedEffect(dimmed, dark, app.brightness.revision) { activity.applyCommandCenterDim(dimmed, dark) }
@@ -462,6 +464,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                             SaveSetupSingle(app, shown, screen, scale, activity::dispatch)
                     }
                 }
+            }
+            model.saveFix?.let { page ->
+                if (heroHere || controlsHere) SaveFixScreen(app, page, controlsHere, activity::dispatch)
             }
             // Y's menu, beside its tile, over the grid it came from and under any dialog it asks.
             if (panel != null && screen != null && drawsHere) {
@@ -1980,7 +1985,7 @@ private fun heroFactLine(
     } else {
         val focusedGame = game?.takeIf { it.id == item?.key }
         // What the library is doing with this game leads the line, in the focus colour.
-        val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
+        val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
         val activity = focusedGame?.let { app.shell.activityFor(it.id) }
         val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
         val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
@@ -2010,7 +2015,7 @@ private fun heroFactLine(
         }
         return buildAnnotatedString {
             if (saveLine != null) {
-                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
+                withStyle(SpanStyle(color = if (health.attentionLine) theme.style.colors.attention else theme.muted)) { append(saveLine) }
                 if (live != null || facts.isNotEmpty()) append(" · ")
             }
             if (live != null) {
@@ -3609,7 +3614,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier, page: Lis
         },
     )
     // The grid's own keys only count while nothing covers it.
-    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
+    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && model.saveFix == null && !model.connectOpen
     val pageKeys = page ?: model.playActivity?.takeIf { model.dialog == null }?.let {
         // Read from the history kept for the page, which follows removals and usage changes.
         playActivityHints(model, app.playHistory(it.game).daySessions(it.cursor).isNotEmpty())
@@ -4683,7 +4688,7 @@ private fun TileStatus(
     focused: Boolean,
     downloading: Boolean,
     activity: TileActivity?,
-    saveHealth: SaveHealth,
+    saveHealth: SaveStatus,
     animatorScale: Float,
     modifier: Modifier,
 ) {
@@ -4845,7 +4850,7 @@ private fun Cell(
     onServer: Boolean = false,
     downloading: Boolean = false,
     activity: TileActivity? = null,
-    saveHealth: SaveHealth = SaveHealth.Fine,
+    saveHealth: SaveStatus = SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked),
     library: Boolean = false,
     /** When this tile last took a new look (see [ShellController.settledAt]), or 0. */
     settledAt: Long = 0L,

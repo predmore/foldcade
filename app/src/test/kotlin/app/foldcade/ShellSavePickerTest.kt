@@ -23,7 +23,7 @@ class ShellSavePickerTest {
     }
     private val game = Game("romm", "3", "nintendo-ds", Availability.Cached, "Original")
     private fun entry(game: Game) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game)
-    private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false)
+    private fun picker(session: Long = 1) = SavePickerState(SavePickerTarget(homeGameId("romm", "3"), "romm", "3", "melonds", session), "Original", "melonDS", SaveStatus.NotSyncing(SaveIssue.NoFolder), loading = false)
 
     @Test fun pspAndGameCubeKeepTheSavesActionAndOwnSlotsBeforeFolderSetup() {
         plugins.register(app.foldcade.plugins.ppsspp.PpssppEntry())
@@ -37,10 +37,10 @@ class ShellSavePickerTest {
             shell.onMeaning(Meaning.Options, HostScreen.Bottom)
             assertEquals(Effect.OpenSaves(homeGameId("romm", "3")), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
             val target = SavePickerTarget(homeGameId("romm", "3"), "romm", "3", player)
-            shell.presentSavePicker(SavePickerState(target, "Original", plugins.player(player)!!.displayName, SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false))
+            shell.presentSavePicker(SavePickerState(target, "Original", plugins.player(player)!!.displayName, SaveStatus.NotSyncing(SaveIssue.NoFolder), loading = false))
             shell.refreshPlayerSaves()
             assertEquals(listOf(slot), shell.model.savePicker!!.ownSlots)
-            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.model.savePicker!!.health)
+            assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.model.savePicker!!.health)
             shell.presentSavePicker(null)
         }
     }
@@ -172,13 +172,13 @@ class ShellSavePickerTest {
         shell.presentSavePicker(picker())
         shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), installedPlayers = emptySet())
         val target = shell.model.savePicker!!.target
-        assertEquals(SaveHealth.Waiting, shell.model.savePicker!!.health)
+        assertEquals(SaveStatus.Waiting(0), shell.model.savePicker!!.health)
         assertFalse(shell.model.savePicker!!.canPlay)
         assertTrue(shell.model.savePicker!!.ownSlots.isEmpty())
         assertNull(shell.savePickerFix(target))
         assertEquals(Effect.SyncSavePicker(target), shell.onMeaning(Meaning.Activate, HostScreen.Bottom))
         shell.setUnsyncedSaves("romm", emptySet())
-        assertEquals(SaveHealth.Fine, shell.model.savePicker!!.health)
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.NoPlayer), shell.model.savePicker!!.health)
         shell.updateSavePicker(target) { it.copy(busy = false, saves = listOf(SavePickerSave("first", "sav", "melonds", null, 1, 10, false, null))) }
         assertNull(shell.touchSavePickerSave(target, "first"))
         assertNull(shell.model.savePicker!!.confirmation)
@@ -190,11 +190,11 @@ class ShellSavePickerTest {
         shell.presentSavePicker(picker())
         val target = shell.model.savePicker!!.target
         assertEquals(Effect.ChoosePlayerSave("melonds"), shell.savePickerFix(target))
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.model.savePicker!!.health)
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.model.savePicker!!.health)
         (plugins.player("melonds") as SaveFolderHolder).bindSaveFolder("content://saves")
         shell.refreshPlayerSaves()
-        assertEquals(SaveHealth.Fine, shell.model.savePicker!!.health)
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.model.savePicker!!.health)
         shell.setUnsyncedSaves("romm", setOf("3"))
-        assertEquals(SaveHealth.Waiting, shell.model.savePicker!!.health)
+        assertEquals(SaveStatus.Waiting(0), shell.model.savePicker!!.health)
     }
 }

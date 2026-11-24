@@ -1357,7 +1357,8 @@ class FoldcadeApp : Application() {
         firmwareNoticeDismissals.dismiss(foldcadeNotices.firstOrNull { it.id == id }, byUser)
         playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
-        if (id.startsWith("foldcade:save-setup:")) {
+        saveIncidentNotices.dismiss(id)
+        if ((id.startsWith("foldcade:save-setup:") || id.startsWith("foldcade:save-incident:"))) {
             publishNotices()
             return
         }
@@ -1373,6 +1374,7 @@ class FoldcadeApp : Application() {
         componentUpdates.dismiss(foldcadeNotices.filter { it.dismissable }.map { it.id })
         foldcadeNotices.filter { it.dismissable }.forEach { firmwareNoticeDismissals.dismiss(it, byUser = true) }
         saveSetupNotices.clear()
+        saveIncidentNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
         publishNotices()
         NoticeListener.connected?.cancelAllNotifications()
@@ -1402,7 +1404,7 @@ class FoldcadeApp : Application() {
             rommSignInSince = null
             emptyList()
         }
-        shell.setNotices(orderedNotices(signIn + foldcadeNotices + androidNotices + saveSetupNotices.notices(now)))
+        shell.setNotices(orderedNotices(signIn + foldcadeNotices + androidNotices + saveSetupNotices.notices(now) + saveIncidentNotices.notices(now)))
     }
 
     /** When RomM began waiting for a sign-in, so its notice keeps its place among the others. */
@@ -1654,6 +1656,53 @@ class FoldcadeApp : Application() {
         contentResolver.notifyChange(DocumentsContract.buildRootsUri(hostedAuthority), null, false)
     }
 
+    private val receiptSpots = ConcurrentHashMap<Game, Pair<Player, List<SaveSpot>>>()
+
+    /** A receipt concerns the bytes in the working copy, never just a held library snapshot. */
+    internal suspend fun refreshSaveReceipt(game: Game, player: Player, spots: List<SaveSpot>) {
+        receiptSpots[game] = player to spots
+        val destination = try {
+            val backend = plugins.library(game.backendId) ?: return
+            val receipts = backend.saveReceipts(game)
+            val held = plugins.saves(game.backendId, game).slots.associate { it.slot to it.contentHash }
+            val working = spots.mapNotNull { spot -> playerSaves.readSpot(spot, strict = true)?.first?.let { spot.slot to md5Hex(it) } }.toMap()
+            when {
+                spots.isEmpty() -> app.foldcade.language.OffDeviceFact.Unknown
+                working.isEmpty() && held.isEmpty() -> app.foldcade.language.OffDeviceFact.NothingYet
+                working.isNotEmpty() && working.all { (slot, hash) -> held[slot] == hash && receipts.containsKey(slot) } -> {
+                    val times = working.keys.map { receipts[it] }
+                    app.foldcade.language.OffDeviceFact.OnRomm(if (times.any { it == null }) null else times.filterNotNull().minOrNull())
+                }
+                else -> app.foldcade.language.OffDeviceFact.Unknown
+            }
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { app.foldcade.language.OffDeviceFact.Unknown }
+        withContext(Dispatchers.Main.immediate) { shell.setSaveDestination(game, destination) }
+    }
+
+    internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
+    internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder) }
+
+    internal suspend fun refreshSaveProtection() {
+        val routes = withContext(Dispatchers.Main.immediate) { shell.protectionRoutes().mapNotNull { route -> shell.savePlayer(route)?.let { it.saveFolderId() to route.saves } } }
+        val known = withContext(Dispatchers.IO) { routes.mapNotNull { (key, game) ->
+            try { key.takeIf { plugins.saves(game.backendId, game).slots.isNotEmpty() } } catch (_: Exception) { null }
+        }.toSet() }
+        val locations = withContext(Dispatchers.IO) {
+            plugins.playerIds().mapNotNull(plugins::player).filterIsInstance<SaveFolderHolder>()
+                .filterIsInstance<Player>().filter { it.packageNames.any(::packageInstalled) }.distinctBy { it.saveFolderId() }
+                .mapNotNull { player ->
+                    val location = saveProbes.refresh(player, player.saveFolderId() in known) ?: return@mapNotNull null
+                    player.saveFolderId() to location
+                }.toMap()
+        }
+        withContext(Dispatchers.Main.immediate) {
+            shell.setSaveProtection(locations, saveProtection.incidents())
+            saveIncidentNotices.update(saveProtection.incidents())
+            publishNotices()
+        }
+    }
+
     private val saveFolderFindLock = Mutex()
     private val saveFolderStarts = ConcurrentHashMap<String, String>()
 
@@ -1741,6 +1790,7 @@ class FoldcadeApp : Application() {
             saveFoldersReady.completeExceptionally(failure)
             throw failure
         }
+        refreshSaveProtection()
         refreshEdenSetting()
         shell.setThorSetups(notes.thor)
         shell.setSaveSync(notes.sync, notes.setup)
@@ -1790,6 +1840,8 @@ class FoldcadeApp : Application() {
         }
     }
 
+    private val saveIncidentNotices = SaveIncidentNotices()
+
     private val thorSetupNotices = app.foldcade.language.ThorSetupNotices()
 
     /** Apply before launch; publishing one settings snapshot and a notice never delays Home drawing. */
@@ -1818,7 +1870,10 @@ class FoldcadeApp : Application() {
     }
 
     internal fun noteSaveLaunch(route: GameRoute) {
-        shell.savePlayer(route)?.let { saveSetupNotices.launch(shell.saveNoticePlayerId(it.id)) }
+        shell.savePlayer(route)?.let {
+            saveSetupNotices.launch(shell.saveNoticePlayerId(it.id))
+            saveIncidentNotices.launch(it.saveFolderId())
+        }
         publishNotices()
     }
 
@@ -1829,6 +1884,10 @@ class FoldcadeApp : Application() {
             for (id in ids) {
                 saveHealthReads.remove(id)?.cancel()
                 saveHealthReads[id] = launch {
+                    val service = try { withContext(Dispatchers.IO) { plugins.library(id)?.saveServiceState() } }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { app.foldcade.api.plugin.SaveServiceState.Unknown }
+                    if (service != null) shell.setSaveService(id, service)
                     val keys = try {
                         plugins.unsyncedSaves(id)
                     } catch (cancelled: CancellationException) {
@@ -1838,6 +1897,7 @@ class FoldcadeApp : Application() {
                     }
                     unsyncedSaveKeys[id] = keys
                     shell.setUnsyncedSaves(id, keys)
+                    withContext(Dispatchers.IO) { saveFlow.withLock { receiptSpots.filterKeys { it.backendId == id }.forEach { (game, reading) -> refreshSaveReceipt(game, reading.first, reading.second) } } }
                     updateWaitingSaveNotices()
                 }
             }

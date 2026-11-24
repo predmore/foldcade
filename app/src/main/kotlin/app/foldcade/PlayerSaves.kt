@@ -267,6 +267,50 @@ internal class PlayerSaves(
         return resolveSpots(player, game, romName, { header }, gameFile(uri), forLaunch, changed)
     }
 
+    /** A reason backed by the file type and the adapter’s existing setup checks. */
+    fun unresolvedSpot(player: Player, game: Game, target: LaunchTarget): app.foldcade.language.SpotFact.Unresolved {
+        try {
+            val uri = when (target) { is LaunchTarget.ContentUri -> target.uri; is LaunchTarget.SharedFile -> target.uri; else -> null }
+            val name = uri?.let(docs::displayName)
+            if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
+            val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
+            val sync = folder?.let { saveSync(player, it) }
+            if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
+            if (player is app.foldcade.plugins.eden.EdenPlayer && !edenHasUser(player, game)) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoProfile)
+            val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+            if (player is DolphinPlayer && extension !in setOf("iso", "gcm")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedImage,
+                app.foldcade.language.SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT).ifEmpty { "This file type" }, "ISO and GCM"))
+            if (player is app.foldcade.plugins.explus.ExPlusPlayer && extension in setOf("zip", "7z")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.ArchiveName)
+            if (player.romHeaderSize > 0 && docs.head(uri!!, player.romHeaderSize) == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
+            return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoTitleId)
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable) }
+    }
+
+    /** Resolve against another readable root without rebinding the installed player or writing it. */
+    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
+        val candidate = object : Player by player {
+            override fun saveDeclarations(game: Game) = player.saveDeclarations(game).map { it.copy(locationUri = root) }
+        }
+        return spots(candidate, game, target, forLaunch = false)
+    }
+
+    /** Stable, durable bytes for incident recovery. Never handed to ordinary slot reconciliation. */
+    fun stageLiveCopy(game: Game, player: Player, spot: SaveSpot): String? {
+        val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return null
+        if (bytes.size > 256 * 1024 * 1024) throw SaveNotPlaced()
+        val name = "live-${md5Hex((game.backendId + ":" + game.remoteKey + ":" + player.saveFolderId() + ":" + spot.slot + ":" + storageIdentity(spot.folderUri)).toByteArray())}-${md5Hex(bytes)}.save"
+        val file = handover.resolve(name)
+        app.foldcade.romm.writeDurably(file, bytes)
+        // Keep enough identity to recover a queued copy even after the guided incident closes.
+        val metadata = org.json.JSONObject().put("library", game.backendId).put("game", game.remoteKey)
+            .put("platform", game.platformId).put("label", game.label).put("player", player.id)
+            .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri))
+        app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
+        return file.toUri().toString()
+    }
+
     /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
     fun spotsForFileName(player: Player, game: Game, romName: String): List<SaveSpot> =
         resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null)
@@ -758,14 +802,14 @@ internal class PlayerSaves(
         null
     }
 
-    private fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
+    internal fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
         DocumentSaveFolder(docs, folderUri, allowWrite) { name, bytes -> backup(player, name, bytes) }
 
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
-    private fun readSpot(spot: SaveSpot, strict: Boolean = false): Pair<ByteArray, String?>? {
+    internal fun readSpot(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Pair<ByteArray, String?>? {
         if (strict) readableChildren(spot.folderUri, "")
         if (spot.folders.isNotEmpty() || spot.search != null) {
-            val folders = readFolders(spot, strict)
+            val folders = readFolders(spot, strict, limit)
             if (strict && folders == Held.Unreadable) throw SaveNotPlaced()
             val held = folders as? Held.Found ?: return null
             // Folders with no file are no save, and a zip of them could never be placed.
@@ -778,10 +822,10 @@ internal class PlayerSaves(
             val listed = readableChildren(spot.folderUri, parent) ?: return null
             val file = listed.firstOrNull { it.name == name } ?: return null
             if (file.isFolder) throw SaveNotPlaced()
-            return (docs.read(file.uri) ?: throw SaveNotPlaced()) to file.uri
+            return (docs.readBounded(file.uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt()) ?: throw SaveNotPlaced()) to file.uri
         }
         val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
-        return (docs.read(uri) ?: return null) to uri
+        return (docs.readBounded(uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt()) ?: return null) to uri
     }
 
     /** Distinguish a verified missing folder from one that exists but cannot be listed. */
@@ -798,7 +842,7 @@ internal class PlayerSaves(
     }
 
     /** Everything in [spot]'s folders, named as in its zip. A search lists its parent and takes the matches. */
-    private fun readFolders(spot: SaveSpot, strict: Boolean = false): Held {
+    private fun readFolders(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Held {
         val parts = try {
             folderParts(spot, strict)
         } catch (_: Exception) {
@@ -807,6 +851,7 @@ internal class PlayerSaves(
         if (parts.isEmpty()) return Held.Missing
         val entries = sortedMapOf<String, ByteArray?>()
         val uris = HashMap<String, String>()
+        var remaining = limit
         try {
             for (part in parts) {
                 if (strict && readableChildren(spot.folderUri, part.path) == null) continue
@@ -819,7 +864,11 @@ internal class PlayerSaves(
                         if (!filter.accepts(name, head)) continue
                     }
                     if (spot.filter != null && entry.isFolder) continue
-                    entries[name] = if (entry.isFolder) null else docs.read(entry.uri) ?: return Held.Unreadable
+                    entries[name] = if (entry.isFolder) null else {
+                        val bytes = docs.readBounded(entry.uri, minOf(remaining, Int.MAX_VALUE.toLong()).toInt()) ?: return Held.Unreadable
+                        remaining -= bytes.size
+                        bytes
+                    }
                     uris[name] = entry.uri
                 }
             }

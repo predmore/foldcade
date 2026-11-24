@@ -49,8 +49,8 @@ class SaveSetupTest {
 
     @Test fun aFolderFoundWithoutAskingSaysWhereOnThePageAndInSettings() {
         val found = model.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
-        assertEquals("saves/nds", rowText(Row.PlayerSave("melonds"), found).value)
-        assertEquals(Copy.playerSavesSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
+        assertEquals(SaveProtectionCopy.folderSet, rowText(Row.PlayerSave("melonds"), found).value)
+        assertEquals(SaveProtectionCopy.folderSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
         val tile = found.openSaveSetup(HostScreen.Top).tile("melonds")
         assertEquals("saves/nds", tile.foundIn)
         assertTrue(tile.done)
@@ -157,7 +157,7 @@ class SaveSetupTest {
             val attention = settingsTileStatus(row, played) == TileStatus.Attention
             assertEquals(tile.key, attention, !tile.done)
             // With none, one still waiting wears nothing: no saves are at stake yet.
-            assertEquals(tile.key, if (tile.done) TileStatus.Fine else null, settingsTileStatus(row, ready))
+            assertEquals(tile.key, null, settingsTileStatus(row, ready))
         }
         val aps = tiles.first { it.key == "aps3e" }
         assertEquals(SetupStep.InApp("aps3e", InAppStep.Setup, "Install firmware in aPS3e.", done = false), aps.step)

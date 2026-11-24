@@ -5,14 +5,9 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.language.DialogButton
-import app.foldcade.plugins.dolphin.DolphinPlayer
-import app.foldcade.plugins.eden.EdenPlayer
-import app.foldcade.plugins.ppsspp.PpssppPlayer
-import app.foldcade.plugins.explus.ExPlusPlayer
 
-/** Content-derived save players can bypass negotiation. Other players still prepare their firmware. */
-internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean =
-    declinedFor != player.id || (player !is EdenPlayer && player !is PpssppPlayer && player !is DolphinPlayer && player !is ExPlusPlayer)
+/** The opt-out applies to every adapter; LaunchSaves still prepares firmware separately. */
+internal fun saveSyncForLaunch(player: Player, declinedFor: String?): Boolean = declinedFor != player.id
 
 /** Only an unresolved save spot offers a retry without syncing; failed writes must stop. */
 internal fun unresolvedSaveHold(failure: SaveNotPlaced, pending: () -> PendingBackendLaunch): PendingBackendLaunch? =

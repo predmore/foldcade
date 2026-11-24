@@ -30,7 +30,7 @@ data class SavePickerState(
     val target: SavePickerTarget,
     val gameLabel: String,
     val playerName: String,
-    val health: SaveHealth,
+    val health: SaveStatus,
     val ownSlots: List<String> = emptyList(),
     val saves: List<SavePickerSave> = emptyList(),
     /** The status chip is 0; save rows start at 1. See [firstIndex]. */
@@ -61,7 +61,7 @@ data class SavePickerState(
      * Nothing on RomM yet and the emulator needs setting up: the card's centre is the one way
      * on, Set up saves with A on its cap, so the head's chip only says how things are.
      */
-    val setupInCard: Boolean get() = health is SaveHealth.NotSyncing && saves.isEmpty() && !loading && !error && !busy && copying == null
+    val setupInCard: Boolean get() = (health is SaveStatus.NotSyncing || health is SaveStatus.Problem) && saves.isEmpty() && !loading && !error && !busy && copying == null
     val firstIndex: Int get() = if (statusActs || saves.isEmpty()) 0 else 1
 
     /** [index] moved onto a row that can hold it, after the saves or the health change. */
@@ -115,13 +115,13 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
         Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(state.firstIndex), message = null) to null
         Meaning.MoveDown -> state.copy(index = (state.index + 1).coerceAtMost(state.saves.size), message = null) to null
         Meaning.Activate -> if (state.index == 0) when (state.health) {
-            is SaveHealth.NotSyncing -> state to Effect.FixSavePicker(state.target)
-            SaveHealth.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
+            is SaveStatus.Problem, is SaveStatus.NotSyncing -> state to Effect.FixSavePicker(state.target)
+            is SaveStatus.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
         } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
             // Set up loses nothing and is the only way on, so it is the one focused.
-            is SaveHealth.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
-            SaveHealth.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
+            is SaveStatus.Problem, is SaveStatus.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
+            is SaveStatus.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
             else -> state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
         }
         Meaning.Options -> state.copy(copying = state.focused, destinationIndex = 0) to null
@@ -224,20 +224,14 @@ object SavePickerCopy {
         1 -> "1 save on RomM"
         else -> "$saves saves on RomM"
     }
-    fun header(health: SaveHealth): String = when (health) {
-        SaveHealth.Fine -> "Syncing with RomM"
-        // What to do is said once, beside A: in the footer, or on the card's Set up saves.
-        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot) "Saves aren’t syncing" else Copy.notSyncing
-        SaveHealth.Waiting -> "Waiting to upload"
-        SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
-    }
-    fun explanation(health: SaveHealth): String = when (health) {
-        SaveHealth.Fine -> "Foldcade keeps this game’s saves on RomM."
-        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot)
-            "Check the save folder, game file type and emulator’s save layout."
-            else "Set up the emulator to keep this game’s saves on RomM."
-        SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
-        SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
+    fun header(health: SaveStatus): String = saveStatusLine(health)
+    fun explanation(health: SaveStatus, azahar: Boolean = false): String = when (health) {
+        is SaveStatus.Problem -> SaveProtectionCopy.body(health.incident)
+        is SaveStatus.NotSyncing -> health.detail ?: health.spot?.let { SaveProtectionCopy.spot(it, azahar) }
+            ?: "Set up the emulator to keep this game’s saves on RomM."
+        is SaveStatus.Waiting -> "Progress on this device is waiting to reach RomM."
+        is SaveStatus.DeviceOnly -> "This emulator keeps its saves on this device."
+        else -> saveStatusLine(health)
     }
     /**
      * The confirmation's title. A copy names where it lands: a slot someone named by its name, and
@@ -402,8 +396,8 @@ fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
     if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
     if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
     return when (state.health) {
-        is SaveHealth.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
-        SaveHealth.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
+        is SaveStatus.Problem, is SaveStatus.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
+        is SaveStatus.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
         else -> emptyList()
     }
 }

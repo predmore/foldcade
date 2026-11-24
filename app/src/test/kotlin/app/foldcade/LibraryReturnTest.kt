@@ -102,6 +102,29 @@ class LibraryReturnTest {
         assertEquals(listOf(stored), returnSpots(shelf(), pending))
     }
 
+    @Test fun baselineAndUnprotectedChoiceSurviveProcessDeath() {
+        val root = app.foldcade.language.FolderRef("primary:saves", "saves")
+        val baseline = app.foldcade.language.ProbeSnapshot(100, 1, "emulator", listOf(app.foldcade.language.RootReading(root, true, emptyList(), "hash", true, true, null)))
+        val pending = LibraryReturn("romm", game, player, emptyList(), "content://roms/game.iso", baseline, true)
+        val restored = decodeLibraryReturn(pending.encode()) { player }!!
+        assertEquals(baseline, restored.baseline)
+        assertEquals(true, restored.unprotectedSession)
+        assertEquals(pending.targetUri, restored.targetUri)
+        val old = org.json.JSONObject(pending.encode()).apply { remove("baseline"); remove("unprotectedSession") }
+        val legacy = decodeLibraryReturn(old.toString()) { player }!!
+        assertEquals(null, legacy.baseline)
+        assertFalse(legacy.unprotectedSession)
+    }
+
+    @Test fun anOptedOutSessionStillReadsReachableSpotsOnReturn() {
+        val plain = object : Player by player {
+            override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("sav", "content://saves"))
+            override fun saveFileName(slot: String, romFileName: String) = "game.sav"
+        }
+        val pending = LibraryReturn("romm", game, plain, emptyList(), "content://roms/game.iso", unprotectedSession = true)
+        assertEquals("game.sav", returnSpots(shelf(), pending).single().fileName)
+    }
+
     private fun shelf(): PlayerSaves {
         val docs = object : SaveDocuments {
             override fun displayName(uri: String) = "game.iso"

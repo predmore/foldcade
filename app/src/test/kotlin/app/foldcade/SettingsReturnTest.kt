@@ -50,7 +50,7 @@ class SettingsReturnTest {
         shell.openSettingsRow(Row.AddRomm)
         shell.presentSavePicker(SavePickerState(
             SavePickerTarget("game", "romm", "1", "melonds", 1), "Game", "melonDS",
-            SaveHealth.NotSyncing(SaveIssue.NoFolder), loading = false,
+            SaveStatus.NotSyncing(SaveIssue.NoFolder), loading = false,
         ))
         assertFalse(shell.model.connectOpen)
         assertNull(shell.model.connectReturnSettings)

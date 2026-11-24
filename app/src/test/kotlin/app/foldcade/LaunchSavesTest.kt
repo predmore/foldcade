@@ -39,6 +39,62 @@ import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
+    @Test fun everyPreviouslyUnguardedAdapterStopsWhenAKnownSaveHasNoSpot() = runBlocking {
+        val players = listOf(
+            app.foldcade.plugins.azahar.AzaharPlayer(), app.foldcade.plugins.melonds.MelonDsPlayer(),
+            app.foldcade.plugins.armsx2.ArmsX2Player(), app.foldcade.plugins.aps3e.Aps3ePlayer(),
+            app.foldcade.plugins.duckstation.DuckStationPlayer(), app.foldcade.plugins.retroarch.RetroArchEntry().players.first(),
+        )
+        docs.names.remove("content://rf4") // unreadable ROM: none may guess an identity
+        for (player in players) {
+            (player as app.foldcade.api.plugin.SaveFolderHolder).bindSaveFolder(SAVES)
+            (player as? app.foldcade.api.plugin.HostedSaveFolder)?.bindHostedFolder(SAVES, true)
+            val game = owner.copy(platformId = player.platformId)
+            server.held = player.saveDeclarations(game).map { it.slot }
+            assertTrue(player.id, server.held.isNotEmpty())
+            val failure = runCatching { LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", game, game), player, local) }.exceptionOrNull()
+            assertTrue("${player.id}: $failure", failure is UnresolvedSaveNotPlaced)
+            assertTrue(server.calls.isEmpty())
+            assertTrue(awaiting.isEmpty())
+        }
+    }
+
+    @Test fun positiveIncidentsStopBeforeAnyReconciliationButPlayAnywayIsOneLaunch() = runBlocking {
+        val root = app.foldcade.language.FolderRef("primary:saves", "saves")
+        for (kind in listOf(app.foldcade.language.IncidentKind.WrongFolder, app.foldcade.language.IncidentKind.FolderEmptied, app.foldcade.language.IncidentKind.LostAccess)) {
+            val incident = app.foldcade.language.SaveIncident("${kind}:melonds", kind, "melonds", "melonDS", emptyList(), root, null,
+                app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog, "proof"), 1)
+            val launch = LaunchSaves(saves, plugins, protectionGate = { _, _, _ -> throw SaveProtectionStop(incident) }) { awaiting += it }
+            val failure = runCatching { launch.prepare(GameRoute("tile", owner, owner), Melon, local) }.exceptionOrNull()
+            assertTrue(failure is SaveProtectionStop)
+            assertTrue(failure is UnresolvedSaveNotPlaced)
+            assertTrue(server.calls.isEmpty())
+            val prepared = launch.prepare(GameRoute("tile", owner, owner), Melon, local, syncing = false)
+            assertTrue(prepared.unprotectedSession)
+            assertTrue(prepared.spots.isEmpty())
+            val dialog = app.foldcade.language.saveProtectionDialog(incident, app.foldcade.language.HostScreen.Bottom)
+            assertTrue(dialog.holdsLaunch)
+            assertEquals(app.foldcade.language.BACK_CLOSES, dialog.safeIndex)
+        }
+    }
+
+    @Test fun anUnexpectedProtectionFailureCannotFallThroughToAnOrdinaryLaunch() = runBlocking {
+        val launch = LaunchSaves(saves, plugins, protectionGate = { _, _, _ -> throw java.io.IOException("evidence could not be recorded") }) { awaiting += it }
+        assertTrue(runCatching { launch.prepare(GameRoute("tile", owner, owner), Melon, local) }.exceptionOrNull() is SaveNotPlaced)
+        assertTrue(server.calls.isEmpty())
+    }
+
+    @Test fun baselineIsTakenAfterFoldcadesOwnPlacement() = runBlocking {
+        server.toPlace = "placed"
+        var snapshotted = false
+        LaunchSaves(saves, plugins, baseline = { _, _, _ ->
+            assertEquals("placed", docs.files["$SAVES/Tetris DS (USA).sav"]?.toString(Charsets.UTF_8))
+            snapshotted = true
+            null
+        }) { awaiting += it }.prepare(GameRoute("tile", play, owner), Melon, local)
+        assertTrue(snapshotted)
+    }
+
     @Test fun unresolvedPspAndGameCubeSavesNeverAcknowledgeAnIncomingHead() = runBlocking {
         val players = listOf(app.foldcade.plugins.ppsspp.PpssppPlayer(), app.foldcade.plugins.dolphin.DolphinPlayer(), app.foldcade.plugins.explus.ExPlusEntry().players.first())
         for (player in players) {
@@ -402,9 +458,9 @@ class LaunchSavesTest {
                 assertEquals(listOf("bios/SCPH1001.BIN"), saves.placeFirmware(publisher, game, target, SAVES))
             })
 
-        assertEquals(listOf("prepareLaunch:12"), server.calls)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
         assertTrue(prepared.spots.isEmpty())
-        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertEquals(emptyList<SaveDeclaration>(), server.declarationsSeen)
         assertArrayEquals(bytes, docs.files["$SAVES/bios/SCPH1001.BIN"])
         assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
         assertEquals(1, docs.firmwarePublications)
@@ -422,10 +478,10 @@ class LaunchSavesTest {
             syncing = saveSyncForLaunch(player, continuation.declinedFor),
             firmware = { target -> assertTrue(saves.placeFirmware(player, game, target, SAVES).isEmpty()) })
 
-        assertEquals(listOf("prepareLaunch:12"), server.calls)
-        assertEquals("content://own", (prepared.target as LaunchTarget.ContentUri).uri)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
+        assertEquals("content://rf4", (prepared.target as LaunchTarget.ContentUri).uri)
         assertTrue(prepared.spots.isEmpty())
-        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertEquals(emptyList<SaveDeclaration>(), server.declarationsSeen)
         assertTrue(docs.files.isEmpty())
         assertTrue(awaiting.isEmpty())
         assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
@@ -460,8 +516,8 @@ class LaunchSavesTest {
                 assertEquals(listOf("bios/ps2.bin"), saves.placeFirmware(player, game, target, SAVES))
             })
 
-        assertEquals(listOf("prepareLaunch:12"), server.calls)
-        assertEquals(listOf(SaveDeclaration("card1", null)), server.declarationsSeen)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
+        assertEquals(emptyList<SaveDeclaration>(), server.declarationsSeen)
         assertEquals(listOf(prepared.target to game.backendId), firmwarePasses)
         assertTrue(prepared.spots.isEmpty())
         assertArrayEquals(bytes, docs.files["$SAVES/bios/ps2.bin"])
@@ -528,7 +584,9 @@ class LaunchSavesTest {
 
         override suspend fun prepareSaves(game: Game, player: Player, target: LaunchTarget): Placement {
             calls += "prepareSaves:${game.remoteKey}"
-            return Placement(target, placed())
+            declarationsSeen = player.saveDeclarations(game)
+            val withFirmware = if (target is LaunchTarget.ContentUri) LaunchTarget.ContentUri(target.uri, firmware) else target
+            return Placement(withFirmware, placed())
         }
 
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {

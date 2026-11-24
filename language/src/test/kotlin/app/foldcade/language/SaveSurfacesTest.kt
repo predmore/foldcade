@@ -152,7 +152,7 @@ class SaveSurfacesTest {
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.HostedSaves("duckstation"), model))
         // Once in use, the state wears the check.
         val inUse = model.copy(playerSaves = listOf(duck.copy(hostedInUse = true)))
-        assertEquals(RowControl.Value(Copy.hostedSavesSet, opens = true, healthy = true), rowControl(Row.HostedSaves("duckstation"), inUse))
+        assertEquals(RowControl.Value(SaveProtectionCopy.folderSet, opens = true), rowControl(Row.HostedSaves("duckstation"), inUse))
         assertEquals(RowText(Copy.saveFolder, Copy.notSyncing), rowText(Row.PlayerSave("azahar"), model.copy(playerSaves = listOf(PlayerSaveSetting("azahar", "Azahar", false, installed = true)), boardEmulators = setOf("azahar"))))
         // Set up saves says how many are left, and nothing once all sync.
         assertEquals(1, savesDue(model).size)

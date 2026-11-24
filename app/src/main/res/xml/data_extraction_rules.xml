@@ -7,11 +7,13 @@
         <include domain="sharedpref" path="foldcade.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="datastore" />
+        <exclude domain="file" path="save-protection" />
     </cloud-backup>
     <device-transfer>
         <!-- Only foldcade.xml travels. apk_plugins.xml consent stays on this device. -->
         <include domain="sharedpref" path="foldcade.xml" />
         <include domain="file" path="." />
         <exclude domain="file" path="datastore" />
+        <exclude domain="file" path="save-protection" />
     </device-transfer>
 </data-extraction-rules>

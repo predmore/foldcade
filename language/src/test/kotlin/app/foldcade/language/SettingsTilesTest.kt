@@ -63,10 +63,10 @@ class SettingsTilesTest {
             listOf(tile("azahar"), tile("armsx2"), tile("eden"), tile("retroarch.nes"), Row.SaveSetup, Row.FindSaves),
             settingsRows(SettingsCategory.Players, emulators),
         )
-        assertEquals(listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")), shelf.single { it.key == "armsx2" }.rows)
+        assertEquals(listOf(Row.PlayerSave("armsx2"), Row.SaveCheck("armsx2"), Row.SaveSync("armsx2")), shelf.single { it.key == "armsx2" }.rows)
         // RetroArch's cores and Eden's keys join the player that is that app, not a row of their own.
-        assertEquals(listOf(Row.PlayerSave("retroarch.nes"), Row.RetroArchCores), shelf.single { it.key == "retroarch.nes" }.rows)
-        assertEquals(listOf(Row.PlayerSave("eden"), Row.EdenFolder), shelf.single { it.key == "eden" }.rows)
+        assertEquals(listOf(Row.PlayerSave("retroarch.nes"), Row.SaveCheck("retroarch.nes"), Row.RetroArchCores), shelf.single { it.key == "retroarch.nes" }.rows)
+        assertEquals(listOf(Row.PlayerSave("eden"), Row.SaveCheck("eden"), Row.EdenFolder), shelf.single { it.key == "eden" }.rows)
         assertEquals("com.retroarch.aarch64", shelf.single { it.key == "retroarch.nes" }.packageName)
     }
 
@@ -83,7 +83,7 @@ class SettingsTilesTest {
 
     @Test
     fun aTileWearsTheCheckOnlyWhileEveryRowIsFine() {
-        assertEquals(TileStatus.Fine, settingsTileStatus(tile("armsx2"), emulators))
+        assertNull(settingsTileStatus(tile("armsx2"), emulators))
         assertEquals(TileStatus.Attention, settingsTileStatus(tile("azahar"), emulators))
         val cardOff = emulators.copy(playerSaves = listOf(armsx2.copy(saveSyncing = false, saveSyncSteps = "Use a folder card")))
         assertEquals(TileStatus.Attention, settingsTileStatus(tile("armsx2"), cardOff))
@@ -101,7 +101,7 @@ class SettingsTilesTest {
         // Azahar and RetroArch wait for a step but have no games on Home: no cloud, and no check either.
         assertNull(settingsTileStatus(tile("azahar"), noGames))
         assertNull(settingsTileStatus(tile("retroarch.nes"), noGames))
-        assertEquals(TileStatus.Fine, settingsTileStatus(tile("armsx2"), noGames))
+        assertNull(settingsTileStatus(tile("armsx2"), noGames))
         // Its own page still says what is left, as quietly as its tile (review-B S10), and it still counts as a step left.
         assertEquals(RowControl.Value(SaveSetupCopy.notSetUp, opens = true), rowControl(Row.PlayerSave("azahar"), noGames))
         assertTrue(rowNeedsYou(Row.PlayerSave("azahar"), noGames))
@@ -132,13 +132,13 @@ class SettingsTilesTest {
     @Test
     fun anEmulatorsPageListsShortValuesUnderItsName() {
         assertEquals("ARMSX2", settingsInnerTitle(SettingsInner.Emulator("armsx2"), emulators))
-        assertEquals(RowText(Copy.saveFolder, Copy.playerSavesSet), rowText(Row.PlayerSave("armsx2"), emulators))
-        assertEquals(RowText(Copy.memoryCard, Copy.hostedSavesSet), rowText(Row.SaveSync("armsx2"), emulators))
+        assertEquals(RowText(Copy.saveFolder, SaveProtectionCopy.folderSet), rowText(Row.PlayerSave("armsx2"), emulators))
+        assertEquals(RowText(Copy.memoryCard, SaveProtectionCopy.folderSet), rowText(Row.SaveSync("armsx2"), emulators))
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.PlayerSave("azahar"), emulators))
         assertEquals(RowText(Copy.retroArchCores, "2 ${Copy.cores}"), rowText(Row.RetroArchCores, emulators))
         val duck = PlayerSaveSetting("duckstation", "DuckStation", chosen = false, hostedTitle = "DuckStation memory cards", hostedInUse = true, installed = true)
         val hosted = emulators.copy(playerSaves = listOf(duck))
-        assertEquals(RowText("Memory cards", Copy.hostedSavesSet), rowText(Row.HostedSaves("duckstation"), hosted))
+        assertEquals(RowText("Memory cards", SaveProtectionCopy.folderSet), rowText(Row.HostedSaves("duckstation"), hosted))
     }
 
     @Test
@@ -150,7 +150,7 @@ class SettingsTilesTest {
         assertEquals(SettingsInner.Emulator("eden"), page.settings!!.inner)
         assertEquals(0, page.settings!!.row)
         assertEquals(Row.PlayerSave("eden"), settingsFocus(page))
-        assertEquals(Row.EdenFolder, settingsFocus(page.press(Meaning.MoveDown)))
+        assertEquals(Row.SaveCheck("eden"), settingsFocus(page.press(Meaning.MoveDown)))
 
         val back = page.press(Meaning.MoveDown, Meaning.Back)
         assertNull(back.settings!!.inner)

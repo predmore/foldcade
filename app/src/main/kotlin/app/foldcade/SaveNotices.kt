@@ -198,3 +198,31 @@ internal class WaitingSaveNotices(private val patienceMillis: Long = RETURN_SYNC
         return notices.filter { notice -> done.values.any { it === notice } }
     }
 }
+
+/** Incidents persist; dismissal lasts only until a launch or the next cold start. */
+internal class SaveIncidentNotices {
+    private var incidents = emptyList<app.foldcade.language.SaveIncident>()
+    private val dismissed = mutableSetOf<String>()
+    fun update(next: List<app.foldcade.language.SaveIncident>) {
+        dismissed.retainAll(next.map { it.id }.toSet())
+        incidents = next
+    }
+    fun launch(key: String) { incidents.filter { it.playerKey == key }.forEach { dismissed.remove(it.id) } }
+    fun dismiss(id: String) {
+        if (id == MERGED) clear() else incidents.firstOrNull { noticeId(it.id) == id }?.let { dismissed.add(it.id) }
+    }
+    fun clear() { dismissed.addAll(incidents.map { it.id }) }
+    fun notices(nowMillis: Long): List<FoldNotice> {
+        if (incidents.none { it.id !in dismissed }) return emptyList()
+        val players = incidents.distinctBy { it.playerKey }
+        if (players.size > 1) return listOf(FoldNotice(MERGED, app.foldcade.language.SaveProtectionCopy.emulatorsNeedFix(players.size), app.foldcade.language.SaveProtectionCopy.checkWhere,
+            postedMillis = incidents.maxOf { it.openedAtMillis }, settingsCategory = SettingsCategory.Players))
+        return incidents.filter { it.id !in dismissed }.map { incident -> FoldNotice(
+            noticeId(incident.id), app.foldcade.language.SaveProtectionCopy.title(incident),
+            // No unconditional RomM reassurance: a folder-wide incident may concern a local-only game.
+            app.foldcade.language.SaveProtectionCopy.body(incident), postedMillis = incident.openedAtMillis,
+        ) }
+    }
+    private fun noticeId(id: String) = "foldcade:save-incident:$id"
+    private companion object { const val MERGED = "foldcade:save-incident:emulators" }
+}

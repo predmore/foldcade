@@ -44,7 +44,8 @@ import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.api.plugin.SaveDeclaration
-import app.foldcade.language.SaveHealth
+import app.foldcade.language.SaveStatus
+import app.foldcade.language.*
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.artwork.ArtQuery
@@ -641,7 +642,7 @@ class ShellController(
 
     private var saveHealthEpoch by mutableStateOf(0)
     private var unsyncedSaves by mutableStateOf<Map<String, Set<String>>>(emptyMap())
-    private data class SaveReachability(val locations: List<SaveDeclaration>, val reachable: Boolean)
+    private data class SaveReachability(val locations: List<SaveDeclaration>, val reachable: Boolean, val spot: SpotFact.Unresolved? = null)
     private val reachableSaves = mutableMapOf<Pair<String, String>, SaveReachability>()
     private val saveSupport = mutableMapOf<Pair<String, Game>, GameSaveSupport>()
     private var healthPlayerSettings: List<PlayerSaveSetting>? = null
@@ -653,9 +654,9 @@ class ShellController(
         refreshSavePickerHealth()
     }
 
-    internal fun noteSaveReachable(game: Game, playerId: String, reachable: Boolean) {
+    internal fun noteSaveReachable(game: Game, playerId: String, reachable: Boolean, spot: SpotFact.Unresolved? = null) {
         val player = plugins.player(playerId) ?: return
-        reachableSaves[homeGameId(game.backendId, game.remoteKey) to playerId] = SaveReachability(player.saveDeclarations(game), reachable)
+        reachableSaves[homeGameId(game.backendId, game.remoteKey) to playerId] = SaveReachability(player.saveDeclarations(game), reachable, spot)
         saveSupport.remove(playerId to game)
         saveHealthEpoch += 1
         refreshSavePickerHealth()
@@ -749,7 +750,7 @@ class ShellController(
 
     /** Notices and Set up saves choose a Settings row in the reducer, before Settings opens. */
     private fun settingsPlayerChoices(next: PickerModel): List<SystemPlayerChoice> =
-        if (next.settings != null || next.panel != null || next.saveSetup != null) systemPlayerChoices() else next.systemPlayers
+        if (next.settings != null || next.panel != null || (next.saveSetup != null || next.saveFix != null)) systemPlayerChoices() else next.systemPlayers
 
     private fun systemPlayerChoices(): List<SystemPlayerChoice> =
         (libraryGames.values.map { it.platformId } + entries.mapNotNull { it.game?.platformId } + Shelf.games.mapNotNull { it.platformId })
@@ -767,13 +768,88 @@ class ShellController(
         (runningPlayer(route.tileId) ?: playerResolution(route.tileId, route.play.platformId).player)
             ?.takeIf { it.packageNames.any(installedPlayers::contains) }
 
-    internal fun saveHealthOf(id: String, pressed: Game? = null): SaveHealth {
+    private var saveLocations: Map<String, LocationFact> = emptyMap()
+    private var saveIncidents: List<SaveIncident> = emptyList()
+    private val saveServices = mutableMapOf<String, app.foldcade.api.plugin.SaveServiceState>()
+    private val saveDestinations = mutableMapOf<String, OffDeviceFact>()
+
+    internal fun setSaveProtection(locations: Map<String, LocationFact>, incidents: List<SaveIncident>) {
+        val changed = (saveLocations.keys + locations.keys).filter { key ->
+            val old = saveLocations[key]
+            val next = locations[key]
+            fun identity(fact: LocationFact?): String? = when (fact) {
+                is LocationFact.Bound -> fact.root.identity
+                is LocationFact.Verified -> fact.root.identity
+                is LocationFact.Mismatch -> fact.bound.identity
+                else -> null
+            }
+            old is LocationFact.Verified && next !is LocationFact.Verified || old != null && identity(old) != identity(next)
+        }.toSet()
+        saveDestinations.keys.removeAll { id -> plugins.playerIds().mapNotNull(plugins::player).any { it.saveFolderId() in changed && it.platformId == libraryGames[id]?.platformId } }
+        saveLocations = locations
+        saveIncidents = incidents
+        model = model.copy(saveIncidents = incidents)
+        saveSettingsCache = null
+        refreshPlayerSaves()
+        refreshSaveHealth()
+    }
+
+    internal fun protectionRoutes(): List<GameRoute> = libraryGames.keys.mapNotNull { launchRoute(tileOf(it)) }.distinctBy { it.tileId }
+
+    internal fun setSaveService(libraryId: String, state: app.foldcade.api.plugin.SaveServiceState) {
+        saveServices[libraryId] = state
+        saveHealthEpoch += 1
+        refreshSavePickerHealth()
+    }
+
+    private fun saveDestination(game: Game): OffDeviceFact? = when (saveServices[game.backendId]) {
+        app.foldcade.api.plugin.SaveServiceState.SignedOut -> OffDeviceFact.NoDestination(NoDestinationWhy.SignedOut)
+        is app.foldcade.api.plugin.SaveServiceState.ServerTooOld -> OffDeviceFact.NoDestination(NoDestinationWhy.ServerTooOld)
+        is app.foldcade.api.plugin.SaveServiceState.Unreachable -> OffDeviceFact.Unreachable((saveDestinations[homeGameId(game.backendId, game.remoteKey)] as? OffDeviceFact.OnRomm)?.atMillis)
+        else -> saveDestinations[homeGameId(game.backendId, game.remoteKey)]
+    }
+
+    internal fun setSaveDestination(game: Game, destination: OffDeviceFact) {
+        saveDestinations[homeGameId(game.backendId, game.remoteKey)] = destination
+        saveHealthEpoch += 1
+        refreshSavePickerHealth()
+    }
+
+    internal fun showSaveProtection(incident: SaveIncident, holdsLaunch: Boolean = true, receipt: Long? = null, hasVersions: Boolean = false) {
+        // Folder-wide receipts are not interchangeable. Launch dialogs get a game receipt from the host.
+        showDialog(saveProtectionDialog(incident, model.layout.gridScreen, receipt, hasVersions).copy(holdsLaunch = holdsLaunch))
+    }
+
+    internal fun touchSaveFix(index: Int): Effect? {
+        if (model.dialog != null || model.folderGuide != null) return null
+        val page = model.saveFix ?: return null
+        model = model.copy(saveFix = page.copy(index = index))
+        return onMeaning(Meaning.Activate, page.screen)
+    }
+
+    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?) {
+        publish(model.copy(panel = null, dialog = null, saveFix = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId)))
+    }
+
+    internal fun closeSaveFix() { model = model.copy(saveFix = null) }
+
+    internal fun noteSaveFix(text: String) {
+        model.saveFix?.let { model = model.copy(saveFix = it.copy(note = text)) }
+    }
+
+    internal fun saveHealthOf(id: String, pressed: Game? = null): SaveStatus {
         saveHealthEpoch // Folder checks, player installs, and catalog changes invalidate this read.
         val homeId = pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: id
-        val route = launchRoute(tileOf(homeId), pressed) ?: return SaveHealth.Fine
+        val route = launchRoute(tileOf(homeId), pressed) ?: return when (home.item(tileOf(homeId))?.kind) {
+            HomeKind.AndroidApp, HomeKind.AndroidGame, HomeKind.Emulator -> SaveStatus.Unconfirmed(UnconfirmedWhy.AppKeepsSaves)
+            HomeKind.Moonlight -> SaveStatus.Unconfirmed(UnconfirmedWhy.HostComputer)
+            HomeKind.GameNative -> SaveStatus.Unconfirmed(UnconfirmedWhy.PartnerCloud, keeper = SaveKeeper.Partner("GameNative", null))
+            HomeKind.DroidDeck -> SaveStatus.Unconfirmed(UnconfirmedWhy.PartnerCloud, keeper = SaveKeeper.Partner("DroidDeck", "Steam Cloud"))
+            else -> SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
+        }
         val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
         // A save still waiting for the server says so even after its emulator is gone.
-        val player = savePlayer(route) ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
+        val player = savePlayer(route) ?: return if (waiting) SaveStatus.Waiting(0) else SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
         val saves = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
         val reachability = reachableSaves[homeGameId(route.saves.backendId, route.saves.remoteKey) to player.id]
         return gameSaveHealth(
@@ -783,11 +859,16 @@ class ShellController(
             setup = setupSteps[player.id],
             reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable,
             saves = saves,
+            spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
+            location = saveLocations[player.saveFolderId()],
+            offDevice = saveDestination(route.saves),
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() },
+            playedHere = lastPlayedMillis(playId(route.tileId)) != null,
         )
     }
 
-    fun saveHealthAt(source: Int, game: ShelfGame?): SaveHealth {
-        if (game == null) return SaveHealth.Fine
+    fun saveHealthAt(source: Int, game: ShelfGame?): SaveStatus {
+        if (game == null) return SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
         val pressed = if (model.libraryGrid) entries.getOrNull(source)?.game else null
         return saveHealthOf(pressed?.let { homeGameId(it.backendId, it.remoteKey) } ?: game.id, pressed)
     }
@@ -1036,7 +1117,7 @@ class ShellController(
     }
 
     private fun applyMeaning(meaning: Meaning, screen: HostScreen, repeatCount: Int, inputWindow: String): Effect? {
-        if (model.saveSetup != null && model.dialog == null) {
+        if ((model.saveSetup != null || model.saveFix != null) && model.dialog == null) {
             val before = model
             val (next, effect) = reduce(model, meaning, screen, repeatCount)
             // The press that closes the page stays its own until the key comes up, so a held Done never reaches the grid.
@@ -1420,7 +1501,7 @@ class ShellController(
         if (artPicker != null) return app.foldcade.language.HomeKeys.ChoosingArt
         if (model.panel != null && home.selection != null) return HomeKeys.Selecting
         if (model.dialog != null || model.panel != null || model.playActivity != null || model.gameAbout != null ||
-            model.saveConflict != null || model.savePicker != null || model.saveSetup != null || model.connectOpen
+            model.saveConflict != null || model.savePicker != null || (model.saveSetup != null || model.saveFix != null) || model.connectOpen
         ) {
             return app.foldcade.language.HomeKeys.Idle
         }
@@ -1444,7 +1525,7 @@ class ShellController(
      * with nothing to act on.
      */
     fun holdsCommandCenter(): Boolean =
-        model.folderGuide != null || model.savePicker != null || model.saveSetup != null || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
+        model.folderGuide != null || model.savePicker != null || (model.saveSetup != null || model.saveFix != null) || model.dialog != null || model.panel != null || model.connectOpen || typing() != null || home.iconPick != null || home.selection != null || find != null ||
             // Settings, Play activity and a game's About opened from that grid, as beside a game on the top screen.
             model.settings != null || model.playActivity != null || model.gameAbout != null
 
@@ -1801,7 +1882,7 @@ class ShellController(
 
     private fun homeReturnBlocked(): Boolean =
         find != null || artPicker != null || model.panel != null || model.dialog != null || model.settings != null ||
-            model.playActivity != null || model.gameAbout != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null ||
+            model.playActivity != null || model.gameAbout != null || model.saveConflict != null || model.savePicker != null || (model.saveSetup != null || model.saveFix != null) ||
             model.connectOpen || home.board.editing || home.selection != null || home.typing != null || home.iconPick != null
 
     private fun landHomeReturn() {
@@ -3159,7 +3240,7 @@ class ShellController(
      * A dialog or save choice takes every key, so a touch on the page under it does nothing.
      * A tap on a Settings row once went on to activate the dialog's focused button.
      */
-    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null || model.savePicker != null || model.saveSetup != null
+    private fun modalOpen(): Boolean = model.dialog != null || model.saveConflict != null || model.savePicker != null || (model.saveSetup != null || model.saveFix != null)
 
     /** One tap focuses the button and activates it. Keys still move, then Activate. */
     fun touchDialog(index: Int, screen: HostScreen): Effect? {
@@ -3408,17 +3489,20 @@ class ShellController(
         return runningApp(game).copy(record = record)
     }
 
-    internal fun savePickerHealth(target: app.foldcade.language.SavePickerTarget): SaveHealth {
-        val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveHealth.Fine
+    internal fun savePickerHealth(target: app.foldcade.language.SavePickerTarget): SaveStatus {
+        val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
         val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
         val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
-            ?: return if (waiting) SaveHealth.Waiting else SaveHealth.Fine
+            ?: return if (waiting) SaveStatus.Waiting(0) else SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
         val saves = saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }
         val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
         return gameSaveHealth(owner, player, true, waiting,
             saveSync[player.id], setupSteps[player.id],
-            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves)
+            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves,
+            spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
+            location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
     }
 
     private fun refreshSavePickerHealth() {
@@ -3447,7 +3531,7 @@ class ShellController(
      * sign-in started there.
      */
     fun offerSaveSetup(screen: HostScreen) {
-        if (model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen || model.dialog != null) return
+        if ((model.saveSetup != null || model.saveFix != null) || model.savePicker != null || model.saveConflict != null || model.connectOpen || model.dialog != null) return
         if (!saveSetupWanted(model)) return
         artPicker = null
         find = null
@@ -3456,7 +3540,7 @@ class ShellController(
 
     /** The page again on [focus] after Android recreated Home with it open, as when the process died behind a picker. */
     fun restoreSaveSetup(focus: String?, screen: HostScreen) {
-        if (saveSetupSeen || model.saveSetup != null || model.savePicker != null || model.saveConflict != null || model.connectOpen) return
+        if (saveSetupSeen || (model.saveSetup != null || model.saveFix != null) || model.savePicker != null || model.saveConflict != null || model.connectOpen) return
         artPicker = null
         find = null
         publish(model.openSaveSetup(screen, target = focus))
@@ -3550,6 +3634,7 @@ class ShellController(
         if (model.savePicker?.target != target) return null
         val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) } ?: return null
         return when {
+            saveIncidents.any { it.playerKey == player.saveFolderId() } -> Effect.OpenSaveFix(saveIncidents.first { it.playerKey == player.saveFolderId() }.id)
             player is app.foldcade.api.plugin.HostedSaveFolder && !player.hostedFolderInUse() -> Effect.SetUpHostedSaves(player.id)
             player is SaveFolderHolder && !player.hasSaveFolder() -> Effect.ChoosePlayerSave(player.id)
             saveSync[player.id] is SaveSyncState.NeedsSetup -> Effect.ShowSaveSync(player.id)
@@ -3561,7 +3646,7 @@ class ShellController(
 
     /** Puts a conflict on the bottom screen unless the save chooser owns it. */
     fun presentSaveConflict(prompt: app.foldcade.language.SaveConflictPrompt?) {
-        if (model.savePicker != null || model.saveSetup != null) return
+        if (model.savePicker != null || (model.saveSetup != null || model.saveFix != null)) return
         if (prompt == null && model.saveConflict?.preview == true) return
         if (prompt != null && !prompt.preview) {
             Log.i("Foldcade", "save-conflict ${prompt.gameLabel}")
@@ -4272,13 +4357,15 @@ class ShellController(
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
             // Eden's existing row owns its one grant for saves, keys and firmware.
-            if (player !is SaveFolderHolder || player is app.foldcade.plugins.eden.EdenPlayer) return@mapNotNull null
+            if (player !is SaveFolderHolder) return@mapNotNull null
             val sync = saveSync[player.id]
             player.saveFolderId() to PlayerSaveSetting(
                 playerId = player.id,
                 label = player.displayName,
                 chosen = player.hasSaveFolder(),
                 thorSetup = thorSetups[player.id],
+                location = saveLocations[player.saveFolderId()],
+                incident = saveIncidents.firstOrNull { it.playerKey == player.saveFolderId() },
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,
@@ -4392,7 +4479,7 @@ class ShellController(
             home.rememberRootFocus(model.panel?.grid?.cellIndex ?: model.focus.cellIndex)
         }
         // A save conflict waits for either save page to close.
-        val savePickerClosed = (model.savePicker != null && next.savePicker == null) || (model.saveSetup != null && next.saveSetup == null)
+        val savePickerClosed = (model.savePicker != null && next.savePicker == null) || (model.saveSetup != null && next.saveSetup == null) || (model.saveFix != null && next.saveFix == null)
         val connectClosed = model.connectOpen && !next.connectOpen
         if (model.connectOpen != next.connectOpen) invalidateSetupValidation()
         if (next.playOn != model.playOn) store.update { it.withPlayOn(next.playOn.panel()) }

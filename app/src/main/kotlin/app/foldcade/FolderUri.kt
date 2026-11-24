@@ -68,3 +68,17 @@ internal fun saveFolderPickOf(suggested: String?, opensThere: Boolean): app.fold
         else -> app.foldcade.language.FolderPick.Browse
     }
 }
+
+/** Canonical identity shared by SAF and Foldcade's all-files alias. */
+internal fun storageIdentity(uri: String): String = try {
+    if (!uri.startsWith("content:")) {
+        val path = uri.removePrefix("file://").removePrefix("/storage/emulated/0/").removePrefix("/sdcard/")
+        if (path != uri) "primary:${path.trimEnd('/')}" else uri
+    } else {
+        val parsed = URI(uri)
+        val id = folderDocumentId(uri).trimEnd('/')
+        if (parsed.authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY || parsed.authority in setOf("app.foldcade.storage", "app.foldcade.debug.storage"))
+            id.substringBefore(':').lowercase(java.util.Locale.ROOT) + ":" + id.substringAfter(':', "")
+        else "${parsed.authority}:$id"
+    }
+} catch (_: Exception) { uri }

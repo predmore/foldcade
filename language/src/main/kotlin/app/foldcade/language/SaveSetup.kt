@@ -86,6 +86,7 @@ sealed interface SetupStep {
 
     /** Android's all-files access, so Foldcade finds save folders itself. Optional. */
     data class AllFiles(override val done: Boolean) : SetupStep
+    data class Fix(val incidentId: String, override val done: Boolean = false) : SetupStep
 }
 
 /** One tile on the strip: an emulator, or Find saves. [packageName] is the installed app whose art it wears. */
@@ -104,6 +105,7 @@ data class SetupTile(
      * plays on has no saves to lose yet, so it reads Not set up, quietly, and sorts last.
      */
     val onHome: Boolean = false,
+    val verified: Boolean = false,
 ) {
     /** The step to do now, or null once everything is done. */
     val step: SetupStep? get() = steps.firstOrNull { !it.done }
@@ -113,12 +115,13 @@ data class SetupTile(
 
 enum class SetupStatus {
     Syncing,
+    FolderSet,
     NeedsYou,
     Skipped,
 }
 
 fun setupStatus(tile: SetupTile, page: SaveSetupPage): SetupStatus = when {
-    tile.done -> SetupStatus.Syncing
+    tile.done -> if (tile.findSaves || tile.verified) SetupStatus.Syncing else SetupStatus.FolderSet
     tile.key in page.skipped -> SetupStatus.Skipped
     else -> SetupStatus.NeedsYou
 }
@@ -130,7 +133,10 @@ private fun SetupTile.needsYou(page: SaveSetupPage): Boolean = setupStatus(this,
  * row stops reading Not syncing ([rowNeedsYou]). A player whose saves live in the folder
  * Foldcade hosts has no folder of its own to pick.
  */
-fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> = entry.rows.mapNotNull { row ->
+fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> {
+    val incident = model.playerSaves.firstOrNull { it.playerId == entry.key }?.incident
+    if (incident != null) return listOf(SetupStep.Fix(incident.id))
+    return entry.rows.mapNotNull { row ->
     val done = !rowNeedsYou(row, model)
     val setting = { id: String -> model.playerSaves.firstOrNull { it.playerId == id } }
     when (row) {
@@ -145,6 +151,8 @@ fun setupSteps(entry: EmulatorShelfEntry, model: PickerModel): List<SetupStep> =
         Row.EdenUser -> SetupStep.InApp(EDEN_SHELF_KEY, InAppStep.User, model.eden?.setupSteps, done)
         else -> null
     }
+}
+
 }
 
 /**
@@ -168,7 +176,8 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
         SetupTile(
             entry.key, entry.label, entry.packageName, setupSteps(entry, model),
             model.playerSaves.firstOrNull { it.playerId == entry.key }?.foundIn,
-            onHome = entry.key in model.boardEmulators,
+            onHome = entry.key in model.boardEmulators || model.playerSaves.firstOrNull { it.playerId == entry.key }?.incident != null,
+            verified = model.playerSaves.firstOrNull { it.playerId == entry.key }?.location is LocationFact.Verified,
         )
     }.sortedWith(compareBy({ page.order.indexOf(it.key).let { at -> if (at < 0) Int.MAX_VALUE else at } }, { saveSetupRank(it.onHome, !it.done) }))
     val helps = emulators.any { tile -> tile.steps.any { it is SetupStep.Folder && it.findable && !it.done } }
@@ -308,6 +317,7 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
 }
 
 private fun stepEffect(step: SetupStep): Effect = when (step) {
+    is SetupStep.Fix -> Effect.OpenSaveFix(step.incidentId)
     is SetupStep.Folder -> Effect.ChoosePlayerSave(step.playerId)
     is SetupStep.EdenFolder -> Effect.ShowEdenFolder
     is SetupStep.Cores -> Effect.ShowRetroArchCores
@@ -488,6 +498,7 @@ object SaveSetupCopy {
         if (items.size < 2) items.joinToString() else "${items.dropLast(1).joinToString(", ")} $last ${items.last()}"
 
     fun status(tile: SetupTile, page: SaveSetupPage): String = when (setupStatus(tile, page)) {
+        SetupStatus.FolderSet -> SaveProtectionCopy.folderSet
         SetupStatus.Syncing -> if (tile.findSaves) SettingsCopy.accessAllowed else syncing
         SetupStatus.NeedsYou -> when {
             tile.findSaves -> optional
@@ -498,8 +509,9 @@ object SaveSetupCopy {
     }
 
     /** The step's title. None once the tile syncs: its status chip already says so. */
-    fun stepTitle(step: SetupStep?): String? = when (step) {
+    fun stepTitle(step: SetupStep?, emulator: String? = null): String? = when (step) {
         null -> null
+        is SetupStep.Fix -> emulator?.let(SaveProtectionCopy::fixTitle) ?: "Fix the save folder"
         is SetupStep.Folder, is SetupStep.EdenFolder -> seeSaves
         is SetupStep.Cores -> seeRetroArch
         is SetupStep.InApp -> when (step.kind) {
@@ -541,6 +553,7 @@ object SaveSetupCopy {
             else -> null
         }
         // The picker opening in the right place needs no saying: only what to tap there.
+        is SetupStep.Fix -> "Check where the emulator saves, then choose the same folder here."
         is SetupStep.Folder -> if (step.pick == FolderPick.Browse) browse(tile.label) else useThisFolder
         is SetupStep.EdenFolder, is SetupStep.Cores -> useThisFolder
         is SetupStep.InApp -> step.steps
@@ -550,6 +563,7 @@ object SaveSetupCopy {
     /** Confirm's word on the focused tile. */
     fun action(tile: SetupTile): String = when (val step = tile.step) {
         null -> SettingsCopy.title
+        is SetupStep.Fix -> SaveProtectionCopy.fix
         // One verb for every trip through Android's picker, as its own last button says.
         is SetupStep.Folder, is SetupStep.EdenFolder, is SetupStep.Cores, is SetupStep.AllFiles -> allow
         is SetupStep.InApp -> open(tile.label)

@@ -112,6 +112,14 @@ internal class DocumentSaveFolder(
     var changed: Boolean = false
         private set
 
+    override fun modifiedAtMillis(path: String): Long? {
+        if (savePathParts(path) == null) return null
+        val parent = path.substringBeforeLast('/', "")
+        val name = path.substringAfterLast('/')
+        return try { docs.children(folderUri, parent)?.firstOrNull { it.name == name }?.modifiedMillis?.takeIf { it > 0 } }
+        catch (_: Exception) { null }
+    }
+
     override fun list(path: String): List<SaveFolderEntry>? {
         if (path.isNotEmpty() && savePathParts(path) == null) return null
         val children = try {

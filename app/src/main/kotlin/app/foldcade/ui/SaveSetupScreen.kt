@@ -50,6 +50,7 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveSetupCopy
 import app.foldcade.language.SaveSetupPage
+import app.foldcade.language.SaveProtectionCopy
 import app.foldcade.language.SetupStatus
 import app.foldcade.language.SetupStep
 import app.foldcade.language.SetupTile
@@ -159,10 +160,10 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
             // Emulators no game on Home plays on wear their own marks; the head stays quiet about them.
             val look = when {
                 due > 0 -> StatusLook.NeedsYou
-                rest > 0 -> StatusLook.Quiet
+                rest > 0 || tiles.any { !it.findSaves && !it.verified } -> StatusLook.Quiet
                 else -> StatusLook.Syncing
             }
-            SlideSwap(target = SaveSetupCopy.head(due, rest) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
+            SlideSwap(target = (if (due == 0 && rest == 0 && tiles.any { !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.head(due, rest)) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
                 Chip(word, shown, theme)
             }
         }
@@ -528,6 +529,7 @@ private fun TileShowcase(
 
 /** A step's identity, so the words slide only when the step itself changes, not when its how-to is read again. */
 private fun stepKey(step: SetupStep): String = when (step) {
+    is SetupStep.Fix -> "fix:${step.incidentId}"
     is SetupStep.Folder -> "folder:${step.playerId}"
     is SetupStep.EdenFolder -> "eden"
     is SetupStep.Cores -> "cores"
@@ -543,7 +545,7 @@ private fun StepWords(tile: SetupTile, step: SetupStep?, page: SaveSetupPage, co
     val note = page.note?.takeIf { it.key == tile.key }?.text
     val shown = presence(note, theme.motion.durationFocus, scale)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        SaveSetupCopy.stepTitle(step)?.let { title ->
+        SaveSetupCopy.stepTitle(step, tile.label)?.let { title ->
             BasicText(
                 title,
                 style = setupStyle(theme.onBackground, design.type.dialogTitle, theme, bold = true, display = true),
@@ -720,16 +722,17 @@ private fun End(
                 .background(theme.background.copy(alpha = design.tile.statusBackingAlpha)),
             contentAlignment = Alignment.Center,
         ) {
-            val (icon, tint) = badgeOf(if (due == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
+            val (icon, tint) = if (due == 0 && tiles.any { !it.findSaves && !it.verified }) R.drawable.ic_badge_cloud to theme.muted
+                else badgeOf(if (due == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
             val badge = themeIcon(icon)
             Image(badge.painter, contentDescription = null, colorFilter = badge.tint(tint), modifier = Modifier.fillMaxSize(BADGE_INK))
         }
     }
     val title = @Composable {
-        BasicText(SaveSetupCopy.endTitle(due, rest), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
+        BasicText(if (tiles.any { it.done && !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.endTitle(due, rest), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
     }
     val body = @Composable {
-        SaveSetupCopy.endBody(due, rest)?.let {
+        (SaveSetupCopy.endBody(due, rest) ?: SaveProtectionCopy.foldersSet.takeIf { tiles.any { it.done && !it.findSaves && !it.verified } })?.let {
             BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
