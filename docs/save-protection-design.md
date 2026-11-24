@@ -253,6 +253,9 @@ interface SaveLocationProbe {
      */
     val probePlaces: List<String> get() = emptyList()
 
+    /** Optional relative signature for shallow all-files discovery of custom roots. Minor 26. */
+    val signatureFile: String? get() = null
+
     /**
      * The save's name beside the game file, for a player that can be set to save
      * next to the content (melonDS, RetroArch, EX). The host checks it only when the
@@ -368,7 +371,7 @@ sealed interface SessionVerdict {
     data class Wrote(val root: FolderRef) : SessionVerdict                       // → Verified(SessionWrite)
     data class WroteElsewhere(val live: FolderRef) : SessionVerdict              // → WrongFolder incident
     data class Signalled(val verdict: RootVerdict) : SessionVerdict              // fresh log etc.
-    data class SilentStart(val source: String) : SessionVerdict                  // → MaybeWrongFolder (perStart only)
+    data class SilentStart(val source: String) : SessionVerdict                  // → WrongFolder (approved perStart, launched session only)
     data object NoNews : SessionVerdict
 }
 ```
@@ -383,11 +386,12 @@ sealed interface SessionVerdict {
 
 `judgeSession` rules, in order:
 
-1. **The bound save changed:** `Wrote(bound)`. A changed hash is positive. The baseline is taken after Foldcade's own placement, so Foldcade's write never counts.
-2. **The bound save is unchanged, and a candidate's save changed:** `WroteElsewhere(candidate)`. A save that appears where none was counts as a change.
-3. **A proving signal moved past the baseline:** `Signalled(judgeRoots(after, …))`.
-4. **A `perStart` signal in the bound root did not move, and `sessionMillis ≥ 60_000`:** `SilentStart`. §4.2 says when this is enabled.
-5. Otherwise `NoNews`. An unchanged short session lands here and alarms nobody.
+1. **The bound save is unchanged, and candidates' saves changed:** `WroteElsewhere(candidate)`, or an unknown live root when several changed. A save that appears where none was counts as a change.
+2. **A proving signal moved past the baseline and names a different root:** `Signalled(UsesOther(…))`. This includes a newly discovered custom root with no earlier game hash.
+3. **An approved `perStart` signal in the bound root did not advance past baseline during a Foldcade-launched session of at least 20 s, and remains readable:** `SilentStart` → `WrongFolder`. Resumes are excluded (§4.2).
+4. **The bound save changed:** `Wrote(bound)`. The baseline is taken after Foldcade's own placement, so Foldcade's write never counts. A fresh mismatch or silent-start alarm above takes precedence.
+5. **Another proving signal moved past the baseline:** `Signalled(judgeRoots(after, …))`.
+6. Otherwise `NoNews`. An unchanged short session lands here and alarms nobody.
 
 These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, the stale-log case from the audit, restored mtimes, two-flavor ambiguity, and all-files alias identity.
 
@@ -395,7 +399,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 
 - **`SaveProbes.kt`** builds a `ProbeSnapshot`. It runs on IO and reads only:
   - Read-only `SaveFolderAccess` for the bound root, plus `modifiedAtMillis`, which comes from `DocumentsContract.Document.COLUMN_LAST_MODIFIED`.
-  - Candidate roots. These are `saveFolderPlaces + probePlaces` as `primary:<place>`, resolved through `SaveFolderFinder.reachable`. That covers held SAF grants and the all-files `SharedStorageProvider` alias, read only. A root Foldcade can't read is left out, not counted as absent.
+  - Candidate roots. These are `saveFolderPlaces + probePlaces` as `primary:<place>`, known live roots from open incidents, and fresh signature roots discovered on return (§4.2), resolved through `SaveFolderFinder.reachable`. That covers held SAF grants and the all-files `SharedStorageProvider` alias, read only. A root Foldcade can't read is left out, not counted as absent.
   - The beside-game file, when the game sits in `Android/media/app.foldcade/romm/…` or a local library tree Foldcade holds.
   - `AndroidSaveFolderFinder.playerHolds` for each root, when `saveFolderPickedInPlayer`. Today that check runs only for *found* folders (`FoldcadeApp.kt:1685` keeps a chosen folder on Foldcade's grant alone). Here it runs for chosen ones too.
   - The game's spot is resolved with the existing `PlayerSaves.resolveSpots` against each root. It is hashed with `readSpot`. Bounds: at most 4 candidate roots, the 256 MiB zip limit as today, and the first 32 KiB of any log.
@@ -412,7 +416,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 
 | Emulator | `probePlaces` / beside-game | `liveSignals` | Best stock evidence today | Gaps left / later |
 |---|---|---|---|---|
-| **Azahar** | `saveFolderPlaces` (`saves/Azahar`, `Azahar`); none beside | `log/azahar_log.txt`: the line `User directory path: <uri>` (upstream `native.cpp` `logUserDirectory`) → `Proves`, `namesUri`. Each game start writes `Azahar starting...` (`RunCitra`), so the file is `perStart` once QA confirms it flushes (§4.2). `log/azahar_log.old.txt` is ignored. | **FreshLog** proves the root, before launch and after. Session write. Azahar's own grant on each candidate (Supports, or Proves when it holds exactly one). | Title ID only from NCSD `.cci`. `.zcci` stays `NoTitleId`. Upstream `liveSaveLocation` query (§8.4). |
+| **Azahar** | `saveFolderPlaces` (`saves/Azahar`, `Azahar`), plus custom roots discovered after a session with all-files access: root depth ≤ 2 under primary storage, signature `log/azahar_log.txt`; none beside | The signature's `User directory path: <uri>` must name its own root and its mtime must be newer than the session baseline. It reports `Proves`, `namesUri` and the enabled `perStart` flag. `log/azahar_log.old.txt` is ignored. | **FreshLog**, session write, and launch-only negative evidence after 20 s (§4.2). Azahar retains its old grant, so the grant verdict stays off. | Title ID only from NCSD `.cci`. `.zcci` stays `NoTitleId`. Upstream `liveSaveLocation` query (§8.4). |
 | **ARMSX2** | `ARMSX2`; private `Android/data` roots are not readable | `armsx2-settings.json` and `inis/PCSX2-Android.ini` in the bound root: `[Folders] MemoryCards` and slot-1 card name/enable → `Supports`, `Config`. A path outside the root gives `Supports` only, since the mirror can be stale (audit). | Session write on the game's card folders. Candidate diff for `/sdcard/ARMSX2` against another granted root. | Live private prefs need upstream. Honour `[Folders] MemoryCards` in `Ps2Card` when it is inside the root. |
 | **aPS3e** | none | none needed: bound root = own provider (`aenu.aps3e…` authority) → **OwnProvider** at bind, valid while the install stamp holds | OwnProvider plus session write on matched `savedata` | VFS remaps and title aliases (`SpotIssue.Unresolved`). Upstream provider call. |
 | **Dolphin** | `dolphin-emu` (legacy) | `Config/Dolphin.ini` and `GameSettings/<ID>.ini`: SlotA device and GCI path, already parsed at `DolphinEntry.kt:117`/`:141` → `Proves` when it names a custom folder (today that is a setup issue; it stays one) | OwnProvider when bound to the official provider. Otherwise `Bound`, then session write. A reachable legacy `dolphin-emu` copy is a candidate, so a GCI change there gives `WroteElsewhere`. | Slot B, raw cards, Wii |
@@ -519,17 +523,30 @@ Helpers:
    - Capture the live root's copy: `readSpot` against the live root goes into `save-handover`.
    - Call `keepAsBackups`, then record the ids in `incident.kept`. If RomM is unreachable, they go in `incident.staged`.
    - The bound root's bytes go through the normal `reconcile`, unchanged from today.
-4. `SilentStart` opens `MaybeWrongFolder`, only for signals marked `perStart` (§4.2).
+4. `SilentStart` opens `WrongFolder`, only for approved signals marked `perStart` on an actual Foldcade launch (§4.2).
 5. **The profile is frozen (Eden).** The profile resolved at launch is stored in the pending return. If the read-back resolves a different profile UUID, it doesn't read from it. It opens `MaybeNewSave("Eden’s user changed during play")`. This fixes the audit's "place into one account, read another".
 6. **Unprotected sessions.** With an open `WrongFolder` and a readable live root, the live copy is captured and kept as a Backup on every return. That way playing anyway is still preserved off-device, even though it isn't synced.
 
 ### 4.2 Negative evidence (`perStart`)
 
-Azahar's `RunCitra` logs `Azahar starting...` on every game start. Foldcade launches Azahar with `ClearTop | ClearTask`, so every launch from Foldcade goes through it. A launch that leaves the bound root's `azahar_log.txt` mtime untouched, after a session of 60 s or more, means Azahar wrote its log somewhere else. That is strong evidence, but it depends on the file backend flushing. PR 1's Thor QA checks it: it measures mtime movement on a cold launch, a warm launch, and **Home → A resume**. A resume doesn't call `RunCitra`, so it gets no `before` snapshot and no verdict.
+**Decision, 24 November 2026, after Thor QA run 2 (`b37fa512`): enable Azahar's per-start evidence only for game launches sent by Foldcade. Keep the emulator-grant rule off.** The report conservatively recommended leaving both rules disabled; the product decision uses its measured cold/warm behaviour and explicitly excludes resume.
 
-`perStart = true` ships only if all three behave. Until then the log is still `Proves` for freshness, and the negative rule is off.
+The bound root's readable `log/azahar_log.txt` must report `perStart = true` before launch and still be readable on return. If the actual launched session lasted at least 20 s and the log's mtime did not advance past the pre-launch baseline, open **WrongFolder**. The live root can be unknown. This gates the next ordinary launch and leads to guided Fix. A session shorter than 20 s, a resume, an unknown mtime or an unreadable log gives no negative verdict. The host persists whether the return came from a fresh Foldcade launch, plus its actual start and observed return times, so time spent preparing files, waiting for the save flow or uploading does not count. The observed return time survives a retry, and a resume cannot reuse an earlier launch's negative evidence.
 
-DuckStation's "no card open in a 60-second session" uses the same rule. It applies only when `Card1Type` is readable and not `None`, and that also needs the data grant.
+QA measured these local times and file sizes:
+
+| Path | Before mtime / bytes | After mtime / bytes | Result |
+|---|---|---|---|
+| Cold launch | 10:41:31.079 / 20,075 | 13:14:27.923 / 20,260 | New backend and directory line. |
+| Warm launch, same PID after Close Game | 13:18:53.547 / 23,215 | 13:21:08.875 / 41,829 | Appended; directory line still names the bound root. |
+| Controlled Home → A resume | 13:37:57.475 / 19,635 | 13:39:02.695 / 20,714 | Buffered/ordinary traffic, no new directory line or RunCitra start; excluded from this rule. |
+| Cold start in custom `AzaharQA` | No log | 13:28:32.115 / 2,693 | New log names `primary:AzaharQA`. |
+
+The resume also showed a Loading overlay for at least 51 s and “Missing game data in intent extras”. That is a separate resume issue, not a reason to treat a resume as a new launch. Azahar retained both the old and new tree grants after switching, so grant presence cannot identify its live root. `SAVE_NEGATIVE_EVIDENCE_ENABLED` stays false for the generic/grant rule; the Azahar signal's `perStart` is the explicit per-probe opt-in.
+
+With all-files access, session return also searches primary storage for the optional probe `signatureFile`. Only roots at depths 0–2 are considered, with an 8,192-entry budget and at most four discovered roots. The signature is read within the probe's bound (Azahar: first 32 KiB); its signal must prove and name that same root, with mtime newer than the session baseline. Links and Android app-data roots are excluded. A discovered live root names the incident and opens Fix's picker there. Without that access, the negative incident still opens with an unknown live root and the user chooses the folder Azahar uses.
+
+A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept. Other per-start probes, including DuckStation's hosted-card rule, remain deferred until their own QA decision.
 
 ### 4.3 Regression quarantine (PR 2)
 
@@ -950,7 +967,7 @@ These are drafted, not sent; the user approves before anything goes out.
 
 ## 9. Where the audit and the code differ
 
-- **Azahar log movement.** The audit (`Azahar › Readable signals`) calls absent log movement "inconclusive for a reused process", because initialization is guarded by `directoryState`. But upstream `RunCitra` logs `Azahar starting...` on every game start, and Foldcade always starts Azahar with `ClearTop | ClearTask` (`AzaharEntry.kt:135`). So each Foldcade launch should move the live log. Whether it flushes in time is a QA question, and that is why `perStart` is gated on PR 1 QA (§4.2).
+- **Azahar log movement.** The audit (`Azahar › Readable signals`) calls absent log movement "inconclusive for a reused process", because initialization is guarded by `directoryState`. But upstream `RunCitra` logs `Azahar starting...` on every game start, and Foldcade always starts Azahar with `ClearTop | ClearTask` (`AzaharEntry.kt:135`). So each Foldcade launch should move the live log. QA run 2 measured cold and warm log movement; the resulting launch-only decision and resume exclusion are in §4.2.
 - **The scope of the launch guard.** The audit lists the Eden/PPSSPP/Dolphin/EX guard. The code confirms it (`LaunchSaves.kt:52`), and also shows that Azahar with an unresolvable title and a server save launches without a stop: no spots, so `place` returns true. The design makes the guard universal (§3.1, case 3).
 - **The receipt time.** The audit asks for "verified server receipt/head age". `SaveLedger` has no time at all (`synced_hash`, `archived_hash`, `emulator`), so PR 1 adds `synced_at`. Old records show "Saved to RomM" with no age, because the hash agreement is still evidence.
 - **"Missing selected player becomes Fine".** Confirmed at `ShellController.kt:773–774`. Non-emulators returning `Fine` is confirmed at `SaveHealth.kt:15`.
@@ -969,10 +986,10 @@ These are drafted, not sent; the user approves before anything goes out.
 4. **What "Play anyway" captures.**
    - The recommendation: capture the live copy as a Backup on every return while a `WrongFolder` is open, so playing anyway is never device-only.
 5. **`perStart` and the emulator-grant rule.**
-   - The recommendation: decide from PR 1 Thor QA results, and ship them off if QA can't confirm them.
+   - Decided from Thor QA run 2: enable Azahar's per-start check for Foldcade-launched cold/warm sessions of at least 20 s; exclude resumes and unreadable logs. Keep the emulator-grant rule off because Azahar retains the old grant. The measurements and custom-root discovery bounds are in §4.2.
 6. **History of resolved incidents.**
    - The recommendation: none. Backups on RomM, and their folder labels in Y › Saves, are the history the user needs.
 7. **A stable version bump** for PR 1, since it changes user-visible status everywhere.
    - The recommendation: yes, a minor `versionName` bump when PR 1 and PR 2 both land, so the release notes explain the new states once.
 
-**Decided, 24 November 2026:** all seven recommendations above are accepted as written. Questions 5's two rules ship enabled only if PR 1's Thor QA confirms them.
+**Decided, 24 November 2026:** all seven recommendations above are accepted as written. Question 5 was refined after QA run 2 as recorded above: Azahar launch-only per-start evidence is enabled; generic and emulator-grant evidence remain off.
