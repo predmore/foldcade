@@ -40,6 +40,48 @@ import org.junit.Test
 
 /** A folder copy that plays keeps its saves on the server copy of the same file. */
 class LaunchSavesTest {
+    @Test fun aFreshProcessResolvesMatchedWorkingSavesWithoutLaunchingOrDownloading() = runBlocking {
+        val file = "$SAVES/Tetris DS (USA).sav"
+        docs.files[file] = "matched progress".toByteArray()
+        val backend = object : LibraryBackend by server {
+            override suspend fun saves(game: Game) = SaveSet(game.backendId, listOf(SaveSlot("sav", md5Hex("matched progress".toByteArray()), null)))
+            override suspend fun saveReceipts(game: Game): Map<String, Long?> = mapOf("sav" to 123L)
+        }
+        val spots = resolveReceiptSpots(saves, backend, owner, Melon) { local }!!
+        val receipt = readSaveReceipt(saves, backend, owner, spots)
+        assertEquals(OffDeviceFact.OnRomm(123), receipt)
+        val root = FolderRef("primary:saves", "saves")
+        val facts = SaveFacts(SaveKeeper.Emulator(Melon.displayName), LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "saved"), 200),
+            SpotFact.Resolved, receipt, null, emptyList(), true)
+        assertTrue(deriveSaveStatus(facts) is SaveStatus.Protected)
+        docs.files[file] = "played outside Foldcade".toByteArray()
+        assertEquals(OffDeviceFact.Unknown, readSaveReceipt(saves, backend, owner, spots))
+        assertTrue(server.calls.isEmpty())
+    }
+
+    @Test fun backgroundReceiptResolutionSkipsGamesWithoutHeldSavesAndMissingLocalRoms() = runBlocking {
+        assertEquals(null, resolveReceiptSpots(saves, server, owner, Melon) { error("Must not resolve a game without held saves") })
+        server.held = listOf("sav")
+        assertEquals(null, resolveReceiptSpots(saves, server, owner, Melon) { null })
+        assertTrue(docs.files.isEmpty())
+        assertTrue(server.calls.isEmpty())
+    }
+
+    @Test fun aVerifiedExistingServerVersionDrainsTheQueueWithoutAnExtraBackup() = runBlocking {
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "already on RomM".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("duplicate-copy"))
+        val incident = incident(IncidentKind.WrongFolder)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        copies.stage(owner, Melon, saves.spots(Melon, owner, local), incident, mark = true)
+        server.existingVersionId = "head-130"
+        copies.keep(owner, Melon)
+        assertTrue(saves.queuedCopies().isEmpty())
+        assertTrue(store.incidents().single().staged.isEmpty())
+        assertTrue(server.backups.isEmpty())
+        assertTrue(server.calls.isEmpty())
+    }
+
     @Test fun everyPreviouslyUnguardedAdapterStopsWhenAKnownSaveHasNoSpot() = runBlocking {
         val players = listOf(
             app.foldcade.plugins.azahar.AzaharPlayer(), app.foldcade.plugins.melonds.MelonDsPlayer(),
@@ -916,6 +958,7 @@ class LaunchSavesTest {
         val observed = mutableListOf<String>()
         val backups = mutableListOf<String>()
         var backupsFail = false
+        var existingVersionId: String? = null
         var toPlace: String? = null
         var archiveToPlace: ByteArray? = null
         var placementSlot = "sav"
@@ -957,6 +1000,7 @@ class LaunchSavesTest {
             return observed.slots.map { slot ->
                 val bytes = Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(slot.contentUri!!)))
                 assertEquals(md5Hex(bytes), slot.contentHash)
+                existingVersionId?.let { return@map it }
                 backups += slot.contentHash
                 "backup-${backups.size}"
             }

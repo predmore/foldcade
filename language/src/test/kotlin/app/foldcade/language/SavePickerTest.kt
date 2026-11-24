@@ -7,6 +7,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SavePickerTest {
+    @Test fun backupDetailsAndRowsNameTheirSourceFolder() {
+        val copy = SavePickerSave("99", null, "azahar", null, 1_000, 608, false, null,
+            backup = true, origin = SavePickerOrigin("foldcade", "Foldcade", true), folderLabel = "AzaharQA")
+        assertEquals("Backup · from the folder AzaharQA", SavePickerCopy.sourceDetail(copy))
+        assertEquals("Backup · from the folder AzaharQA", SavePickerCopy.row(copy))
+        assertEquals("from the folder AzaharQA", SavePickerCopy.source(copy))
+    }
     private val target = SavePickerTarget("original-game", "romm", "3", "melonds")
     private val save = SavePickerSave("17", "autosave", "melonds", "Steam Deck", 1_000, 32_768, false, null)
     private val state = SavePickerState(target, "Mario", "melonDS", SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), listOf("sav"), listOf(save), index = 1, loading = false)

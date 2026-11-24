@@ -161,14 +161,16 @@ internal class SaveProbes(
         }
     }
 
-    suspend fun returned(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, unprotected: Boolean = false,
+    fun judgeReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, unprotected: Boolean = false,
         startedByFoldcade: Boolean = true, sessionStartedAtMillis: Long? = null, sessionEndedAtMillis: Long? = null,
-        onJudged: suspend (ProbeSnapshot?) -> Unit = {}) {
+    ): ProbeSnapshot? {
         val after = snapshot(player, game, target, resolvedPackage = before?.packageName, discoverAfterMillis = before?.atMillis)
         if (before != null && after != null) noteSession(player, game, before, after,
             (sessionEndedAtMillis ?: after.atMillis) - (sessionStartedAtMillis ?: before.atMillis), startedByFoldcade, unprotected)
-        // Publish the alarm before any network upload can delay the return's visible result.
-        onJudged(after)
+        return after
+    }
+
+    suspend fun captureReturn(player: Player, game: Game, target: LaunchTarget?) {
         if (target != null) {
             for (incident in store.incidents().filter { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder }) {
                 val live = incident.live ?: continue

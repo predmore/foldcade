@@ -6,6 +6,7 @@ import app.foldcade.romm.SaveLedger
 import app.foldcade.romm.writeDurably
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -85,6 +86,18 @@ internal class RommData(val root: Path, origin: String) {
     fun romSaves(romId: Long): Path = savesRoot().resolve(romId.toString())
 
     fun ledger(romId: Long): SaveLedger = SaveLedger(romSaves(romId).resolve(SaveLedger.FILE_NAME))
+
+    /** Folder origins of verified Backups, scoped to this server and ROM. */
+    fun backupFolders(romId: Long): Map<String, String> = try {
+        val json = Json.parseToJsonElement(String(Files.readAllBytes(romSaves(romId).resolve("backup-folders.json")), Charsets.UTF_8)) as JsonObject
+        json.mapNotNull { (id, value) -> value.jsonPrimitive.contentOrNull?.let { id to it } }.toMap()
+    } catch (_: Exception) { emptyMap() }
+
+    fun rememberBackupFolder(romId: Long, id: String, label: String) {
+        val next = backupFolders(romId) + (id to label)
+        writeDurably(romSaves(romId).resolve("backup-folders.json"),
+            JsonObject(next.mapValues { JsonPrimitive(it.value) }).toString().toByteArray())
+    }
 
     /** Choices the shell has not finished, for this server. */
     fun conflictsFile(): Path = server.resolve("conflicts.json")

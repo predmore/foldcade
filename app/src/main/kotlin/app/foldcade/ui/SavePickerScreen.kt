@@ -477,7 +477,7 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenTe
             overflow = TextOverflow.Ellipsis,
         )
         val meta = Modifier.graphicsLayer { alpha = if (save.backup) rest + (1f - rest) * lit.value else 1f }
-        if (save.origin?.thisDevice != true) {
+        if (save.origin?.thisDevice != true || save.folderLabel != null) {
             Row(meta.widthIn(max = SOURCE_MAX), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Box(Modifier.size(MARK_SIZE), contentAlignment = Alignment.Center) { SymbolIcon("handheld", 1f, theme.muted) }
                 BasicText(SavePickerCopy.source(save), style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)

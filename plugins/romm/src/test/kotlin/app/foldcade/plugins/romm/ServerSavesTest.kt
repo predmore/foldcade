@@ -126,6 +126,48 @@ class ServerSavesTest {
         assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
     }
 
+    @Test fun preservationReusesTheHeadOrAnOlderVersionWithTheSameMemberAwareHash() = runBlocking {
+        hold("RomM head")
+        val head = server.single()
+        val zipped = add(zip(), "sav", player.id, at = -1)
+        val sameMembers = zip(level = 0)
+        assertFalse(bytes.getValue(zipped.id).contentEquals(sameMembers))
+        assertNotEquals(zipped.sizeBytes, sameMembers.size.toLong())
+        assertEquals(zipped.contentHash, rommSaveHash(sameMembers))
+        val before = server.toList()
+        val ledger = data.ledger(ROM).slots()
+        for ((body, expected) in listOf("RomM head".toByteArray() to head, sameMembers to zipped)) {
+            val file = root.resolve("live.save")
+            writeDurably(file, body)
+            val ids = library().keepAsBackups(GAME, player,
+                ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString()))))
+            assertEquals(listOf(expected.id.toString()), ids)
+        }
+        assertEquals(before, server)
+        assertEquals(ledger, data.ledger(ROM).slots())
+        assertFalse(events.any { it.startsWith("archive:") || it.startsWith("upload:") || it == "sync" })
+    }
+
+    @Test fun aBackupRemembersItsFolderAcrossRestartAndKeepsOtherServersAndRomsSeparate() = runBlocking {
+        hold("RomM head")
+        val file = root.resolve("live.save")
+        writeDurably(file, "live progress".toByteArray())
+        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"folderLabel\":\"AzaharQA\"}")
+        val id = library().keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))).single()
+        val restored = library()
+        val listed = restored.serverSaves(GAME, player)
+        assertEquals("AzaharQA", listed.single { it.id == id }.source)
+        assertTrue(id in restored.serverSaveBackups(GAME))
+        // Older durable queues recorded only storage identity; reconnect still recovers the folder label.
+        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"identity\":\"primary:AzaharQA\"}")
+        assertEquals(listOf(id), restored.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))))
+        assertEquals(mapOf(id to "AzaharQA"), RommData(root.resolve("data"), ORIGIN).backupFolders(ROM))
+        assertTrue(RommData(root.resolve("data"), "https://other.example").backupFolders(ROM).isEmpty())
+        assertTrue(data.backupFolders(ROM + 1).isEmpty())
+    }
+
     @Test fun listsEverySlotAndUsesTheOriginsDeviceNameAndTheHeldHash() = runBlocking {
         val old = add("current".toByteArray(), "sav", "melonds", at = 1)
         add("newer".toByteArray(), "sav", "melonds", at = 2)
@@ -583,7 +625,7 @@ class ServerSavesTest {
     }
 
     private fun report() = SaveSyncReport(1, "5.4.1", emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), true)
-    private fun zip(): ByteArray = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { it.putNextEntry(ZipEntry("sdmc/save.bin")); it.write("progress".toByteArray()); it.closeEntry() } }.toByteArray()
+    private fun zip(level: Int = 6): ByteArray = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { it.setLevel(level); it.putNextEntry(ZipEntry("sdmc/save.bin").apply { time = 0 }); it.write("progress".toByteArray()); it.closeEntry() } }.toByteArray()
     companion object {
         const val ROM = 1234L
         const val ORIGIN = "https://romm.example"

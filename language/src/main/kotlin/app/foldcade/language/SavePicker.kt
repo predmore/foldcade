@@ -14,6 +14,7 @@ data class SavePickerSave(
     val origin: SavePickerOrigin? = null,
     /** The emulator's own name, "melonDS" for RomM's "melonds". Only shown; [emulator] is what RomM keeps. */
     val emulatorLabel: String? = null,
+    val folderLabel: String? = null,
 )
 
 data class SavePickerOrigin(val client: String?, val deviceName: String?, val thisDevice: Boolean)
@@ -183,6 +184,7 @@ object SavePickerCopy {
             .joinToString(" ").takeIf { it.isNotEmpty() }
     }
     fun source(save: SavePickerSave): String {
+        save.folderLabel?.let { return "from the folder $it" }
         val origin = save.origin ?: return fallbackSource(save)
         return when {
             origin.thisDevice -> thisDevice
@@ -192,6 +194,7 @@ object SavePickerCopy {
     }
     /** The detail page and confirmation keep the client, device and emulator together. */
     fun sourceDetail(save: SavePickerSave): String {
+        save.folderLabel?.let { return "$backup · from the folder $it" }
         val client = clientName(save.origin?.client)
         val device = deviceName(save.origin?.deviceName)
         // Every Foldcade names its RomM device Foldcade, so the device is named once, not "Foldcade on Foldcade".
@@ -216,7 +219,7 @@ object SavePickerCopy {
     const val emptySlot = "Empty slot"
     /** The save a named slot holds now, in "Its current save is kept on RomM." */
     const val currentSave = "current"
-    fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
+    fun row(save: SavePickerSave): String = if (save.folderLabel != null) sourceDetail(save) else "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
     /** Under the game's name on the top screen, once the saves are known. */
     fun count(saves: Int): String = when (saves) {

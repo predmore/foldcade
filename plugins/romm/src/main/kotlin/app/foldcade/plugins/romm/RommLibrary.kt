@@ -83,6 +83,10 @@ import kotlinx.serialization.json.put
 /** A cached offline listing may fill Home, but cannot release newly restored places. */
 fun rommCatalogLive(library: LibraryBackend?): Boolean = (library as? RommLibrary)?.liveCatalog == true
 
+/** A verified local ROM for background save checks; never downloads, extracts or adopts files. */
+suspend fun cachedRommSaveTarget(library: LibraryBackend?, game: Game): LaunchTarget? =
+    (library as? RommLibrary)?.cachedSaveTarget(game)
+
 /** A device-owned snapshot, never evidence that a restored source has reported live. */
 data class RommCatalogSnapshot(val platforms: List<ListedPlatform>, val games: List<Game>)
 
@@ -497,6 +501,16 @@ internal class RommLibrary internal constructor(
         }
     }
 
+    internal suspend fun cachedSaveTarget(game: Game): LaunchTarget? = fileLock(game.romId()).withLock {
+        val wiring = gate.wiring()
+        val catalog = gate.restoreCatalog(wiring)
+        runInterruptible(Dispatchers.IO) {
+            val spec = catalog.rom(game.remoteKey)?.bytes() ?: readRomSpec(wiring.romRoot, game.romId())
+            if (spec == null) return@runInterruptible null
+            verifiedRom(wiring.romRoot, game.romId(), spec)?.let { launchTarget(wiring, it) }
+        }
+    }
+
     /**
      * The game file a player opens, as a file in its folder: Eden finds a game's
      * update and DLC beside it, a player handed a `.cue` finds its tracks, and
@@ -882,9 +896,9 @@ internal class RommLibrary internal constructor(
                 rememberDevice(wiring, ops)
                 val device = wiring.rememberedDevice!!.deviceId
                 observed.slots.map { slot ->
+                    val uri = slot.contentUri ?: throw PluginException.Unavailable("The copy has no bytes")
+                    val local = wiring.contentUris.pathFor(uri) ?: uri.takeIf { it.startsWith("file:") }?.let { java.nio.file.Paths.get(java.net.URI(it)) }
                     val bytes = runInterruptible(Dispatchers.IO) {
-                        val uri = slot.contentUri ?: throw PluginException.Unavailable("The copy has no bytes")
-                        val local = wiring.contentUris.pathFor(uri)
                         val bytes = if (local != null && Files.isRegularFile(local)) Files.readAllBytes(local) else wiring.saveBytes.read(uri)
                         if (bytes == null || md5Hex(bytes) != slot.contentHash) throw PluginException.Unavailable("The copy changed before it could be kept")
                         bytes
@@ -892,16 +906,26 @@ internal class RommLibrary internal constructor(
                     val hash = app.foldcade.romm.rommSaveHash(bytes) ?: throw PluginException.Unavailable("The copy cannot be verified")
                     val zip = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
                     val existing = ops.listSaves(romId, device).firstOrNull {
-                        it.romId == romId && it.slot == null && it.fileName.matches(Regex("""foldcade-kept-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(sav|zip)""")) &&
-                            it.sizeBytes == bytes.size.toLong() && it.contentHash?.lowercase() == hash
+                        it.romId == romId && it.contentHash?.lowercase() == hash
                     }
                     val id = existing?.id ?: ops.uploadArchive(app.foldcade.romm.RommSave(
                         0, romId, if (zip) "save.zip" else "save.sav", null, player.id, hash,
                         java.time.Instant.now(), bytes.size.toLong(), null, emptyList(), null,
                     ), device, hash, bytes)
-                    val verified = ops.listSaves(romId, device).singleOrNull { it.id == id && it.romId == romId && it.slot == null }
-                    if (verified == null || verified.sizeBytes != bytes.size.toLong() || verified.contentHash?.lowercase() != hash)
+                    val verified = ops.listSaves(romId, device).singleOrNull { it.id == id && it.romId == romId }
+                    if (verified == null || verified.contentHash?.lowercase() != hash ||
+                        existing == null && (verified.slot != null || verified.sizeBytes != bytes.size.toLong()))
                         throw PluginException.Unavailable("The Backup did not verify")
+                    if (verified.slot == null && local != null) {
+                        val label = runInterruptible(Dispatchers.IO) {
+                            try {
+                                val row = Json.parseToJsonElement(String(Files.readAllBytes(local.resolveSibling("${local.fileName}.json")), Charsets.UTF_8)) as JsonObject
+                                row["folderLabel"]?.jsonPrimitive?.contentOrNull
+                                    ?: row["identity"]?.jsonPrimitive?.contentOrNull?.takeIf { it.startsWith("primary:") }?.removePrefix("primary:")
+                            } catch (_: Exception) { null }
+                        }
+                        if (!label.isNullOrBlank()) runInterruptible(Dispatchers.IO) { wiring.data.rememberBackupFolder(romId, id.toString(), label) }
+                    }
                     id.toString()
                 }
             }
@@ -934,6 +958,7 @@ internal class RommLibrary internal constructor(
                 listedBackups[wiring.data.romSaves(romId)] = listed.filter {
                     it.slot == null && it.fileName.matches(Regex("""foldcade-kept-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(sav|zip)"""))
                 }.mapTo(HashSet()) { it.id.toString() }
+                val backupFolders = runInterruptible(Dispatchers.IO) { wiring.data.backupFolders(romId) }
                 val slots = player?.saveDeclarations(game).orEmpty().map { it.slot }.toSet()
                 val ledger = wiring.data.ledger(romId)
                 val playing = slots.mapNotNull { slot ->
@@ -948,7 +973,8 @@ internal class RommLibrary internal constructor(
                 listed.map { save ->
                     app.foldcade.api.plugin.ServerSave(
                         save.id.toString(), save.slot, save.emulator,
-                        save.deviceSyncs.firstOrNull { it.deviceId == save.originDeviceId }?.deviceName?.takeIf { it.isNotBlank() }
+                        if (save.id.toString() in listedBackups[wiring.data.romSaves(romId)].orEmpty()) backupFolders[save.id.toString()]
+                        else save.deviceSyncs.firstOrNull { it.deviceId == save.originDeviceId }?.deviceName?.takeIf { it.isNotBlank() }
                             ?: save.emulator?.takeIf { it.isNotBlank() },
                         save.updatedAt.toEpochMilli(), save.sizeBytes, save.id in playing,
                         save.screenshotId?.let { "${RommClient.normalizeOrigin(wiring.origin)}/api/screenshots/$it/content" },

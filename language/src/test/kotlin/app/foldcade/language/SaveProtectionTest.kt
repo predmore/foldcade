@@ -71,6 +71,11 @@ class SaveProtectionTest {
         assertEquals(Copy.syncingSaves, heroActivityLine(waiting, TileActivity.Syncing))
         assertTrue(saveHealthLeads(fault, TileActivity.Downloading(.5f)))
         assertTrue(saveHealthLeads(SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer), null))
+        val hero = HeroSubject.Item(HeroItem("game", "Game", "Nintendo 3DS"))
+        val problem = SaveStatus.Problem(incident)
+        val afterSync = heroFactText(hero, problem, TileActivity.Synced(SyncMark.Synced, 10_000)).text
+        assertTrue(afterSync.startsWith(SaveProtectionCopy.title(incident)))
+        assertFalse(afterSync.contains(Copy.savesSynced))
     }
 
     @Test fun anUnknownLiveRootDescribesTheLastSessionWithoutClaimingAPermanentMove() {

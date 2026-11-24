@@ -821,9 +821,22 @@ class ShellController(
         refreshSavePickerHealth()
     }
 
-    internal fun showSaveProtection(incident: SaveIncident, holdsLaunch: Boolean = true, receipt: Long? = null, hasVersions: Boolean = false) {
+    private var saveProtectionRequest: DialogState? = null
+
+    internal fun showSaveProtection(incident: SaveIncident, holdsLaunch: Boolean = true, receipt: Long? = null, hasVersions: Boolean = false): DialogState? {
         // Folder-wide receipts are not interchangeable. Launch dialogs get a game receipt from the host.
-        showDialog(saveProtectionDialog(incident, model.layout.gridScreen, receipt, hasVersions).copy(holdsLaunch = holdsLaunch))
+        if (model.dialog != null) return null
+        val dialog = saveProtectionDialog(incident, model.layout.gridScreen, receipt, hasVersions).copy(holdsLaunch = holdsLaunch)
+        saveProtectionRequest = dialog
+        showDialog(dialog)
+        return dialog
+    }
+
+    internal fun updateSaveProtection(dialog: DialogState, incident: SaveIncident, receipt: Long?, hasVersions: Boolean) {
+        // Identity also distinguishes a later stop for another game sharing this folder incident.
+        val current = model.dialog ?: return
+        if (saveProtectionRequest !== dialog || current.kind != DialogKind.SaveProtection || current.subject != incident.id) return
+        publish(model.copy(dialog = current.copy(body = SaveProtectionCopy.body(incident, receipt, hasVersions))))
     }
 
     internal fun touchSaveFix(index: Int): Effect? {

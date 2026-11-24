@@ -2430,7 +2430,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun showSaveNotPlaced(title: String, pending: PendingBackendLaunch? = null, needsEdenUser: Boolean = false, incompatible: Boolean = false, protection: SaveProtectionStop? = null) {
         if (protection != null) {
-            foldcade.shell.showSaveProtection(protection.incident, pending != null)
+            val dialog = foldcade.shell.showSaveProtection(protection.incident, pending != null) ?: return
             if (pending != null) {
                 foldcade.hostedAsk = HostedAsk(pending.playerId, pending)
                 foldcade.scope.launch {
@@ -2440,9 +2440,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     val hasVersions = receipts.isNotEmpty() || try { foldcade.plugins.serverSaves(owner.backendId, owner).isNotEmpty() }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
                     withContext(Dispatchers.Main.immediate) {
-                        if (foldcade.shell.model.dialog?.subject == protection.incident.id) {
-                            foldcade.shell.showSaveProtection(protection.incident, receipt = receipts.values.filterNotNull().minOrNull(), hasVersions = hasVersions)
-                        }
+                        foldcade.shell.updateSaveProtection(dialog, protection.incident, receipts.values.filterNotNull().minOrNull(), hasVersions)
                     }
                 }
             }
@@ -4120,7 +4118,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     val label = it.emulator?.substringBefore('.')?.lowercase()?.let(names::get)
                         ?: it.source?.takeIf { _ -> it.emulator == null }?.lowercase()?.let(names::get)
                     val origin = origins[it.id]?.let { detail -> app.foldcade.language.SavePickerOrigin(detail.client, detail.deviceName, detail.thisDevice) }
-                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin, label)
+                    app.foldcade.language.SavePickerSave(it.id, it.slot, it.emulator, it.source, it.updatedAtMillis, it.sizeBytes, it.playing, it.screenshotUri, it.id in backups, origin, label,
+                        folderLabel = it.source.takeIf { _ -> request.owner.backendId == RommCredentials.PLUGIN_ID && it.id in backups })
                 }
                 withContext(Dispatchers.Main.immediate) {
                     foldcade.shell.updateSavePicker(target) { previous ->
@@ -4280,6 +4279,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.
                 return false
             }
+            // Judge and publish before reconcile can report Synced for the stale bound copy.
+            // Optional probe failures still cannot block handing that copy back to the library.
+            try {
+                val reading = foldcade.saveProbes.judgeReturn(pending.player, pending.game,
+                    pending.targetUri?.let { LaunchTarget.ContentUri(it) }, pending.baseline,
+                    unprotected = preserved, startedByFoldcade = pending.startedByFoldcade,
+                    sessionStartedAtMillis = pending.sessionStartedAtMillis, sessionEndedAtMillis = endedAtMillis)
+                foldcade.publishSaveGate(pending.player, reading)
+            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
             val observed = if (preserved) app.foldcade.api.plugin.ObservedSaves(emptyList()) else saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
             if (!preserved) {
                 // The library may finish its sync before reconcile returns. The notice waits for either.
@@ -4308,10 +4316,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             // Optional evidence and live-copy capture cannot prevent the bound save reaching RomM.
             try {
-                foldcade.saveProbes.returned(pending.player, pending.game, pending.targetUri?.let { LaunchTarget.ContentUri(it) }, pending.baseline,
-                    unprotected = preserved, startedByFoldcade = pending.startedByFoldcade, sessionStartedAtMillis = pending.sessionStartedAtMillis,
-                    sessionEndedAtMillis = endedAtMillis,
-                    onJudged = { foldcade.publishSaveGate(pending.player, it) })
+                foldcade.saveProbes.captureReturn(pending.player, pending.game, pending.targetUri?.let { LaunchTarget.ContentUri(it) })
                 foldcade.saveIncidentCopies.keep(pending.game, pending.player)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
             foldcade.refreshSaveProtection(pending.player, flowHeld = true)

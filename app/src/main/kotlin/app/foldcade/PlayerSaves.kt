@@ -345,6 +345,7 @@ internal class PlayerSaves(
         val metadata = org.json.JSONObject().put("library", game.backendId).put("game", game.remoteKey)
             .put("platform", game.platformId).put("label", game.label).put("player", player.id)
             .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
+            .put("folderLabel", runCatching { folderPathLabel(spot.folderUri) }.getOrNull() ?: org.json.JSONObject.NULL)
             .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes))
         app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
         return file.toUri().toString()
