@@ -26,7 +26,7 @@ sealed interface RootVerdict {
 }
 sealed interface SessionVerdict {
     data class Wrote(val root: FolderRef) : SessionVerdict
-    data class WroteElsewhere(val live: FolderRef) : SessionVerdict
+    data class WroteElsewhere(val live: FolderRef?) : SessionVerdict
     data class Signalled(val verdict: RootVerdict) : SessionVerdict
     data class SilentStart(val source: String) : SessionVerdict
     data object NoNews : SessionVerdict
@@ -76,7 +76,8 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
     if (changed(bound)) return SessionVerdict.Wrote(bound.root)
     val oldBound = before.roots.singleOrNull { it.bound && it.root.identity == bound.root.identity } ?: return SessionVerdict.NoNews
     if (oldBound.spotReadable && bound.spotReadable && oldBound.spotHash == bound.spotHash) {
-        after.roots.filter { !it.bound && changed(it) }.singleOrNull()?.let { return SessionVerdict.WroteElsewhere(it.root) }
+        val changedCandidates = after.roots.filter { !it.bound && changed(it) }
+        if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(changedCandidates.singleOrNull()?.root)
     }
     val advanced = after.roots.any { root -> root.signals.any { signal ->
         signal.proves && signal.modifiedAtMillis != null && signal.modifiedAtMillis > before.atMillis &&
@@ -98,3 +99,13 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
 /** A candidate from another installed flavour needs a matching version line. */
 fun provingSignal(proves: Boolean, bound: Boolean, installedFlavors: Int, logVersion: String?, resolvedVersion: String?): Boolean =
     proves && (bound || installedFlavors <= 1 || logVersion != null && logVersion == resolvedVersion)
+
+/** A bypassed session cannot clear its own alarm, even when fresh saves restore markers. */
+fun SaveIncident.causeResolved(bound: RootReading): Boolean = !recoveryRequired && when (kind) {
+    IncidentKind.LostAccess -> bound.reachable && bound.spotReadable && (evidence.detail != "The emulator no longer holds this folder" || bound.emulatorHolds == true)
+    IncidentKind.FolderEmptied -> bound.markersPresent == true
+    else -> false
+}
+
+val IncidentKind.gatesLaunch: Boolean get() = this in setOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)
+val SaveIncident.blocksLaunch: Boolean get() = kind.gatesLaunch && repair != RepairState.Done

@@ -54,7 +54,7 @@ internal class LaunchSaves(
             protectionGate(route, player, local)
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (stopped: SaveNotPlaced) { throw stopped
-        } catch (_: Exception) { throw SaveNotPlaced() }
+        } catch (_: Exception) { Unit }
         val candidates = candidates(route)
         val setup = mutableListOf<String>()
         val resolvedSpots = saves.spots(player, route.saves, local, forLaunch = true, changed = setup)

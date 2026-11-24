@@ -121,6 +121,8 @@ data class SaveIncident(
     /** Local copies staged in save-handover, waiting for RomM. */
     val staged: List<String> = emptyList(),
     val repair: RepairState = RepairState.NotStarted,
+    /** A bypass session wrote suspect bytes. Only choosing a recovery folder clears this. */
+    val recoveryRequired: Boolean = false,
 )
 
 enum class IncidentKind {

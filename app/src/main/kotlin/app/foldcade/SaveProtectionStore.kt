@@ -87,7 +87,7 @@ private fun JSONArray.strings(): List<String> = (0 until length()).map(::getStri
 private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("kind", kind.name).put("playerKey", playerKey)
     .put("playerName", playerName).put("gameIds", JSONArray(gameIds)).put("bound", bound?.toJson() ?: JSONObject.NULL)
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
-    .put("kept", JSONArray(kept)).put("staged", JSONArray(staged)).put("repair", when (repair) {
+    .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged)).put("repair", when (repair) {
         RepairState.NotStarted -> "NotStarted"
         RepairState.Binding -> "Binding"
         RepairState.Done -> "Done"
@@ -98,6 +98,7 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     evidenceFromJson(json.getJSONObject("evidence")), json.getLong("openedAtMillis"),
     json.optJSONArray("kept")?.strings().orEmpty(), json.optJSONArray("staged")?.strings().orEmpty(),
     when (json.optString("repair")) { "Binding" -> RepairState.Binding; "Done" -> RepairState.Done; else -> RepairState.NotStarted },
+    json.optBoolean("recoveryRequired"),
 )
 
 internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", atMillis).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)

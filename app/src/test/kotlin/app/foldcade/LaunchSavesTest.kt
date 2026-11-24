@@ -27,6 +27,7 @@ import app.foldcade.api.plugin.StartDisplay
 import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.host.PluginHost
+import app.foldcade.language.*
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -78,11 +79,126 @@ class LaunchSavesTest {
         }
     }
 
-    @Test fun anUnexpectedProtectionFailureCannotFallThroughToAnOrdinaryLaunch() = runBlocking {
+    @Test fun anOptionalProbeFailureWithoutPositiveEvidenceDoesNotStopLaunch() = runBlocking {
         val launch = LaunchSaves(saves, plugins, protectionGate = { _, _, _ -> throw java.io.IOException("evidence could not be recorded") }) { awaiting += it }
-        assertTrue(runCatching { launch.prepare(GameRoute("tile", owner, owner), Melon, local) }.exceptionOrNull() is SaveNotPlaced)
-        assertTrue(server.calls.isEmpty())
+        launch.prepare(GameRoute("tile", owner, owner), Melon, local)
+        assertEquals(listOf("prepareLaunch:12"), server.calls)
     }
+
+    @Test fun guidedBindingKeepsLiveBytesAsABackupAndTheNextLaunchPlacesRommHeadWithoutPromotion() = runBlocking {
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "fresh live copy".toByteArray()
+        server.toPlace = "RomM head"
+        val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+        val incident = incident(IncidentKind.WrongFolder)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val spots = saves.spots(Melon, owner, local)
+        copies.stage(owner, Melon, spots, incident, mark = true)
+        copies.keep(owner, Melon)
+        assertEquals(listOf(md5Hex("fresh live copy".toByteArray())), server.backups)
+        assertTrue(store.incidents().single().staged.isEmpty())
+        assertEquals(listOf("backup-1"), store.incidents().single().kept)
+        assertTrue(saves.changedSince(owner.backendId, owner, Melon, spots).slots.isEmpty())
+        LaunchSaves(saves, plugins) { awaiting += it }.prepare(GameRoute("tile", play, owner), Melon, local)
+        assertEquals(listOf("prepareSaves:12"), server.calls)
+        assertEquals("RomM head", docs.files.getValue("$SAVES/Tetris DS (USA).sav").toString(Charsets.UTF_8))
+        assertTrue(server.observed.isEmpty())
+    }
+
+    @Test fun bypassReturnsKeepEveryCopyWithoutReconciliationOrClearingTheAlarm() = runBlocking {
+        for (kind in listOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)) {
+            val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+            store.put(incident(kind))
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            copies.beginUnprotected(Melon)
+            val spots = saves.spots(Melon, owner, local)
+            for (progress in listOf("fresh", "more progress")) {
+                docs.files["$SAVES/Tetris DS (USA).sav"] = progress.toByteArray()
+                assertTrue(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+                assertTrue(saves.changedSince(owner.backendId, owner, Melon, spots).slots.isEmpty())
+                val open = store.incidents().single()
+                assertTrue(open.recoveryRequired)
+                assertTrue(open.blocksLaunch)
+                assertFalse(open.causeResolved(RootReading(open.bound!!, true, emptyList(), "fresh", true, true, true)))
+            }
+            assertTrue(server.calls.isEmpty())
+            assertTrue(server.observed.isEmpty())
+            assertEquals(2, store.incidents().single().kept.size)
+        }
+    }
+
+    @Test fun failedBackupUploadKeepsDurableStagingAndMarksSoItCannotBecomeHead() = runBlocking {
+        docs.files["$SAVES/Tetris DS (USA).sav"] = "live".toByteArray()
+        server.backupsFail = true
+        val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+        val incident = incident(IncidentKind.WrongFolder)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val spots = saves.spots(Melon, owner, local)
+        assertTrue(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+        val staged = store.incidents().single().staged.single()
+        assertEquals("live", Files.readString(java.nio.file.Paths.get(java.net.URI(staged))))
+        assertTrue(saves.changedSince(owner.backendId, owner, Melon, spots).slots.isEmpty())
+        assertTrue(server.calls.isEmpty())
+        server.backupsFail = false
+        copies.keep(owner, Melon)
+        assertTrue(store.incidents().single().staged.isEmpty())
+    }
+
+    @Test fun ordinaryReturnsAndUngatedOptOutsUseNormalReconciliation() = runBlocking {
+        val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val spots = saves.spots(Melon, owner, local)
+        assertFalse(copies.preserveReturn(owner, Melon, spots, unprotected = true))
+        store.put(incident(IncidentKind.WrongFolder))
+        assertFalse(copies.preserveReturn(owner, Melon, spots, unprotected = false))
+    }
+
+    @Test fun storedIncidentsStillGateWhenProbingThrowsButDoneDoesNot() {
+        val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val player = object : Player by Melon, app.foldcade.api.plugin.SaveFolderHolder {
+            override fun bindSaveFolder(contentUri: String) = Unit
+            override fun hasSaveFolder() = true
+        }
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies)
+        probes.gate(player, owner)
+        store.put(incident(IncidentKind.WrongFolder))
+        assertTrue(runCatching { probes.gate(player, owner) }.exceptionOrNull() is SaveProtectionStop)
+        store.put(incident(IncidentKind.WrongFolder).copy(repair = RepairState.Done))
+        probes.gate(player, owner)
+    }
+
+    @Test fun rootRecoveryClosesItsCauseAndUsesClosesBindingAndDoneButBypassesNeverVerify() {
+        val store = SaveProtectionStore(Files.createTempDirectory("incident"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val incident = incident(IncidentKind.WrongFolder)
+        val reading = RootReading(incident.bound!!, true, emptyList(), null, true, true, true)
+        val snapshot = ProbeSnapshot(100, 1, "emulator", listOf(reading))
+        for (kind in listOf(IncidentKind.LostAccess, IncidentKind.FolderEmptied)) {
+            store.put(incident(kind))
+            probes.check(Melon, snapshot)
+            assertTrue(store.incidents().isEmpty())
+        }
+        for (repair in listOf(RepairState.Binding, RepairState.Done)) {
+            store.put(incident.copy(repair = repair))
+            probes.apply(Melon, snapshot, RootVerdict.Uses(reading.root, incident.evidence, 100))
+            assertTrue(store.incidents().isEmpty())
+        }
+        store.put(incident.copy(repair = RepairState.Done))
+        probes.apply(Melon, snapshot, RootVerdict.UsesOther(null, incident.evidence, 200))
+        assertTrue(store.incidents().single().blocksLaunch)
+        assertEquals(RepairState.NotStarted, store.incidents().single().repair)
+        store.bound(Melon.id, reading.root, "emulator", 1, 1)
+        store.put(incident.copy(recoveryRequired = true))
+        probes.apply(Melon, snapshot, RootVerdict.Uses(reading.root, incident.evidence, 100))
+        assertTrue(store.incidents().isNotEmpty())
+        assertTrue(store.location(Melon.id, reading.root, "emulator", 1) is LocationFact.Bound)
+    }
+
+    private fun incident(kind: IncidentKind) = SaveIncident("$kind:melonds", kind, "melonds", "melonDS", emptyList(),
+        FolderRef("primary:saves", "saves"), null, Evidence(EvidenceKind.SessionWrite, "saved elsewhere"), 1)
 
     @Test fun baselineIsTakenAfterFoldcadesOwnPlacement() = runBlocking {
         server.toPlace = "placed"
@@ -553,6 +669,8 @@ class LaunchSavesTest {
         override val displayName = id
         val calls = mutableListOf<String>()
         val observed = mutableListOf<String>()
+        val backups = mutableListOf<String>()
+        var backupsFail = false
         var toPlace: String? = null
         var archiveToPlace: ByteArray? = null
         var placementSlot = "sav"
@@ -587,6 +705,16 @@ class LaunchSavesTest {
             declarationsSeen = player.saveDeclarations(game)
             val withFirmware = if (target is LaunchTarget.ContentUri) LaunchTarget.ContentUri(target.uri, firmware) else target
             return Placement(withFirmware, placed())
+        }
+
+        override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> {
+            if (backupsFail) throw java.io.IOException("offline")
+            return observed.slots.map { slot ->
+                val bytes = Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(slot.contentUri!!)))
+                assertEquals(md5Hex(bytes), slot.contentHash)
+                backups += slot.contentHash
+                "backup-${backups.size}"
+            }
         }
 
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {

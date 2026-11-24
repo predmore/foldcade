@@ -1,7 +1,7 @@
 package app.foldcade.language
 
 /** Guided repair only. Binding is persisted with the incident; navigation itself is transient. */
-data class SaveFixPage(val incidentId: String, val screen: HostScreen, val steps: String?, val index: Int = 0, val note: String? = null, val playerId: String? = null)
+data class SaveFixPage(val incidentId: String, val screen: HostScreen, val steps: String?, val index: Int = 0, val note: String? = null, val playerId: String? = null, val resolved: SaveIncident? = null)
 
 fun saveFolderState(incident: SaveIncident): String = when (incident.kind) {
     IncidentKind.WrongFolder, IncidentKind.MaybeWrongFolder -> "Wrong folder"
@@ -12,7 +12,7 @@ fun saveFolderState(incident: SaveIncident): String = when (incident.kind) {
 
 fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeatCount: Int): Pair<PickerModel, Effect?> {
     if (repeatCount > 0 && meaning !in setOf(Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight)) return model to null
-    val incident = model.saveIncidents.firstOrNull { it.id == page.incidentId } ?: return model.copy(saveFix = null) to null
+    val incident = model.saveIncidents.firstOrNull { it.id == page.incidentId } ?: page.resolved ?: return model.copy(saveFix = null) to null
     val done = incident.repair == RepairState.Done
     val last = if (done) 0 else 2
     return when (meaning) {

@@ -112,8 +112,16 @@ class LibraryReturnTest {
         assertEquals(pending.targetUri, restored.targetUri)
         val old = org.json.JSONObject(pending.encode()).apply { remove("baseline"); remove("unprotectedSession") }
         val legacy = decodeLibraryReturn(old.toString()) { player }!!
+        val corrupt = org.json.JSONObject(pending.encode()).put("baseline", org.json.JSONObject().put("atMillis", 50))
+        assertEquals(null, decodeLibraryReturn(corrupt.toString()) { player }!!.baseline)
         assertEquals(null, legacy.baseline)
         assertFalse(legacy.unprotectedSession)
+    }
+
+    @Test fun sharedFilesRetainTheReadableUriInsteadOfTheLaunchPath() {
+        val shared = LaunchTarget.SharedFile("/sdcard/roms/game.iso", "content://readable/game.iso")
+        assertEquals("content://readable/game.iso", shared.saveReadUri())
+        assertEquals("content://readable/game.iso", LaunchTarget.ContentUri(shared.saveReadUri()!!).saveReadUri())
     }
 
     @Test fun anOptedOutSessionStillReadsReachableSpotsOnReturn() {

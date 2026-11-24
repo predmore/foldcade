@@ -64,7 +64,9 @@ class ServerSavesTest {
         ops.onArchive = { save, _, hash, content ->
             assertEquals(rommSaveHash(content), hash)
             events += "archive:${save.id}"
-            add(content, null, save.emulator, at = 0).id
+            val kept = add(content, null, save.emulator, at = 0)
+            server[server.indexOf(kept)] = kept.copy(fileName = "foldcade-kept-${java.util.UUID.randomUUID()}.${if (save.fileName.endsWith(".zip")) "zip" else "sav"}")
+            kept.id
         }
         ops.onUploadSave = { rom, _, slot, emulator, _, hash, content ->
             assertEquals(ROM, rom)
@@ -79,6 +81,50 @@ class ServerSavesTest {
     }
 
     @After fun cleanup() { root.toFile().deleteRecursively() }
+
+    @Test fun incidentCopiesAreVerifiedBackupsAndNeverChangeHeldBytesLedgerOrSlotHeads() = runBlocking {
+        hold("RomM head")
+        val ledger = data.ledger(ROM).slots()
+        val heads = server.filter { it.slot != null }
+        val library = library()
+        for (body in listOf("live copy".toByteArray(), zip())) {
+            val file = root.resolve("live.save")
+            writeDurably(file, body)
+            val observed = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+            val ids = library.keepAsBackups(GAME, player, observed)
+            assertEquals(1, ids.size)
+            val kept = server.single { it.id.toString() == ids.single() }
+            assertNull(kept.slot)
+            assertArrayEquals(body, bytes.getValue(kept.id))
+            assertEquals(ids, library.keepAsBackups(GAME, player, observed))
+            assertEquals(heads, server.filter { it.slot != null })
+            assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
+            assertEquals(ledger, data.ledger(ROM).slots())
+            assertEquals(emptyList<String>(), events.filter { it == "sync" || it.startsWith("upload:") })
+            library.serverSaves(GAME, player)
+            assertTrue(ids.single() in library.serverSaveBackups(GAME))
+        }
+        assertEquals(2, events.count { it.startsWith("archive:") })
+    }
+
+    @Test fun backupResponseLossRetriesWithoutDuplicatesAndUnverifiedIdsAreRefused() = runBlocking {
+        hold("RomM head")
+        val file = root.resolve("live.save")
+        writeDurably(file, "live".toByteArray())
+        val observed = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+        val archive = ops.onArchive
+        ops.onArchive = { save, device, hash, content -> archive(save, device, hash, content); throw RommUnavailable("lost response") }
+        val library = library()
+        assertNotNull(runCatching { library.keepAsBackups(GAME, player, observed) }.exceptionOrNull())
+        ops.onArchive = { _, _, _, _ -> error("Must reuse verified archive") }
+        assertEquals(1, library.keepAsBackups(GAME, player, observed).size)
+        assertEquals(1, server.count { it.slot == null })
+        writeDurably(file, "different".toByteArray())
+        val other = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+        ops.onArchive = { _, _, _, _ -> 99999 }
+        assertNotNull(runCatching { library.keepAsBackups(GAME, player, other) }.exceptionOrNull())
+        assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
+    }
 
     @Test fun listsEverySlotAndUsesTheOriginsDeviceNameAndTheHeldHash() = runBlocking {
         val old = add("current".toByteArray(), "sav", "melonds", at = 1)
@@ -496,7 +542,8 @@ class ServerSavesTest {
     }.toByteArray()
 
     private fun library(): RommLibrary {
-        val wiring = RommWiring(ORIGIN, RommTokenSource { token }, root.resolve("cache"), root.resolve("data"))
+        val wiring = RommWiring(ORIGIN, RommTokenSource { token }, root.resolve("cache"), root.resolve("data"),
+            saveBytes = SaveBytes { Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(it))) })
         wiring.open = { _, _ -> ops }
         return RommLibrary(RommGate { wiring })
     }

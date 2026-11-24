@@ -299,6 +299,25 @@ internal class PlayerSaves(
     fun stageLiveCopy(game: Game, player: Player, spot: SaveSpot): String? {
         val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return null
         if (bytes.size > 256 * 1024 * 1024) throw SaveNotPlaced()
+        return stageCopy(game, player, spot, bytes)
+    }
+
+    fun stageCopies(game: Game, player: Player, spots: List<SaveSpot>): ObservedSaves = ObservedSaves(spots.mapNotNull { spot ->
+        val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return@mapNotNull null
+        ObservedSlot(spot.slot, md5Hex(bytes), player.id, stageCopy(game, player, spot, bytes))
+    })
+
+    fun stagedCopies(game: Game, player: Player, uris: List<String>): ObservedSaves = ObservedSaves(uris.mapNotNull { uri ->
+        val file = java.nio.file.Paths.get(java.net.URI(uri))
+        require(file.toAbsolutePath().normalize().parent == handover.toAbsolutePath().normalize())
+        val metadata = org.json.JSONObject(Files.readAllBytes(file.resolveSibling("${file.fileName}.json")).toString(Charsets.UTF_8))
+        if (metadata.getString("library") != game.backendId || metadata.getString("game") != game.remoteKey ||
+            metadata.getString("playerKey") != player.saveFolderId()) return@mapNotNull null
+        val hash = metadata.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
+        ObservedSlot(metadata.getString("slot"), hash, player.id, uri)
+    })
+
+    private fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray): String {
         val name = "live-${md5Hex((game.backendId + ":" + game.remoteKey + ":" + player.saveFolderId() + ":" + spot.slot + ":" + storageIdentity(spot.folderUri)).toByteArray())}-${md5Hex(bytes)}.save"
         val file = handover.resolve(name)
         app.foldcade.romm.writeDurably(file, bytes)
@@ -306,7 +325,7 @@ internal class PlayerSaves(
         val metadata = org.json.JSONObject().put("library", game.backendId).put("game", game.remoteKey)
             .put("platform", game.platformId).put("label", game.label).put("player", player.id)
             .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
-            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri))
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes))
         app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
         return file.toUri().toString()
     }

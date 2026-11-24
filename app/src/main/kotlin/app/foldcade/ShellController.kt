@@ -773,7 +773,8 @@ class ShellController(
     private val saveServices = mutableMapOf<String, app.foldcade.api.plugin.SaveServiceState>()
     private val saveDestinations = mutableMapOf<String, OffDeviceFact>()
 
-    internal fun setSaveProtection(locations: Map<String, LocationFact>, incidents: List<SaveIncident>) {
+    internal fun setSaveProtection(readings: Map<String, LocationFact>, incidents: List<SaveIncident>, replace: Boolean = true) {
+        val locations = if (replace) readings else saveLocations + readings
         val changed = (saveLocations.keys + locations.keys).filter { key ->
             val old = saveLocations[key]
             val next = locations[key]
@@ -787,8 +788,13 @@ class ShellController(
         }.toSet()
         saveDestinations.keys.removeAll { id -> plugins.playerIds().mapNotNull(plugins::player).any { it.saveFolderId() in changed && it.platformId == libraryGames[id]?.platformId } }
         saveLocations = locations
+        val fix = model.saveFix?.let { page ->
+            val previous = saveIncidents.firstOrNull { it.id == page.incidentId }
+            if (incidents.none { it.id == page.incidentId } && previous != null)
+                page.copy(index = 0, resolved = previous.copy(repair = app.foldcade.language.RepairState.Done)) else page
+        }
         saveIncidents = incidents
-        model = model.copy(saveIncidents = incidents)
+        model = model.copy(saveIncidents = incidents, saveFix = fix)
         saveSettingsCache = null
         refreshPlayerSaves()
         refreshSaveHealth()
@@ -4356,7 +4362,6 @@ class ShellController(
     private fun readPlayerSaveSettings(): List<PlayerSaveSetting> =
         plugins.playerIds().mapNotNull { id ->
             val player = plugins.player(id) ?: return@mapNotNull null
-            // Eden's existing row owns its one grant for saves, keys and firmware.
             if (player !is SaveFolderHolder) return@mapNotNull null
             val sync = saveSync[player.id]
             player.saveFolderId() to PlayerSaveSetting(

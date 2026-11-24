@@ -874,6 +874,40 @@ internal class RommLibrary internal constructor(
     /** How a sync reads when the player's saves could not be reached: not synced. */
     private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, SAVE_UNREACHABLE)
 
+    /** Preservation only: no negotiation, slot write, selection recovery, or ledger change. */
+    override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> {
+        val romId = game.romId()
+        return romLock(romId).withLock {
+            gate.session { wiring, ops ->
+                rememberDevice(wiring, ops)
+                val device = wiring.rememberedDevice!!.deviceId
+                observed.slots.map { slot ->
+                    val bytes = runInterruptible(Dispatchers.IO) {
+                        val uri = slot.contentUri ?: throw PluginException.Unavailable("The copy has no bytes")
+                        val local = wiring.contentUris.pathFor(uri)
+                        val bytes = if (local != null && Files.isRegularFile(local)) Files.readAllBytes(local) else wiring.saveBytes.read(uri)
+                        if (bytes == null || md5Hex(bytes) != slot.contentHash) throw PluginException.Unavailable("The copy changed before it could be kept")
+                        bytes
+                    }
+                    val hash = app.foldcade.romm.rommSaveHash(bytes) ?: throw PluginException.Unavailable("The copy cannot be verified")
+                    val zip = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4b.toByte()
+                    val existing = ops.listSaves(romId, device).firstOrNull {
+                        it.romId == romId && it.slot == null && it.fileName.matches(Regex("""foldcade-kept-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.(sav|zip)""")) &&
+                            it.sizeBytes == bytes.size.toLong() && it.contentHash?.lowercase() == hash
+                    }
+                    val id = existing?.id ?: ops.uploadArchive(app.foldcade.romm.RommSave(
+                        0, romId, if (zip) "save.zip" else "save.sav", null, player.id, hash,
+                        java.time.Instant.now(), bytes.size.toLong(), null, emptyList(), null,
+                    ), device, hash, bytes)
+                    val verified = ops.listSaves(romId, device).singleOrNull { it.id == id && it.romId == romId && it.slot == null }
+                    if (verified == null || verified.sizeBytes != bytes.size.toLong() || verified.contentHash?.lowercase() != hash)
+                        throw PluginException.Unavailable("The Backup did not verify")
+                    id.toString()
+                }
+            }
+        }
+    }
+
     override suspend fun serverSaves(game: Game, player: Player?): List<app.foldcade.api.plugin.ServerSave> {
         val romId = game.romId()
         return romLock(romId).withLock {

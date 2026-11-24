@@ -56,6 +56,13 @@ class SaveEvidenceTest {
         assertEquals(SessionVerdict.NoNews, judgeSession(before, snap(root(hash = null), root(live, hash = null)), 400))
     }
 
+    @Test fun multipleChangedCandidatesStillProveAMismatchWithNoSingleLiveRoot() {
+        val other = FolderRef("primary:Azahar2", "Azahar2")
+        val before = snap(root(), root(live), root(other), at = 100)
+        val after = snap(root(), root(live, hash = "new"), root(other, hash = "newer"))
+        assertEquals(SessionVerdict.WroteElsewhere(null), judgeSession(before, after, 400))
+    }
+
     @Test fun freshSignalsAfterBaselineAndDisabledNegativeRule() {
         val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
         val after = snap(root(signals = listOf(signal(live, 300))))

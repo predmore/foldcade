@@ -22,6 +22,38 @@ class ShellSaveHealthTest {
         assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.AppKeepsSaves), shell.saveHealthOf(androidHomeId("example.game")))
     }
 
+    @Test fun aServiceRefreshClearsSignedOutStatusWithoutRestartingAndCanInvalidateAReceipt() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val entry = MelonDsEntry()
+        plugins.register(entry)
+        val player = entry.players.single()
+        (player as SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.setInstalledApps(emptyList(), player.packageNames.toSet(), player.packageNames.toSet())
+        val game = Game("romm", "12", player.platformId, Availability.Cached, "Tetris")
+        shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
+        val id = homeGameId(game.backendId, game.remoteKey)
+        val root = FolderRef("primary:saves", "saves")
+        val checked = LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "saved here"), 100)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), emptyList())
+        shell.noteSaveReachable(game, player.id, true)
+        shell.setSaveDestination(game, OffDeviceFact.OnRomm(200))
+        shell.setSaveService("romm", SaveServiceState.SignedOut)
+        assertEquals(SaveStatus.NotSyncing(destination = NoDestinationWhy.SignedOut), shell.saveHealthOf(id))
+        shell.setSaveService("romm", SaveServiceState.Ready)
+        assertEquals(SaveStatus.Protected(200, 100), shell.saveHealthOf(id))
+        shell.setSaveDestination(game, OffDeviceFact.Unknown)
+        assertFalse(shell.saveHealthOf(id) is SaveStatus.Protected)
+        val incident = SaveIncident("WrongFolder:melonds", IncidentKind.WrongFolder, player.saveFolderId(), player.displayName,
+            emptyList(), root, null, checked.evidence, 200)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), listOf(incident))
+        shell.openSaveFix(incident, "Choose the folder", player.id)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), emptyList(), replace = false)
+        assertEquals(RepairState.Done, shell.model.saveFix!!.resolved!!.repair)
+        assertEquals(Effect.FinishSaveFix(incident.id), reduce(shell.model, Meaning.Activate).second)
+    }
+
     @Test fun healthAndNoticesStayQuietUntilAnEmulatorIsKnownToBeInstalled() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())

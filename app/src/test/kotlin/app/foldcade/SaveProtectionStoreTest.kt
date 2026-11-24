@@ -15,7 +15,7 @@ class SaveProtectionStoreTest {
         val store = SaveProtectionStore(dir)
         store.verified("azahar", root, evidence, 30, "azahar.app", 10, true)
         val incident = SaveIncident("WrongFolder:azahar", IncidentKind.WrongFolder, "azahar", "Azahar", listOf("game"), root, live, evidence, 40,
-            listOf("server-1"), listOf("file:///staged"), RepairState.Binding)
+            listOf("server-1"), listOf("file:///staged"), RepairState.Binding, recoveryRequired = true)
         store.put(incident)
         val restored = SaveProtectionStore(dir)
         assertEquals(listOf(incident), restored.incidents())
@@ -55,8 +55,9 @@ class SaveProtectionStoreTest {
         val external = "content://com.android.externalstorage.documents/tree/primary%3Asaves%2FAzahar"
         val alias = "content://app.foldcade.storage/tree/primary%3A/document/primary%3Asaves%2FAzahar"
         assertEquals(root.identity, storageIdentity(external))
-        assertEquals(storageIdentity(external), storageIdentity(alias))
+        assertEquals(storageIdentity(external), storageIdentity(alias, "app.foldcade"))
         assertEquals("primary:PSP", storageIdentity("content://com.android.externalstorage.documents/tree/PRIMARY%3APSP"))
+        assertNotEquals(storageIdentity(alias, "other.package"), storageIdentity(external))
         assertNotEquals(storageIdentity("content://a.provider/tree/root"), storageIdentity("content://b.provider/tree/root"))
     }
 }

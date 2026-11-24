@@ -14,7 +14,7 @@ import app.foldcade.language.*
 @Composable
 internal fun SaveFixScreen(app: FoldcadeApp, page: SaveFixPage, controls: Boolean, dispatch: (Effect?) -> Unit) {
     val theme = LocalFoldTheme.current.theme
-    val incident = app.shell.model.saveIncidents.firstOrNull { it.id == page.incidentId } ?: return
+    val incident = app.shell.model.saveIncidents.firstOrNull { it.id == page.incidentId } ?: page.resolved ?: return
     val done = incident.repair == RepairState.Done
     val bodyStyle = TextStyle(color = theme.onBackground, fontFamily = theme.font, fontSize = theme.style.type.dialogBody)
     Column(Modifier.fillMaxSize().background(theme.background).padding(48.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
