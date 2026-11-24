@@ -386,10 +386,10 @@ sealed interface SessionVerdict {
 
 `judgeSession` rules, in order:
 
-1. **The bound save is unchanged, and candidates' saves changed:** `WroteElsewhere(candidate)`, or an unknown live root when several changed. A save that appears where none was counts as a change.
-2. **A proving signal moved past the baseline and names a different root:** `Signalled(UsesOther(…))`. This includes a newly discovered custom root with no earlier game hash.
-3. **An approved `perStart` signal in the bound root did not advance past baseline during a Foldcade-launched session of at least 20 s, and remains readable:** `SilentStart` → `WrongFolder`. Resumes are excluded (§4.2).
-4. **The bound save changed:** `Wrote(bound)`. The baseline is taken after Foldcade's own placement, so Foldcade's write never counts. A fresh mismatch or silent-start alarm above takes precedence.
+1. **The bound save changed:** `Wrote(bound)`. The baseline is taken after Foldcade's own placement, so Foldcade's write never counts. This positive write takes precedence over log evidence, including a silent-start alarm.
+2. **The bound save is unchanged, and candidates' saves changed:** `WroteElsewhere(candidate)`, or an unknown live root when several changed. A save that appears where none was counts as a change.
+3. **A proving signal moved past the baseline and names a different root:** `Signalled(UsesOther(…))`. This includes a newly discovered custom root with no earlier game hash.
+4. **An approved `perStart` signal in the bound root has exactly the same known mtime before and after a Foldcade-launched session of at least 20 s, and remains readable and eligible:** `SilentStart` → `WrongFolder`. Resumes, capped logs and moved clocks are excluded (§4.2).
 5. **Another proving signal moved past the baseline:** `Signalled(judgeRoots(after, …))`.
 6. Otherwise `NoNews`. An unchanged short session lands here and alarms nobody.
 
@@ -402,7 +402,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
   - Candidate roots. These are `saveFolderPlaces + probePlaces` as `primary:<place>`, known live roots from open incidents, and fresh signature roots discovered on return (§4.2), resolved through `SaveFolderFinder.reachable`. That covers held SAF grants and the all-files `SharedStorageProvider` alias, read only. A root Foldcade can't read is left out, not counted as absent.
   - The beside-game file, when the game sits in `Android/media/app.foldcade/romm/…` or a local library tree Foldcade holds.
   - `AndroidSaveFolderFinder.playerHolds` for each root, when `saveFolderPickedInPlayer`. Today that check runs only for *found* folders (`FoldcadeApp.kt:1685` keeps a chosen folder on Foldcade's grant alone). Here it runs for chosen ones too.
-  - The game's spot is resolved with the existing `PlayerSaves.resolveSpots` against each root. It is hashed with `readSpot`. Bounds: at most 4 candidate roots, the 256 MiB zip limit as today, and the first 32 KiB of any log.
+  - The game's spot is resolved with the existing `PlayerSaves.resolveSpots` against each root. It is hashed with `readSpot`. Bounds: at most 4 candidate roots, the 256 MiB zip limit as today, and the first 32 KiB of any log. Azahar also reads one byte near its 100 MiB logging limit to disable negative evidence for capped logs.
 - **Identity.** `storageIdentity(uri)` maps an external-storage tree or document, and Foldcade's all-files alias, to `primary:<path>`. It lower-cases the volume. An emulator's own provider keeps `authority + documentId`. Every comparison uses identity, never the raw URI. The audit shows PPSSPP's two URIs for one `/sdcard/PSP`.
 - **When probes run:**
   - Inside `LaunchSaves.prepare`, before `changedSince`. This is the gate (§3).
@@ -487,7 +487,7 @@ Copy, as `SaveProtectionCopy`:
 | Stop | Title | Body | Buttons |
 |---|---|---|---|
 | WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now uses the folder ${live.label}, not ${bound.label}. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` | **Fix it** · **Play anyway** |
-| WrongFolder, live root unknown (grant check only) | same | `"$emulator stopped using ${bound.label}. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` | **Fix it** · **Play anyway** |
+| WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. ${safeOnRomm(receipt)} Fix it first, or this session’s progress isn’t protected."` | **Fix it** · **Play anyway** |
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"Its saves in ${bound.label} are gone. ${safeOnRomm(receipt)} Put it back before you play."` | **Put it back** · **Play anyway** |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Allow ${bound.label} again so saves reach RomM. ${safeOnRomm(receipt)}"` | **Allow** · **Play anyway** |
 | Known save can't be placed (all adapters) | the existing `"${Copy.saveNotPlaced} $title"` | the existing `Copy.saveUnresolved`, or the precise `SpotIssue` sentence (§6.3) | **Set up saves** · **Play anyway** · **Not now** (as today, with Play without syncing renamed) |
@@ -531,7 +531,9 @@ Helpers:
 
 **Decision, 24 November 2026, after Thor QA run 2 (`b37fa512`): enable Azahar's per-start evidence only for game launches sent by Foldcade. Keep the emulator-grant rule off.** The report conservatively recommended leaving both rules disabled; the product decision uses its measured cold/warm behaviour and explicitly excludes resume.
 
-The bound root's readable `log/azahar_log.txt` must report `perStart = true` before launch and still be readable on return. If the actual launched session lasted at least 20 s and the log's mtime did not advance past the pre-launch baseline, open **WrongFolder**. The live root can be unknown. This gates the next ordinary launch and leads to guided Fix. A session shorter than 20 s, a resume, an unknown mtime or an unreadable log gives no negative verdict. The host persists whether the return came from a fresh Foldcade launch, plus its actual start and observed return times, so time spent preparing files, waiting for the save flow or uploading does not count. The observed return time survives a retry, and a resume cannot reuse an earlier launch's negative evidence.
+The bound root's readable `log/azahar_log.txt` must report `perStart = true` both before launch and on return. If the bound save did not change, the actual launched session lasted at least 20 s, and the log's known mtime is exactly unchanged and no later than the pre-launch baseline, open **WrongFolder**. The live root can be unknown. This gates the next ordinary launch and leads to guided Fix. A positive bound-save write wins first. A short session, a resume, an unknown or moved mtime, a capped log or an unreadable log gives no negative verdict. The host persists whether the return came from a fresh Foldcade launch, plus its actual start and observed return times, so time spent preparing files, waiting for the save flow or uploading does not count. The observed return time survives a retry, and a resume cannot reuse an earlier launch's negative evidence.
+
+Azahar's [upstream FileBackend](https://github.com/azahar-emu/azahar/blob/a5c3d4f8eb34493f37479158128de134c3e700a9/src/common/logging/backend.cpp#L158) stops ordinary writes after 100 MiB until the process restarts. A one-byte read at offset `100 MiB - 1` disables `perStart` when the file has reached that boundary. The log can still give fresh positive evidence; a stationary capped log cannot open a launch alarm. No full-log read or allocation is needed.
 
 QA measured these local times and file sizes:
 
@@ -544,7 +546,7 @@ QA measured these local times and file sizes:
 
 The resume also showed a Loading overlay for at least 51 s and “Missing game data in intent extras”. That is a separate resume issue, not a reason to treat a resume as a new launch. Azahar retained both the old and new tree grants after switching, so grant presence cannot identify its live root. `SAVE_NEGATIVE_EVIDENCE_ENABLED` stays false for the generic/grant rule; the Azahar signal's `perStart` is the explicit per-probe opt-in.
 
-With all-files access, session return also searches primary storage for the optional probe `signatureFile`. Only roots at depths 0–2 are considered, with an 8,192-entry budget and at most four discovered roots. The signature is read within the probe's bound (Azahar: first 32 KiB); its signal must prove and name that same root, with mtime newer than the session baseline. Links and Android app-data roots are excluded. A discovered live root names the incident and opens Fix's picker there. Without that access, the negative incident still opens with an unknown live root and the user chooses the folder Azahar uses.
+With all-files access, session return searches primary storage for the optional probe `signatureFile` only when the bound signature did not advance past baseline or did not prove that it names the bound folder. A fresh bound log naming that folder skips the walk. Only roots at depths 0–2 are considered, with an 8,192-entry budget and at most four discovered roots. The signature is read within the probe's bound (Azahar: first 32 KiB); its signal must prove and name that same root, with mtime newer than the session baseline. Only directories, checked without following links, reach canonical path validation; ordinary files are skipped. Links and Android app-data roots are excluded. A discovered live root names the incident and opens Fix's picker there. Without that access, the negative incident still opens with an unknown live root and the user chooses the folder Azahar uses.
 
 A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept. Other per-start probes, including DuckStation's hosted-card rule, remain deferred until their own QA decision.
 
@@ -660,7 +662,7 @@ The voice follows `SaveSetupCopy`: one or two words for a control, one short sen
   - `"Sonic Boom saved there, today 10:52."`
   - `"Azahar’s own folder."`
   - `"Play a game and save in it to check."`
-  - With an incident, the row opens the Fix saves page instead.
+  - With an incident, the row opens the Fix saves page instead. A silent-start incident's evidence reads `"$emulator’s log in ${bound.label} didn’t change while you played."`.
 - **Set up saves.** An incident makes its emulator's tile need you again. The step is `SetupStep.Fix(incidentId)`, the title is `"Fix $emulator’s folder"`, and the body is `"Your save is safe on RomM."`. `savesDue` counts incidents, so R1, the **3 to go** chip and Set up saves still count the same set. `SaveSetupCopy.endTitle` can't say **All set** while an incident is open.
   - `SetupStatus.Syncing` gains a sibling, `FolderSet`, label **Folder set**. **All set** requires that every due emulator is `Syncing`, meaning verified. Until then the end reads `"Folders set. Each is checked the first time a game saves."`.
 
@@ -760,12 +762,15 @@ New class `SaveIncidentNotices` in `SaveNotices.kt`. It shows one notice per inc
 
 | Incident | Title | Body | A |
 |---|---|---|---|
-| WrongFolder | `"$emulator is saving somewhere else"` | `"${games or "Its games"} · Your save is safe on RomM. Fix it before you play."` | Fix saves page |
+| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now uses the folder ${live.label}, not ${bound.label}. Fix it first, or this session’s progress isn’t protected."` | Fix saves page |
+| WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. Fix it first, or this session’s progress isn’t protected."` | Fix saves page |
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"Your save is safe on RomM. Put it back before you play."` | Fix saves page |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Allow its folder again so saves reach RomM."` | picker |
 | MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"Check where it saves."` | Fix saves page |
 | MaybeNewSave | `"Two saves for $game"` | `"Both are kept on RomM. Choose which to play."` | two-saves card |
 | Repair Done | `"Fixed: $game"` | `"Your RomM save is back in ${live.label}."` | — |
+
+R1 uses the gate’s body helper without a receipt or server-version claim: a folder-wide notice does not know every game has a RomM copy.
 
 Dismiss works "for now", as `SaveSetupNotices` does. The notice comes back when any game on that emulator is launched, and at every cold start, until the incident closes. If several incidents are open, they merge into `"$n emulators need a fix"`, using the merged-notice pattern, with `settingsCategory = Players`.
 
