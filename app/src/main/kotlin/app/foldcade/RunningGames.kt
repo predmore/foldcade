@@ -98,6 +98,12 @@ internal class RunningGames {
 
     fun packages(): Set<String> = byPackage.keys.toSet()
 
+    /**
+     * Players that may hold a game an update would kill. A player the player closed in this process holds
+     * nothing, so its update need not wait for the next game to end; one restored from an earlier process still may.
+     */
+    fun holdingPackages(): Set<String> = byPackage.keys + (holdingOnly - closedPlayers)
+
     /** True when [packageName] may still hold a game Foldcade started, in this process or an earlier one. */
     fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)
 

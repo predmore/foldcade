@@ -241,7 +241,14 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
     SettingsCategory.Plugins -> model.apkPlugins.map { Row.SettingsTile(SettingsInner.ApkPlugin(it.packageName)) } +
         PluginRegistry.sources.filter { source -> model.apkPlugins.none { it.packageName == source.packageName } }
             .map { Row.SettingsTile(SettingsInner.PluginCatalog(it.packageName)) }
-    SettingsCategory.About -> listOf(Row.Version, Row.Licenses)
+    SettingsCategory.About -> buildList {
+        if (model.selfUpdates) add(Row.PluginInstall(PluginRegistry.foldcade.packageName))
+        add(Row.AutomaticUpdates)
+        if (model.selfUpdates) add(Row.IncludePrereleases)
+        add(Row.WhatsNew(model.appPackage))
+        add(Row.Version)
+        add(Row.Licenses)
+    }
 }
 
 /**
@@ -388,7 +395,10 @@ fun settingsInnerRows(inner: SettingsInner, model: PickerModel): List<Row> = whe
     // focus. What the plugin is ([pluginFacts]) is no row.
     is SettingsInner.ApkPlugin -> model.apkPlugins.firstOrNull { it.packageName == inner.packageName }?.let { plugin ->
         buildList {
-            if (PluginRegistry.source(plugin.packageName) != null) add(Row.PluginInstall(plugin.packageName))
+            if (PluginRegistry.source(plugin.packageName) != null) {
+                add(Row.PluginInstall(plugin.packageName))
+                add(Row.WhatsNew(plugin.packageName))
+            }
             plugin.scopes.sorted().forEach { add(Row.PluginGrant(plugin.packageName, it)) }
             if (plugin.supported && "gamestream" in plugin.granted) add(Row.PluginRouting(plugin.packageName))
             // Under its consent: what root still needs, until the plugin has it.
@@ -417,6 +427,8 @@ fun rootOpensMagisk(row: Row.DeviceRoot, model: PickerModel): Boolean =
  * or why an action stopped. Most rows need none.
  */
 fun settingsRowCaption(row: Row, model: PickerModel): String? = when (row) {
+    Row.AutomaticUpdates -> UpdateCopy.automaticCaption
+    Row.IncludePrereleases -> UpdateCopy.prereleasesCaption
     is Row.PluginGrant -> (if (row.scope == DEVICE_SCOPE) DeviceCopy.consent else ApkPluginCopy.consent)
         .takeIf { model.apkPlugins.any { it.packageName == row.packageName } }
     Row.StickLights -> DeviceCopy.lightsNeedColor.takeIf { model.device?.lightsNeedColor == true }
@@ -697,6 +709,8 @@ sealed interface RowControl {
 
 /** [value] is the row's [rowText] value, for a caller that already has it. */
 fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model).value): RowControl = when (row) {
+    Row.AutomaticUpdates -> RowControl.Toggle(model.automaticUpdates)
+    Row.IncludePrereleases -> RowControl.Toggle(model.includePrereleases)
     Row.Music -> RowControl.Toggle(model.music.enabled)
     Row.AddNewGames -> RowControl.Toggle(model.addNewToHome)
     // Android owns the switch: A opens its all-files page, and the switch shows what it says.
@@ -730,7 +744,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     is Row.DeviceRoot -> value?.takeIf { it.isNotEmpty() }?.let { RowControl.Value(it, attention = true) } ?: RowControl.None
     is Row.Collection -> model.tileActions?.collections?.firstOrNull { it.folderId == row.folderId }.let { RowControl.Check(it?.member == true, it?.some == true) }
     Row.EditHome, Row.Folders, Row.Hidden, Row.AddToCollection, is Row.RommConnection,
-    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.SettingsTile,
+    Row.AddFolder, Row.AddRomm, Row.SetAsHome, Row.DefaultHomeApp, Row.AndroidSettings, Row.Licenses, is Row.WhatsNew, is Row.SettingsTile,
     Row.Backup, is Row.PickFolderAgain, Row.Systems, is Row.EditRomm, Row.SignInRomm,
     -> RowControl.Opens
     Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true, opens = true) } ?: RowControl.Opens

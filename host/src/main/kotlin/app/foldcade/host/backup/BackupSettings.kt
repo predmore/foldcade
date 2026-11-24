@@ -28,7 +28,7 @@ object BackupSettings {
         "game_fan:",
         // Found ROM folders the player removed stay removed after a restore.
         "removed_roots")
-    private val backedBooleans = listOf("primary_top", "music_enabled", "music_default_night_route", "artwork", "button_prompt_dismissed:")
+    private val backedBooleans = listOf("automatic_updates", "include_prereleases", "primary_top", "music_enabled", "music_default_night_route", "artwork", "button_prompt_dismissed:")
     val keys: List<BackupKey> = backedStrings.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.StringValue) } +
         backedBooleans.map { BackupKey(it, BackupDisposition.BackedUp, PreferenceType.BooleanValue) } +
         BackupKey("music_volume", BackupDisposition.BackedUp, PreferenceType.FloatValue) +

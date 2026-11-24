@@ -2687,6 +2687,10 @@ class ShellController(
         return Effect.SetBottomBrightness(clamped)
     }
 
+    internal fun setUpdateBuild(packageName: String, eligible: Boolean) {
+        model = model.copy(appPackage = packageName, selfUpdates = eligible)
+    }
+
     internal fun setPluginCatalog(packageName: String, catalog: app.foldcade.language.PluginCatalogSetting) {
         publish(app.foldcade.language.afterApkPluginInstall(model, model.copy(pluginCatalogs = model.pluginCatalogs + (packageName to catalog))))
     }
@@ -4410,6 +4414,8 @@ class ShellController(
             store.setMotionSpeed(next.motionSpeed)
         }
         if (next.brightnessAllowed && next.brightness != model.brightness) onBrightness(next.brightness)
+        if (next.automaticUpdates != model.automaticUpdates) store.setAutomaticUpdates(next.automaticUpdates)
+        if (next.includePrereleases != model.includePrereleases) store.setIncludePrereleases(next.includePrereleases)
         if (next.artwork != model.artwork) store.setArtworkEnabled(next.artwork)
         val ready = if (!next.connectOpen) next.copy(connectBusy = false) else next
         model = if (ready.libraryGrid) {
@@ -4724,6 +4730,8 @@ class ShellController(
             motionSpeed = store.motionSpeed(),
             artwork = store.artworkEnabled(),
             appVersion = appVersion,
+            automaticUpdates = store.automaticUpdates(),
+            includePrereleases = store.includePrereleases(),
         )
     }
 

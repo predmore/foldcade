@@ -671,7 +671,7 @@ private fun PanelBody(
         // The other screen is still Foldcade, so it is never dimmed. Its keys still drive the page.
         // Play activity and Settings name their keys here, for the row in focus; a connect form shows its own.
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = beside.progress.value }) {
-            CommandCenterScreen(app, subject, hints = !subject.settings || (model.settings != null && !model.connectOpen)) {
+            CommandCenterScreen(app, subject, hints = !subject.settings || subject.hints != null || (model.settings != null && !model.connectOpen)) {
                 when {
                     model.connectOpen -> app.shell.closeConnect(returnToPage = false)
                     subject.settings -> {
@@ -929,17 +929,17 @@ private fun pageBeside(
 ): CenterSubject.Page? {
     // The dark screen stays dark beside a page too.
     if ((!session.bothScreensFree() && !session.besideFoldcadePage(screen.panel())) || session.surfaceOn(screen.panel()) == Surface.Dark) return null
+    // A native page can open from R1 without a Settings model. Its session marker owns this companion.
+    app.settingsPageActivity?.takeIf { session.besideFoldcadePage(screen.panel()) }?.let { owned ->
+        return CenterSubject.Page(owned.companionTitle() ?: SettingsCopy.title, R.drawable.ic_status_settings, null,
+            settings = true, hints = owned.companionHints())
+    }
     val about = model.gameAbout
     return when (model.companionPageOn(screen)) {
         // The form's own title, so the two screens name one place (review-A 12).
         CompanionPage.Romm -> CenterSubject.Page(rommConnectTitle(model, saved = app.store.rommOrigin() != null), null, "cloud", settings = true)
         CompanionPage.ArtKey -> CenterSubject.Page(Copy.steamGridDb, R.drawable.symbol_art, null, settings = true)
-        CompanionPage.Settings -> {
-            // Themes or Licenses over Settings names itself and its own keys, not the Settings row frozen under it.
-            val owned = app.settingsPageActivity?.takeIf { session.besideFoldcadePage(screen.panel()) }
-            CenterSubject.Page(owned?.companionTitle() ?: SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true,
-                hints = owned?.companionHints())
-        }
+        CompanionPage.Settings -> CenterSubject.Page(SettingsCopy.title, R.drawable.ic_status_settings, null, settings = true)
         CompanionPage.PlayActivity -> {
             // A game's page names the game, as its About does, with Play time where About has the platform.
             val tile = model.playActivity?.game

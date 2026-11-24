@@ -21,6 +21,8 @@ data class FoldNotice(
     val settingsCategory: SettingsCategory? = null,
     /** Optional BIOS setup: A opens its folder picker without holding a game launch. */
     val firmwarePlayerId: String? = null,
+    val updatePackage: String? = null,
+    val installUpdatePackage: String? = null,
 )
 
 object NoticeCopy {

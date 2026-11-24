@@ -22,7 +22,7 @@ class SettingsHintsTest {
             pluginCatalogs = mapOf(moonlight to PluginCatalogSetting(PluginCatalogStatus.UpdateAvailable, installed = true, latest = "2")))
         val page = SettingsInner.ApkPlugin(moonlight)
         assertEquals(listOf(HintKey(a, "Update"), HintKey(b, "Back")), settingsHints(on(base, SettingsCategory.Plugins, page, row = 0)))
-        assertEquals(listOf(HintKey(a, "Turn on"), HintKey(b, "Back")), settingsHints(on(base, SettingsCategory.Plugins, page, row = 1)))
+        assertEquals(listOf(HintKey(a, "Turn on"), HintKey(b, "Back")), settingsHints(on(base, SettingsCategory.Plugins, page, row = 2)))
         // A download under way names only B: A does nothing until it finishes.
         val busy = base.copy(pluginCatalogs = mapOf(moonlight to PluginCatalogSetting(PluginCatalogStatus.Downloading, installed = true)))
         assertEquals(listOf(HintKey(b, "Back")), settingsHints(on(busy, SettingsCategory.Plugins, page, row = 0)))

@@ -142,6 +142,14 @@ commit: ${GITHUB_SHA}
 Asset name: foldcade.apk
 EOF
 
+# The rolling tag keeps its build headers and readable first-parent changes since stable.
+if last_stable="$(git describe --tags --abbrev=0 --match 'v0.*' HEAD 2>/dev/null)"; then
+  {
+    printf '\nChanges since %s:\n' "$last_stable"
+    git log --first-parent --format='- %s' "${last_stable}..HEAD"
+  } >>"$notes"
+fi
+
 # present, absent, or error. HTTP 500 is an error, not proof the release is
 # gone. Treating it as absent would try to create a second release while the
 # first one is still on the tag.

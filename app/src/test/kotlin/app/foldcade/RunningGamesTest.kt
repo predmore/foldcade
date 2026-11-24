@@ -239,6 +239,16 @@ class RunningGamesTest {
         assertFalse(games.mayHold("closed-player"))
     }
 
+    @Test fun anUpdateWaitsForAHeldPlayerButNotOneClosedInThisProcess() {
+        val games = RunningGames()
+        games.restore(setOf("restored"))
+        games.noteHolding("left-with-home")
+        games.noteHolding("closed", closed = true)
+        assertEquals(setOf("restored", "left-with-home"), games.holdingPackages())
+        // Closing still counts as holding for launches; only updates may go ahead.
+        assertTrue(games.mayHold("closed"))
+    }
+
     @Test fun aPlayerThatMayStillHoldAnotherLibraryGameIsNotACompanion() {
         val games = RunningGames()
         games.note(game("current", "player").copy(occupiesBoth = false))

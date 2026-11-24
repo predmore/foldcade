@@ -373,6 +373,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     override fun onMeaning(meaning: app.foldcade.language.Meaning) = onMeaningRepeated(meaning, 0)
 
     override fun onMeaningRepeated(meaning: app.foldcade.language.Meaning, repeatCount: Int) {
+        foldcade.componentUpdates.playerInput()
         if (foldcade.shell.model.folderGuide != null) return
         // The companion's keys drive Themes or Licenses, keeping the parent Settings inactive.
         val inputPanel = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
@@ -508,7 +509,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             true
                         } catch (_: ActivityNotFoundException) { false }
                     }
-                } else foldcade.apkPluginCatalogs[effect.packageName]?.install()
+                } else foldcade.apkPluginCatalogs[effect.packageName]?.install(useStaged = effect.staged)
             }
             Effect.OpenArtKey -> foldcade.shell.openArtKey()
             Effect.SaveArtKey -> foldcade.saveArtKey()
@@ -524,6 +525,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.store.handoffAndroidSetting(panel) { openAndroidSetting(effect.setting) }
             }
             Effect.OpenAllFilesAccess -> openAllFilesAccess()
+            is Effect.OpenWhatsNew -> {
+                foldcade.scope.launch {
+                    val update = foldcade.componentUpdates.update(effect.packageName)
+                    if (update != null) withContext(Dispatchers.Main.immediate) {
+                        openSettingsPage(WhatsNewActivity::class.java) { putUpdate(it, update) }
+                        foldcade.dismissNotice(app.foldcade.language.UpdateCopy.updatedPrefix + effect.packageName, byUser = true)
+                    }
+                }
+            }
             Effect.OpenLicenses -> openSettingsPage(LicensesActivity::class.java)
             Effect.OpenThemes -> openSettingsPage(ThemesActivity::class.java)
             Effect.OpenBackup -> {
@@ -811,6 +821,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The chosen theme's background, for windows drawn before Compose is. */
     internal fun themeBackgroundArgb(): Int =
         foldcade.paintFor(foldcade.shell.model.themeIndex).theme.background.toArgb()
+
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) foldcade.componentUpdates.playerInput()
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        foldcade.componentUpdates.playerInput()
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun onResume() {
         perfMark("resume ${javaClass.simpleName}")
@@ -3276,7 +3296,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun openSettingsPage(page: Class<*>) {
+    private fun openSettingsPage(page: Class<*>, configure: (Intent) -> Unit = {}) {
         // A key received on the grid still opens this page on Settings' screen.
         val screen = foldcade.shell.model.settingsActivityScreen(hostScreen())
         val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
@@ -3286,7 +3306,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.settingsPageActivity?.finish()
         foldcade.noteSettingsPage(host)
         try {
-            host.startActivity(Intent(host, page))
+            host.startActivity(Intent(host, page).also(configure))
         } catch (failure: RuntimeException) {
             displays.panelFor(host, foldcade.store.session.defaultDisplayIsTop)?.let { panel ->
                 foldcade.store.update { it.foldcadeResumed(panel) }

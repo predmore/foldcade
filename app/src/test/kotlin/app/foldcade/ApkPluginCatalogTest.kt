@@ -11,6 +11,24 @@ class ApkPluginCatalogTest {
     private val source = PluginRegistry.moonlight.copy(signers = trusted)
     private val archive = PluginArchive("app.foldcade.moonlight", 7, trusted)
 
+    @Test fun stagedReuseTracksTheAssetRatherThanOptionalOrStaleVersionHints() {
+        val staged = PluginRelease("pre-release", "https://example/rolling.apk", 100, 7)
+        assertFalse(mayReuseStagedRelease(null, staged))
+        assertTrue(mayReuseStagedRelease(staged, staged.copy(versionCode = null)))
+        assertTrue(mayReuseStagedRelease(staged, staged.copy(versionCode = 8)))
+        assertFalse(mayReuseStagedRelease(staged, staged.copy(url = "https://example/new.apk")))
+        assertFalse(mayReuseStagedRelease(staged, staged.copy(bytes = 101)))
+    }
+
+    @Test fun onlyAutomaticSessionsRestoreAndUncommittedSessionsAreAbandoned() {
+        assertEquals(17, restoredAutomaticSession(17, true))
+        assertNull(restoredAutomaticSession(17, false))
+        assertNull(restoredAutomaticSession(-1, true))
+        assertTrue(shouldAbandonInstallSession(false))
+        assertFalse(shouldAbandonInstallSession(true))
+        assertFalse(shouldAbandonInstallSession(null)) // Missing sessions settle by installed version.
+    }
+
     @Test fun requiresTheRegisteredPackageANewerVersionAndTheExactPinnedSignerSet() {
         assertEquals(PluginVerification.Verified, verifyPluginArchive(archive, null, source))
         assertEquals(PluginVerification.Verified, verifyPluginArchive(archive, 6, source.copy(signers = trusted.reversed().toSet())))
@@ -140,5 +158,33 @@ class ApkPluginCatalogTest {
         assertNull(parsePluginRelease(json, source))
         val moonlightUrl = """{"tag_name":"v3","assets":[{"name":"plugin.apk","size":10,"browser_download_url":"https://github.com/predmore/foldcade-moonlight/releases/download/v3/plugin.apk"}]}"""
         try { parsePluginRelease(moonlightUrl, other); fail("Accepted another repository's asset") } catch (_: IllegalArgumentException) { }
+    }
+
+    @Test fun rollingPrereleaseIsAcceptedOnlyOnItsExactChannelAndStillValidatesTheAsset() {
+        fun rolling(draft: Boolean = false, prerelease: Boolean = true, tag: String = "pre-release", url: String = "https://github.com/predmore/foldcade-moonlight/releases/download/pre-release/foldcade-moonlight.apk"): String =
+            org.json.JSONObject(release(url = url)).put("tag_name", tag).put("draft", draft).put("prerelease", prerelease).toString()
+        assertNull(parsePluginRelease(rolling(), source))
+        assertNotNull(parsePluginRelease(rolling(), source, ReleaseChannel.Prerelease))
+        assertNull(parsePluginRelease(rolling(draft = true), source, ReleaseChannel.Prerelease))
+        assertNull(parsePluginRelease(rolling(prerelease = false), source, ReleaseChannel.Prerelease))
+        assertNull(parsePluginRelease(rolling(tag = "v1"), source, ReleaseChannel.Prerelease))
+        for (url in listOf("http://github.com/predmore/foldcade-moonlight/releases/download/pre-release/foldcade-moonlight.apk",
+            "https://github.com/other/repo/releases/download/pre-release/foldcade-moonlight.apk",
+            "https://github.com/predmore/foldcade-moonlight/releases/download/pre-release/foldcade-moonlight.apk?x=1")) {
+            try { parsePluginRelease(rolling(url = url), source, ReleaseChannel.Prerelease); fail(url) } catch (_: IllegalArgumentException) { }
+        }
+    }
+
+    @Test fun greatestVersionCodeWinsAcrossChannelsAndStableWinsATie() {
+        val stable = PluginRelease("v1", "url", 10, 20)
+        val pre = PluginRelease("pre-release", "url", 10, 21, versionName = "1-dev")
+        assertEquals(pre, chooseRelease(stable, pre))
+        assertEquals(stable, chooseRelease(stable, pre.copy(versionCode = 19)))
+        assertEquals(stable, chooseRelease(stable, pre.copy(versionCode = 20)))
+        assertEquals(stable, chooseRelease(stable, pre.copy(versionCode = null)))
+        assertEquals(pre, chooseRelease(null, pre))
+        assertEquals(stable, chooseRelease(stable, null))
+        assertNull(chooseRelease(null, null))
+        assertEquals("1-dev", pre.name)
     }
 }

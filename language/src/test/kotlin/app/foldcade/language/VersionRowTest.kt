@@ -11,7 +11,7 @@ class VersionRowTest {
 
     @Test
     fun aboutShowsTheVersionAboveTheLicenses() {
-        assertEquals(listOf(Row.Version, Row.Licenses), settingsRows(SettingsCategory.About, model))
+        assertEquals(listOf(Row.AutomaticUpdates, Row.WhatsNew(model.appPackage), Row.Version, Row.Licenses), settingsRows(SettingsCategory.About, model))
         // The version is in About's head; the row says what A does with it.
         assertEquals(RowText("Copy version info", null), rowText(Row.Version, model))
         assertEquals(RowControl.None, rowControl(Row.Version, model))

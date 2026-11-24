@@ -79,7 +79,7 @@ class ApkPluginSettingsTest {
             pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Ready, installed = true)))
         val page = SettingsInner.ApkPlugin(installed.packageName)
         assertEquals(listOf(
-            Row.PluginInstall(moonlight), Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName),
+            Row.PluginInstall(moonlight), Row.WhatsNew(moonlight), Row.PluginGrant(installed.packageName, "gamestream"), Row.PluginRouting(installed.packageName),
         ), settingsInnerRows(page, model))
         val opened = reduce(model.onSetting(Row.SettingsTile(page)), Meaning.Activate).first
         assertEquals(Row.PluginInstall(moonlight), settingsFocus(opened))
@@ -220,10 +220,26 @@ class ApkPluginSettingsTest {
         assertTrue(PluginCatalogSetting(PluginCatalogStatus.Current, installed = false).canInstall)
     }
 
-    @Test fun aPluginNotYetCheckedIsCheckingAndKnowsWhetherItIsInstalled() {
-        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin.copy(packageName = moonlight)))
-        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = true), model.pluginCatalog(moonlight))
-        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Checking, installed = false), PickerModel(count = 4, rowsPerPage = 1).pluginCatalog(moonlight))
+    @Test fun aPluginNotYetCheckedIsNotBusyAndKeepsTheCatalogInstallOffer() {
+        val model = PickerModel(count = 4, rowsPerPage = 1, apkPlugins = listOf(plugin.copy(packageName = moonlight, granted = plugin.scopes)))
+        val installed = model.pluginCatalog(moonlight)
+        assertEquals(PluginCatalogSetting(PluginCatalogStatus.Unchecked, installed = true), installed)
+        assertFalse(installed.busy)
+        assertFalse(installed.canInstall)
+        assertFalse(installed.arriving)
+        assertNull(pluginListing(SettingsInner.ApkPlugin(moonlight), model)!!.value)
+        assertEquals(Effect.CheckPluginRelease(moonlight), reduce(model.onSetting(Row.PluginInstall(moonlight)), Meaning.Activate).second)
+        val catalogModel = PickerModel(count = 4, rowsPerPage = 1)
+        val unchecked = catalogModel.pluginCatalog(moonlight)
+        assertEquals(PluginCatalogStatus.Unchecked, unchecked.status)
+        assertFalse(unchecked.busy)
+        assertTrue(unchecked.canInstall)
+        val listing = pluginListing(catalogPage, catalogModel)!!
+        assertEquals(ApkPluginCopy.install, listing.value)
+        assertEquals(PluginRegistry.moonlight.detail, listing.line)
+        assertTrue(listing.offer)
+        assertEquals(Effect.CheckPluginRelease(moonlight, onlyIfStale = true), pluginPageCheck(catalogPage, catalogModel))
+        assertEquals(catalogModel, afterApkPluginInstall(catalogModel, catalogModel))
     }
 
     @Test fun onlyAPluginSignedAsItsRegistryEntryPinsReadsVerified() {
@@ -315,5 +331,12 @@ class ApkPluginSettingsTest {
         // The release is removed some other way: the catalog card takes its place after the debug build.
         val removed = retainSettingsShelf(onDebug, onDebug.copy(apkPlugins = listOf(debug)))
         assertEquals(Row.SettingsTile(SettingsInner.ApkPlugin(debug.packageName)), settingsFocus(removed))
+    }
+
+    @Test fun openingACatalogBeforeTheDelayedStartupCheckStartsItsFirstCheck() {
+        val model = PickerModel(count = 1, rowsPerPage = 1)
+        assertEquals(Effect.CheckPluginRelease(moonlight, onlyIfStale = true), pluginPageCheck(catalogPage, model))
+        val checking = model.copy(pluginCatalogs = catalogs(PluginCatalogSetting(PluginCatalogStatus.Checking)))
+        assertNull(pluginPageCheck(catalogPage, checking))
     }
 }

@@ -143,7 +143,7 @@ class FoldcadeApp : Application() {
         private set
 
     internal val setupBackups by lazy { SetupBackups(filesDir, getSharedPreferences("foldcade", MODE_PRIVATE)) }
-    internal val backupWork = Mutex()
+    internal val backupWork = ObservableMutex()
     internal var pendingSetupRestore: app.foldcade.host.backup.SetupBackup? = null
     internal var pendingSetupAction = app.foldcade.language.RestoreAction.Restore
     internal var restoreNoticeShown = false
@@ -155,7 +155,7 @@ class FoldcadeApp : Application() {
     internal val savePreparationReady: Boolean get() = pluginsReady.isCompleted && !pluginsReady.isCancelled
 
     /** One save flow at a time: a launch's placement, or a return's read-back. */
-    internal val saveFlow = Mutex()
+    internal val saveFlow = ObservableMutex()
     internal var savePickerSerial = 0L
     internal var savePickerRequest: SavePickerRequest? = null
 
@@ -236,12 +236,16 @@ class FoldcadeApp : Application() {
      * Installs a downloaded pack, on trial from the next start. This is the theme updater's way in;
      * call it off the main thread.
      */
-    internal fun installTheme(input: InputStream): ThemeInstallResult =
-        themeInstalls.install(input, bundledThemeIds) { zip ->
-            // A pack that extends one already installed is checked over that one, as it will load.
-            val parent = zip.file.extends?.let { id -> themePacks.firstOrNull { it.resources.id == id } }
-            themeInstallable(zip, (parent ?: packaged)?.resources)
-        }.also { if (it is ThemeInstallResult.Installed) themesChanged = true }
+    internal fun installTheme(input: InputStream): ThemeInstallResult {
+        updateThemeBusy = true
+        try {
+            return themeInstalls.install(input, bundledThemeIds) { zip ->
+                // A pack that extends one already installed is checked over that one, as it will load.
+                val parent = zip.file.extends?.let { id -> themePacks.firstOrNull { it.resources.id == id } }
+                themeInstallable(zip, (parent ?: packaged)?.resources)
+            }.also { if (it is ThemeInstallResult.Installed) themesChanged = true }
+        } finally { updateThemeBusy = false }
+    }
 
     /** Takes an installed pack out for the next start. False for a pack Foldcade ships. */
     internal fun removeTheme(pack: PackagedTheme): Boolean {
@@ -572,7 +576,7 @@ class FoldcadeApp : Application() {
 
     /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
     internal val runningGames = RunningGames().also { games ->
-        games.onChange = { ids -> if (::shell.isInitialized) shell.running = ids }
+        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate() } }
     }
 
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
@@ -707,11 +711,21 @@ class FoldcadeApp : Application() {
     private val apkPluginRefreshVersion = AtomicInteger()
     @Volatile private var installedApkPlugins: List<ApkPlugin> = emptyList()
     @Volatile private var apkPluginsLoaded = false
+    internal val componentUpdates by lazy { ComponentUpdates(this) }
+    internal var updateThemeBusy by mutableStateOf(false)
+        private set
+    internal val updateHomeShown: Boolean get() = homeShownNow
+
     internal val apkPluginGrants by lazy { ApkPluginGrants.open(this) }
-    /** One catalog per [app.foldcade.language.PluginRegistry] plugin, by package. */
+    /** Plugins and an eligible CI Foldcade share one catalog implementation, by package. */
     internal val apkPluginCatalogs: Map<String, ApkPluginCatalog> by lazy {
-        app.foldcade.language.PluginRegistry.sources.associate { source ->
-            source.packageName to ApkPluginCatalog(this, scope, source) {
+        (app.foldcade.language.PluginRegistry.sources + listOfNotNull(app.foldcade.language.PluginRegistry.foldcade.takeIf { componentUpdates.selfEligible })).associate { source ->
+            source.packageName to ApkPluginCatalog(this, scope, source,
+                includePrereleases = { store.includePrereleases() },
+                onRelease = { componentUpdates.keepRelease(source.packageName, it) },
+                onStaged = { componentUpdates.reevaluate() },
+                automaticAllowed = { componentUpdates.mayInstall(source.packageName) },
+            ) {
                 shell.setPluginCatalog(source.packageName, it)
                 if (it.status == app.foldcade.language.PluginCatalogStatus.Installed) refreshApkPlugins()
             }
@@ -844,7 +858,10 @@ class FoldcadeApp : Application() {
 
     /** Closing the lid turns the screens off. An external game's time stops until its screen is on again. */
     private val playScreen = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) = notePlayScreen()
+        override fun onReceive(context: Context?, intent: Intent?) {
+            notePlayScreen()
+            componentUpdates.screenChanged(intent?.action == Intent.ACTION_SCREEN_OFF)
+        }
     }
 
     private val playDisplay = object : DisplayManager.DisplayListener {
@@ -931,6 +948,7 @@ class FoldcadeApp : Application() {
                         apkPluginGrants.forget(changed)
                     }
                     refreshApkPlugins()
+                    componentUpdates.observeInstalled()
                     // A game cannot still run in an emulator that is gone, so its tile falls back
                     // to the game's choice, and Close and Move find the run that replaces it.
                     if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) runningGames.forget(changed)
@@ -990,6 +1008,7 @@ class FoldcadeApp : Application() {
                 deviceControl.reconcile()
             }
             refreshHomeRecovery()
+            componentUpdates.reevaluate()
         }
         perfMark("themes-start")
         val manifests = mutableMapOf<String, ThemeFile>()
@@ -1238,7 +1257,8 @@ class FoldcadeApp : Application() {
         refreshCredentials()
         reloadInstalledApps()
         refreshApkPlugins()
-        apkPluginCatalogs.values.forEach { it.checkRelease() }
+        shell.setUpdateBuild(packageName, componentUpdates.selfEligible)
+        componentUpdates.start()
         // This one read also serves both activities' initial resume.
         val initialSaveRefresh = refreshFoundSaveFolders(changed = false)
         pluginLoad.launch {
@@ -1331,6 +1351,7 @@ class FoldcadeApp : Application() {
 
     /** Removes a notice; only explicit user actions suppress later optional BIOS guidance. */
     fun dismissNotice(id: String, byUser: Boolean = false) {
+        componentUpdates.dismiss(listOf(id))
         firmwareNoticeDismissals.dismiss(foldcadeNotices.firstOrNull { it.id == id }, byUser)
         playerChoiceNotices.remove(id)
         saveSetupNotices.dismiss(id)
@@ -1347,11 +1368,17 @@ class FoldcadeApp : Application() {
     }
 
     fun clearNotices() {
+        componentUpdates.dismiss(foldcadeNotices.filter { it.dismissable }.map { it.id })
         foldcadeNotices.filter { it.dismissable }.forEach { firmwareNoticeDismissals.dismiss(it, byUser = true) }
         saveSetupNotices.clear()
         foldcadeNotices = foldcadeNotices.filter { !it.dismissable }
         publishNotices()
         NoticeListener.connected?.cancelAllNotifications()
+    }
+
+    internal fun replaceUpdateNotices(notices: List<FoldNotice>) {
+        foldcadeNotices = foldcadeNotices.filterNot { it.id.startsWith(app.foldcade.language.UpdateCopy.updatedPrefix) || it.id.startsWith(app.foldcade.language.UpdateCopy.readyPrefix) } + notices
+        publishNotices()
     }
 
     /**
@@ -2859,6 +2886,7 @@ class FoldcadeApp : Application() {
         libraryResync.noteShown(shown)
         noteThemeTrialShown(shown)
         moonlightStreams.hosts.watch(shown)
+        componentUpdates.reevaluate()
     }
 
     /**

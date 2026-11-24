@@ -1053,6 +1053,9 @@ sealed interface Row {
     /** A device plugin's page, while its root manager has not let it in: what to do, and A checks again. */
     data class DeviceRoot(val packageName: String) : Row
     data object ButtonLabels : Row
+    data class WhatsNew(val packageName: String) : Row
+    data object AutomaticUpdates : Row
+    data object IncludePrereleases : Row
     data object Licenses : Row
 
     /** A tile on a Settings shelf: an emulator, a library source, or Add. A opens [page] inside the card. */
@@ -1541,6 +1544,9 @@ fun panelHints(model: PickerModel): List<HintKey>? {
                 } else if (notice.savePlayerId != null || notice.settingsCategory != null || notice.firmwarePlayerId != null) {
                     add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.setUp))
                 }
+                if (notice.updatePackage != null || notice.installUpdatePackage != null) add(
+                    HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, if (notice.updatePackage != null) NoticeCopy.open else ApkPluginCopy.install),
+                )
                 if (notice.id == ROMM_SIGN_IN_NOTICE) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, Copy.signIn))
                 if (notice.openable) add(HintKey(promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA, NoticeCopy.open))
                 if (notice.dismissable) add(HintKey(roles.bottomGlyph, NoticeCopy.dismiss))
@@ -1704,6 +1710,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.MusicVolume -> RowText(MusicCopy.volume, MusicCopy.volumeLabel(model.music.volume).substringAfter("  "))
     Row.SetAsHome -> RowText(Copy.setAsHome)
     Row.AndroidSettings -> RowText(Copy.androidSettings)
+    is Row.WhatsNew -> RowText(UpdateCopy.title)
+    Row.AutomaticUpdates -> RowText(UpdateCopy.automatic)
+    Row.IncludePrereleases -> RowText(UpdateCopy.prereleases)
     Row.Licenses -> RowText(LicenseCopy.row)
     is Row.SettingsTile -> RowText(settingsTileLabel(row.page, model))
     Row.Version -> RowText(AboutCopy.copyInfo, AboutCopy.copied.takeIf { model.versionCopied })
@@ -1890,7 +1899,7 @@ sealed interface Effect {
     data object OpenAddRomm : Effect
     data class SetPluginGrant(val packageName: String, val scope: String, val on: Boolean) : Effect
     data class SetPluginRouting(val packageName: String, val on: Boolean) : Effect
-    data class InstallPlugin(val packageName: String) : Effect
+    data class InstallPlugin(val packageName: String, val staged: Boolean = false) : Effect
 
     /** The device plugin's fan tier, stick lights, or bottom screen's level ([bottomBrightnessLevel]). The model already shows them. */
     data class SetFan(val tier: FanTier) : Effect
@@ -1950,6 +1959,7 @@ sealed interface Effect {
     /** Go to the board's folder [folderId] and open it, as L1's Games and Apps do. */
     data class OpenFolder(val folderId: String) : Effect
     data class OpenAndroidSetting(val setting: AndroidSetting) : Effect
+    data class OpenWhatsNew(val packageName: String) : Effect
     data object OpenLicenses : Effect
     data object OpenThemes : Effect
     data object OpenBackup : Effect
@@ -2281,6 +2291,10 @@ data class PickerModel(
     val letterJumpEpoch: Int = 0,
     /** "0.1.2 (230)", from the installed package. Settings › About shows it. */
     val appVersion: String = "",
+    val appPackage: String = "app.foldcade.debug",
+    val selfUpdates: Boolean = false,
+    val automaticUpdates: Boolean = true,
+    val includePrereleases: Boolean = false,
     /** A on Version copied the debug line. The row says so until the focus leaves it. */
     val versionCopied: Boolean = false,
 )
@@ -3155,6 +3169,9 @@ private fun activateRow(
         Row.MusicVolume -> model.copy(panel = panel, music = model.music.stepped()) to null
         Row.SetAsHome -> model to Effect.RequestHome
         Row.AndroidSettings -> model.copy(panel = panel.takeUnless { it.side == Side.Right }, focus = panel.grid) to Effect.OpenAndroidSetting(AndroidSetting.Settings)
+        is Row.WhatsNew -> model.copy(panel = panel) to Effect.OpenWhatsNew(row.packageName)
+        Row.AutomaticUpdates -> model.copy(panel = panel, automaticUpdates = !model.automaticUpdates) to null
+        Row.IncludePrereleases -> model.copy(panel = panel, includePrereleases = !model.includePrereleases) to null
         Row.Licenses -> model.copy(panel = panel) to Effect.OpenLicenses
         // Settings opens its page itself, see [applySettings].
         is Row.SettingsTile -> model.copy(panel = panel) to null
@@ -3341,6 +3358,8 @@ private fun TileActions.toggled(folderId: String): TileActions = copy(
 /** A. An app's notice opens that app and R1 closes. A Foldcade notice has no app, so A shows all of its text. */
 private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<PickerModel, Effect?> {
     val notice = model.notices.firstOrNull { it.id == id } ?: return model.copy(panel = panel) to null
+    notice.updatePackage?.let { return model.copy(panel = panel) to Effect.OpenWhatsNew(it) }
+    notice.installUpdatePackage?.let { return model.copy(panel = null, focus = panel.grid) to Effect.InstallPlugin(it, staged = true) }
     if (notice.id == ROMM_SIGN_IN_NOTICE) return model.openRommSignIn(panel.grid)
     // The save-setup notices open Set up saves: the merged one at the first emulator that needs
     // you, one emulator's on its own tile.
