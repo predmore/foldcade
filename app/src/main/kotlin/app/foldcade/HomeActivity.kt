@@ -2040,16 +2040,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
+        val resumeFlags = runningLaunchFlags(player, launchFlags) {
+            try {
+                packageManager.getPackageInfo(pkg, 0).versionName
+            } catch (_: PackageManager.NameNotFoundException) {
+                null
+            }
+        }
+        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, resumeFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
-        val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in launchFlags
-        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags || player is ApkMoonlightPlayer
+        val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in resumeFlags
+        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in resumeFlags || player is ApkMoonlightPlayer
         val resumeStart = if (sameStartResumes) Intent(intent).apply {
-            flags = resumeStartFlags(flags, launchFlags)
+            flags = resumeStartFlags(flags, resumeFlags)
         } else null
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
             player.occupiesBothDisplays, System.currentTimeMillis(), saves, resumeStart,

@@ -151,6 +151,16 @@ class AzaharPlayer : Player, SaveFolderHolder, app.foldcade.api.plugin.SaveLocat
         )
     }
 
+    /**
+     * Azahar 2127.0 added a same-URI check before stopping emulation in onNewIntent.
+     * https://github.com/azahar-emu/azahar/blob/2127.0/src/android/app/src/main/java/org/citra/citra_emu/activities/EmulationActivity.kt#L177-L189
+     */
+    fun sameStartResumes(versionName: String?): Boolean {
+        val major = versionName?.let(RELEASE_VERSION::matchEntire)
+            ?.groupValues?.get(1)?.toIntOrNull() ?: return false
+        return major >= 2127
+    }
+
     companion object {
         const val LOG = "log/azahar_log.txt"
         const val ID: String = "azahar"
@@ -161,6 +171,7 @@ class AzaharPlayer : Player, SaveFolderHolder, app.foldcade.api.plugin.SaveLocat
         /** Matches the VIEW filter on EmulationActivity: content + this MIME type. */
         const val CONTENT_MIME: String = "application/octet-stream"
         val PACKAGES: List<String> = listOf(VANILLA_PACKAGE, PLAY_PACKAGE)
+        private val RELEASE_VERSION = Regex("""(\d+)\.\d+(?:\.\d+)*(?:-vanilla|-googleplay)?""")
     }
 }
 
