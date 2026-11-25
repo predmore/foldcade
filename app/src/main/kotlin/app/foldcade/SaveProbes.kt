@@ -467,7 +467,8 @@ internal class SaveProbes(
                 store.put(SaveIncident(id, IncidentKind.MaybeNewSave, player.saveFolderId(), player.displayName, listOf(gameId),
                     card(spot.fileName), verdict.backupName?.let(::card),
                     Evidence(EvidenceKind.HostedOpen, "DuckStation opened ${verdict.names.joinToString(", ")}."),
-                    verdict.openedAtMillis, prior?.kept.orEmpty(), prior?.staged.orEmpty()))
+                    verdict.openedAtMillis, prior?.kept.orEmpty(), prior?.staged.orEmpty(),
+                    capturedAlternateHashes = prior?.capturedAlternateHashes.orEmpty()))
             }
             // A first boot with no file can format the card in RAM without opening it.
             HostedCardVerdict.Unknown -> if (startedByFoldcade && hadExpectedCard && end - start >= SAVE_START_CHECK_MIN_MILLIS &&
@@ -492,16 +493,21 @@ internal class SaveProbes(
         store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.hostedCardSilence }
 
     /** Durable staging runs before the ordinary handoff. An interrupted return can retry the same named card. */
-    fun stageDuckStationReturn(player: Player, game: Game, spots: List<SaveSpot>, start: Long?, end: Long) {
-        if (player !is DuckStationPlayer || start == null) return
+    fun stageDuckStationReturn(player: Player, game: Game, spots: List<SaveSpot>, start: Long?, end: Long, startedByFoldcade: Boolean = true) {
+        if (player !is DuckStationPlayer) return
+        // The card identified before Home can still be open when DuckStation resumes.
+        val earliestOpen = if (startedByFoldcade) start ?: return else Long.MIN_VALUE
         val incident = store.incidents().firstOrNull {
-            it.playerKey == player.saveFolderId() && it.appliesTo(game) && it.hostedCardMismatch && it.openedAtMillis in start..end
+            it.playerKey == player.saveFolderId() && it.appliesTo(game) && it.hostedCardMismatch &&
+                it.repair != RepairState.Done && it.openedAtMillis in earliestOpen..end
         } ?: return
         val live = incident.live ?: return
         val spot = spots.singleOrNull { it.slot == DuckStationPlayer.CARD_SLOT } ?: return
         val expected = folderDocumentUri(spot.folderUri, HostedFolders.childId(folderDocumentId(spot.folderUri), spot.fileName))
         if (storageIdentity(expected, context.packageName) != incident.bound?.identity) return
-        copies.stage(game, player, listOf(spot.copy(fileName = HostedSavesProvider.plainName(live.label))), incident, mark = false)
+        val alternate = spot.copy(fileName = HostedSavesProvider.plainName(live.label))
+        val bytes = saves.readSpot(alternate, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return
+        copies.stageAlternate(game, player, alternate, bytes, incident)
     }
 }
 

@@ -49,10 +49,14 @@ internal class SaveIncidentCopies(
     fun stageCandidate(game: Game, player: Player, candidate: RetroArchCandidate, incident: SaveIncident?) {
         val bytes = (candidate.read as? FileReading.Bytes)?.bytes ?: return
         val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
+        stageAlternate(game, player, candidate.spot, bytes, incident, origin)
+    }
+
+    fun stageAlternate(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?, origin: String? = null) {
         val hash = md5Hex(bytes)
         val current = incident?.let { store.incident(it.id) }
         if (current != null && (hash in current.capturedAlternateHashes || current.staged.any { it.endsWith("-$hash.save") })) return
-        val uri = saves.stageCopy(game, player, candidate.spot, bytes, origin, hash)
+        val uri = saves.stageCopy(game, player, spot, bytes, origin, hash)
         if (current != null) store.put(current.copy(staged = (current.staged + uri).distinct(),
             capturedAlternateHashes = current.capturedAlternateHashes + hash))
     }

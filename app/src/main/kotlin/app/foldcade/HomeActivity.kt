@@ -4618,7 +4618,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (pending.player is RetroArchPlayer) try {
                 foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after, backupOnly)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return false }
-            foldcade.saveProbes.stageDuckStationReturn(pending.player, pending.game, spots, pending.sessionStartedAtMillis, endedAtMillis)
+            foldcade.saveProbes.stageDuckStationReturn(pending.player, pending.game, spots, pending.sessionStartedAtMillis, endedAtMillis,
+                startedByFoldcade = pending.startedByFoldcade)
             val preserved = try {
                 // A legacy Backup does not complete the fence for a compatible working slot.
                 if (legacyBackup) true

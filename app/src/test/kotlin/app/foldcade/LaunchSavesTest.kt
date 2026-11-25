@@ -493,7 +493,7 @@ class LaunchSavesTest {
             val start = resumed.sessionStartedAtMillis!!
             val end = 400L
             judge(start = maxOf(start, resumed.baseline!!.atMillis), end = end, startedByFoldcade = resumed.startedByFoldcade)
-            probes.stageDuckStationReturn(duck, game, spots, start, end)
+            probes.stageDuckStationReturn(duck, game, spots, start, end, startedByFoldcade = resumed.startedByFoldcade)
             assertTrue(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
             copies.keep(game, duck)
 
@@ -505,6 +505,46 @@ class LaunchSavesTest {
             assertTrue(saves.queuedCopies().isEmpty())
             assertTrue(server.observed.isEmpty())
             assertTrue(server.calls.isEmpty())
+        }
+    }
+
+    @Test fun duckStationWarmResumeKeepsNewBytesFromThePreviouslyOpenedCardOnce() = runBlocking {
+        with(DuckStationReturnFixture()) {
+            val serial = "SLUS-00067_1.mcd"
+            val initial = ByteArray(128 * 1024) { 1 }
+            val changed = initial.copyOf().also { it[0] = 2 }
+            val card = "$hostedUri/$serial"
+            docs.files[card] = initial
+            opened(serial, 110, "r", HostedCardClose.Detached)
+            judge(start = 100, end = 200, startedByFoldcade = true)
+            probes.stageDuckStationReturn(duck, game, spots, 100, 200)
+            copies.keep(game, duck)
+            assertEquals(listOf(md5Hex(initial)), server.backups)
+            judge(start = 100, end = 200, startedByFoldcade = true)
+            probes.stageDuckStationReturn(duck, game, spots, 100, 200)
+            assertTrue(saves.queuedCopies().isEmpty())
+            val incident = store.incidents().single()
+
+            val first = LibraryReturn(game.backendId, game, duck, spots, sessionStartedAtMillis = 100, sessionEndedAtMillis = 200)
+            val running = RunningGame(homeGameId(game.backendId, game.remoteKey), game.label, game.platformId,
+                duck.packageNames.single(), DuckStationPlayer.EMULATION_ACTIVITY, Panel.Bottom, false, 100, first)
+            val resumed = copies.resume(running, sessionStartedAtMillis = 300) { true }!!.saves!!
+            val start = resumed.sessionStartedAtMillis!!
+            // The activity is still running. Saving writes a temp file and publishes the same card.
+            opened("card.tmp", 350, "w", HostedCardClose.Detached)
+            published("card.tmp", serial, 352)
+            docs.files[card] = changed
+            judge(start = start, end = 400, startedByFoldcade = resumed.startedByFoldcade)
+            assertEquals(incident, store.incidents().single())
+            probes.stageDuckStationReturn(duck, game, spots, start, 400, startedByFoldcade = resumed.startedByFoldcade)
+            assertEquals(listOf(md5Hex(changed)), saves.queuedCopies().map { it.slot.contentHash })
+            assertTrue(copies.preserveReturn(game, duck, spots, preserveAsBackup = resumed.preserveAsBackup))
+            copies.keep(game, duck)
+
+            probes.stageDuckStationReturn(duck, game, spots, start, 400, startedByFoldcade = resumed.startedByFoldcade)
+            assertTrue(saves.queuedCopies().isEmpty())
+            assertEquals(listOf(md5Hex(initial), md5Hex(changed)), server.backups)
+            assertTrue(server.observed.isEmpty())
         }
     }
 
