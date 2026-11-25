@@ -65,14 +65,14 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
         } else {
             BasicText(SaveProtectionCopy.title(incident), style = body.copy(color = design.colors.attention))
         }
-        page.safe?.let { safe ->
+        page.safe?.takeIf { page.hasRommDestination }?.let { safe ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 BasicText(if (safe.atMillis != null) SaveProtectionCopy.safeHeadline else SaveProtectionCopy.safeHeadlineVersions, style = body)
                 BasicText(listOfNotNull(safe.game, safe.atMillis?.let { saveWhen(it, System.currentTimeMillis(), dates) }).joinToString(" · "),
                     style = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        val steps = saveFixSteps(incident)
+        val steps = saveFixSteps(incident, page)
         if (steps.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 steps.forEach { step -> FixStep(step) }

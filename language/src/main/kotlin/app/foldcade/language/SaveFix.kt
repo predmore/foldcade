@@ -3,8 +3,8 @@ package app.foldcade.language
 /**
  * The incident owns repair progress. Navigation itself is transient.
  * [game] is the game a held launch or an open Saves page is for, so the finished page can open
- * its Saves; [safe] is that game's RomM copy once the host has read it. [offline] is the network
- * as the host last saw it, so a finished page offline closes instead of opening a dead end.
+ * its Saves when [hasRommDestination] is true. [safe] is that game's RomM copy once the host
+ * has read it. [offline] is the network as the host last saw it.
  */
 data class SaveFixPage(
     val incidentId: String,
@@ -18,6 +18,7 @@ data class SaveFixPage(
     val safe: SaveFixSafe? = null,
     val offline: Boolean = false,
     val canCloseGame: Boolean = false,
+    val hasRommDestination: Boolean = false,
 )
 
 /** A RomM copy of [game] the host has seen: [atMillis] its receipt, or null when only versions are known. */
@@ -41,18 +42,26 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
  * A known folder needs one button, which opens the picker there: sending the player into the
  * emulator would only have them change its folder again. Unknown, the emulator comes first.
  */
-fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> = when {
-    incident.repair == RepairState.Done -> listOf(if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
-    incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
-    incident.repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null -> listOf(SaveFixAction.OpenSaves)
-    incident.repair is RepairState.Choosing -> listOf(SaveFixAction.ChooseProgress)
-    incident.repair is RepairState.WaitingForRomm -> listOf(SaveFixAction.Retry)
-    incident.repair is RepairState.WaitingForClose -> listOf(SaveFixAction.OpenEmulator,
-        if (page.canCloseGame) SaveFixAction.CloseGame else SaveFixAction.Retry)
-    incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) || incident.repair is RepairState.Placing -> emptyList()
-    saveFixTarget(incident) != null -> listOf(SaveFixAction.ChooseFolder)
-    else -> listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder)
+fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> {
+    val repair = saveFixRepair(incident, page)
+    val finish = if (page.hasRommDestination && page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close
+    return when {
+        repair == RepairState.Done -> listOf(finish)
+        incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, finish)
+        page.hasRommDestination && repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null ->
+            listOf(SaveFixAction.OpenSaves)
+        repair is RepairState.Choosing -> listOf(SaveFixAction.ChooseProgress)
+        repair is RepairState.WaitingForRomm -> listOf(SaveFixAction.Retry)
+        repair is RepairState.WaitingForClose -> listOf(SaveFixAction.OpenEmulator, if (page.canCloseGame) SaveFixAction.CloseGame else SaveFixAction.Retry)
+        repair in setOf(RepairState.Keeping, RepairState.Rebinding) || repair is RepairState.Placing -> emptyList()
+        saveFixTarget(incident) != null -> listOf(SaveFixAction.ChooseFolder)
+        else -> listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder)
+    }
 }
+
+/** An earlier automatic repair can still be recorded after the RomM destination is gone. */
+private fun saveFixRepair(incident: SaveIncident, page: SaveFixPage): RepairState =
+    if (page.hasRommDestination || incident.repair == RepairState.Done) incident.repair else RepairState.Guided
 
 fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (action) {
     SaveFixAction.ChooseFolder -> SaveProtectionCopy.chooseFolder
@@ -69,21 +78,30 @@ fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (
 data class SaveFixCard(val body: String, val detail: String?)
 
 fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
-    val automatic = when (incident.repair) {
+    val repair = saveFixRepair(incident, page)
+    val automatic = when (repair) {
         RepairState.Keeping -> SaveProtectionCopy.keepingCopies
         is RepairState.WaitingForRomm -> SaveProtectionCopy.waitForRomm
         is RepairState.WaitingForClose -> SaveProtectionCopy.waitForClose(page.game, incident.playerName)
         RepairState.Rebinding -> SaveProtectionCopy.usingFolder(saveFixTarget(incident)?.label.orEmpty())
         is RepairState.Choosing -> SaveProtectionCopy.bothKept
         is RepairState.Placing -> SaveProtectionCopy.placingSave
-        RepairState.Done -> saveFixTarget(incident)?.let { SaveProtectionCopy.repairDone(it.label) }.takeIf { incident.automaticDone }
+        RepairState.Done -> saveFixTarget(incident)?.let { SaveProtectionCopy.repairDone(it.label) }
+            .takeIf { incident.automaticDone && page.hasRommDestination }
         else -> null
     }
     if (automatic != null) return SaveFixCard(automatic, page.note)
-    if (incident.repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null)
+    if (page.hasRommDestination && repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null)
         return SaveFixCard(SaveProtectionCopy.chooseInSaves, page.note)
-    if (incident.repair == RepairState.Done) return SaveFixCard(if (page.offline) SaveProtectionCopy.guidedDoneOffline else SaveProtectionCopy.guidedDone, page.note)
-    if (incident.isEdenSessionChange) return SaveFixCard("Check the user in Eden’s Profile Manager, then choose a save in Y › Saves.", page.note)
+    if (repair == RepairState.Done) return SaveFixCard(when {
+        !page.hasRommDestination && incident.staged.isNotEmpty() -> SaveProtectionCopy.guidedDoneLocal
+        !page.hasRommDestination -> SaveProtectionCopy.guidedDoneWithoutLocalCopy
+        page.offline -> SaveProtectionCopy.guidedDoneOffline
+        else -> SaveProtectionCopy.guidedDone
+    }, page.note)
+    if (incident.isEdenSessionChange) return SaveFixCard(
+        if (page.hasRommDestination) "Check the user in Eden’s Profile Manager, then choose a save in Y › Saves."
+        else "Check the user in Eden’s Profile Manager.", page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)
     return SaveFixCard(steps, listOfNotNull(SaveProtectionCopy.thenChoose, page.note).joinToString(" "))
@@ -94,11 +112,11 @@ data class SaveFixStep(val title: String, val state: SaveFixStepState, val value
 
 enum class SaveFixStepState { Done, Now, Later }
 
-fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
+fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
     if (incident.kind == IncidentKind.MaybeNewSave && !incident.isEdenSessionChange) return emptyList()
-    if (incident.automaticDone || incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) ||
+    if (page.hasRommDestination && (incident.automaticDone || incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) ||
         incident.repair is RepairState.WaitingForRomm || incident.repair is RepairState.WaitingForClose ||
-        incident.repair is RepairState.Choosing || incident.repair is RepairState.Placing) {
+        incident.repair is RepairState.Choosing || incident.repair is RepairState.Placing)) {
         val closing = incident.repair as? RepairState.WaitingForClose
         val step = when (incident.repair) {
             RepairState.Keeping, is RepairState.WaitingForRomm -> 0
@@ -116,21 +134,26 @@ fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
     }
     val bound = incident.repair == RepairState.Done
     val keep = when {
-        incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
+        !page.hasRommDestination -> if (incident.staged.isNotEmpty())
+            SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, SaveProtectionCopy.stepKeptLocal)
+        else SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Later, SaveProtectionCopy.stepNoLocalCopy)
         incident.staged.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting)
+        incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
+        page.safe != null -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepAlreadyOnRomm)
         incident.isEdenGrant -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later)
-        incident.gameIds.isNotEmpty() -> null
-        else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepAlreadyOnRomm)
+        else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later, SaveProtectionCopy.stepNoVerifiedCopy)
     }
+    val choose = SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later)
+        .takeIf { page.hasRommDestination }
     if (incident.isEdenSessionChange) return listOfNotNull(
-        keep.takeIf { incident.kept.isNotEmpty() || incident.staged.isNotEmpty() },
+        keep,
         SaveFixStep("Check your Eden user", SaveFixStepState.Now),
-        SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
+        choose,
     )
     return listOfNotNull(
         keep,
         SaveFixStep(SaveProtectionCopy.stepFolder(incident.playerName, saveFixTarget(incident) != null), if (bound) SaveFixStepState.Done else SaveFixStepState.Now),
-        SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later),
+        choose,
     )
 }
 

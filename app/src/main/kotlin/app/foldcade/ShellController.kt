@@ -854,8 +854,14 @@ class ShellController(
         return onMeaning(Meaning.Activate, page.screen)
     }
 
-    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, game: String? = null, offline: Boolean = false) {
-        publish(model.copy(panel = null, dialog = null, saveFix = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = game, offline = offline)))
+    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, owner: Game? = null, offline: Boolean = false): SaveFixPage {
+        val origin = store.rommOrigin()
+        val subject = incident.subject
+        val hasRommDestination = owner?.backendId == RommCredentials.PLUGIN_ID && origin != null && (subject == null || subject.origin == origin)
+        val page = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = owner?.label, offline = offline,
+            hasRommDestination = hasRommDestination)
+        publish(model.copy(panel = null, dialog = null, saveFix = page))
+        return page
     }
 
     /** Changes the open Fix page, if it is still [incidentId]'s: a RomM copy read late, or the network after a pick. */

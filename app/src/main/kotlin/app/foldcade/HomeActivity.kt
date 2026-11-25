@@ -3475,16 +3475,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val player = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player).firstOrNull { it.saveFolderId() == incident.playerKey }
         val steps = (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
             ?: (player as? app.foldcade.api.plugin.HostedSaveFolder)?.hostedFolderSteps
-        // A held launch or an open Saves page names the game, so the page can say its RomM copy is safe and open its Saves once fixed.
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
-        foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
-            game = incident.subject?.label ?: route?.saves?.label, offline = !foldcade.hasValidatedNetwork())
+        val owner = incident.subject?.game() ?: route?.saves?.takeIf(incident::appliesTo)
+        val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
+            owner = owner, offline = !foldcade.hasValidatedNetwork())
         if (!incident.isEdenGrant && !incident.isEdenSessionChange) {
-            if (incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
+            if (page.hasRommDestination && incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
                 chooseRepairSave(id)
             else retrySaveRepair(id, start = true)
         }
-        val owner = incident.subject?.game() ?: route?.saves ?: return
+        if (owner == null || !page.hasRommDestination) return
         foldcade.scope.launch {
             val receipts = try { foldcade.plugins.library(owner.backendId)?.saveReceipts(owner).orEmpty() }
                 catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { emptyMap() }
@@ -4527,7 +4527,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val held = foldcade.hostedAsk?.pending
         // Keep Later available while the selected save is being checked and placed.
         if (effect.action == SaveConflictAction.KeepBoth) foldcade.hostedAsk = null
-        foldcade.shell.openSaveFix(incident, null, subject.playerId, game = subject.label)
+        foldcade.shell.openSaveFix(incident, null, subject.playerId, owner = subject.game())
         foldcade.scope.launch {
             val done = foldcade.advanceSaveRepair(incident.id, choice = choice to effect.action)
             withContext(Dispatchers.Main.immediate) {
