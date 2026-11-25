@@ -341,6 +341,8 @@ object SaveProtectionCopy {
     const val noHostedCard = "DuckStation didn’t open a memory card from Foldcade’s folder."
     const val canReadConfig = "Readable"
     const val cantReadConfig = "Can’t read config"
+    const val dolphinCustomCardDetail = "Dolphin’s Slot A configuration names a different GCI folder."
+    const val dolphinDefaultCard = "Keep a copy of your current card in Dolphin, then restore the default Slot A GCI Folder in Dolphin and check the game’s settings."
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."
@@ -428,6 +430,7 @@ object SaveProtectionCopy {
     fun noticeBody(incident: SaveIncident): String = with(incident) { when (kind) {
         IncidentKind.WrongFolder -> when {
             isEdenGrant -> "Allow ${live?.label} to sync Eden saves."
+            dolphinCustomCard -> "Slot A uses a custom GCI folder. Fix it before you play."
             saveLayoutChanged -> "Save layout changed. Fix it before you play."
             besideGame -> "Saved beside the ROM. Fix it before you play."
             live != null -> "Saving in ${live.label}. Fix it before you play."
@@ -473,6 +476,7 @@ object SaveProtectionCopy {
             // The folder and the emulator often share a name ("Azahar"), so the folder is called one.
             IncidentKind.WrongFolder -> when {
                 isEdenGrant -> "Allow ${live?.label} so Foldcade can sync Eden’s saves."
+                dolphinCustomCard -> dolphinCustomCardDetail
                 saveLayoutChanged -> "$playerName uses a different save location inside ${live?.label ?: "the chosen folder"}."
                 besideGame -> "$playerName saved beside a ROM."
                 live != null -> "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."

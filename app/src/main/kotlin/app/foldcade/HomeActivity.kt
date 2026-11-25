@@ -114,6 +114,8 @@ import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
 import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.armsx2.ArmsX2Player
+import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
@@ -284,7 +286,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     // Not the player's folder: ask again, and the game waits.
                     val player = playerForPendingLaunch()
                     val folder = pickedSaveFolder(uri, player, ask = true) ?: return@launch
-                    if (rememberSaveFolder(folder, player)) {
+                    if (foldcade.saveFlow.withLock { rememberSaveFolder(folder, player) }) {
                         pendingLaunch?.let { launchGame(it) }
                     } else {
                         cancelLaunches()
@@ -297,7 +299,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     // A recreated screen lost the game. The folder is kept, and the next press starts it.
                     val pending = pendingBackend
                     pendingBackend = null
-                    if (rememberSaveFolder(folder, player) && pending != null) {
+                    if (foldcade.saveFlow.withLock { rememberSaveFolder(folder, player) } && pending != null) {
                         continueBackendSaveAsk(pending, SaveFolderAnswer.Chosen)
                     } else {
                         cancelLaunches()
@@ -348,16 +350,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (incident != null && player != null) {
                         val folder = pickedSaveFolder(uri, player, ask = false) ?: return@launch
                         val scopedRetroArch = player is RetroArchPlayer && incident.gameIds.isNotEmpty()
-                        val repairInPlace = scopedRetroArch || incident.armsX2OutsideCard
+                        val repairInPlace = scopedRetroArch || incident.armsX2OutsideCard || incident.dolphinCustomCard
                         val expected = if (repairInPlace) incident.bound?.identity else incident.live?.identity
-                        if (!repairFolderMatches(expected, storageIdentity(folder.toString(), packageName))) {
+                        val oldOwnProvider = incident.bound?.identity?.substringBefore(':') == DolphinPlayer.PROVIDER
+                        val requiresDolphinProvider = player is DolphinPlayer && incident.kind == IncidentKind.LostAccess && oldOwnProvider
+                        if (!repairFolderMatches(expected, storageIdentity(folder.toString(), packageName)) ||
+                            requiresDolphinProvider && providerSaveRootPackage(player, folder.toString()) == null) {
                             val copy = app.foldcade.language.SaveProtectionCopy
-                            foldcade.shell.noteSaveFix(if (repairInPlace) copy.chooseThere(incident.bound?.label.orEmpty())
+                            foldcade.shell.noteSaveFix(if (repairInPlace || requiresDolphinProvider) copy.chooseThere(incident.bound?.label.orEmpty())
                                 else copy.wrongPick(incident.playerName, incident.live?.label.orEmpty()))
                             return@launch
                         }
                         if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(Uri.parse(folderGrantUri(folder.toString())), flags) }) {
                             foldcade.shell.noteSaveFix(Copy.folderGrantFailed)
+                            return@launch
+                        }
+                        if (player is DolphinPlayer && incident.dolphinCustomCard) {
+                            try { confirmDolphinCard(player, incident, folder) }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { foldcade.shell.noteSaveFix(Copy.saveNotPlacedBody) }
                             return@launch
                         }
                         try {
@@ -1938,7 +1949,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         }
         if (first is HostedSaveFolder) foldcade.refreshHostedFolders()
-        val syncState = if (first is SaveFolderHolder && first.hasSaveFolder()) {
+        if ((first is Aps3ePlayer || first is DolphinPlayer) &&
+            !first.hasSaveFolder() && saveSyncForLaunch(first, saveSyncDeclinedFor)) {
+            // A revoked provider grant is a Fix, even before the generic folder offer or ROM download.
+            foldcade.refreshSaveProtection(first)
+            val lost = foldcade.saveProtection.incidents().firstOrNull {
+                it.playerKey == first.saveFolderId() && it.kind == IncidentKind.LostAccess && it.blocksLaunch
+            }
+            if (lost != null) {
+                withContext(Dispatchers.Main.immediate) {
+                    if (fetching) foldcade.shell.endDownload(libraryId, game.remoteKey)
+                    if (launchCurrent(generation)) {
+                        val pending = PendingBackendLaunch(title, platformId, route, first.id, launchScreen, fresh)
+                        showSaveNotPlaced(title, pending, protection = SaveProtectionStop(lost))
+                    }
+                }
+                return
+            }
+        }
+        // Dolphin's disc revision can override its global card setting.
+        val syncState = if (first is SaveFolderHolder && first !is DolphinPlayer && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
             if (folder != null) withContext(Dispatchers.IO) { foldcade.playerSaves.saveSync(first, folder) } else null
         } else null
@@ -3567,7 +3597,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
         val owner = incident.subject?.game() ?: route?.saves?.takeIf(incident::appliesTo)
             ?: incident.gameIds.singleOrNull()
-                ?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard || incident.besideGame }
+                ?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard || incident.besideGame || incident.dolphinCustomCard }
                 ?.let(foldcade.shell::saveGame)
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
@@ -3688,7 +3718,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             settingsPlayerId = player.id
             folderPurpose = FolderPurpose.Settings
             besideFixPickerId = incident.id.takeIf { incident.besideGame }
-            val preferred = if (incident.besideGame || incident.armsX2OutsideCard || player is RetroArchPlayer && incident.gameIds.isNotEmpty()) incident.bound
+            val preferred = if (incident.besideGame || incident.armsX2OutsideCard || incident.dolphinCustomCard || player is RetroArchPlayer && incident.gameIds.isNotEmpty()) incident.bound
                 else app.foldcade.language.saveFixTarget(incident)
             val initial = preferred?.identity?.takeIf { incident.isEdenGrant || it.startsWith("primary:") }?.let(::storageFolderDocument)
                 ?: foldcade.saveFolderStart(player)
@@ -3728,6 +3758,27 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (startRepair) retrySaveRepair(incident.id)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { foldcade.shell.noteSaveFix(Copy.saveNotPlacedBody) }
+    }
+
+    private suspend fun confirmDolphinCard(player: DolphinPlayer, incident: SaveIncident, folder: Uri) {
+        val done = foldcade.saveFlow.withLock {
+            withContext(Dispatchers.IO) {
+                val current = foldcade.saveProtection.incident(incident.id)?.takeIf { it.repair == RepairState.Binding } ?: return@withContext false
+                val watched = foldcade.playerSaveFolder(player) ?: return@withContext false
+                if (storageIdentity(watched, packageName) != storageIdentity(folder.toString(), packageName)) return@withContext false
+                val subject = current.subject ?: return@withContext false
+                val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) } ?: return@withContext false
+                val game = subject.game()
+                if (foldcade.playerSaves.probeSpots(player, game, target, folder.toString()).isEmpty()) return@withContext false
+                foldcade.saveProbes.stageDolphinAlternate(player, game, target)
+                foldcade.saveIncidentCopies.keep(game, player)
+                val latest = foldcade.saveProtection.incident(incident.id) ?: return@withContext false
+                foldcade.saveProtection.put(latest.copy(repair = RepairState.Done, recoveryRequired = false))
+                true
+            }
+        }
+        if (done) foldcade.refreshSaveProtection(player)
+        else foldcade.shell.noteSaveFix(SaveProtectionCopy.dolphinDefaultCard)
     }
 
     /** An external save or NAND grant supplements Eden's provider grant for keys and config. */
@@ -3817,6 +3868,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 location.cardOutside -> copy.armsX2CardOutside
                 !location.configUnavailable -> copy.checkByPlaying
                 playerId == ArmsX2Player.ID -> copy.armsX2ConfigUnavailableDetail
+                setting.playerId == Aps3ePlayer.ID || setting.playerId == "dolphin.gamecube" -> copy.cantReadConfig
                 else -> copy.configUnavailableDetail(setting.label)
             }
             else -> copy.checkByPlaying
@@ -4316,6 +4368,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (player is EdenPlayer) return uri
         val narrowed = withContext(Dispatchers.IO) {
             val holder = player as? SaveFolderHolder ?: return@withContext uri
+            if (player is Aps3ePlayer) {
+                val pkg = player.packageNames.firstOrNull(::packageInstalled)
+                return@withContext uri.takeIf { pkg != null && providerSaveRootPackage(player, it.toString()) == pkg }
+            }
+            if (player is DolphinPlayer && providerSaveRootPackage(player, uri.toString()) != null) return@withContext uri
             if (player is RetroArchPlayer && folderDocumentId(uri.toString()).substringAfter(':').substringAfterLast('/').equals("RetroArch", true)) {
                 val docs = AndroidSaveDocuments(contentResolver)
                 if (!docs.createFolder(uri.toString(), "saves")) return@withContext null
@@ -4364,13 +4421,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val previous = foldcade.store.playerSaveFolder(key)
             val changed = beside.isNotEmpty() && previous?.let { storageIdentity(it, packageName) } != identity
             if (changed) foldcade.saveProtection.rebound(key)
+            if (previous != null && (player is Aps3ePlayer || player is DolphinPlayer)) {
+                // Another install can have the same document ID. Fence its working bytes before the binding changes.
+                val old = FolderRef(storageIdentity(previous, packageName), folderPathLabel(previous))
+                val pkg = providerSaveRootPackage(player, previous)?.let { name ->
+                    try { packageManager.getPackageInfo(name, 0) } catch (_: PackageManager.NameNotFoundException) { null }
+                }
+                if (old.identity != identity ||
+                    pkg != null && foldcade.saveProtection.reinstalled(key, old, pkg.packageName, pkg.firstInstallTime) ||
+                    foldcade.saveProtection.incidents().any { it.playerKey == key && it.kind == IncidentKind.LostAccess && it.blocksLaunch }) {
+                    foldcade.saveProtection.rebound(key)
+                }
+            }
             // Every player that shares the folder gets it, as at startup.
             for (id in foldcade.plugins.playerIds()) {
                 val sharing = foldcade.plugins.player(id) ?: continue
                 if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri.toString())
             }
             foldcade.store.setPlayerSaveFolder(key, uri.toString(), durable = changed)
-            foldcade.saveProbes.markBound(player)
+            foldcade.saveProbes.markBound(player, picked = true)
             if (beside.isNotEmpty()) foldcade.saveProtection.retargetBesideRepairs(key, FolderRef(identity, folderPathLabel(uri.toString())))
             foldcade.dismissNotice("firmware-folder:$key")
             if (previous != null && previous != uri.toString() && foldcade.saveProtection.incidents().none { it.playerKey == key }) {
@@ -4576,6 +4645,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     }
                     ServerSaveFlow(foldcade.playerSaves, foldcade.plugins, foldcade.store::saveAwaitsLoad,
                         preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
+                        protectionGate = { player, game, local ->
+                            if (player is Aps3ePlayer || player is DolphinPlayer) withContext(Dispatchers.IO) {
+                                var reading: ProbeSnapshot? = null
+                                try { foldcade.saveProbes.gate(player, game, local) { reading = it } }
+                                finally {
+                                    val uri = (local as? LaunchTarget.ContentUri)?.uri ?: (local as? LaunchTarget.SharedFile)?.uri
+                                    foldcade.associateSaveRepair(player, incidentGame(game, player, uri, foldcade.store.rommOrigin(), reading))
+                                    foldcade.publishSaveGate(player, reading)
+                                }
+                            }
+                        },
                         onHeadPlaced = { game, player ->
                             foldcade.saveIncidentCopies.headPlaced(game, player)
                             if (saveId != null && destination == null) {
@@ -4759,16 +4839,19 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.associateSaveRepair(pending.player, subject)
                 foldcade.publishSaveGate(pending.player, reading)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
-            if (pending.player is RetroArchPlayer || pending.player.probesContentSaves) try {
+            if (pending.player is RetroArchPlayer || pending.player is DolphinPlayer || pending.player.probesContentSaves) try {
                 foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after, backupOnly)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return false }
             foldcade.saveProbes.stageDuckStationReturn(pending.player, pending.game, spots, pending.sessionStartedAtMillis, endedAtMillis,
                 startedByFoldcade = pending.startedByFoldcade)
             val preserved = try {
+                val lostProvider = (pending.player is Aps3ePlayer || pending.player is DolphinPlayer) &&
+                    foldcade.saveProtection.incidents().any { it.playerKey == key && it.kind == IncidentKind.LostAccess && it.blocksLaunch }
                 // A legacy Backup does not complete the fence for a compatible working slot.
                 if (legacyBackup) true
+                else if ((lostProvider || pending.player is DolphinPlayer) && spots.isEmpty()) true
                 else foldcade.saveProbes.preserveArmsX2Return(pending, probeTarget, spots, after) ||
-                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
+                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.
@@ -4814,7 +4897,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             // Optional evidence and live-copy capture cannot prevent the bound save reaching RomM.
             try {
-                if (pending.player !is RetroArchPlayer && !pending.player.probesContentSaves)
+                if (pending.player !is RetroArchPlayer && pending.player !is DolphinPlayer && !pending.player.probesContentSaves)
                     foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after)
                 foldcade.saveIncidentCopies.keep(pending.game, pending.player)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
@@ -4986,6 +5069,11 @@ internal data class LibraryReturn(
  */
 internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
     if (unsupportedRetroArchReturn(saves, pending)) return emptyList()
+    // Slot A / VFS config can change during play. A cached launch spot still points to the old card.
+    if (pending.player is DolphinPlayer || pending.player is Aps3ePlayer) {
+        val uri = pending.targetUri ?: return emptyList()
+        return saves.spots(pending.player, pending.game, LaunchTarget.ContentUri(uri), forLaunch = false)
+    }
     val uri = pending.targetUri ?: return pending.spots
     if (!pending.unprotectedSession && pending.spots.none { it.search != null }) return pending.spots
     val fresh = try {

@@ -134,6 +134,22 @@ class Aps3ePlayerTest {
         assertNull(player.findSaveFolders("savedata", Bytes(ByteArray(32)), folder(), forLaunch = false))
     }
 
+    @Test fun onlyAReadableStockVfsMappingResolvesTheDefaultSavedataSpot() {
+        val image = Bytes(iso("PS3_GAME", "PARAM.SFO", sfo(mapOf("TITLE_ID" to "BLUS30464"))))
+        val path = "config/vfs.yml"
+        fun vfs(text: String?) = object : SaveFolderAccess by Listed(setOf(path)) {
+            override fun read(path: String, limit: Int) = text?.toByteArray()
+        }
+        val defaults = "\$(EmulatorDir): \"\"\n/dev_hdd0/: \$(EmulatorDir)dev_hdd0/\n/dev_usb***/:\n  /dev_usb000:\n    Path: \"\"\n"
+        assertTrue(usesDefaultAps3eSavePath(vfs(defaults)))
+        assertTrue(player.findSaveFolders("savedata", image, vfs(defaults), forLaunch = true) != null)
+        for (text in listOf(null, "\$(EmulatorDir): /sdcard/PS3\n", "/dev_hdd0/: /sdcard/PS3\n",
+            "  /dev_hdd0/: /sdcard/PS3\n", "{ /dev_hdd0/: /sdcard/PS3 }", "$defaults/dev_hdd0/: /sdcard/PS3\n")) {
+            assertFalse(usesDefaultAps3eSavePath(vfs(text)))
+            assertNull(player.findSaveFolders("savedata", image, vfs(text), forLaunch = true))
+        }
+    }
+
     @Test
     fun eachPackageLaunchesADecryptedIso() {
         val uri = "content://app.foldcade.romm.folders/document/Skate3.dec.iso"

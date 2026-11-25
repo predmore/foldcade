@@ -197,11 +197,13 @@ Put `PS3UPDAT.PUP` in RomM's firmware for the PlayStation 3. Foldcade checks it 
 
 Once aPS3e's folder is picked, **Foldcade Settings › Emulators** shows **aPS3e setup: Set up** while any of those is still true. Select it for the same steps.
 
-The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. aPS3e can't start a game until it has one, so declining the folder offer only closes it, and the next start asks again. The picker opens at aPS3e's own folder, so tap **Use this folder** and **Allow**. With the premium build, open **aPS3e Premium** in the picker's list first: the picker opens at the free build's folder. You can change the folder later in **Foldcade Settings › Emulators › aPS3e**. A folder you pick has to hold `config` or `logs`; a new install of aPS3e has `logs` before you open it.
+The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. Declining the offer closes it, and the next start asks again. The picker opens at the installed build's own folder. Tap **Use this folder** and **Allow** at its root. You can pick it again in **Foldcade Settings › Emulators › aPS3e**.
 
 ### Saves
 
-Foldcade syncs each game's `savedata` folders through [RomM](romm.md#save-sync). Those folders are named with the game's title id, such as `BLUS30464-ALIAS_SKATER` for `BLUS30464`. Trophies are not synced. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
+Foldcade checks the root when you allow the installed aPS3e build's provider. A reinstall invalidates that check and opens **Allow** to grant the folder again. For RomM games, Foldcade can stage `PS3UPDAT.PUP` again after you regrant access. Finish aPS3e's firmware and first-run setup before playing.
+
+Foldcade syncs `savedata` under the default `dev_hdd0` and account `00000001` through [RomM](romm.md#save-sync). For `BLUS30464`, a matching folder might be named `BLUS30464-ALIAS_SKATER`. Remapped VFS paths, other accounts, aliases without the title ID, and trophies are outside this slot. An unreadable or unsupported VFS configuration shows **Can’t read config** and leaves the destination unresolved. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
 
 aPS3e’s provider grant reaches `config/config.yml` and `config/default_config.yml`. Accessing that provider starts aPS3e’s process, which can cache settings and write them back. Foldcade does not patch that live configuration or its profiles. Apply tuning in aPS3e itself.
 
@@ -252,13 +254,15 @@ If Foldcade cannot resolve a save destination and already holds or finds an inco
 
 Install [official Dolphin](https://dolphin-emu.org/download/) and open it once. Its default **GameCube Slot A Device: GCI Folder** keeps one or more `.gci` files per game. Foldcade syncs those for **ISO/GCM** games through RomM, in slot `gci`. It reads the game ID and region from the disc, then checks the GCI headers. Other games on that card and Slot B stay untouched.
 
-Foldcade reuses access to Dolphin's own folder when available. Otherwise choose **Settings › Emulators › Dolphin › Save folder**: the picker opens in Dolphin's own provider, so choose **Use this folder** and **Allow**. Held grants and **Auto-find saves** also cover the old shared `dolphin-emu` folder. All-files access cannot open Dolphin's `Android/data` folder, so its provider is the manual fallback. A folder holding **GC** or **Config** is required.
+Choose **Settings › Emulators › Dolphin › Save folder** and allow the root of Dolphin's own provider. Foldcade checks that root for the current installation. A reinstall requires a fresh grant. The provider reaches Dolphin's data on stock Android 11 and later, where all-files access cannot read another app's `Android/data`. With access already held, Foldcade can also look for a matching GCI write in the shared `dolphin-emu` folder. A shared folder alone leaves its location unconfirmed.
 
 A zip contains the game's `.gci` files directly at the root, matching Argosy's GameCube bundle layout. Foldcade keeps its own slot/emulator names; other clients' slots remain available through **Y › Saves**. A loose GCI must be packaged in this layout before it can be placed through this folder-archive slot.
 
-Raw `.raw` cards can hold many games and are never uploaded as one game's save. With a raw card or custom card settings, Settings shows **Set up** and the game's saves remain not syncing. In Dolphin, choose **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder**. Games won't see saves on the old card in this mode. Keep the old card; Dolphin's desktop **Memory Card Manager** can export its saves as GCI files into the matching `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A` folder. Foldcade never changes Dolphin's card settings for you.
+Foldcade checks `Config/Dolphin.ini` and the ISO/GCM's applicable `GameSettings` INIs. An unreadable configuration shows **Can’t read config**. A confirmed custom GCI destination in Dolphin's own config stops the affected game's ordinary launch and opens a guided Fix. A matching GCI write in another readable root can also stop launches. Foldcade keeps readable suspect GCI copies as verified **Backups** in RomM, or on the device for local-only games.
 
-**RVZ, Wii NAND saves, custom card paths, per-game card overrides, MMJR, Slot B, and save states do not sync yet.** They still launch through their existing paths. An unresolved game keeps the amber not-syncing signal. If Foldcade holds or finds an incoming save and cannot resolve a destination, the launch offers **Play without syncing** for that launch; both copies stay intact. When only RomM's listing is unavailable, the game can play offline without syncing and the amber warnings stay.
+Raw `.raw` cards can hold many games. Preserve the old card before choosing **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder** in Dolphin. Check the game's **Game Settings** for a card override and restore the default path. Dolphin's desktop **Memory Card Manager** can export saves as GCI files into `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A`. Foldcade leaves Dolphin's card settings to you.
+
+**Save sync covers official Dolphin's default GameCube Slot A GCI folder on ISO/GCM.** RVZ, Wii, MMJR, raw cards, custom GCI destinations, Slot B, and save states stay with the emulator. When a known incoming save has no safe destination, **Play anyway** bypasses sync for that launch.
 
 The [candidate audit](../save-sync-candidates.md) lists the next emulators and verified formats.
 

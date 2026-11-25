@@ -41,11 +41,11 @@ class DolphinTest {
         folder.ini = "[Core]\nSlotA = 8\nGCIFolderAPath = /some/card\n"
         assertNull(player.findSaveFolderParts("gci", disc(), folder))
         folder.ini = "\uFEFF[core] # comment\nslota = 1\n"
-        assertFalse(defaultFolderCard(folder))
+        assertEquals(DolphinCard.OtherDevice, readDolphinCard(folder, null))
         folder.ini = "[Core]\nSlotA = 1\nslota = 8\n"
-        assertTrue(defaultFolderCard(folder))
+        assertEquals(DolphinCard.Default, readDolphinCard(folder, null))
         folder.ini = "[Core]\n [Other]\nSlotA = 1\n"
-        assertFalse(defaultFolderCard(folder))
+        assertEquals(DolphinCard.OtherDevice, readDolphinCard(folder, null))
         assertTrue(ServiceLoader.load(PluginEntry::class.java).any { it is DolphinEntry })
     }
 
@@ -61,9 +61,9 @@ class DolphinTest {
         }
         folder.gameInis.clear()
         folder.gameInis["GFZE8P.ini"] = "[Video_Settings]\nSlotA = 1\nGCIFolderAPath = /irrelevant\n[Main.Core]\nSlotA = 8\n"
-        assertTrue(defaultFolderCard(folder, "GFZE8P"))
+        assertEquals(DolphinCard.Default, readDolphinCard(folder, gameCubeDisc(disc())))
         folder.gameInis["GFZE8P.ini"] = "[Main.Core]\nSlotA = 1\n"
-        assertFalse(defaultFolderCard(folder, "GFZE8P"))
+        assertEquals(DolphinCard.OtherDevice, readDolphinCard(folder, gameCubeDisc(disc())))
         folder.gameInis["GFZE8P.ini"] = "[Core]\nSlotA = 1\n"
         assertNull(player.findSaveFolderParts("gci", disc(), folder))
     }
@@ -73,18 +73,61 @@ class DolphinTest {
         for (key in listOf("GCIFolderAPath", "GCIFolderAPathOverride")) {
             for (path in listOf("False", "false", "0", "True", "/custom/card")) {
                 folder.ini = "[Core]\nSlotA = 8\n$key = $path\n"
-                assertFalse("$key = $path", defaultFolderCard(folder))
+                assertTrue("$key = $path", readDolphinCard(folder, null) is DolphinCard.Custom)
                 folder.ini = "[Core]\nSlotA = 8\n"
                 folder.gameInis["GFZE8P.ini"] = "[Core]\n$key = $path\n"
-                assertFalse("per-game $key = $path", defaultFolderCard(folder, "GFZE8P"))
+                assertTrue("per-game $key = $path", readDolphinCard(folder, gameCubeDisc(disc())) is DolphinCard.Custom)
             }
             folder.gameInis.clear()
         }
     }
 
-    private fun disc(region: Int = 1, magic: Boolean = true) = object : GameFileReader {
+    @Test fun slotAndPathUseTheExactGameAndRevisionInPriorityOrder() {
+        val folder = Folder().apply {
+            ini = "[Core]\nSlotA = 1\nGCIFolderAPath = /sdcard/QA/USA\n"
+            gameInis["G.ini"] = "[Core]\nSlotA = 8\n"
+            gameInis["GFZ.ini"] = "[Core]\nGCIFolderAPath = /sdcard/Region/EUR\n"
+            gameInis["GFZE8P.ini"] = "[Main.Core]\nGCIFolderAPathOverride = /storage/emulated/0/Exact Card\n"
+            gameInis["GFZE8Pr2.ini"] = "[Main.Core]\nGCIFolderAPathOverride = \"\"\n"
+            gameInis["GFZE8Pr7.ini"] = "[Core]\nSlotA = 1\n"
+            gameInis["GZLE01.ini"] = "[Core]\nSlotA = 1\n"
+        }
+        assertEquals(DolphinCard.OtherDevice, readDolphinCard(folder, null))
+        assertEquals(DolphinCard.Custom("Exact Card"), readDolphinCard(folder, gameCubeDisc(disc(revision = 1))))
+        assertEquals(DolphinCard.Custom("Region/JPN"), readDolphinCard(folder, gameCubeDisc(disc(region = 0, revision = 2))))
+        assertEquals(DolphinCard.OtherDevice, readDolphinCard(folder, gameCubeDisc(disc(revision = 7))))
+    }
+
+    @Test fun missingAndUnreadableConfigAreDifferent() {
+        val folder = Folder()
+        val game = gameCubeDisc(disc())
+        assertEquals(DolphinCard.Default, readDolphinCard(folder, game))
+        folder.gameInis["GFZE8P.ini"] = "[Core]\nSlotA = 8\n"
+        folder.unreadable = "GameSettings/GFZE8P.ini"
+        assertEquals(DolphinCard.Unknown, readDolphinCard(folder, game))
+        assertEquals(DolphinCard.Default, readDolphinCard(folder, game?.copy(id = "GZLE01")))
+        folder.ini = "[Core]\nSlotA = 8\n"
+        folder.unreadable = "Config/Dolphin.ini"
+        assertEquals(DolphinCard.Unknown, readDolphinCard(folder, game))
+        assertNull(DolphinPlayer().saveSyncState(folder))
+    }
+
+    @Test fun ambiguousPathsAndConflictingSectionSpellingsCannotProveAMismatch() {
+        val folder = Folder()
+        val game = gameCubeDisc(disc())
+        for (path in listOf("../card", "/sdcard/tmp/../card", "/some/card", "False")) {
+            folder.ini = "[Core]\nGCIFolderAPathOverride = $path\n"
+            assertEquals(DolphinCard.Custom(null), readDolphinCard(folder, game))
+        }
+        folder.ini = null
+        folder.gameInis["GFZE8P.ini"] = "[Core]\nSlotA=8\n[Main.Core]\nSlotA=1\n"
+        assertEquals(DolphinCard.Unknown, readDolphinCard(folder, game))
+    }
+
+    private fun disc(region: Int = 1, magic: Boolean = true, revision: Int = 0) = object : GameFileReader {
         override fun read(offset: Long, length: Int) = ByteArray(0x460).also {
             "GFZE8P".toByteArray().copyInto(it)
+            it[7] = revision.toByte()
             if (magic) byteArrayOf(0xc2.toByte(), 0x33, 0x9f.toByte(), 0x3d).copyInto(it, 0x1c)
             it[0x45b] = region.toByte()
         }.let { it.copyOfRange(offset.toInt(), minOf(it.size, offset.toInt() + length)) }
@@ -92,6 +135,7 @@ class DolphinTest {
     private fun gci(id: String) = ByteArray(64).also { id.toByteArray().copyInto(it) }
     private class Folder : SaveFolderAccess {
         var ini: String? = null
+        var unreadable: String? = null
         val gameInis = linkedMapOf<String, String>()
         override fun list(path: String): List<SaveFolderEntry>? = when(path) {
             "Config" -> ini?.let { listOf(SaveFolderEntry("Dolphin.ini", false, it.length.toLong())) }.orEmpty()
@@ -99,6 +143,7 @@ class DolphinTest {
             else -> null
         }
         override fun read(path: String, limit: Int) = when {
+            path == unreadable -> null
             path == "Config/Dolphin.ini" -> ini
             path.startsWith("GameSettings/") -> gameInis[path.removePrefix("GameSettings/")]
             else -> null

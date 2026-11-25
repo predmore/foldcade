@@ -111,7 +111,7 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         folder: SaveFolderAccess,
         forLaunch: Boolean,
     ): SaveFolderSearch? {
-        if (slot != SLOT) return null
+        if (slot != SLOT || !usesDefaultAps3eSavePath(folder)) return null
         val titleId = ps3TitleId(game) ?: return null
         return SaveFolderSearch(SAVEDATA, titleId)
     }
@@ -214,6 +214,34 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         const val INSTALL_FIRMWARE: String =
             "In aPS3e, open the menu and choose Install Firmware. Tap ☰ in the file picker, then aPS3e › firmware › PS3UPDAT.PUP. Foldcade put it there from RomM. Then start the game again."
     }
+}
+
+/** RPCS3's VFS settings can redirect dev_hdd0 independently of config.yml. Accept the stock
+ * defaults or the simple top-level scalars written by aPS3e. Other mappings need an effective
+ * VFS/account query before Foldcade can place a save there. */
+fun usesDefaultAps3eSavePath(folder: SaveFolderAccess): Boolean {
+    val files = folder.list("config") ?: return folder.list("")?.none { it.name == "config" } == true
+    if (files.none { it.name == "vfs.yml" }) return true
+    val text = folder.read("config/vfs.yml", 64 * 1024)?.toString(Charsets.UTF_8) ?: return false
+    val keys = mutableSetOf<String>()
+    var parent: String? = null
+    for (raw in text.removePrefix("\uFEFF").lineSequence()) {
+        if (raw.isBlank() || raw.trimStart().startsWith('#')) continue
+        if (raw.startsWith(' ')) {
+            // Stock YAML writes a nested USB device map. Root scalars stay on one line.
+            if (parent != "/dev_usb***/") return false
+            continue
+        }
+        val key = raw.substringBefore(':')
+        if (':' !in raw || !key.matches(Regex("(?:/[^: ]+/|\\$\\(EmulatorDir\\))")) || !keys.add(key)) return false
+        parent = key
+        val value = raw.substringAfter(':').trim().removeSurrounding("\"").removeSurrounding("'")
+        when (key) {
+            "\$(EmulatorDir)" -> if (value.isNotEmpty()) return false
+            "/dev_hdd0/" -> if (value.isNotEmpty() && value != "\$(EmulatorDir)dev_hdd0/") return false
+        }
+    }
+    return true
 }
 
 /** True when [folder] lists the file at [path]. A missing folder is not that file. */
