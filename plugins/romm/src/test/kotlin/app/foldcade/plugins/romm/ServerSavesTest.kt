@@ -379,6 +379,19 @@ class ServerSavesTest {
         assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
     }
 
+    @Test fun anUnresolvedStrictSyncConflictTellsRepairToUseGuidedRecovery() = runBlocking {
+        hold("current")
+        val head = server.single()
+        val source = add("choice".toByteArray(), null, player.id)
+        ops.onSync = { _, _, _, _ -> report().copy(keptBoth = listOf(KeptBoth(ROM, "sav", null, source.id, data.slotFile(ROM, "sav")))) }
+        val failure = runCatching {
+            library().placeRepairSave(GAME, player, source.id.toString(), ORIGIN, head.contentHash!!, {}, { error("Must not commit") })
+        }.exceptionOrNull()
+        assertTrue(failure is RommRepairNeedsSync)
+        assertEquals(listOf("current", "choice"), server.map { String(bytes.getValue(it.id)) })
+        assertFalse(events.any { it.startsWith("upload:") })
+    }
+
     @Test fun ownUnslottedArchivesAreIdentifiedWithoutInventingASlot() = runBlocking {
         val backup = add("progress".toByteArray(), null, "azahar")
         server[0] = backup.copy(fileName = "foldcade-kept-12345678-1234-1234-1234-123456789abc.zip")

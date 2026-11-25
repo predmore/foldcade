@@ -329,6 +329,17 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun closedGamePlayers(): Set<String> = stringSet(KEY_CLOSED_GAME_PLAYERS)
 
+    fun repairPlayerOpenedAt(packageName: String): Long? =
+        prefs.getLong(REPAIR_PLAYER_OPENED_PREFIX + packageName, 0).takeIf { it > 0 }
+
+    fun noteRepairPlayerOpened(packageName: String, atMillis: Long) {
+        prefs.edit().putLong(REPAIR_PLAYER_OPENED_PREFIX + packageName, atMillis).commit()
+    }
+
+    fun noteRepairPlayerClosed(packageName: String) {
+        prefs.edit().remove(REPAIR_PLAYER_OPENED_PREFIX + packageName).commit()
+    }
+
     fun setPlayersHoldingGames(packages: Set<String>, closed: Set<String>) {
         if (packages == playersHoldingGames() && closed == closedGamePlayers()) return
         prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).putStringSet(KEY_CLOSED_GAME_PLAYERS, closed).commit()
@@ -745,6 +756,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
         private const val KEY_CLOSED_GAME_PLAYERS = "closed_game_players"
+        private const val REPAIR_PLAYER_OPENED_PREFIX = "repair_player_opened:"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val EDEN_FOLDER_PREFIX = "eden_folder:"

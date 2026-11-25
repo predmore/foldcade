@@ -27,7 +27,7 @@ internal class ServerSaveFlow(
 ) {
     /** Repair has already captured the working files. They must never reach ordinary reconcile. */
     suspend fun repair(owner: Game, player: Player, spots: List<SaveSpot>, origin: String,
-        choice: RepairState.Placing, beforeWrite: suspend () -> Unit) {
+        choice: RepairState.Placing, backedUpLiveHash: String?, beforeWrite: suspend () -> Unit) {
         val spot = spots.singleOrNull() ?: throw RepairFoldersUnavailable()
         val placingPlayer = object : Player by player {
             override fun canPlaceSave(slot: String, bytes: ByteArray) =
@@ -35,9 +35,9 @@ internal class ServerSaveFlow(
         }
         val placed = placeRommRepairSave(plugins.library(owner.backendId), owner, placingPlayer,
             choice.saveId, origin, choice.headHash, beforeWrite) { awaitLoad(player.saveFolderId(), true) }
-        if (placed.singleOrNull()?.slot != spot.slot) throw SaveNotPlaced()
+        val selected = placed.singleOrNull()?.takeIf { it.slot == spot.slot } ?: throw SaveNotPlaced()
         beforeWrite()
-        if (!saves.place(owner.backendId, owner, player, spots, placed)) throw SaveNotPlaced()
+        if (!saves.placeAfterBackup(owner, player, spot, selected, backedUpLiveHash)) throw SaveNotPlaced()
         onHeadPlaced(owner, player)
     }
 

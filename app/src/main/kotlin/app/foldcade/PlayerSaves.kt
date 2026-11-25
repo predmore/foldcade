@@ -422,7 +422,8 @@ internal class PlayerSaves(
      * and is left out. Any other bytes are handed over, even after a failed
      * placement, because the player may have run on its own since.
      */
-    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false): ObservedSaves {
+    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false,
+        onChanged: ((SaveSpot, ObservedSlot, ByteArray) -> Unit)? = null): ObservedSaves {
         val changed = spots.mapNotNull { spot ->
             val (bytes, uri) = readSpot(spot, strict) ?: return@mapNotNull null
             val hash = md5Hex(bytes)
@@ -442,7 +443,7 @@ internal class PlayerSaves(
                     marks.setMark(tornKey(key), hash)
                     null
                 } else {
-                    ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes))
+                    ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes)).also { onChanged?.invoke(spot, it, bytes) }
                 }
             }
         }
@@ -457,6 +458,15 @@ internal class PlayerSaves(
             settle(key, slot.contentHash)
             Files.deleteIfExists(handover.resolve("$key.zip"))
         }
+    }
+
+    /** The caller has verified a Backup of [previousHash]. Any other working bytes still refuse placement. */
+    fun placeAfterBackup(game: Game, player: Player, spot: SaveSpot, placed: PlacedSave, previousHash: String?): Boolean {
+        if (placed.slot != spot.slot) return false
+        if (previousHash != null) {
+            noteHandedOver(game.backendId, game, player, listOf(spot), ObservedSaves(listOf(ObservedSlot(spot.slot, previousHash, player.id, null))))
+        }
+        return place(game.backendId, game, player, listOf(spot), listOf(placed))
     }
 
     /**

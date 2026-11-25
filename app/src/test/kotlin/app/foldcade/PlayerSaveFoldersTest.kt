@@ -207,6 +207,24 @@ class PlayerSaveFoldersTest {
         assertEquals(1, saves.changedSince("romm", GAME, PLAYER, spots).slots.size)
     }
 
+    @Test fun repairUsesTheRawWorkingArchiveHashAfterKeepingTheLiveFolder() {
+        val spot = spots().single()
+        val file = "$DATA/00000001/00.SAV"
+        docs.put(file, "live folder progress")
+        val captured = saves.readSpot(spot)!!.first
+        docs.library[SERVER] = zipOf("data/00000001/00.SAV" to "server head")
+        assertFalse(saves.placeAfterBackup(GAME, PLAYER, spot, placed(), null))
+        assertFalse(saves.placeAfterBackup(GAME, PLAYER, spot, placed(), app.foldcade.romm.rommSaveHash(captured)))
+        assertEquals("live folder progress", docs.text(file))
+
+        docs.put(file, "newer local write")
+        assertFalse(saves.placeAfterBackup(GAME, PLAYER, spot, placed(), md5Hex(captured)))
+        assertEquals("newer local write", docs.text(file))
+        docs.put(file, "live folder progress")
+        assertTrue(saves.placeAfterBackup(GAME, PLAYER, spot, placed(), md5Hex(captured)))
+        assertEquals("server head", docs.text(file))
+    }
+
     @Test
     fun anArgosyZipIsUnpackedIntoAnEmptyFolder() {
         // As Argosy uploads them: a folder entry for the part, other folders listed, its own times.

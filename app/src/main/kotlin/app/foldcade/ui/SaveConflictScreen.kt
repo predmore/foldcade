@@ -153,13 +153,15 @@ internal fun SaveConflictBottom(
                     horizontalArrangement = Arrangement.spacedBy(gap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ConflictChip(
-                        label = Copy.keepBoth,
-                        focused = prompt.focus == SaveConflictFocus.KeepBoth,
-                        compact = fit.compact,
-                        modifier = Modifier,
-                        onClick = { onFocus(SaveConflictFocus.KeepBoth) },
-                    )
+                    if (prompt.canKeepBoth) {
+                        ConflictChip(
+                            label = Copy.keepBoth,
+                            focused = prompt.focus == SaveConflictFocus.KeepBoth,
+                            compact = fit.compact,
+                            modifier = Modifier,
+                            onClick = { onFocus(SaveConflictFocus.KeepBoth) },
+                        )
+                    }
                     LaterChip(compact = fit.compact, backKey = backKey, modifier = Modifier, onClick = onLater)
                 }
             }

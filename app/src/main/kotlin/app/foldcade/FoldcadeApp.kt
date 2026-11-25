@@ -922,6 +922,12 @@ class FoldcadeApp : Application() {
         return manager.getHistoricalProcessExitReasons(packageName, 0, 20).map { it.timestamp }
     }
 
+    /** Opening an emulator by its icon does not create a Paused tile. Save repair still waits for release. */
+    internal fun noteRepairAppOpened(packageName: String) {
+        if (plugins.playerIds().mapNotNull(plugins::player).any { it is SaveFolderHolder && packageName in it.packageNames })
+            store.noteRepairPlayerOpened(packageName, System.currentTimeMillis())
+    }
+
     /** "0.1.2 (230)" from the installed package. The build has no BuildConfig to read it from. */
     private fun installedVersion(): String = try {
         val info = packageManager.getPackageInfo(packageName, 0)
@@ -1706,7 +1712,13 @@ class FoldcadeApp : Application() {
     internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
     internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection, store::rommOrigin) }
     internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies, ::edenSaveReadsAllowed) }
-    internal val saveRegression by lazy { SaveRegression(playerSaves, plugins, saveProtection, saveIncidentCopies) }
+    internal val saveRegression by lazy {
+        SaveRegression(playerSaves, saveProtection, baseline = { game, slot, folder ->
+            val library = plugins.library(game.backendId)
+            app.foldcade.plugins.romm.rommSyncedSave(library, game, slot, SAVE_ZIP_LIMIT)?.let { inspectSave(it, folder) }
+                ?: SaveInspection(null, null).takeIf { library?.saveReceipts(game)?.containsKey(slot) == true }
+        })
+    }
     private val saveRepair by lazy {
         SaveRepair(saveProtection, { repairWork(it) }, changed = { publishSaveProtection(emptyMap(), replace = false) })
     }
@@ -1818,7 +1830,7 @@ class FoldcadeApp : Application() {
     internal fun repairClosePackage(incident: app.foldcade.language.SaveIncident): String? {
         if (incident.repair !is app.foldcade.language.RepairState.WaitingForClose) return null
         return incident.subject?.playerId?.let(plugins::player)?.packageNames?.filter { name ->
-            name in runningGames.holdingPackages() && name !in closingPlayers && canClearPlayerTask(name) &&
+            (name in runningGames.holdingPackages() || store.repairPlayerOpenedAt(name) != null) && name !in closingPlayers && canClearPlayerTask(name) &&
                 packageManager.getLaunchIntentForPackage(name) != null
         }?.singleOrNull()
     }
@@ -2329,6 +2341,10 @@ class FoldcadeApp : Application() {
      */
     fun noteStarted(player: Player, intent: PlayerIntent): Boolean {
         store.setSaveAwaitsLoad(player.saveFolderId(), false)
+        if (player is RetroArchPlayer) {
+            val installed = launchWork.retroArchCore?.installedIntent(intent) ?: intent
+            store.noteRepairPlayerOpened(installed.packageName, System.currentTimeMillis())
+        }
         if (LaunchFlag.ReplaceRunning !in intent.flags) return false
         val key = startKey(launchWork.retroArchCore?.installedIntent(intent) ?: intent)
         val replacing = store.lastPlayerStart(intent.packageName) != key

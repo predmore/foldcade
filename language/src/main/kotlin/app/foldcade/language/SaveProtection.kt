@@ -126,6 +126,8 @@ data class SaveIncident(
     val subject: SaveIncidentGame? = null,
     val quarantinedHash: String? = null,
     val automaticDone: Boolean = false,
+    val quarantineSourceUri: String? = null,
+    val quarantineBackupId: String? = null,
 )
 
 /** The locally resolved game and player behind an incident, retained for repair after restart. */
@@ -263,6 +265,8 @@ object SaveProtectionCopy {
     const val stepRestore = "Put your save back"
     const val tryAgain = "Try again"
     const val closeGame = "Close game"
+    const val openSaves = "Open Saves"
+    const val chooseInSaves = "Open Y › Saves to choose which progress to keep."
     const val thisThor = "This Thor"
     const val romm = "RomM"
     const val twoSaves = "Two saves"

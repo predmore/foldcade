@@ -1651,6 +1651,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         foldcade.runningGames.noteApp(GameCompanion(pkg, game.title, panel), beside,
             setOf(packageName, "app.foldcade"))
+        foldcade.noteRepairAppOpened(pkg)
         foldcade.runningGames.forget(pkg)
     }
 
@@ -2303,6 +2304,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 foldcade.store.update { it.clearIfCurrent(app.panel, appId) }
                             }
                         }
+                        foldcade.store.noteRepairPlayerClosed(running.packageName)
                         foldcade.runningGames.noteHolding(running.packageName, closed = true)
                         true
                     }
@@ -3477,8 +3479,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             try {
                 foldcade.saveFlow.withLock {
                     val closed = withContext(Dispatchers.Main.immediate) {
-                        if (foldcade.launchWork.active || !foldcade.runningGames.mayHold(name) ||
+                        val trackedApp = foldcade.store.repairPlayerOpenedAt(name) != null
+                        if (foldcade.launchWork.active || !(foldcade.runningGames.mayHold(name) || trackedApp) ||
                             foldcade.runningGames.forPackage(name) != null || !clearBehindHome(name, displayId)) return@withContext false
+                        foldcade.store.noteRepairPlayerClosed(name)
                         foldcade.runningGames.noteHolding(name, closed = true)
                         true
                     }
@@ -3727,6 +3731,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (SystemClock.uptimeMillis() > pending.until) return false
         return try {
             startOnDisplay(pending.intent, pending.displayId)
+            pending.intent.component?.packageName?.let(foldcade::noteRepairAppOpened)
             foldcade.externalPlay.notePlayerRestarted()
             true
         } catch (_: ActivityNotFoundException) {
@@ -4084,6 +4089,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.store.place(panel, ExternalApp(opened.sessionId, occupiesBothDisplays = false))
         val options = ActivityOptions.makeBasic().apply { launchDisplayId = displayId }
         startActivity(launch, options.toBundle())
+        foldcade.noteRepairAppOpened(packageName)
     }
 
     private fun continueBackendSaveAsk(pending: PendingBackendLaunch, answer: SaveFolderAnswer) {
@@ -4373,7 +4379,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     }
                     ServerSaveFlow(foldcade.playerSaves, foldcade.plugins, foldcade.store::saveAwaitsLoad,
                         preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
-                        onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
+                        onHeadPlaced = { game, player ->
+                            foldcade.saveIncidentCopies.headPlaced(game, player)
+                            if (saveId != null && destination == null) {
+                                val id = regressionIncidentId(game, player)
+                                if (foldcade.saveProtection.incident(id)?.repair == app.foldcade.language.RepairState.Guided) {
+                                    foldcade.saveProtection.close(id)
+                                    foldcade.refreshSaveProtection(player, flowHeld = true)
+                                }
+                            }
+                        },
                         awaitLoad = foldcade.store::setSaveAwaitsLoad)
                         .perform(request.copy(player = installedPlayer), saveId, destination, eden)
                 }
@@ -4530,40 +4545,40 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // Judge and publish before reconcile can report Synced for the stale bound copy.
             // Optional probe failures still cannot block handing that copy back to the library.
             val key = pending.player.saveFolderId()
-            val regressionContext = mutableSetOf<app.foldcade.language.RegressionContext>()
-            if (pending.baseline?.roots?.singleOrNull { it.bound }?.markersPresent == false)
-                regressionContext += app.foldcade.language.RegressionContext.FreshRoot
-            if (pending.player is EdenPlayer) {
-                val previousUser = pending.spots.singleOrNull()?.search?.parent
-                val currentUser = spots.singleOrNull()?.search?.parent
-                if (currentUser != null && previousUser != null && currentUser != previousUser)
-                    regressionContext += app.foldcade.language.RegressionContext.NewProfile
-            }
             var subject = incidentGame(pending.game, pending.player, pending.targetUri, foldcade.store.rommOrigin(), pending.baseline)
             var root = pending.baseline?.roots?.singleOrNull { it.bound }?.root
-            fun readOpenIncident() {
-                if (foldcade.saveProtection.incidents().any { it.playerKey == key && it.blocksLaunch &&
-                        it.kind in setOf(app.foldcade.language.IncidentKind.WrongFolder, app.foldcade.language.IncidentKind.FolderEmptied) })
-                    regressionContext += app.foldcade.language.RegressionContext.OpenIncident
-            }
-            readOpenIncident()
+            var after: app.foldcade.language.ProbeSnapshot? = null
+            var reinstalled = false
+            fun hasOpenFolderIncident() = foldcade.saveProtection.incidents().any { it.playerKey == key && it.blocksLaunch &&
+                it.kind in setOf(app.foldcade.language.IncidentKind.WrongFolder, app.foldcade.language.IncidentKind.FolderEmptied) }
+            val openBeforeJudgement = hasOpenFolderIncident()
             try {
                 val reading = foldcade.saveProbes.judgeReturn(pending.player, pending.game,
                     pending.targetUri?.let { LaunchTarget.ContentUri(it) }, pending.baseline,
                     unprotected = preserved, startedByFoldcade = pending.startedByFoldcade,
                     sessionStartedAtMillis = pending.sessionStartedAtMillis, sessionEndedAtMillis = endedAtMillis, edenSpots = eden?.spots,
-                    beforeJudgement = { after ->
-                        root = after.roots.singleOrNull { it.bound }?.root
-                        if (root?.let { foldcade.saveProtection.reinstalled(key, it, after.packageName, after.installFirstMillis) } == true)
-                            regressionContext += app.foldcade.language.RegressionContext.Reinstalled
+                    beforeJudgement = { snapshot ->
+                        after = snapshot
+                        root = snapshot.roots.singleOrNull { it.bound }?.root
+                        reinstalled = root?.let { foldcade.saveProtection.reinstalled(key, it, snapshot.packageName, snapshot.installFirstMillis) } == true
                     })
                 subject = incidentGame(pending.game, pending.player, pending.targetUri, foldcade.store.rommOrigin(), reading ?: pending.baseline)
                 foldcade.associateSaveRepair(pending.player, subject)
                 foldcade.publishSaveGate(pending.player, reading)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
-            readOpenIncident()
-            val observed = if (preserved) app.foldcade.api.plugin.ObservedSaves(emptyList()) else saves.changedSince(pending.libraryId, pending.game, pending.player, spots)
-            val quarantined = !preserved && foldcade.saveRegression.quarantine(subject, pending.player, spots, observed, root, regressionContext)
+            val regressionContext = returnRegressionContext(pending.baseline, after, pending.player is HostedSaveFolder,
+                null, null, // Eden profile changes are handled by the frozen Backup-only return above.
+                reinstalled, openBeforeJudgement || hasOpenFolderIncident())
+            val (observed, returned) = when {
+                preserved -> app.foldcade.api.plugin.ObservedSaves(emptyList()) to null
+                subject.origin != null && spots.size == 1 &&
+                    app.foldcade.plugins.romm.supportsRommRepair(foldcade.plugins.library(pending.libraryId)) ->
+                    foldcade.saveRegression.capture(pending.libraryId, pending.game, pending.player, spots)
+                else -> saves.changedSince(pending.libraryId, pending.game, pending.player, spots) to null
+            }
+            val quarantined = returned?.let {
+                foldcade.saveRegression.quarantine(subject, pending.player, it, root, regressionContext)
+            } == true
             if (!preserved && !quarantined) {
                 // The library may finish its sync before reconcile returns. The notice waits for either.
                 withContext(Dispatchers.Main.immediate) { foldcade.expectSaveReturn(pending.libraryId, pending.game) }

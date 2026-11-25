@@ -24,7 +24,7 @@ data class SaveFixPage(
 data class SaveFixSafe(val game: String, val atMillis: Long?)
 
 /** What each of the Fix page's buttons does, in the order they sit. */
-enum class SaveFixAction { ChooseFolder, OpenEmulator, CloseGame, ChooseSave, ChooseProgress, Retry, Close }
+enum class SaveFixAction { ChooseFolder, OpenEmulator, CloseGame, ChooseSave, ChooseProgress, OpenSaves, Retry, Close }
 
 fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == IncidentKind.MaybeNewSave) SaveProtectionCopy.twoSaves
     else SaveProtectionCopy.fixTitle(incident.playerName)
@@ -43,6 +43,7 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
 fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> = when {
     incident.repair == RepairState.Done -> listOf(if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
     incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
+    incident.repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null -> listOf(SaveFixAction.OpenSaves)
     incident.repair is RepairState.Choosing -> listOf(SaveFixAction.ChooseProgress)
     incident.repair is RepairState.WaitingForRomm -> listOf(SaveFixAction.Retry)
     incident.repair is RepairState.WaitingForClose -> listOf(SaveFixAction.OpenEmulator,
@@ -58,6 +59,7 @@ fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (
     SaveFixAction.CloseGame -> SaveProtectionCopy.closeGame
     SaveFixAction.ChooseSave -> SaveProtectionCopy.chooseSave
     SaveFixAction.ChooseProgress -> SaveProtectionCopy.chooseSave
+    SaveFixAction.OpenSaves -> SaveProtectionCopy.openSaves
     SaveFixAction.Retry -> SaveProtectionCopy.tryAgain
     SaveFixAction.Close -> SaveSetupCopy.done
 }
@@ -77,6 +79,8 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         else -> null
     }
     if (automatic != null) return SaveFixCard(automatic, page.note)
+    if (incident.repair == RepairState.Guided && incident.kind == IncidentKind.MaybeNewSave && incident.subject != null)
+        return SaveFixCard(SaveProtectionCopy.chooseInSaves, page.note)
     if (incident.repair == RepairState.Done) return SaveFixCard(if (page.offline) SaveProtectionCopy.guidedDoneOffline else SaveProtectionCopy.guidedDone, page.note)
     if (incident.isEdenSessionChange) return SaveFixCard("Check the user in Eden’s Profile Manager, then choose a save in Y › Saves.", page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
@@ -168,6 +172,7 @@ fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeat
             SaveFixAction.CloseGame -> Effect.CloseRepairGame(incident.id)
             SaveFixAction.ChooseSave -> Effect.FinishSaveFix(incident.id)
             SaveFixAction.ChooseProgress -> Effect.ChooseRepairSave(incident.id)
+            SaveFixAction.OpenSaves -> return model.copy(saveFix = null) to incident.subject?.let { Effect.OpenSaves(homeGameId(it.libraryId, it.gameId)) }
             SaveFixAction.Retry -> Effect.RetrySaveRepair(incident.id)
             SaveFixAction.Close -> Effect.FinishSaveFix(incident.id, openSaves = false)
             null -> null
@@ -176,8 +181,8 @@ fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeat
     }
 }
 
-fun canConfirmSaveLocation(incident: SaveIncident): Boolean = !incident.isEdenSessionChange &&
-    (incident.kind == IncidentKind.MaybeWrongFolder || incident.isEdenSessionChange) && incident.repair != RepairState.Done
+fun canConfirmSaveLocation(incident: SaveIncident): Boolean =
+    incident.kind == IncidentKind.MaybeWrongFolder && incident.repair != RepairState.Done
 
 fun saveProtectionDialog(
     incident: SaveIncident,

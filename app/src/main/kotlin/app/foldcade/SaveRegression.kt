@@ -3,15 +3,14 @@ package app.foldcade
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.ObservedSaves
+import app.foldcade.api.plugin.ObservedSlot
 import app.foldcade.api.plugin.Player
-import app.foldcade.host.PluginHost
 import app.foldcade.language.*
-import app.foldcade.plugins.romm.rommSyncedSave
-import app.foldcade.plugins.romm.supportsRommRepair
 import app.foldcade.romm.rommSaveHash
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.zip.ZipInputStream
+import kotlin.coroutines.cancellation.CancellationException
 
 internal fun regressionIncidentId(game: Game, player: Player) =
     "MaybeNewSave:${player.saveFolderId()}:${game.backendId}:${game.remoteKey}"
@@ -47,50 +46,79 @@ internal fun saveShape(bytes: ByteArray, folder: Boolean): SaveShape? {
 
 internal fun SaveSpot.isFolderSave() = folders.isNotEmpty() || search != null
 
-/** Inspect the verified local RomM receipt, so the same quarantine works on an offline return. */
+/** Context comes from the same bound root before launch and after return. */
+internal fun returnRegressionContext(
+    before: ProbeSnapshot?,
+    after: ProbeSnapshot?,
+    hosted: Boolean,
+    previousProfile: String?,
+    currentProfile: String?,
+    reinstalled: Boolean,
+    openIncident: Boolean,
+): Set<RegressionContext> = buildSet {
+    val first = before?.roots?.singleOrNull { it.bound }
+    val last = after?.roots?.singleOrNull { it.bound }
+    if (!hosted && first?.markersPresent == false && last?.markersPresent == true && first.root.identity == last.root.identity)
+        add(RegressionContext.FreshRoot)
+    if (previousProfile != null && currentProfile != null && previousProfile != currentProfile) add(RegressionContext.NewProfile)
+    if (reinstalled) add(RegressionContext.Reinstalled)
+    if (openIncident) add(RegressionContext.OpenIncident)
+}
+
+internal data class ReturnedSave(val spot: SaveSpot, val slot: ObservedSlot, val bytes: ByteArray)
+internal data class SaveInspection(val hash: String?, val shape: SaveShape?)
+
+internal fun inspectSave(bytes: ByteArray, folder: Boolean): SaveInspection =
+    SaveInspection(rommSaveHash(bytes), saveShape(bytes, folder))
+
+/** Compare with the verified local RomM copy, including when the server is offline. */
 internal class SaveRegression(
     private val saves: PlayerSaves,
-    private val plugins: PluginHost,
     private val store: SaveProtectionStore,
-    private val copies: SaveIncidentCopies,
+    private val baseline: suspend (Game, String, Boolean) -> SaveInspection?,
+    private val inspect: (ByteArray, Boolean) -> SaveInspection = ::inspectSave,
 ) {
-    suspend fun quarantine(
-        subject: SaveIncidentGame,
-        player: Player,
-        spots: List<SaveSpot>,
-        observed: ObservedSaves,
-        root: FolderRef?,
-        context: Set<RegressionContext>,
-    ): Boolean {
+    fun capture(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>): Pair<ObservedSaves, ReturnedSave?> {
+        var returned: ReturnedSave? = null
+        val observed = saves.changedSince(libraryId, game, player, spots) { spot, slot, bytes ->
+            if (spots.size == 1) returned = ReturnedSave(spot, slot, bytes)
+        }
+        return observed to returned
+    }
+
+    suspend fun quarantine(subject: SaveIncidentGame, player: Player, returned: ReturnedSave, root: FolderRef?,
+        context: Set<RegressionContext>): Boolean {
+        val origin = subject.origin ?: return false
         val game = subject.game()
-        val library = plugins.library(subject.libraryId)
-        if (subject.origin == null || !supportsRommRepair(library)) return false
-        // The existing choice route can place exactly one slot.
-        val slot = observed.slots.singleOrNull() ?: return false
-        val spot = spots.singleOrNull { it.slot == slot.slot } ?: return false
         val id = regressionIncidentId(game, player)
         val previous = store.incident(id)
-        val folderSave = spot.isFolderSave()
-        val synced = rommSyncedSave(library, game, slot.slot, SAVE_ZIP_LIMIT)?.let {
-            rommSaveHash(it) to saveShape(it, folderSave)
+        val folder = returned.spot.isFolderSave()
+        val prior = try { baseline(game, returned.slot.slot, folder) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { SaveInspection(null, null).takeIf { context.isNotEmpty() } }
+        if (prior == null && previous == null) return false
+        val current = try { inspect(returned.bytes, folder) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { null }
+
+        val same = current?.hash?.let { it == prior?.hash } == true
+        val reason = when {
+            same -> null
+            context.isNotEmpty() -> SaveProtectionCopy.mayBeNewGame
+            else -> current?.takeIf { it.hash != null }?.shape?.let { suspectRegression(prior?.shape, it) }
         }
-        if (previous == null && synced?.second == null) return false
-        val bytes = saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: throw SaveNotPlaced()
-        if (md5Hex(bytes) != slot.contentHash) throw SaveNotPlaced()
-        val hash = rommSaveHash(bytes) ?: throw SaveNotPlaced()
-        if (synced?.first == hash) return false
-        val shape = saveShape(bytes, folderSave)
-        val reason = shape?.let { suspectRegression(synced?.second, it, context) }
         if (previous == null && reason == null) return false
 
-        val uri = saves.stageCopy(game, player, spot, bytes, subject.origin)
-        // Preserve the first unresolved reset choice. Subsequent progress is kept too.
+        // The first read supplied both the observed hash and bytes. A failed inspection
+        // cannot force another read of a mutable emulator file or prevent ordinary sync.
+        val uri = saves.stageCopy(game, player, returned.spot, returned.bytes, origin)
         val incident = previous ?: SaveIncident(id, IncidentKind.MaybeNewSave, player.saveFolderId(), player.displayName,
-            listOf(game.remoteKey), root, null, Evidence(EvidenceKind.SessionWrite, reason ?: SaveProtectionCopy.mayBeNewGame),
-            System.currentTimeMillis(), repair = RepairState.Keeping, subject = subject, quarantinedHash = hash)
+            listOf(game.remoteKey), root, null, Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.mayBeNewGame),
+            System.currentTimeMillis(), repair = RepairState.Keeping, subject = subject,
+            quarantinedHash = current?.hash, quarantineSourceUri = uri)
         store.put(incident.copy(staged = (incident.staged + uri).distinct()))
-        saves.noteHandedOver(game.backendId, game, player, spots, observed)
-        copies.keep(game, player)
+        if (reason == null) return false // Preserve later progress as a Backup and hand it to ordinary sync.
+        saves.noteHandedOver(subject.libraryId, game, player, listOf(returned.spot), ObservedSaves(listOf(returned.slot)))
         return true
     }
 }

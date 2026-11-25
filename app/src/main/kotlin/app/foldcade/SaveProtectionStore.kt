@@ -154,6 +154,7 @@ private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
+    .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
     .put("repair", repair.toJson())
 private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.getString("id"), IncidentKind.valueOf(json.getString("kind")), json.getString("playerKey"), json.getString("playerName"),
@@ -163,6 +164,7 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     repairFromJson(json.optJSONObject("repair") ?: JSONObject().put("state", json.optString("repair"))),
     json.optBoolean("recoveryRequired"), json.optJSONObject("subject")?.let(::subjectFromJson), json.stringOrNull("quarantinedHash"),
     json.optBoolean("automaticDone"),
+    json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)

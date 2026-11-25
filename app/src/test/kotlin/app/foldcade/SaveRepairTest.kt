@@ -44,7 +44,9 @@ class SaveRepairTest {
             return true
         }
         override suspend fun bind() { events += "bind" }
-        override suspend fun place(selection: RepairState.Placing, copies: RepairCopies) {
+        var refuseStrictSync = false
+        override suspend fun place(selection: RepairState.Placing, copies: RepairCopies, backedUpLive: Boolean) {
+            if (refuseStrictSync) throw app.foldcade.plugins.romm.RommRepairNeedsSync()
             events += "place:${selection.saveId}"
             val chosen = versions().single { it.id == selection.saveId }
             this.copies = this.copies.copy(live = chosen.hash)
@@ -153,6 +155,36 @@ class SaveRepairTest {
         assertFalse(work.events.any { it.startsWith("place") })
     }
 
+    @Test fun leaveAsIsCannotPlaceTheHeadDuringAWrongFolderRepair() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val work = Work(RepairCopies(null, "live", null))
+        store.put(incident)
+        val repair = SaveRepair(store, { work }, settle = {})
+        repair.advance(incident.id, start = true)
+        val choice = store.incident(incident.id)?.repair as RepairState.Choosing
+        assertNull(repair.advance(incident.id, choice = choice to SaveConflictAction.KeepBoth))
+        assertEquals(choice, store.incident(incident.id)?.repair)
+        assertFalse(work.events.any { it.startsWith("place") })
+    }
+
+    @Test fun aStrictSyncConflictGoesToGuidedRecovery() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val work = Work().apply { refuseStrictSync = true }
+        store.put(incident)
+        assertNull(SaveRepair(store, { work }, settle = {}).advance(incident.id, start = true))
+        assertEquals(RepairState.Guided, store.incident(incident.id)?.repair)
+    }
+
+    @Test fun aSuspectCopyWithNoShapeOrHashIsFoundByItsVerifiedBackupId() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val work = Work(RepairCopies("reset", "reset", null))
+        work.backups["reset"] = RommRepairSave("reset-id", null, "reset", 2, 5)
+        val quarantine = incident.copy(kind = IncidentKind.MaybeNewSave, repair = RepairState.Keeping, quarantineBackupId = "reset-id")
+        store.put(quarantine)
+        SaveRepair(store, { work }, settle = {}).advance(quarantine.id)
+        assertEquals(RepairState.Choosing("head-id", "reset-id", "head", suspect = true), store.incident(quarantine.id)?.repair)
+    }
+
     @Test fun aResetIsOfferedWithoutGatingAndLeavingItAloneKeepsTheHead() = runBlocking {
         val store = SaveProtectionStore(temp.newFolder().toPath())
         val work = Work(RepairCopies("reset", "reset", null))
@@ -193,5 +225,21 @@ class SaveRepairTest {
         assertEquals(SaveShape(2560, 2, folder = true), saveShape(archive, folder = true))
         assertNull(saveShape(archive.copyOf(archive.size - 22), folder = true))
         assertEquals(SaveShape(archive.size.toLong(), 1), saveShape(archive, folder = false))
+    }
+
+    @Test fun freshRootRequiresNewMarkersInTheSameNonHostedFolder() {
+        fun snap(root: FolderRef, markers: Boolean) = ProbeSnapshot(1, 1, "azahar.app",
+            listOf(RootReading(root, true, emptyList(), null, true, markers, null)))
+        fun context(before: ProbeSnapshot?, after: ProbeSnapshot?, hosted: Boolean = false) =
+            returnRegressionContext(before, after, hosted, null, null, reinstalled = false, openIncident = false)
+        val before = snap(bound, false)
+        assertTrue(context(before, before, hosted = true).isEmpty())
+        assertTrue(context(before, snap(bound, true), hosted = true).isEmpty())
+        assertTrue(context(before, before).isEmpty())
+        assertTrue(context(before, null).isEmpty())
+        assertTrue(context(before, snap(live, true)).isEmpty())
+        assertEquals(setOf(RegressionContext.FreshRoot), context(before, snap(bound, true)))
+        assertEquals(setOf(RegressionContext.NewProfile, RegressionContext.Reinstalled, RegressionContext.OpenIncident),
+            returnRegressionContext(before, before, true, "old", "new", reinstalled = true, openIncident = true))
     }
 }

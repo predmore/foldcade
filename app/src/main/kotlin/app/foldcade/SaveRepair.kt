@@ -13,9 +13,10 @@ import kotlin.coroutines.cancellation.CancellationException
 
 internal data class RepairCopies(
     val bound: String?, val live: String?, val besideGame: String?, val suspect: Boolean = false, val liveMatchesSynced: Boolean = false,
+    val liveRawHash: String? = null,
 ) {
     fun hashes() = setOfNotNull(bound, live, besideGame)
-    fun sameBytes(other: RepairCopies) = bound == other.bound && live == other.live && besideGame == other.besideGame
+    fun sameBytes(other: RepairCopies) = bound == other.bound && live == other.live && besideGame == other.besideGame && liveRawHash == other.liveRawHash
 }
 
 internal class RepairFoldersUnavailable : Exception()
@@ -29,7 +30,7 @@ internal interface SaveRepairWork {
     suspend fun readCopies(keptHashes: Set<String>, stage: Boolean): RepairCopies
     suspend fun uploadBackups(): Boolean
     suspend fun bind()
-    suspend fun place(selection: RepairState.Placing, copies: RepairCopies)
+    suspend fun place(selection: RepairState.Placing, copies: RepairCopies, backedUpLive: Boolean)
     suspend fun verify()
 }
 
@@ -50,6 +51,8 @@ internal class SaveRepair(
         if (state == RepairState.Binding || state == RepairState.Guided || state == RepairState.NotStarted && !start) return null
         if (state is RepairState.Choosing && choice?.first != state && !(start && choice == null)) return null
         if (choice?.second == SaveConflictAction.DecideLater) return null
+        val quarantine = incident.kind == IncidentKind.MaybeNewSave
+        if (!quarantine && choice?.second == SaveConflictAction.KeepBoth) return null
 
         suspend fun update(next: RepairState) {
             val latest = store.incident(id) ?: return
@@ -59,7 +62,6 @@ internal class SaveRepair(
             }
         }
 
-        val quarantine = incident.kind == IncidentKind.MaybeNewSave
         var backupsKept = (state as? RepairState.WaitingForClose)?.backupsKept == true || state is RepairState.Placing
         var selection = when (state) {
             is RepairState.Placing -> state
@@ -87,7 +89,7 @@ internal class SaveRepair(
                 return null
             }
             val needed = working.hashes().filter { it !in backups && it != alreadyPlaced }
-            val verified = if (needed.isEmpty()) listed else work.versions()
+            val verified = if (needed.isEmpty() && incident.staged.isEmpty()) listed else work.versions()
             val kept = verified.filter { it.slot == null }.associateBy { it.hash }
             if (needed.any { it !in kept }) {
                 update(RepairState.WaitingForRomm(selection))
@@ -100,8 +102,11 @@ internal class SaveRepair(
                 if (all != latest.kept) store.put(latest.copy(kept = all))
             }
             val head = verified.firstOrNull { it.slot == work.slot }?.takeIf { it.hash.isNotEmpty() } ?: throw RommRepairNeedsSync()
-            val liveHash = if (quarantine) incident.quarantinedHash else working.live
-            val live = kept[liveHash]
+            val live = if (quarantine) {
+                val current = store.incident(id) ?: return null
+                verified.firstOrNull { it.slot == null && it.id == current.quarantineBackupId } ?: kept[current.quarantinedHash]
+            } else kept[working.live]
+            val liveIsHead = if (quarantine) (live?.hash ?: incident.quarantinedHash) == head.hash else working.live == head.hash
             val suspect = quarantine || working.suspect
             val next = if (live != null && live.hash != head.hash && (quarantine || !suspect && !working.liveMatchesSynced)) {
                 RepairState.Choosing(head.id, live.id, head.hash, suspect)
@@ -118,11 +123,11 @@ internal class SaveRepair(
                 update(next ?: RepairState.WaitingForRomm())
                 return null
             }
-            if (quarantine && liveHash != head.hash && live == null) {
+            if (quarantine && !liveIsHead && live == null) {
                 update(RepairState.WaitingForRomm(selection))
                 return null
             }
-            if (quarantine && selection == null && (choice?.second == SaveConflictAction.KeepBoth || liveHash == head.hash)) {
+            if (quarantine && selection == null && (choice?.second == SaveConflictAction.KeepBoth || liveIsHead)) {
                 if (working.live != null && working.live != head.hash) {
                     val subject = incident.subject
                     if (subject != null) store.requireBackup(incident.playerKey, subject.game())
@@ -146,7 +151,7 @@ internal class SaveRepair(
             )
             selection = selected
             update(selected)
-            work.place(selected, working)
+            work.place(selected, working, backedUpLive = working.live != null && working.live in kept)
             work.verify()
             return complete(id)
         } catch (cancelled: CancellationException) {
@@ -161,7 +166,7 @@ internal class SaveRepair(
         } catch (_: SaveNotPlaced) {
             update(if (quarantine) RepairState.WaitingForClose(selection, backupsKept) else RepairState.Guided)
         } catch (_: RommRepairNeedsSync) {
-            update(if (quarantine) RepairState.WaitingForRomm(selection) else RepairState.Guided)
+            update(RepairState.Guided)
         } catch (_: PluginException.SaveFormatMismatch) {
             update(if (quarantine && state is RepairState.Choosing) state else RepairState.Guided)
         } catch (_: Exception) {

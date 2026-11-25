@@ -128,7 +128,9 @@ internal class SaveIncidentCopies(
                 else library.keepAsBackups(copy.game, player, observed)
             if (kept.size != 1 || kept.single().isBlank()) throw PluginException.Unavailable("Backup did not verify")
             store.incidents().filter { it.playerKey == copy.playerKey && copy.slot.contentUri in it.staged }.forEach { current ->
-                store.put(current.copy(kept = (current.kept + kept).distinct(), staged = current.staged.filterNot { it == copy.slot.contentUri }))
+                val candidate = if (current.quarantineSourceUri == copy.slot.contentUri) kept.single() else current.quarantineBackupId
+                store.put(current.copy(kept = (current.kept + kept).distinct(),
+                    staged = current.staged.filterNot { it == copy.slot.contentUri }, quarantineBackupId = candidate))
             }
             saves.removeQueuedCopy(copy)
         } catch (cancelled: CancellationException) { throw cancelled

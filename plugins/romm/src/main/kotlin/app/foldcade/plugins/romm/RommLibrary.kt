@@ -1097,13 +1097,16 @@ internal class RommLibrary internal constructor(
             throw PluginException.Unavailable(SAVE_UNREACHABLE)
     }
 
-    private suspend fun strictSaveSync(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?): SaveSyncReport {
+    private suspend fun strictSaveSync(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?, forRepair: Boolean = false): SaveSyncReport {
         val report = syncOnce(wiring, ops, romId, emulator)
         rememberConflicts(wiring, report)
+        val refused = report.keptBoth.isNotEmpty() || report.failed.isNotEmpty()
+        if (forRepair && refused) throw RommRepairNeedsSync()
         if (report.queued.isNotEmpty() || !report.completedSession)
             throw PluginException.Unavailable("Save sync did not finish", app.foldcade.romm.RommUnavailable("Save sync is waiting for RomM"))
-        if (report.keptBoth.isNotEmpty() || report.failed.isNotEmpty() ||
+        if (refused ||
             runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
+            if (forRepair) throw RommRepairNeedsSync()
             throw PluginException.Unavailable("Save sync did not finish")
         }
         return report
@@ -1112,7 +1115,7 @@ internal class RommLibrary internal constructor(
     private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, player: Player?, beforeCommit: () -> Unit,
         expectedHead: String? = null, beforeRepairWrite: suspend () -> Unit = {}): List<PlacedSave> {
         val localPlayer = player?.id
-        strictSaveSync(wiring, ops, romId, localPlayer)
+        strictSaveSync(wiring, ops, romId, localPlayer, forRepair = expectedHead != null)
         val device = wiring.rememberedDevice!!.deviceId
         val listed = ops.listSaves(romId, device).filter { it.romId == romId }
         val chosen = listed.singleOrNull { it.id.toString() == id } ?: throw PluginException.NotFound("Save is no longer available")

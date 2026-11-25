@@ -483,6 +483,20 @@ class SettingsPersistenceTest {
         assertEquals("key", SessionStore(prefs).lastPlayerStart("com.retroarch.aarch64"))
     }
 
+    @Test fun repairOnlyHoldsSurviveRestartAndRequireExitAfterTheLatestOpen() {
+        val prefs = MemoryPrefs()
+        val name = "com.retroarch.aarch64"
+        SessionStore(prefs).noteRepairPlayerOpened(name, 125)
+        val restored = SessionStore(prefs)
+        assertTrue(restored.playersHoldingGames().isEmpty())
+        assertFalse(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(120)))
+        assertTrue(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(130)))
+        restored.noteRepairPlayerOpened(name, 135)
+        assertFalse(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(130)))
+        restored.noteRepairPlayerClosed(name)
+        assertNull(SessionStore(prefs).repairPlayerOpenedAt(name))
+    }
+
     private fun shell(prefs: MemoryPrefs, themes: List<String> = listOf("Built-in", "Afterglow")): ShellController =
         ShellController(
             SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),

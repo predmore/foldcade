@@ -10,6 +10,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveConflictPromptTest {
+    @Test fun wrongFolderChoiceOnlyOffersTheTwoHistoriesAndLater() {
+        val repair = prompt.copy(focus = SaveConflictFocus.Remote, canKeepBoth = false)
+        assertEquals(repair to null, applySaveConflict(repair, Meaning.MoveDown))
+        assertEquals(SaveConflictAction.KeepRemote, applySaveConflict(repair, Meaning.Activate).second)
+        assertEquals(SaveConflictAction.DecideLater, applySaveConflict(repair, Meaning.Back).second)
+        assertNull(applySaveConflict(repair.copy(focus = SaveConflictFocus.KeepBoth), Meaning.Activate).second)
+    }
     private val prompt = SaveConflictPrompt(
         id = "1234:autosave",
         libraryId = "romm",
