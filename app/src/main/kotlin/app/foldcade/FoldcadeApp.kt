@@ -581,7 +581,7 @@ class FoldcadeApp : Application() {
 
     /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
     internal val runningGames = RunningGames().also { games ->
-        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate() } }
+        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate(); resumeSaveRepairs() } }
     }
 
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
@@ -984,8 +984,8 @@ class FoldcadeApp : Application() {
             PlaySessions.open(File(filesDir, "play-sessions/events.log")).also { perfMark("history-prepare-end") }
         }
         store = SessionStore(getSharedPreferences(SessionStore.PREFS_NAME, MODE_PRIVATE))
-        runningGames.restore(store.playersHoldingGames())
-        runningGames.onPlayersChange = store::setPlayersHoldingGames
+        runningGames.restore(store.playersHoldingGames(), store.closedGamePlayers())
+        runningGames.onPlayersChange = { store.setPlayersHoldingGames(it, runningGames.closedPackages()) }
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
         credentials = AndroidCredentialStore(this)
@@ -1703,8 +1703,59 @@ class FoldcadeApp : Application() {
     }
 
     internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
-    internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection) }
+    internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection, store::rommOrigin) }
     internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies, ::edenSaveReadsAllowed) }
+    internal val saveRegression by lazy { SaveRegression(playerSaves, plugins, saveProtection, saveIncidentCopies) }
+    private val saveRepair by lazy {
+        SaveRepair(saveProtection, { repairWork(it) }, changed = { publishSaveProtection(emptyMap(), replace = false) })
+    }
+
+    internal fun associateSaveRepair(player: Player, subject: app.foldcade.language.SaveIncidentGame) {
+        if (subject.targetUri == null || !app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId))) return
+        val incident = saveProtection.incident("WrongFolder:${player.saveFolderId()}") ?: return
+        if (incident.live != null && incident.repair == app.foldcade.language.RepairState.NotStarted && incident.subject == null)
+            saveProtection.put(incident.copy(subject = subject))
+    }
+
+    internal suspend fun advanceSaveRepair(id: String, start: Boolean = false,
+        choice: Pair<app.foldcade.language.RepairState.Choosing, app.foldcade.language.SaveConflictAction>? = null): app.foldcade.language.SaveIncident? =
+        withContext(Dispatchers.IO) {
+            awaitPlugins()
+            saveFoldersReady.await()
+            saveFlow.withLock {
+                val done = saveRepair.advance(id, start, choice)
+                val player = done?.subject?.playerId?.let(plugins::player)
+                if (player != null) refreshSaveProtection(player, flowHeld = true)
+                else publishSaveProtection(emptyMap(), replace = false)
+                done
+            }
+        }
+
+    internal fun resumeSaveRepairs() {
+        if (!::plugins.isInitialized || !::shell.isInitialized) return
+        scope.launch {
+            for (incident in saveProtection.incidents()) {
+                when (incident.repair) {
+                    app.foldcade.language.RepairState.Keeping, app.foldcade.language.RepairState.Rebinding,
+                    is app.foldcade.language.RepairState.WaitingForClose, is app.foldcade.language.RepairState.WaitingForRomm,
+                    is app.foldcade.language.RepairState.Placing, app.foldcade.language.RepairState.Done ->
+                        advanceSaveRepair(incident.id)?.let { repairFinished(it) }
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    internal suspend fun repairFinished(incident: app.foldcade.language.SaveIncident) = withContext(Dispatchers.Main.immediate) {
+        val subject = incident.subject ?: return@withContext
+        val live = incident.live
+        if (live != null) postNotice(app.foldcade.language.FoldNotice("foldcade:fixed:${incident.id}",
+            app.foldcade.language.SaveProtectionCopy.fixed(subject.label), app.foldcade.language.SaveProtectionCopy.repairDone(live.label),
+            postedMillis = System.currentTimeMillis()))
+        if (shell.model.saveFix?.incidentId != incident.id) return@withContext
+        val home = homes.values.mapNotNull { it.get() }.firstOrNull { it.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }
+        home?.continueRepairedLaunch(incident)
+    }
 
     internal fun cachedSaveSpots(player: Player): Map<Game, List<SaveSpot>> = receiptSpots
         .filterValues { it.first.saveFolderId() == player.saveFolderId() }.mapValues { it.value.second }
@@ -1741,9 +1792,23 @@ class FoldcadeApp : Application() {
     }
 
     private suspend fun publishSaveProtection(locations: Map<String, app.foldcade.language.LocationFact>, replace: Boolean) = withContext(Dispatchers.Main.immediate) {
-        shell.setSaveProtection(locations, saveProtection.incidents(), replace)
-        saveIncidentNotices.update(saveProtection.incidents())
+        val incidents = saveProtection.incidents()
+        shell.setSaveProtection(locations, incidents, replace)
+        shell.model.saveFix?.let { page ->
+            val canClose = incidents.firstOrNull { it.id == page.incidentId }?.let { repairClosePackage(it) } != null
+            if (page.canCloseGame != canClose) shell.updateSaveFix(page.incidentId) { it.copy(canCloseGame = canClose) }
+        }
+        saveIncidentNotices.update(incidents)
         publishNotices()
+    }
+
+    /** A restored Android task may still hold a game even though its Paused tile is gone. */
+    internal fun repairClosePackage(incident: app.foldcade.language.SaveIncident): String? {
+        if (incident.repair !is app.foldcade.language.RepairState.WaitingForClose) return null
+        return incident.subject?.playerId?.let(plugins::player)?.packageNames?.filter { name ->
+            name in runningGames.holdingPackages() && name !in closingPlayers && canClearPlayerTask(name) &&
+                packageManager.getLaunchIntentForPackage(name) != null
+        }?.singleOrNull()
     }
 
     private val saveFolderFindLock = Mutex()
@@ -1935,6 +2000,7 @@ class FoldcadeApp : Application() {
                     if (service != null) shell.setSaveService(id, service)
                     if (service == app.foldcade.api.plugin.SaveServiceState.Ready) withContext(Dispatchers.IO) {
                         saveFlow.withLock { saveIncidentCopies.keepAll(id) }
+                        resumeSaveRepairs()
                     }
                     val keys = try {
                         plugins.unsyncedSaves(id)

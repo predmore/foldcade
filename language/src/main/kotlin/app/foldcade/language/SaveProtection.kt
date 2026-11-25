@@ -123,6 +123,22 @@ data class SaveIncident(
     val repair: RepairState = RepairState.NotStarted,
     /** A bypass session wrote suspect bytes. Only choosing a recovery folder clears this. */
     val recoveryRequired: Boolean = false,
+    val subject: SaveIncidentGame? = null,
+    val quarantinedHash: String? = null,
+    val automaticDone: Boolean = false,
+)
+
+/** The locally resolved game and player behind an incident, retained for repair after restart. */
+data class SaveIncidentGame(
+    val libraryId: String,
+    val gameId: String,
+    val platformId: String,
+    val label: String,
+    val playerId: String,
+    val targetUri: String?,
+    val origin: String?,
+    val packageName: String?,
+    val installFirstMillis: Long?,
 )
 
 enum class IncidentKind {
@@ -146,6 +162,13 @@ val SaveIncident.isEdenSessionChange: Boolean get() = playerKey == "eden" && kin
 
 sealed interface RepairState {
     data object NotStarted : RepairState
+    data object Keeping : RepairState
+    data class WaitingForRomm(val resume: Placing? = null) : RepairState
+    data class WaitingForClose(val resume: Placing? = null, val backupsKept: Boolean = false) : RepairState
+    data object Rebinding : RepairState
+    data class Choosing(val headId: String, val backupId: String, val headHash: String, val suspect: Boolean) : RepairState
+    data class Placing(val saveId: String, val headHash: String, val liveHash: String?) : RepairState
+    data object Guided : RepairState
     data object Binding : RepairState
     data object Done : RepairState
 }
@@ -231,6 +254,23 @@ fun heroActivityLine(health: SaveStatus, activity: TileActivity): String? =
     if (saveHealthLeads(health, activity) && (activity == TileActivity.Syncing || activity is TileActivity.Synced)) null else activityLine(activity)
 
 object SaveProtectionCopy {
+    const val mayBeNewGame = "May be a new game"
+    const val chooseProgress = "Which save do you want to play?"
+    const val bothKept = "Both are kept on RomM."
+    const val keepingCopies = "Keeping your saves on RomM."
+    const val waitForRomm = "Waiting for RomM. Foldcade will try again when it can connect."
+    const val placingSave = "Putting your save back."
+    const val stepRestore = "Put your save back"
+    const val tryAgain = "Try again"
+    const val closeGame = "Close game"
+    const val thisThor = "This Thor"
+    const val romm = "RomM"
+    const val twoSaves = "Two saves"
+    fun waitForClose(game: String?, player: String) = "Quit ${game ?: "the game"} in $player, then come back."
+    fun usingFolder(folder: String) = "Switching Foldcade to $folder."
+    fun repairDone(folder: String) = "Your RomM save is back in $folder."
+    fun fixed(game: String) = "Fixed: $game"
+    fun fromFolder(folder: String) = "From the folder $folder"
     const val fix = "Fix it"
     const val playAnyway = "Play anyway"
     const val folderSet = "Folder set"
@@ -302,7 +342,7 @@ object SaveProtectionCopy {
         IncidentKind.MaybeWrongFolder -> "$playerName may be saving somewhere else"
         IncidentKind.FolderEmptied -> "$playerName’s save folder is empty"
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) evidence.detail.trimEnd('.') else "Two saves · choose one"
+        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) evidence.detail.trimEnd('.') else subject?.let { "Two saves for ${it.label}" } ?: "Two saves · choose one"
     } }
     fun safeOnRomm(receipt: Long?, hasVersions: Boolean, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String = when {
         receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt, now, style, inSentence = true)}."
@@ -317,7 +357,8 @@ object SaveProtectionCopy {
         IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
         IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
         IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "Check Eden’s user, then choose a save." else "Two saves. Choose which to play."
+        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "Check Eden’s user, then choose a save." else
+            if (repair is RepairState.WaitingForRomm) "Keeping both saves. Waiting for RomM." else "Two saves. Choose which to play."
     } }
     /**
      * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it

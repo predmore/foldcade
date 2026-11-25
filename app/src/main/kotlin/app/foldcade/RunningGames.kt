@@ -61,8 +61,9 @@ internal class RunningGames {
     var onPlayersChange: (Set<String>) -> Unit = {}
 
     /** Players a previous process noted, read back once at start. */
-    fun restore(players: Set<String>) {
+    fun restore(players: Set<String>, closed: Set<String> = emptySet()) {
         holdingOnly += players - byPackage.keys
+        closedPlayers += closed.intersect(holdingOnly)
     }
 
     fun note(game: RunningGame) {
@@ -103,6 +104,8 @@ internal class RunningGames {
      * nothing, so its update need not wait for the next game to end; one restored from an earlier process still may.
      */
     fun holdingPackages(): Set<String> = byPackage.keys + (holdingOnly - closedPlayers)
+
+    fun closedPackages(): Set<String> = closedPlayers.toSet()
 
     /** True when [packageName] may still hold a game Foldcade started, in this process or an earlier one. */
     fun mayHold(packageName: String?): Boolean = packageName != null && (packageName in byPackage || packageName in holdingOnly)

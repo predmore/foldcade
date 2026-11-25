@@ -50,6 +50,14 @@ internal class SaveProtectionStore(private val directory: Path) {
     @Synchronized fun incidents(): List<SaveIncident> = incidentRows.keys().asSequence().map { incidentFromJson(incidentRows.getJSONObject(it)) }
         .sortedByDescending { it.openedAtMillis }.toList()
 
+    @Synchronized fun incident(id: String): SaveIncident? = incidentRows.optJSONObject(id)?.let(::incidentFromJson)
+
+    @Synchronized fun reinstalled(key: String, root: FolderRef, packageName: String, install: Long?): Boolean =
+        install != null && locations.optJSONObject(key)?.let { row ->
+            row.optString("identity") == root.identity && row.optString("packageName") == packageName &&
+                row.nullableLong("installFirstMillis")?.let { it != install } == true && !row.optBoolean("bound")
+        } == true
+
     @Synchronized fun put(incident: SaveIncident) {
         val next = JSONObject(incidentRows.toString()).put(incident.id, incident.toJson())
         writeDurably(incidentsFile, next.toString().toByteArray())
@@ -144,19 +152,64 @@ private fun JSONArray.strings(): List<String> = (0 until length()).map(::getStri
 private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("kind", kind.name).put("playerKey", playerKey)
     .put("playerName", playerName).put("gameIds", JSONArray(gameIds)).put("bound", bound?.toJson() ?: JSONObject.NULL)
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
-    .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged)).put("repair", when (repair) {
-        RepairState.NotStarted -> "NotStarted"
-        RepairState.Binding -> "Binding"
-        RepairState.Done -> "Done"
-    })
+    .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
+    .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
+    .put("repair", repair.toJson())
 private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.getString("id"), IncidentKind.valueOf(json.getString("kind")), json.getString("playerKey"), json.getString("playerName"),
     json.getJSONArray("gameIds").strings(), json.optJSONObject("bound")?.let(::folderFromJson), json.optJSONObject("live")?.let(::folderFromJson),
     evidenceFromJson(json.getJSONObject("evidence")), json.getLong("openedAtMillis"),
     json.optJSONArray("kept")?.strings().orEmpty(), json.optJSONArray("staged")?.strings().orEmpty(),
-    when (json.optString("repair")) { "Binding" -> RepairState.Binding; "Done" -> RepairState.Done; else -> RepairState.NotStarted },
-    json.optBoolean("recoveryRequired"),
+    repairFromJson(json.optJSONObject("repair") ?: JSONObject().put("state", json.optString("repair"))),
+    json.optBoolean("recoveryRequired"), json.optJSONObject("subject")?.let(::subjectFromJson), json.stringOrNull("quarantinedHash"),
+    json.optBoolean("automaticDone"),
 )
+
+private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
+
+private fun SaveIncidentGame.toJson(): JSONObject = JSONObject().put("library", libraryId).put("game", gameId).put("platform", platformId)
+    .put("label", label).put("player", playerId).put("target", targetUri).put("origin", origin)
+    .put("package", packageName).put("install", installFirstMillis)
+
+private fun subjectFromJson(json: JSONObject): SaveIncidentGame = SaveIncidentGame(json.getString("library"), json.getString("game"),
+    json.getString("platform"), json.getString("label"), json.getString("player"), json.stringOrNull("target"), json.stringOrNull("origin"),
+    json.stringOrNull("package"), json.nullableLong("install"))
+
+private fun RepairState.toJson(): JSONObject = JSONObject().put("state", when (this) {
+    RepairState.NotStarted -> "NotStarted"
+    RepairState.Keeping -> "Keeping"
+    is RepairState.WaitingForRomm -> "WaitingForRomm"
+    is RepairState.WaitingForClose -> "WaitingForClose"
+    RepairState.Rebinding -> "Rebinding"
+    is RepairState.Choosing -> "Choosing"
+    is RepairState.Placing -> "Placing"
+    RepairState.Guided -> "Guided"
+    RepairState.Binding -> "Binding"
+    RepairState.Done -> "Done"
+}).apply {
+    when (this@toJson) {
+        is RepairState.WaitingForRomm -> put("resume", resume?.toJson())
+        is RepairState.WaitingForClose -> put("resume", resume?.toJson()).put("backupsKept", backupsKept)
+        is RepairState.Choosing -> put("head", headId).put("backup", backupId).put("hash", headHash).put("suspect", suspect)
+        is RepairState.Placing -> put("save", saveId).put("hash", headHash).put("liveHash", liveHash)
+        else -> Unit
+    }
+}
+
+private fun placingFromJson(json: JSONObject) = RepairState.Placing(json.getString("save"), json.getString("hash"), json.stringOrNull("liveHash"))
+
+private fun repairFromJson(json: JSONObject): RepairState = when (json.optString("state")) {
+    "Keeping" -> RepairState.Keeping
+    "WaitingForRomm" -> RepairState.WaitingForRomm(json.optJSONObject("resume")?.let(::placingFromJson))
+    "WaitingForClose" -> RepairState.WaitingForClose(json.optJSONObject("resume")?.let(::placingFromJson), json.optBoolean("backupsKept"))
+    "Rebinding" -> RepairState.Rebinding
+    "Choosing" -> RepairState.Choosing(json.getString("head"), json.getString("backup"), json.getString("hash"), json.getBoolean("suspect"))
+    "Placing" -> placingFromJson(json)
+    "Guided" -> RepairState.Guided
+    "Binding" -> RepairState.Binding
+    "Done" -> RepairState.Done
+    else -> RepairState.NotStarted
+}
 
 internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", atMillis).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
     .put("packageName", packageName).put("roots", JSONArray(roots.map { root -> JSONObject()

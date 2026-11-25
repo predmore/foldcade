@@ -8,6 +8,8 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SaveDestination
 import app.foldcade.language.SavePickerTarget
+import app.foldcade.language.RepairState
+import app.foldcade.plugins.romm.placeRommRepairSave
 
 /** Captured when Y opens Saves, retained across activity recreation. */
 internal data class SavePickerRequest(val target: SavePickerTarget, val route: GameRoute, val owner: Game, val player: Player?)
@@ -23,6 +25,22 @@ internal class ServerSaveFlow(
     private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
     private val awaitLoad: (String, Boolean) -> Unit,
 ) {
+    /** Repair has already captured the working files. They must never reach ordinary reconcile. */
+    suspend fun repair(owner: Game, player: Player, spots: List<SaveSpot>, origin: String,
+        choice: RepairState.Placing, beforeWrite: suspend () -> Unit) {
+        val spot = spots.singleOrNull() ?: throw RepairFoldersUnavailable()
+        val placingPlayer = object : Player by player {
+            override fun canPlaceSave(slot: String, bytes: ByteArray) =
+                player.canPlaceSave(slot, bytes) && saves.canPlaceSave(listOf(spot), slot, bytes)
+        }
+        val placed = placeRommRepairSave(plugins.library(owner.backendId), owner, placingPlayer,
+            choice.saveId, origin, choice.headHash, beforeWrite) { awaitLoad(player.saveFolderId(), true) }
+        if (placed.singleOrNull()?.slot != spot.slot) throw SaveNotPlaced()
+        beforeWrite()
+        if (!saves.place(owner.backendId, owner, player, spots, placed)) throw SaveNotPlaced()
+        onHeadPlaced(owner, player)
+    }
+
     suspend fun perform(request: SavePickerRequest, saveId: String?, destination: SaveDestination? = null, eden: EdenSaveAccess? = null) {
         val player = request.player
         val owner = request.owner

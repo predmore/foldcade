@@ -15,8 +15,8 @@ import app.foldcade.R
 import app.foldcade.language.*
 
 /**
- * The guided PR 1 path. The top screen says what happened and where the fix stands; the bottom
- * screen is one card in the dialog look, with only the step to do now and its buttons.
+ * The top screen shows what happened and where the fix stands. The bottom screen shows the
+ * current step and its actions.
  */
 @Composable
 internal fun SaveFixScreen(app: FoldcadeApp, page: SaveFixPage, controls: Boolean, dispatch: (Effect?) -> Unit) {
@@ -38,11 +38,11 @@ internal fun SaveFixScreen(app: FoldcadeApp, page: SaveFixPage, controls: Boolea
     Box(Modifier.fillMaxSize().background(theme.background)) {
         DialogFrame(
             app = app,
-            title = if (incident.isEdenSessionChange) SaveProtectionCopy.title(incident) else SaveProtectionCopy.fixTitle(incident.playerName),
+            title = if (incident.isEdenSessionChange) SaveProtectionCopy.title(incident) else saveFixHeading(incident),
             body = card.body,
             detail = card.detail,
             buttons = actions.map { saveFixLabel(it, incident) },
-            focused = page.index.coerceIn(0, actions.lastIndex),
+            focused = page.index.coerceIn(0, actions.lastIndex.coerceAtLeast(0)),
             hints = hints,
             onButton = { index -> dispatch(app.shell.touchSaveFix(index)) },
         )
@@ -58,7 +58,7 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
     val body = TextStyle(color = theme.onBackground, fontFamily = theme.font, fontSize = design.type.dialogBody)
     val muted = body.copy(color = theme.muted)
     Column(Modifier.fillMaxSize().background(theme.background).padding(48.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-        BasicText(if (incident.isEdenSessionChange) "Check Eden’s user" else SaveProtectionCopy.fixTitle(incident.playerName),
+        BasicText(if (incident.isEdenSessionChange) "Check Eden’s user" else saveFixHeading(incident),
             style = body.copy(fontFamily = theme.displayFont, fontSize = design.type.heroTitle, fontWeight = design.type.strongWeight))
         if (done) {
             saveFixWatching(model, page, incident)?.let { BasicText(SaveProtectionCopy.nowWatches(it), style = body) }
@@ -72,10 +72,12 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
                     style = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            saveFixSteps(incident).forEach { step -> FixStep(step) }
+        if (incident.kind != IncidentKind.MaybeNewSave) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                saveFixSteps(incident).forEach { step -> FixStep(step) }
+            }
+            if (!done) FolderRows(incident)
         }
-        if (!done && !incident.isEdenSessionChange) FolderRows(incident)
         page.note?.let { BasicText(it, style = body.copy(color = design.colors.attention)) }
     }
 }

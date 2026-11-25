@@ -219,7 +219,7 @@ Both are device-owned, the same class as save marks. They never go into setup ba
 - Or a later probe gives `Verified` for the bound folder. For example, the user re-pointed the emulator back, or picked the live folder in Settings.
 - Or, for the `Maybe*` kinds only, the user chooses **It's fine** (§6). This closes the incident but leaves the location `Bound`, which reads **Folder set**. A user's word is not evidence, so it can't produce **Checked** or **Saved to RomM**. The next session write verifies it.
 
-A closed incident is deleted. The Backups it made stay on RomM and show in **Y › Saves**.
+A closed incident is deleted. The Backups it made stay on RomM and show in **Y › Saves**. A regression incident is scoped to the game and library. Choosing a copy or **Leave as is** resolves it.
 
 ---
 
@@ -554,20 +554,12 @@ A readable live game's copy is staged and kept through the independent Backup qu
 
 ### 4.3 Regression quarantine (PR 2)
 
-Pure function in `language`:
+`suspectRegression` in `language` compares a returned save with the device’s last verified RomM copy. The host reads that baseline from the locally held slot only when its hash still matches the synced ledger. This works offline. An identical copy, including a ZIP with the same member contents, needs no quarantine.
 
-```kotlin
-data class SaveShape(val bytes: Long, val files: Int)
-enum class RegressionContext { FreshRoot, Reinstalled, NewProfile, OpenIncident }
-fun suspectRegression(lastSynced: SaveShape?, observed: SaveShape, context: Set<RegressionContext>): String?
-```
-
-It returns a reason when **either** of these holds:
-
-- **The context alone justifies it.** This means an open `WrongFolder`/`FolderEmptied` for this folder, the install stamp changed since the last verification, the root's markers were absent at the baseline (a fresh root), or Eden's profile UUID is new. A plain first save on a device with no ledger record is *not* suspect.
-- **The structure dropped badly.** A folder save lost at least half its files compared with the last synced shape (Azahar `data/`, PSP SAVEDATA, ARMSX2 card folders). Or a single-file save shrank to 25% or less of a last-synced size that was over 1 KiB.
-
-When it's suspect, `reconcileLocked` calls `keepAsBackups(observed)` instead of `reconcile`. It records `noteHandedOver`, so the bytes aren't re-sent, and opens `MaybeNewSave(gameId)`. RomM's head does not move. The user chooses on the existing two-saves card (§6.6). False-alarm risk is medium, but the cost of a false one is a choice, not a lost save or a block.
+- For an established save, a fresh root at launch, a changed install stamp or Eden profile, or an open wrong-folder or empty-folder incident are reasons to ask. A first save with no verified baseline goes through ordinary sync.
+- A save declared as folders is suspect if half its file members or more disappeared. Directory entries and compression are irrelevant. A single-file save above 1 KiB is suspect if it shrank to a quarter of its previous size or less.
+- On a match, the return durably stages the changed copy in the Backup queue and records the handover mark before ending the return. It opens a game-specific `MaybeNewSave`. The slot receives no suspect bytes. If RomM is offline, the choice waits for both copies to be verified on RomM. Further returns while the choice is open are kept as Backups too.
+- **Choose save** opens the existing two-saves card. The player can keep the head, play the Backup, or come back later. The incident never stops an ordinary launch. The structural rules are suspicion only, so rare legitimate changes can bring up a choice.
 
 ### 4.4 Across restarts
 
@@ -579,40 +571,16 @@ When it's suspect, `reconcileLocked` calls `keepAsBackups(observed)` instead of 
 
 ## 5. Auto-repair, RomM-first
 
-New file `app/src/main/kotlin/app/foldcade/SaveRepair.kt`. Each step persists `incident.repair` before acting, so a restart resumes at the step it reached.
+**Fix it** starts automatic repair when Foldcade knows the game, has a proven live root, and can read and write both roots using held grants or all-files access. The original and live bindings, local game URI, RomM origin, and each repair phase survive restart. Repair shares the save-flow lock with launches, read-backs, and save choices.
 
-```kotlin
-sealed interface RepairState {
-    data object NotStarted : RepairState
-    data object Keeping : RepairState            // 1
-    data object WaitingForRomm : RepairState     // 1, offline
-    data object WaitingForClose : RepairState    // 2
-    data object Binding : RepairState            // 3
-    data class Choosing(val options: List<String>) : RepairState   // 4, server ids
-    data class Placing(val saveId: String) : RepairState           // 5
-    data object Done : RepairState
-}
-```
+1. **Wait for the game to close.** Home can leave the emulator holding a paused game. Foldcade waits while that player may hold a game, including holds it recorded in an earlier process. The Fix page says to quit the game in the emulator. A confirmed close also survives a restart.
+2. **Keep every distinct game copy.** Read its save from the bound root, live root, and a reachable beside-game file if the adapter declares one. Stage them in the existing Backup queue. Equal contents use one unslotted Backup, even when the same save is a slot version. Verify the unslotted IDs and RomM hashes. A new upload must also match its byte size. An equivalent existing ZIP can have a different container size. While RomM is unreachable, the repair stays at **Waiting for RomM** with the copies durably staged.
+3. **Bind to the proven root.** Check the working files with two reads two seconds apart. A change sends repair back to waiting for the game to close. Write the rebound fence before persisting the new binding, then bind every player sharing that folder. If access or the game’s save path cannot be resolved, offer the guided Fix. The picker checks the proven storage identity when one is known.
+4. **Choose the head.** Use RomM’s current slot head when the live file is absent, equivalent to the head, unchanged from the last verified sync, or structurally suspect. A different live history opens the two-saves card. All local copies are already unslotted Backups. The current RomM head is focused first.
+5. **Place and verify.** The save-selection route checks the server version, format, working copies, and emulator hold again before committing. Restoring the current head creates no new slot version. Choosing a different history keeps the previous head as an unslotted Backup first. Placement sets the fresh-load marker and checks the bytes written using the ordinary save read-back and rollback. An interrupted placement retains the chosen ID. A changed head or new local bytes cause repair to read the histories again before offering a choice.
+6. **Done.** Mark the proven live root verified and close the incident. R1 posts **Fixed: $game** and **Your RomM save is back in $folder.** A still-held launch of the repaired game can continue. The Done page can also open **Y › Saves**. The guided path keeps PR 1’s folder-only recovery and opens **Y › Saves** after binding.
 
-1. **Keep every distinct copy on RomM.** Read the game's save from the bound root, the live root, and the beside-game file when present. Drop any copy equal to RomM's head or to one already kept. Call `keepAsBackups` on the rest. **Verify** each id: it appears in `serverSaves`, its size matches, and its `contentHash` matches for single files. RomM hashes archives by member, so zips are checked by size and id (`RommLibrary.kt:1316`). If RomM is unreachable, the state is `WaitingForRomm`. Copies stay staged, nothing else happens, and the incident says so. *A second copy on the same Thor is not completion* (audit).
-2. **Never act while the emulator holds the files.** A game in `RunningGames` for this player's package means `WaitingForClose`. The step reads `"Quit ${game} in $emulator, then come back."` with **Open $emulator**. Then, before any write, two `readSpot`s 2 s apart must match. Home/background alone is never taken as closed (audit).
-3. **Re-bind the proven live folder.**
-   - If a held grant reaches the live root (an SAF tree, or the all-files alias), bind it. This uses the existing `store.setPlayerSaveFolder(key, uri, found = false)` and binds every player sharing the key.
-   - Otherwise open Android's picker at the live root (`EXTRA_INITIAL_URI = primaryFolderDocument(live)`), with the body `SaveSetupCopy.useThisFolder`. The picked tree must have the live root's `storageIdentity`. If it doesn't, show `"That isn’t the folder $emulator uses. Choose ${live.label}."` and try again.
-   - When the live root is unknown (a grant-only mismatch, or `MaybeWrongFolder`), this step becomes the guided path (§6.5).
-4. **Choose the head.**
-   - If the live copy is absent, or equals RomM's head, or is suspect (§4.3), pick RomM's newest version for this player's slot automatically. That is the head held for the slot, the same one `playing` marks.
-   - Otherwise there is unsynced progress in more than one place, and the user chooses on the two-saves card (§6.6). RomM's head is focused first. Nothing is promoted by mtime.
-5. **Place and verify.** This uses the existing `ServerSaveFlow`/`playServerSave` route, so it inherits the capture-first, fresh-load marker, backup, read-back and rollback rules. After the read-back, the location becomes `Verified(live, incident.evidence)`. That is the same positive evidence (the fresh log, or the candidate write) that proved the live folder. A repair from guided steps, where the live folder was never proven, leaves it `Bound` until the next session write. Either way the incident closes.
-6. **Done.** R1 posts `"Fixed: $game"` / `"Your RomM save is back in ${live.label}."`. If a launch was held, it starts now.
-
-What the repair never does:
-
-- Change an emulator's private preference.
-- Merge whole user folders.
-- Delete either folder.
-- Promote a newer timestamp over established progress.
-- Act on a `Maybe*` incident without the user's choice.
+The rebound fence protects other games in the folder as they are opened. Repair leaves both folders in place and never changes the emulator’s settings. If RomM lacks a head or there is an unresolved local RomM sync conflict, the guided path stays available.
 
 ---
 
@@ -718,13 +686,20 @@ Bottom card, by state (`saveFixActions`, `saveFixCard`):
 
 | State | Body | Buttons |
 |---|---|---|
+| Keeping | **Keeping your saves on RomM.** | |
+| Waiting for RomM | **Waiting for RomM. Foldcade will try again when it can connect.** | **Try again** |
+| Waiting for Close | **Quit $game in $emulator, then come back.** | **Open $emulator** · **Close game** when Foldcade can close its task, otherwise **Try again** |
+| Switching | **Switching Foldcade to $folder.** | |
+| Choosing | **Both are kept on RomM.** | **Choose save** |
+| Placing | **Putting your save back.** | |
+| Automatically fixed | **Your RomM save is back in $folder.** | **Choose save** or **Done** |
 | Folder known: `live`, or `bound` for LostAccess (`saveFixTarget`) | `"Choose ${folder}, then tap Use this folder › Allow."` | **Choose folder**, which opens the picker in that folder |
 | Folder unknown | the emulator's `locationSteps` (§6.5) as numbered steps, then `"Then choose the same folder here."` (`"Find the folder $emulator saves in, then choose it here."` without steps) | **Open $emulator** · **Choose folder** |
 | Done, online, with a game | `"Folder set. Choose your RomM save in Y › Saves."` | **Choose save**, which opens that game's Y › Saves |
 | Done, offline | `"Folder set. Join Wi-Fi, then choose your save in Y › Saves."` | **Done**, which only closes: Saves would be a dead end |
 | Done, no game (opened from Settings or R1) | `"Folder set. Choose your RomM save in Y › Saves."` | **Done** |
 
-The in-emulator steps show only when the live folder is unknown: with it known, they would send the player to change the emulator's folder again. Auto-find isn't offered here.
+The in-emulator folder steps show only in guided Fix when the live folder is unknown. Automatic Fix shows **Put your save back** as the final checklist item.
 
 Top screen:
 
@@ -740,7 +715,7 @@ Top screen:
 
 - Two real columns: `"$emulator now saves in"` | `live.label`, and `"Foldcade was watching"` | `bound.label`. With no live folder, the evidence in words follows, e.g. `"Azahar didn’t use this folder last time you played."`
 
-Controls: B is **Later**. It closes the page, and the incident and gate stay. The bottom face button does nothing here, because there is no skip: a fix either happens or waits. For the `Maybe*` kinds only, Y opens **It's fine**, with the confirmation `"Keep watching ${bound.label}?"` / `"Only if $emulator saves there. Foldcade checks again next time."`.
+Controls: B is **Later**. It closes the page, and the incident and gate stay. The bottom face button does nothing here, because there is no skip: a fix either happens or waits. For **MaybeWrongFolder**, Y opens **It's fine**, with the confirmation `"Keep watching ${bound.label}?"` / `"Only if $emulator saves there. Foldcade checks again next time."`.
 
 ### 6.5 The in-emulator steps
 
@@ -762,8 +737,8 @@ These are written as `locationSteps`, one numbered line each, in the voice of `D
 - **The two-saves card** (the existing `SaveConflictPrompt`) gets a variant for `MaybeNewSave` and repair `Choosing`:
   - Title `"Which save do you want to play?"`. Body `"Both are kept on RomM."`
   - Each copy shows its existing source and time, plus a `"Where"` line, e.g. `"From the folder Azahar"`, `"From RomM, 22 Nov"`.
-  - The suspect copy carries `"May be a new game"`, from the `suspectRegression` reason.
-  - Focus starts on the copy that isn't suspect. A plays the focused copy. **Leave as is** keeps both and leaves RomM's head where it was. B decides later. All of these are unchanged behaviour.
+  - The suspect copy carries **May be a new game**. The card identifies **This Thor** and **RomM**, and shows **From the folder $folder** with the working copy when its folder is known.
+  - Focus starts on the RomM head. A chooses and plays the focused copy once placement verifies. **Leave as is** keeps both and leaves RomM’s head where it was. B decides later.
 - **Y › Saves:**
   - **The chip** shows the status line (§6.1).
   - **With an incident**, a banner row leads the list: `"Your save is safe on RomM"` / `"$emulator is saving somewhere else. Fix it, then choose a save."` · A opens the Fix saves page.
@@ -782,7 +757,7 @@ New class `SaveIncidentNotices` in `SaveNotices.kt`. It shows one notice per inc
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"${bound.label} is empty. Fix it before you play."` | Fix saves page |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Can’t see ${bound.label}. Fix it before you play."` | picker |
 | MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"May be saving elsewhere. Check before you play."` | Fix saves page |
-| MaybeNewSave | `"Two saves for $game"` | `"Two saves. Choose which to play."` | two-saves card |
+| MaybeNewSave | `"Two saves for $game"` | `"Two saves. Choose which to play."` or `"Keeping both saves. Waiting for RomM."` | two-saves card or waiting step |
 | Repair Done | — | No incident notice | — |
 
 R1 uses its own short `noticeBody` helper: the problem first, then the action, about 50 characters with ordinary folder names so both fit its one-line renderer. The stop dialog, hero detail and Fix page keep the longer copy. A folder-wide notice makes no receipt or server-version claim, because it does not know every game has a RomM copy. Done incidents do not keep an R1 alarm.
@@ -887,7 +862,7 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 - **Scope:**
   - `SaveRepair.kt` steps 1–6 (§5).
   - The full Fix page.
-  - `keepAsBackups` in RomM, with verification and the folder-label sidecar.
+  - Reuse PR 1’s `keepAsBackups`, verification, and folder-label sidecar. Verify the head again at placement.
   - `suspectRegression` and the `MaybeNewSave` path.
   - The two-saves variant.
   - Resuming a repair after a restart.

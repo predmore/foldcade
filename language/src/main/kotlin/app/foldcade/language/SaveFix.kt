@@ -1,7 +1,7 @@
 package app.foldcade.language
 
 /**
- * Guided repair only. Binding is persisted with the incident; navigation itself is transient.
+ * The incident owns repair progress. Navigation itself is transient.
  * [game] is the game a held launch or an open Saves page is for, so the finished page can open
  * its Saves; [safe] is that game's RomM copy once the host has read it. [offline] is the network
  * as the host last saw it, so a finished page offline closes instead of opening a dead end.
@@ -17,13 +17,17 @@ data class SaveFixPage(
     val game: String? = null,
     val safe: SaveFixSafe? = null,
     val offline: Boolean = false,
+    val canCloseGame: Boolean = false,
 )
 
 /** A RomM copy of [game] the host has seen: [atMillis] its receipt, or null when only versions are known. */
 data class SaveFixSafe(val game: String, val atMillis: Long?)
 
 /** What each of the Fix page's buttons does, in the order they sit. */
-enum class SaveFixAction { ChooseFolder, OpenEmulator, ChooseSave, Close }
+enum class SaveFixAction { ChooseFolder, OpenEmulator, CloseGame, ChooseSave, ChooseProgress, Retry, Close }
+
+fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == IncidentKind.MaybeNewSave) SaveProtectionCopy.twoSaves
+    else SaveProtectionCopy.fixTitle(incident.playerName)
 
 /**
  * The folder Foldcade knows the fix must end on: where the emulator saves now, or, when only
@@ -39,6 +43,11 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
 fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> = when {
     incident.repair == RepairState.Done -> listOf(if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
     incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
+    incident.repair is RepairState.Choosing -> listOf(SaveFixAction.ChooseProgress)
+    incident.repair is RepairState.WaitingForRomm -> listOf(SaveFixAction.Retry)
+    incident.repair is RepairState.WaitingForClose -> listOf(SaveFixAction.OpenEmulator,
+        if (page.canCloseGame) SaveFixAction.CloseGame else SaveFixAction.Retry)
+    incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) || incident.repair is RepairState.Placing -> emptyList()
     saveFixTarget(incident) != null -> listOf(SaveFixAction.ChooseFolder)
     else -> listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder)
 }
@@ -46,7 +55,10 @@ fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixActio
 fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (action) {
     SaveFixAction.ChooseFolder -> SaveProtectionCopy.chooseFolder
     SaveFixAction.OpenEmulator -> SaveSetupCopy.open(incident.playerName)
+    SaveFixAction.CloseGame -> SaveProtectionCopy.closeGame
     SaveFixAction.ChooseSave -> SaveProtectionCopy.chooseSave
+    SaveFixAction.ChooseProgress -> SaveProtectionCopy.chooseSave
+    SaveFixAction.Retry -> SaveProtectionCopy.tryAgain
     SaveFixAction.Close -> SaveSetupCopy.done
 }
 
@@ -54,6 +66,17 @@ fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (
 data class SaveFixCard(val body: String, val detail: String?)
 
 fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
+    val automatic = when (incident.repair) {
+        RepairState.Keeping -> SaveProtectionCopy.keepingCopies
+        is RepairState.WaitingForRomm -> SaveProtectionCopy.waitForRomm
+        is RepairState.WaitingForClose -> SaveProtectionCopy.waitForClose(page.game, incident.playerName)
+        RepairState.Rebinding -> SaveProtectionCopy.usingFolder(saveFixTarget(incident)?.label.orEmpty())
+        is RepairState.Choosing -> SaveProtectionCopy.bothKept
+        is RepairState.Placing -> SaveProtectionCopy.placingSave
+        RepairState.Done -> saveFixTarget(incident)?.let { SaveProtectionCopy.repairDone(it.label) }.takeIf { incident.automaticDone }
+        else -> null
+    }
+    if (automatic != null) return SaveFixCard(automatic, page.note)
     if (incident.repair == RepairState.Done) return SaveFixCard(if (page.offline) SaveProtectionCopy.guidedDoneOffline else SaveProtectionCopy.guidedDone, page.note)
     if (incident.isEdenSessionChange) return SaveFixCard("Check the user in Eden’s Profile Manager, then choose a save in Y › Saves.", page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
@@ -67,6 +90,24 @@ data class SaveFixStep(val title: String, val state: SaveFixStepState, val value
 enum class SaveFixStepState { Done, Now, Later }
 
 fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
+    if (incident.automaticDone || incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) ||
+        incident.repair is RepairState.WaitingForRomm || incident.repair is RepairState.WaitingForClose ||
+        incident.repair is RepairState.Choosing || incident.repair is RepairState.Placing) {
+        val closing = incident.repair as? RepairState.WaitingForClose
+        val step = when (incident.repair) {
+            RepairState.Keeping, is RepairState.WaitingForRomm -> 0
+            is RepairState.WaitingForClose, RepairState.Rebinding -> 1
+            is RepairState.Choosing, is RepairState.Placing -> 2
+            else -> 3
+        }
+        return listOf(SaveProtectionCopy.stepKeep, SaveProtectionCopy.stepFolder(incident.playerName, true), SaveProtectionCopy.stepRestore)
+            .mapIndexed { i, label -> SaveFixStep(label, when {
+                i == 0 && closing?.backupsKept == false -> SaveFixStepState.Later
+                i < step -> SaveFixStepState.Done
+                i == step -> SaveFixStepState.Now
+                else -> SaveFixStepState.Later
+            }, if (i == 0 && step > 0 && incident.kept.isNotEmpty()) SaveProtectionCopy.stepKept(incident.kept.size) else null) }
+    }
     val bound = incident.repair == RepairState.Done
     val keep = when {
         incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
@@ -115,24 +156,28 @@ fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeat
     if (repeatCount > 0 && meaning !in setOf(Meaning.MoveUp, Meaning.MoveDown, Meaning.MoveLeft, Meaning.MoveRight)) return model to null
     val incident = model.saveIncidents.firstOrNull { it.id == page.incidentId } ?: page.resolved ?: return model.copy(saveFix = null) to null
     val actions = saveFixActions(incident, page)
-    val last = actions.lastIndex
+    val last = actions.lastIndex.coerceAtLeast(0)
     return when (meaning) {
         Meaning.Options -> model to Effect.ConfirmSaveLocation(incident.id).takeIf { canConfirmSaveLocation(incident) }
         Meaning.Back -> model.copy(saveFix = null) to Effect.CancelSaveFix
         Meaning.MoveUp, Meaning.MoveLeft -> model.copy(saveFix = page.copy(index = (page.index - 1).coerceAtLeast(0))) to null
         Meaning.MoveDown, Meaning.MoveRight -> model.copy(saveFix = page.copy(index = (page.index + 1).coerceAtMost(last))) to null
-        Meaning.Activate -> model to when (actions[page.index.coerceIn(0, last)]) {
+        Meaning.Activate -> model to when (actions.getOrNull(page.index.coerceIn(0, last))) {
             SaveFixAction.ChooseFolder -> Effect.PickFixFolder(incident.id)
             SaveFixAction.OpenEmulator -> Effect.OpenPlayer(page.playerId ?: incident.playerKey)
+            SaveFixAction.CloseGame -> Effect.CloseRepairGame(incident.id)
             SaveFixAction.ChooseSave -> Effect.FinishSaveFix(incident.id)
+            SaveFixAction.ChooseProgress -> Effect.ChooseRepairSave(incident.id)
+            SaveFixAction.Retry -> Effect.RetrySaveRepair(incident.id)
             SaveFixAction.Close -> Effect.FinishSaveFix(incident.id, openSaves = false)
+            null -> null
         }
         else -> model to null
     }
 }
 
 fun canConfirmSaveLocation(incident: SaveIncident): Boolean = !incident.isEdenSessionChange &&
-    incident.kind in setOf(IncidentKind.MaybeWrongFolder, IncidentKind.MaybeNewSave) && incident.repair != RepairState.Done
+    (incident.kind == IncidentKind.MaybeWrongFolder || incident.isEdenSessionChange) && incident.repair != RepairState.Done
 
 fun saveProtectionDialog(
     incident: SaveIncident,

@@ -274,9 +274,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun playerSaveFolderFound(playerId: String): Boolean = prefs.getBoolean("player_save_found:$playerId", false)
 
-    fun setPlayerSaveFolder(playerId: String, uri: String?, found: Boolean = false) {
-        prefs.edit().putString(saveFolderKey(playerId), uri)
-            .putBoolean("player_save_found:$playerId", uri != null && found).apply()
+    fun setPlayerSaveFolder(playerId: String, uri: String?, found: Boolean = false, durable: Boolean = false) {
+        val edit = prefs.edit().putString(saveFolderKey(playerId), uri)
+            .putBoolean("player_save_found:$playerId", uri != null && found)
+        if (durable) check(edit.commit()) else edit.apply()
     }
 
     /** A tree grant can be shared by a library source, several players, RetroArch's cores, and Eden's folder. */
@@ -326,9 +327,11 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
      */
     fun playersHoldingGames(): Set<String> = stringSet(KEY_PLAYERS_HOLDING_GAMES)
 
-    fun setPlayersHoldingGames(packages: Set<String>) {
-        if (packages == playersHoldingGames()) return
-        prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).commit()
+    fun closedGamePlayers(): Set<String> = stringSet(KEY_CLOSED_GAME_PLAYERS)
+
+    fun setPlayersHoldingGames(packages: Set<String>, closed: Set<String>) {
+        if (packages == playersHoldingGames() && closed == closedGamePlayers()) return
+        prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).putStringSet(KEY_CLOSED_GAME_PLAYERS, closed).commit()
     }
 
     /**
@@ -741,6 +744,7 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val REFUSED_EDEN_FIRMWARE_CAP = 20
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
+        private const val KEY_CLOSED_GAME_PLAYERS = "closed_game_players"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val EDEN_FOLDER_PREFIX = "eden_folder:"
