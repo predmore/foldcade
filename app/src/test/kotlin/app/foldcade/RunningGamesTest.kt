@@ -72,6 +72,24 @@ class RunningGamesTest {
     }
 
     @Test
+    fun onlyAnUnpromptedReturnToDefaultHomeForgetsTheGame() {
+        assertTrue("Close Game returns to default Home",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true))
+        assertFalse("Android Home covers the running game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = true))
+        assertFalse("Reopening non-default Foldcade can cover a running game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = false))
+        assertFalse("An explicit Home recall keeps the game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = false))
+
+        for (homeRecalled in listOf(false, true)) {
+            for (holdsHomeRole in listOf(false, true)) {
+                assertFalse(forgetsRunOnReturn(returned = false, homeRecalledOnThisDisplay = homeRecalled, holdsHomeRole = holdsHomeRole))
+            }
+        }
+    }
+
+    @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
         val menu = "org.citra.citra_emu.ui.main.MainActivity"

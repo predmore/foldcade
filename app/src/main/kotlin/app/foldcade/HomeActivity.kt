@@ -938,18 +938,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.refreshPlayerSaves()
         val displayId = display?.displayId
         val pending = libraryReturn
-        // Home on the launch display ends play time and returns saves. It can cover a
-        // live game without a Home intent to this process, as an icon or Recents return does.
-        // Keep the run so A can foreground it and checkResume can detect a missing task.
+        val leftPlayer = foldcade.externalPlay.packageName
         val returned = displayId != null && foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         // A companion resume (lid, Move) can have consumed the pause while the game was still open.
         foldcade.refreshSavesOnReturn(returnedFromGame = returned)
-        if (foldcade.homeRecalledOn != displayId) {
+        val homeRecalled = foldcade.homeRecalledOn == displayId
+        if (leftPlayer != null && forgetsRunOnReturn(
+                returned = returned,
+                homeRecalledOnThisDisplay = homeRecalled,
+                holdsHomeRole = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME),
+            )
+        ) {
+            foldcade.runningGames.forget(leftPlayer)
+        }
+        if (!homeRecalled) {
             val leftApp = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
                 ?.let { foldcade.store.session.externalOn(it)?.id }
             if (leftApp?.startsWith("android:") == true) foldcade.runningGames.forgetCompanion(leftApp.removePrefix("android:"))
         }
-        if (foldcade.homeRecalledOn == displayId) foldcade.homeRecalledOn = null
+        if (homeRecalled) foldcade.homeRecalledOn = null
         if (returned) foldcade.suppressSaveConflict = false
         if (returned && pending != null) {
             libraryReturn = null
