@@ -423,6 +423,7 @@ internal class PlayerSaves(
      * placement, because the player may have run on its own since.
      */
     fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false,
+        stageSnapshot: Boolean = false,
         onChanged: ((SaveSpot, ObservedSlot, ByteArray) -> Unit)? = null): ObservedSaves {
         val changed = spots.mapNotNull { spot ->
             val (bytes, uri) = readSpot(spot, strict) ?: return@mapNotNull null
@@ -443,7 +444,8 @@ internal class PlayerSaves(
                     marks.setMark(tornKey(key), hash)
                     null
                 } else {
-                    ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes)).also { onChanged?.invoke(spot, it, bytes) }
+                    val capturedUri = if (stageSnapshot || uri == null) stage(key, bytes) else uri
+                    ObservedSlot(spot.slot, hash, player.id, capturedUri).also { onChanged?.invoke(spot, it, bytes) }
                 }
             }
         }
@@ -965,7 +967,7 @@ internal class PlayerSaves(
         return if (entries.isEmpty()) Held.Missing else Held.Found(FolderSave(entries, uris))
     }
 
-    /** A zip the library reads from a file, as it has no document. */
+    /** A snapshot kept until the library has accepted its exact bytes. */
     private fun stage(key: String, bytes: ByteArray): String {
         Files.createDirectories(handover)
         val file = handover.resolve("$key.zip")

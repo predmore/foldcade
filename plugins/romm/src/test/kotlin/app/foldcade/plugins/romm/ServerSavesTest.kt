@@ -178,7 +178,7 @@ class ServerSavesTest {
         events.clear()
         assertTrue(runCatching {
             library.placeRepairSave(GAME, player, backup.id.toString(), ORIGIN, head.contentHash!!, {}, {})
-        }.exceptionOrNull() is RommRepairNeedsSync)
+        }.exceptionOrNull() is RommRepairWaitingForSync)
         assertTrue(events.isEmpty())
     }
 

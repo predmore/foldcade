@@ -45,8 +45,10 @@ class SaveRepairTest {
         }
         override suspend fun bind() { events += "bind" }
         var refuseStrictSync = false
+        var syncing = false
         override suspend fun place(selection: RepairState.Placing, copies: RepairCopies, backedUpLive: Boolean) {
             if (refuseStrictSync) throw app.foldcade.plugins.romm.RommRepairNeedsSync()
+            if (syncing) throw app.foldcade.plugins.romm.RommRepairWaitingForSync()
             events += "place:${selection.saveId}"
             val chosen = versions().single { it.id == selection.saveId }
             this.copies = this.copies.copy(live = chosen.hash)
@@ -173,6 +175,28 @@ class SaveRepairTest {
         store.put(incident)
         assertNull(SaveRepair(store, { work }, settle = {}).advance(incident.id, start = true))
         assertEquals(RepairState.Guided, store.incident(incident.id)?.repair)
+    }
+
+    @Test fun aQuarantineWithoutRepairWorkOffersGuidedRecovery() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val quarantine = incident.copy(kind = IncidentKind.MaybeNewSave, repair = RepairState.WaitingForClose())
+        store.put(quarantine)
+        assertNull(SaveRepair(store, { null }, settle = {}).advance(quarantine.id))
+        val current = store.incident(quarantine.id)!!
+        assertEquals(RepairState.Guided, current.repair)
+        assertEquals(listOf(SaveFixAction.OpenSaves), saveFixActions(current, SaveFixPage(current.id, HostScreen.Bottom, null)))
+    }
+
+    @Test fun aSlotStillSyncingKeepsPlacementPendingUntilRommIsReady() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val work = Work().apply { syncing = true }
+        store.put(incident)
+        val repair = SaveRepair(store, { work }, settle = {})
+        assertNull(repair.advance(incident.id, start = true))
+        assertEquals(RepairState.WaitingForRomm(RepairState.Placing("head-id", "head", null)), store.incident(incident.id)?.repair)
+        work.syncing = false
+        assertNotNull(repair.advance(incident.id))
+        assertEquals(listOf("place:head-id"), work.events.filter { it.startsWith("place:") })
     }
 
     @Test fun aSuspectCopyWithNoShapeOrHashIsFoundByItsVerifiedBackupId() = runBlocking {

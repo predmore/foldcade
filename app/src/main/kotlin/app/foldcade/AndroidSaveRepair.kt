@@ -68,17 +68,12 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
             val holding = withContext(Dispatchers.Main.immediate) {
                 launchWork.active || launchWork.waitingToLight ||
                     (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch }) ||
-                    packages.any { it in runningGames.holdingPackages() || it in closingPlayers } ||
-                    Panel.entries.any { store.session.externalOn(it)?.id?.removePrefix("android:") in packages }
+                    packages.any(::repairHasRunningTask)
             }
             if (holding) return true
             return packages.any { name ->
-                val openedAt = store.repairPlayerOpenedAt(name)
-                    ?: incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == packageInfo.packageName }
-                if (openedAt == null) false else {
-                    val exits = try { playerExitTimestamps(name) } catch (_: SecurityException) { emptyList() }
-                    !playerDiedAfterStart(openedAt, exits) || (store.repairPlayerOpenedAt(name)?.let { it > openedAt } == true)
-                }
+                val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == packageInfo.packageName }
+                repairPlayerHolds.mayHold(name, fallback)
             }
         }
 

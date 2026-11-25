@@ -731,6 +731,26 @@ class PlayerSavesTest {
         assertEquals(returned.slot.contentHash, saves.queuedCopies().single().slot.contentHash)
     }
 
+    @Test fun aSingleFileReturnHandsRommTheInspectedBytesEvenIfThePlayerWritesAgain() = runBlocking {
+        val store = SaveProtectionStore(backups.resolve("protection"))
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> inspectSave("previous progress".toByteArray(), folder = false) })
+        val subject = incidentGame(GAME, PLAYER, ROM_URI, "https://romm.example", null)
+        docs.put(FOLDER, spot.fileName, "captured progress")
+        val (observed, returned) = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot))
+        docs.put(FOLDER, spot.fileName, "newer progress")
+
+        assertFalse(regression.quarantine(subject, PLAYER, returned!!, null, emptySet()))
+        val slot = observed.slots.single()
+        val snapshot = java.nio.file.Paths.get(java.net.URI(slot.contentUri!!))
+        assertEquals(returned.slot, slot)
+        assertEquals("captured progress", Files.readString(snapshot))
+        assertEquals(slot.contentHash, md5Hex(Files.readAllBytes(snapshot)))
+        saves.noteHandedOver(GAME.backendId, GAME, PLAYER, listOf(spot), observed)
+        assertFalse(Files.exists(snapshot))
+        assertEquals(md5Hex("newer progress".toByteArray()), saves.changedSince(GAME.backendId, GAME, PLAYER, listOf(spot)).slots.single().contentHash)
+    }
+
     private class FakeDocuments : SaveDocuments {
         override var firmwareNewOnly = false
         var firmwareHashes = 0

@@ -91,6 +91,7 @@ data class RommRepairSave(val id: String, val slot: String?, val hash: String, v
 
 class RommRepairHeadChanged : Exception()
 class RommRepairNeedsSync : Exception()
+class RommRepairWaitingForSync : Exception()
 
 fun supportsRommRepair(library: LibraryBackend?): Boolean = library is RommLibrary
 
@@ -893,7 +894,10 @@ internal class RommLibrary internal constructor(
         if (RommClient.normalizeOrigin(wiring.origin) != RommClient.normalizeOrigin(origin)) throw RommRepairNeedsSync()
         requireSavePlayer(game, player)
         val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: throw RommRepairNeedsSync()
-        if (runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) throw RommRepairNeedsSync()
+        runInterruptible(Dispatchers.IO) {
+            if (SaveConflictLog(wiring.data.conflictsFile()).hasUnresolved(romId)) throw RommRepairNeedsSync()
+            if (unsyncedSlots(wiring, romId).isNotEmpty()) throw RommRepairWaitingForSync()
+        }
         chooseSave(wiring, ops, romId, id, slot, player.id, player, beforeCommit, expectedHead, beforeWrite)
     }
 
@@ -1104,9 +1108,8 @@ internal class RommLibrary internal constructor(
         if (forRepair && refused) throw RommRepairNeedsSync()
         if (report.queued.isNotEmpty() || !report.completedSession)
             throw PluginException.Unavailable("Save sync did not finish", app.foldcade.romm.RommUnavailable("Save sync is waiting for RomM"))
-        if (refused ||
-            runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
-            if (forRepair) throw RommRepairNeedsSync()
+        if (refused || runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
+            if (forRepair) throw RommRepairWaitingForSync()
             throw PluginException.Unavailable("Save sync did not finish")
         }
         return report

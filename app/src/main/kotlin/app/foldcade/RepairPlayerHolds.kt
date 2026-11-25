@@ -1,0 +1,31 @@
+package app.foldcade
+
+/** Where Android cannot report an exit, only an explicit confirmation or reboot releases a repair hold. */
+internal class RepairPlayerHolds(
+    private val store: SessionStore,
+    private val bootAtMillis: () -> Long,
+    private val exitTimestamps: (String) -> List<Long>,
+) {
+    fun mayHold(packageName: String, fallbackAtMillis: Long?): Boolean {
+        val started = startedAt(packageName, fallbackAtMillis) ?: return false
+        val exits = readableExits(packageName)
+        val current = startedAt(packageName, fallbackAtMillis) ?: return false
+        return current != started || exits == null || !playerDiedAfterStart(started, exits)
+    }
+
+    /** Called from the waiting card, after checking for a started or visible game on Main. */
+    fun confirmClosed(packageName: String, fallbackAtMillis: Long?, confirmedAtMillis: Long) {
+        val started = startedAt(packageName, fallbackAtMillis) ?: return
+        if (started > confirmedAtMillis || readableExits(packageName) != null) return
+        if (startedAt(packageName, fallbackAtMillis) == started) store.noteRepairPlayerClosed(packageName, confirmedAtMillis)
+    }
+
+    private fun startedAt(packageName: String, fallbackAtMillis: Long?): Long? {
+        val started = store.repairPlayerOpenedAt(packageName) ?: fallbackAtMillis ?: return null
+        val closed = store.repairPlayerClosedAt(packageName)
+        return started.takeIf { it >= bootAtMillis() && (closed == null || closed < it) }
+    }
+
+    private fun readableExits(packageName: String): List<Long>? =
+        try { exitTimestamps(packageName) } catch (_: SecurityException) { null }
+}

@@ -329,20 +329,40 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
 
     fun closedGamePlayers(): Set<String> = stringSet(KEY_CLOSED_GAME_PLAYERS)
 
+    /** An Android task can outlive Foldcade, but it cannot outlive a reboot. */
+    fun restoreGameHolds(bootAtMillis: Long, nowMillis: Long): Pair<Set<String>, Set<String>> {
+        val recorded = prefs.getLong(KEY_PLAYERS_HOLDING_AT, 0)
+        if (recorded > 0 && recorded < bootAtMillis) {
+            setPlayersHoldingGames(emptySet(), emptySet(), nowMillis)
+            return emptySet<String>() to emptySet()
+        }
+        val packages = playersHoldingGames()
+        val closed = closedGamePlayers()
+        // A legacy record has no date. Keep it until there is evidence of a reboot or close.
+        if (recorded == 0L && packages.isNotEmpty()) setPlayersHoldingGames(packages, closed, nowMillis)
+        return packages to closed
+    }
+
     fun repairPlayerOpenedAt(packageName: String): Long? =
         prefs.getLong(REPAIR_PLAYER_OPENED_PREFIX + packageName, 0).takeIf { it > 0 }
 
+    fun repairPlayerClosedAt(packageName: String): Long? =
+        prefs.getLong(REPAIR_PLAYER_CLOSED_PREFIX + packageName, 0).takeIf { it > 0 }
+
     fun noteRepairPlayerOpened(packageName: String, atMillis: Long) {
-        prefs.edit().putLong(REPAIR_PLAYER_OPENED_PREFIX + packageName, atMillis).commit()
+        prefs.edit().putLong(REPAIR_PLAYER_OPENED_PREFIX + packageName, atMillis)
+            .remove(REPAIR_PLAYER_CLOSED_PREFIX + packageName).commit()
     }
 
-    fun noteRepairPlayerClosed(packageName: String) {
-        prefs.edit().remove(REPAIR_PLAYER_OPENED_PREFIX + packageName).commit()
+    fun noteRepairPlayerClosed(packageName: String, atMillis: Long = System.currentTimeMillis()) {
+        prefs.edit().remove(REPAIR_PLAYER_OPENED_PREFIX + packageName)
+            .putLong(REPAIR_PLAYER_CLOSED_PREFIX + packageName, atMillis).commit()
     }
 
-    fun setPlayersHoldingGames(packages: Set<String>, closed: Set<String>) {
-        if (packages == playersHoldingGames() && closed == closedGamePlayers()) return
-        prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).putStringSet(KEY_CLOSED_GAME_PLAYERS, closed).commit()
+    fun setPlayersHoldingGames(packages: Set<String>, closed: Set<String>, atMillis: Long = System.currentTimeMillis()) {
+        if (packages == playersHoldingGames() && closed == closedGamePlayers() && prefs.contains(KEY_PLAYERS_HOLDING_AT)) return
+        prefs.edit().putStringSet(KEY_PLAYERS_HOLDING_GAMES, packages).putStringSet(KEY_CLOSED_GAME_PLAYERS, closed)
+            .putLong(KEY_PLAYERS_HOLDING_AT, atMillis).commit()
     }
 
     /**
@@ -755,8 +775,10 @@ class SessionStore(private val prefs: SharedPreferences) : SaveMarks {
         private const val REFUSED_EDEN_FIRMWARE_CAP = 20
         private const val LAST_START_PREFIX = "last_player_start:"
         private const val KEY_PLAYERS_HOLDING_GAMES = "players_holding_games"
+        private const val KEY_PLAYERS_HOLDING_AT = "players_holding_at"
         private const val KEY_CLOSED_GAME_PLAYERS = "closed_game_players"
         private const val REPAIR_PLAYER_OPENED_PREFIX = "repair_player_opened:"
+        private const val REPAIR_PLAYER_CLOSED_PREFIX = "repair_player_closed:"
         private const val SAVE_AWAITS_LOAD_PREFIX = "save_awaits_load:"
         private const val CORES_FOLDER_PREFIX = "retroarch_cores_folder:"
         private const val EDEN_FOLDER_PREFIX = "eden_folder:"

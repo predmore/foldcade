@@ -629,7 +629,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.LoadSavePicker -> loadSavePicker(effect.target)
             is Effect.OpenSaveFix -> openSaveFix(effect.incidentId)
             is Effect.ChooseRepairSave -> chooseRepairSave(effect.incidentId)
-            is Effect.RetrySaveRepair -> retrySaveRepair(effect.incidentId)
+            is Effect.RetrySaveRepair -> {
+                val waiting = foldcade.shell.model.saveIncidents.firstOrNull { it.id == effect.incidentId }?.repair
+                val confirmedAt = System.currentTimeMillis().takeIf { waiting is app.foldcade.language.RepairState.WaitingForClose }
+                retrySaveRepair(effect.incidentId, confirmedAtMillis = confirmedAt)
+            }
             is Effect.CloseRepairGame -> foldcade.saveProtection.incident(effect.incidentId)?.let { incident ->
                 if (foldcade.repairClosePackage(incident) != null)
                     foldcade.shell.present(closeGameDialog(hostScreen()).copy(subject = incident.id))
@@ -3501,9 +3505,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun retrySaveRepair(id: String, start: Boolean = false) {
+    private fun retrySaveRepair(id: String, start: Boolean = false, confirmedAtMillis: Long? = null) {
         foldcade.scope.launch {
-            foldcade.advanceSaveRepair(id, start)?.let { foldcade.repairFinished(it) }
+            foldcade.advanceSaveRepair(id, start, confirmedAtMillis = confirmedAtMillis)?.let { foldcade.repairFinished(it) }
         }
     }
 

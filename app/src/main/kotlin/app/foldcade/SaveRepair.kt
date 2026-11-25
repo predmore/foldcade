@@ -70,7 +70,11 @@ internal class SaveRepair(
             else -> null
         }
         try {
-            val work = workFor(incident) ?: throw RepairFoldersUnavailable()
+            val work = workFor(incident)
+            if (work == null) {
+                update(RepairState.Guided)
+                return null
+            }
             if (work.running()) throw RepairGameRunning()
             if (state == RepairState.NotStarted) update(RepairState.Keeping)
             val listed = try { work.versions() }

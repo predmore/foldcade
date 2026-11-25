@@ -80,7 +80,7 @@ internal class SaveRegression(
 ) {
     fun capture(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>): Pair<ObservedSaves, ReturnedSave?> {
         var returned: ReturnedSave? = null
-        val observed = saves.changedSince(libraryId, game, player, spots) { spot, slot, bytes ->
+        val observed = saves.changedSince(libraryId, game, player, spots, stageSnapshot = true) { spot, slot, bytes ->
             if (spots.size == 1) returned = ReturnedSave(spot, slot, bytes)
         }
         return observed to returned

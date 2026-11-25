@@ -922,6 +922,10 @@ class FoldcadeApp : Application() {
         return manager.getHistoricalProcessExitReasons(packageName, 0, 20).map { it.timestamp }
     }
 
+    private fun bootAtMillis() = System.currentTimeMillis() - SystemClock.elapsedRealtime()
+
+    internal val repairPlayerHolds by lazy { RepairPlayerHolds(store, ::bootAtMillis, ::playerExitTimestamps) }
+
     /** Opening an emulator by its icon does not create a Paused tile. Save repair still waits for release. */
     internal fun noteRepairAppOpened(packageName: String) {
         if (plugins.playerIds().mapNotNull(plugins::player).any { it is SaveFolderHolder && packageName in it.packageNames })
@@ -991,7 +995,8 @@ class FoldcadeApp : Application() {
             PlaySessions.open(File(filesDir, "play-sessions/events.log")).also { perfMark("history-prepare-end") }
         }
         store = SessionStore(getSharedPreferences(SessionStore.PREFS_NAME, MODE_PRIVATE))
-        runningGames.restore(store.playersHoldingGames(), store.closedGamePlayers())
+        val (heldPlayers, closedPlayers) = store.restoreGameHolds(bootAtMillis(), System.currentTimeMillis())
+        runningGames.restore(heldPlayers, closedPlayers)
         runningGames.onPlayersChange = { store.setPlayersHoldingGames(it, runningGames.closedPackages()) }
         buttonPromptFirstSession = !store.buttonPromptSeenLaunch()
         if (buttonPromptFirstSession) store.setButtonPromptSeenLaunch()
@@ -1731,11 +1736,13 @@ class FoldcadeApp : Application() {
     }
 
     internal suspend fun advanceSaveRepair(id: String, start: Boolean = false,
-        choice: Pair<app.foldcade.language.RepairState.Choosing, app.foldcade.language.SaveConflictAction>? = null): app.foldcade.language.SaveIncident? =
+        choice: Pair<app.foldcade.language.RepairState.Choosing, app.foldcade.language.SaveConflictAction>? = null,
+        confirmedAtMillis: Long? = null): app.foldcade.language.SaveIncident? =
         withContext(Dispatchers.IO) {
             awaitPlugins()
             saveFoldersReady.await()
             saveFlow.withLock {
+                if (confirmedAtMillis != null) withContext(Dispatchers.Main.immediate) { confirmRepairPlayerClosed(id, confirmedAtMillis) }
                 val done = saveRepair.advance(id, start, choice)
                 val subject = done?.subject
                 val player = subject?.playerId?.let(plugins::player)
@@ -1767,6 +1774,26 @@ class FoldcadeApp : Application() {
                     else -> Unit
                 }
             }
+        }
+    }
+
+    /** Active sessions and Android handoffs still take precedence over a confirmation in Fix. */
+    internal fun repairHasRunningTask(packageName: String): Boolean =
+        packageName in runningGames.holdingPackages() || packageName in closingPlayers ||
+            (externalPlay.sessionId != null && externalPlay.packageName == packageName) ||
+            Panel.entries.any { store.session.externalOn(it)?.id == "android:$packageName" }
+
+    private fun confirmRepairPlayerClosed(id: String, confirmedAtMillis: Long) {
+        val incident = saveProtection.incident(id) ?: return
+        if (incident.repair !is app.foldcade.language.RepairState.WaitingForClose || launchWork.active || launchWork.waitingToLight) return
+        val subject = incident.subject ?: return
+        val player = plugins.player(subject.playerId) ?: return
+        val installed = player.packageNames.filter(::packageInstalled)
+        val repairPackage = subject.packageName?.takeIf { it in installed } ?: installed.singleOrNull()
+        for (name in installed) {
+            if (repairHasRunningTask(name)) continue
+            val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == repairPackage }
+            repairPlayerHolds.confirmClosed(name, fallback, confirmedAtMillis)
         }
     }
 
@@ -1829,8 +1856,10 @@ class FoldcadeApp : Application() {
     /** A restored Android task may still hold a game even though its Paused tile is gone. */
     internal fun repairClosePackage(incident: app.foldcade.language.SaveIncident): String? {
         if (incident.repair !is app.foldcade.language.RepairState.WaitingForClose) return null
+        val bootAt = bootAtMillis()
         return incident.subject?.playerId?.let(plugins::player)?.packageNames?.filter { name ->
-            (name in runningGames.holdingPackages() || store.repairPlayerOpenedAt(name) != null) && name !in closingPlayers && canClearPlayerTask(name) &&
+            (name in runningGames.holdingPackages() || store.repairPlayerOpenedAt(name)?.let { it >= bootAt } == true) &&
+                name !in closingPlayers && canClearPlayerTask(name) &&
                 packageManager.getLaunchIntentForPackage(name) != null
         }?.singleOrNull()
     }
