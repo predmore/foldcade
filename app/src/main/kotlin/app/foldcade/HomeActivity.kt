@@ -648,11 +648,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.OpenSaveFix -> openSaveFix(effect.incidentId)
             is Effect.ChooseRepairSave -> chooseRepairSave(effect.incidentId)
             is Effect.RetrySaveRepair -> retrySaveRepair(effect.incidentId)
-            is Effect.ConfirmRepairGameClosed -> retrySaveRepair(effect.incidentId, confirmedAtMillis = System.currentTimeMillis())
-            is Effect.CloseRepairGame -> foldcade.saveProtection.incident(effect.incidentId)?.let { incident ->
-                if (foldcade.repairClosePackage(incident) != null)
-                    foldcade.shell.present(app.foldcade.language.saveFixCloseDialog(hostScreen(), incident))
-            }
             is Effect.PickFixFolder -> pickFixFolder(effect.incidentId)
             is Effect.FinishSaveFix -> finishSaveFix(effect.incidentId, effect.openSaves)
             Effect.CancelSaveFix -> { foldcade.hostedAsk = null; cancelLaunches() }
@@ -3505,7 +3500,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun closeGameForRepair(id: String) {
         val incident = foldcade.saveProtection.incident(id) ?: return
-        val name = foldcade.repairClosePackage(incident) ?: return
+        if (incident.repair !is app.foldcade.language.RepairState.WaitingForClose) return
+        val name = foldcade.repairClosePackage(incident)
+        if (name == null) {
+            retrySaveRepair(id, confirmedAtMillis = System.currentTimeMillis())
+            return
+        }
         val running = foldcade.runningGames.forPackage(name)
         if (running != null) {
             closeGame(running.copy(companions = emptyList()))

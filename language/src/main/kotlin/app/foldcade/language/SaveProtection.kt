@@ -282,6 +282,7 @@ object SaveProtectionCopy {
     const val stepRestore = "Put your save back"
     const val tryAgain = "Try again"
     const val confirmClose = "Confirm close"
+    const val alreadyQuit = "Already quit?"
     const val openSaves = "Open Saves"
     const val chooseInSaves = "Open Y › Saves to choose which progress to keep."
     const val thisThor = "This Thor"
@@ -289,7 +290,9 @@ object SaveProtectionCopy {
     const val twoSaves = "Two saves"
     fun waitForClose(game: String?, player: String) =
         "Already quit ${game ?: "the game"} in $player? Confirm to continue. If it’s still open, save and quit first."
-    fun confirmCloseBody(player: String) = "You can continue if you’ve already quit. If a game is still open in $player, Foldcade will close it. Save your progress first."
+    fun quitInEmulator(game: String?, player: String) = "Quit ${game ?: "the game"} in $player, then come back."
+    fun confirmCloseBody(game: String?, player: String) =
+        "Only continue if you’ve quit ${game ?: "the game"} in $player. Foldcade can’t tell if it’s still open."
     fun usingFolder(folder: String) = "Switching Foldcade to $folder."
     fun repairDone(folder: String) = "Your RomM save is back in $folder."
     fun fixed(game: String) = "Fixed: $game"

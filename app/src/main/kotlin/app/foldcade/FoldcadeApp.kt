@@ -1826,9 +1826,9 @@ class FoldcadeApp : Application() {
         val installed = player.packageNames.filter(::packageInstalled)
         val repairPackage = subject.packageName?.takeIf { it in installed } ?: installed.singleOrNull()
         for (name in installed) {
-            if (name in closingPlayers || repairHasRunningTask(name)) continue
+            if (name in closingPlayers) continue
             val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == repairPackage }
-            repairPlayerHolds.confirmClosed(name, fallback, confirmedAtMillis)
+            repairPlayerHolds.confirmClosed(name, fallback, confirmedAtMillis, hasRunningTask = repairHasRunningTask(name))
         }
     }
 
@@ -1892,8 +1892,12 @@ class FoldcadeApp : Application() {
         withContext(Dispatchers.Main.immediate) {
             val current = saveProtection.incident(incident.id) ?: return@withContext
             if (current.staged != incident.staged) return@withContext
-            val canClose = repairClosePackage(current) != null
-            shell.updateSaveFix(incident.id) { it.copy(canCloseGame = canClose, stagedDestinations = destinations) }
+            val closePackage = repairClosePackage(current)
+            val mustQuit = current.repair is app.foldcade.language.RepairState.WaitingForClose &&
+                current.subject?.playerId?.let(plugins::player)?.packageNames.orEmpty().any { name ->
+                    name != closePackage && repairHasRunningTask(name) && !repairPackageStopped(name)
+                }
+            shell.updateSaveFix(incident.id) { it.copy(mustQuitInEmulator = mustQuit, stagedDestinations = destinations) }
         }
     }
 

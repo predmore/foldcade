@@ -16,8 +16,9 @@ internal class RepairPlayerHolds(
         return current != started || exits == null || !playerDiedAfterStart(started, exits)
     }
 
-    /** Called from the waiting card, after checking for a started or visible game on Main. */
-    fun confirmClosed(packageName: String, fallbackAtMillis: Long?, confirmedAtMillis: Long) {
+    /** Called on Main after the player explicitly confirms that they quit. */
+    fun confirmClosed(packageName: String, fallbackAtMillis: Long?, confirmedAtMillis: Long, hasRunningTask: Boolean) {
+        if (hasRunningTask) return
         val started = startedAt(packageName, fallbackAtMillis) ?: return
         if (started > confirmedAtMillis || readableExits(packageName) != null) return
         if (startedAt(packageName, fallbackAtMillis) == started) store.noteRepairPlayerClosed(packageName, confirmedAtMillis)

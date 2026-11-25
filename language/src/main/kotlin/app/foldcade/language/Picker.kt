@@ -1972,8 +1972,6 @@ sealed interface Effect {
     data class OpenSaveFix(val incidentId: String) : Effect
     data class ChooseRepairSave(val incidentId: String) : Effect
     data class RetrySaveRepair(val incidentId: String) : Effect
-    data class CloseRepairGame(val incidentId: String) : Effect
-    data class ConfirmRepairGameClosed(val incidentId: String) : Effect
     data class PickFixFolder(val incidentId: String) : Effect
     data class FinishSaveFix(val incidentId: String, val openSaves: Boolean = true) : Effect
     data object CancelSaveFix : Effect

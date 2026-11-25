@@ -517,13 +517,13 @@ class SettingsPersistenceTest {
         val store = SessionStore(prefs)
         fun holds(session: SessionStore) = RepairPlayerHolds(session, { 100 }) { throw SecurityException("another uid") }
         assertTrue(holds(store).mayHold(name, fallbackAtMillis = 120))
-        holds(store).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 125)
+        holds(store).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 125, hasRunningTask = false)
         val restored = SessionStore(prefs)
         assertEquals(125L, restored.repairPlayerClosedAt(name))
         assertFalse(holds(restored).mayHold(name, fallbackAtMillis = 120))
         restored.noteRepairPlayerOpened(name, 135)
         assertNull(restored.repairPlayerClosedAt(name))
-        holds(restored).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 130)
+        holds(restored).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 130, hasRunningTask = false)
         assertTrue(holds(restored).mayHold(name, fallbackAtMillis = 120))
     }
 
@@ -532,8 +532,20 @@ class SettingsPersistenceTest {
         val name = "azahar.app"
         store.noteRepairPlayerOpened(name, 120)
         val holds = RepairPlayerHolds(store, { 100 }) { listOf(110) }
-        holds.confirmClosed(name, fallbackAtMillis = null, confirmedAtMillis = 130)
+        holds.confirmClosed(name, fallbackAtMillis = null, confirmedAtMillis = 130, hasRunningTask = false)
         assertNull(store.repairPlayerClosedAt(name))
+        assertTrue(holds.mayHold(name, fallbackAtMillis = null))
+    }
+
+    @Test fun confirmingClosedDoesNotReleaseARecordedRunningTask() {
+        val store = SessionStore(MemoryPrefs())
+        val name = "com.retroarch.aarch64"
+        store.noteRepairPlayerOpened(name, 120)
+        val holds = RepairPlayerHolds(store, { 100 }) { throw SecurityException("another uid") }
+        holds.confirmClosed(name, fallbackAtMillis = null, confirmedAtMillis = 130, hasRunningTask = true)
+        assertNull(store.repairPlayerClosedAt(name))
+        assertEquals(120L, store.repairPlayerOpenedAt(name))
+        assertTrue(holds.mayHold(name, fallbackAtMillis = null, hasRunningTask = true))
         assertTrue(holds.mayHold(name, fallbackAtMillis = null))
     }
 
