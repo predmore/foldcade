@@ -19,7 +19,8 @@ internal fun SaveIncidentGame.game() = Game(libraryId, gameId, platformId, Avail
 
 internal fun SaveIncident.appliesTo(game: Game): Boolean {
     if (gameIds.isEmpty()) return true
-    subject?.let { return it.libraryId == game.backendId && game.remoteKey in gameIds }
+    // A subject's game may be stored bare or as its home id; either names the same game.
+    subject?.let { return it.libraryId == game.backendId && (game.remoteKey in gameIds || homeGameId(game.backendId, game.remoteKey) in gameIds) }
     return if (kind == IncidentKind.WrongFolder) homeGameId(game.backendId, game.remoteKey) in gameIds else game.remoteKey in gameIds
 }
 

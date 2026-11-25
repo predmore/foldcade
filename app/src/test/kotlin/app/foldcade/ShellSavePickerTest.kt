@@ -185,6 +185,26 @@ class ShellSavePickerTest {
         assertEquals(SavePickerCopy.installFirst, shell.model.savePicker!!.message)
     }
 
+    @Test fun fixOpensOnlyAnOpenIncidentForThisGame() {
+        shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
+        val player = plugins.player("melonds") as SaveFolderHolder
+        player.bindSaveFolder("content://saves")
+        shell.presentSavePicker(picker())
+        val target = shell.model.savePicker!!.target
+        val root = FolderRef("primary:saves", "saves")
+        val evidence = Evidence(EvidenceKind.SessionWrite, "wrote elsewhere")
+        val key = plugins.player("melonds")!!.saveFolderId()
+        val other = SaveIncident("WrongFolder:melonds:romm:4", IncidentKind.WrongFolder, key, "melonDS",
+            listOf(homeGameId("romm", "4")), root, null, evidence, 100)
+        val done = SaveIncident("WrongFolder:melonds:romm:3", IncidentKind.WrongFolder, key, "melonDS",
+            listOf(homeGameId("romm", "3")), root, null, evidence, 100, repair = RepairState.Done)
+        shell.setSaveProtection(emptyMap(), listOf(other, done))
+        assertEquals(Effect.ChoosePlayerSave("melonds"), shell.savePickerFix(target))
+        val mine = done.copy(id = "WrongFolder:melonds", gameIds = emptyList(), repair = RepairState.NotStarted)
+        shell.setSaveProtection(emptyMap(), listOf(other, done, mine))
+        assertEquals(Effect.OpenSaveFix(mine.id), shell.savePickerFix(target))
+    }
+
     @Test fun theHeaderUsesTheExistingFolderFixAndUpdatesWhenConfigured() {
         shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
         shell.presentSavePicker(picker())

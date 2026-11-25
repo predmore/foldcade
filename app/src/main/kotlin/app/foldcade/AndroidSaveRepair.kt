@@ -71,7 +71,7 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
             val packages = player.packageNames
             val holding = withContext(Dispatchers.Main.immediate) {
                 launchWork.active || launchWork.waitingToLight ||
-                    (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch }) ||
+                    (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
                     packages.any(::repairHasRunningTask)
             }
             if (holding) return true

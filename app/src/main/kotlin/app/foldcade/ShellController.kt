@@ -3667,8 +3667,14 @@ class ShellController(
     fun savePickerFix(target: app.foldcade.language.SavePickerTarget): Effect? {
         if (model.savePicker?.target != target) return null
         val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) } ?: return null
+        val route = savesMenuRoute(target.gameId)
+        val owner = route?.servers?.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route?.saves
+        val incident = saveIncidents.firstOrNull {
+            it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done &&
+                (owner?.let(it::appliesTo) ?: it.gameIds.isEmpty())
+        }
         return when {
-            saveIncidents.any { it.playerKey == player.saveFolderId() } -> Effect.OpenSaveFix(saveIncidents.first { it.playerKey == player.saveFolderId() }.id)
+            incident != null -> Effect.OpenSaveFix(incident.id)
             player is app.foldcade.api.plugin.HostedSaveFolder && !player.hostedFolderInUse() -> Effect.SetUpHostedSaves(player.id)
             player is SaveFolderHolder && !player.hasSaveFolder() -> Effect.ChoosePlayerSave(player.id)
             saveSync[player.id] is SaveSyncState.NeedsSetup -> Effect.ShowSaveSync(player.id)
