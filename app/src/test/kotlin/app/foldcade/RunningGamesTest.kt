@@ -2,8 +2,6 @@ package app.foldcade
 
 import android.content.Intent
 import app.foldcade.api.plugin.LaunchFlag
-import app.foldcade.plugins.azahar.AzaharPlayer
-import app.foldcade.plugins.duckstation.DuckStationPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -57,31 +55,6 @@ class RunningGamesTest {
             resumeStartFlags(start, setOf(LaunchFlag.SameStartResumes)))
     }
 
-    @Test fun azaharKeepsTheOriginalGameStartForResumeOnSupportedReleases() {
-        val launch = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask)
-        val start = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
-            Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-        val player = AzaharPlayer()
-
-        for (version in listOf("2127.0", "2127.0-vanilla", "2127.0.1-googleplay", "2128.0")) {
-            val flags = runningLaunchFlags(player, launch) { version }
-            assertEquals(version, launch + LaunchFlag.SameStartResumes, flags)
-            assertTrue(resumable(null, "org.citra.citra_emu.activities.EmulationActivity", flags))
-            assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION, resumeStartFlags(start, flags))
-        }
-        for (version in listOf(null, "2126.2-vanilla", "2126.2-googleplay", "2127.0-alpha1-vanilla", "unknown")) {
-            val flags = runningLaunchFlags(player, launch) { version }
-            assertEquals(version, launch, flags)
-            assertFalse(resumable(null, "org.citra.citra_emu.activities.EmulationActivity", flags))
-            assertTrue(resumable("org.citra.citra_emu.ui.main.MainActivity", "org.citra.citra_emu.activities.EmulationActivity", flags))
-        }
-    }
-
-    @Test fun aDifferentPlayersResumeFlagsDoNotDependOnItsVersion() {
-        val flags = setOf(LaunchFlag.SameStartResumes, LaunchFlag.MovesBetweenScreens)
-        assertEquals(flags, runningLaunchFlags(DuckStationPlayer(), flags) { error("No version lookup needed") })
-    }
-
     @Test fun movingRequiresTheActivityToHandleBothPanelSizeChanges() {
         val size = android.content.pm.ActivityInfo.CONFIG_SCREEN_SIZE
         val layout = android.content.pm.ActivityInfo.CONFIG_SCREEN_LAYOUT
@@ -123,10 +96,27 @@ class RunningGamesTest {
     @Test
     fun aResumeBringsThePlayersTaskBackAndHandsItNothing() {
         // No second task, nothing cleared, and no single-top delivery of a game to load.
-        assertEquals(0, RESUME_FLAGS and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+        val flags = displayStartFlags(RESUME_FLAGS, multipleTask = false)
+        assertEquals(RESUME_FLAGS, flags)
+        assertEquals(0, flags and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
             Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED != 0)
-        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertTrue(flags and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED != 0)
+        assertTrue(flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test
+    fun clearingATaskReusesItsSlotEvenWithoutARecordedRun() {
+        val start = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val flags = displayStartFlags(start, multipleTask = true)
+        assertEquals(start or Intent.FLAG_ACTIVITY_NEW_TASK, flags)
+        assertEquals(flags, displayStartFlags(start or Intent.FLAG_ACTIVITY_MULTIPLE_TASK, multipleTask = true))
+    }
+
+    @Test
+    fun anIndependentStartCanStillOpenItsOwnTask() {
+        val start = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        assertEquals(start or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK,
+            displayStartFlags(start, multipleTask = true))
     }
 
     @Test

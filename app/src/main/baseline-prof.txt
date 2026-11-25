@@ -159,7 +159,7 @@ HSPLapp/foldcade/EdenKt;->installedEdenPackage(Lapp/foldcade/api/plugin/Player;L
 Lapp/foldcade/ExternalPlay;
 HSPLapp/foldcade/ExternalPlay;-><clinit>()V
 HSPLapp/foldcade/ExternalPlay;-><init>()V
-HSPLapp/foldcade/ExternalPlay;->endIfDisplayHome(Lapp/foldcade/PlaySessions;I)V
+HSPLapp/foldcade/ExternalPlay;->endIfDisplayHome(Lapp/foldcade/PlaySessions;I)Z
 HSPLapp/foldcade/ExternalPlay;->getPackageName()Ljava/lang/String;
 HSPLapp/foldcade/ExternalPlay;->getSessionId()Ljava/lang/String;
 PLapp/foldcade/FindOutcome$Close;-><clinit>()V

@@ -937,17 +937,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         val displayId = display?.displayId
-        val ending = displayId != null &&
-            foldcade.externalPlay.sessionId != null &&
-            foldcade.externalPlay.displayId == displayId
         val pending = libraryReturn
-        val leftPlayer = foldcade.externalPlay.packageName.takeIf { ending }
-        if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
-        val returned = ending && foldcade.externalPlay.sessionId == null
+        // Home on the launch display ends play time and returns saves. It can cover a
+        // live game without a Home intent to this process, as an icon or Recents return does.
+        // Keep the run so A can foreground it and checkResume can detect a missing task.
+        val returned = displayId != null && foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         // A companion resume (lid, Move) can have consumed the pause while the game was still open.
         foldcade.refreshSavesOnReturn(returnedFromGame = returned)
-        // Back here without the Home button: the player closed the game itself, so it is not paused.
-        if (returned && leftPlayer != null && foldcade.homeRecalledOn != displayId) foldcade.runningGames.forget(leftPlayer)
         if (foldcade.homeRecalledOn != displayId) {
             val leftApp = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
                 ?.let { foldcade.store.session.externalOn(it)?.id }
@@ -2040,23 +2036,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     ) {
         val pkg = intent.component?.packageName ?: return
         if (pkg == packageName || player is RetroArchPlayer) return
-        val resumeFlags = runningLaunchFlags(player, launchFlags) {
-            try {
-                packageManager.getPackageInfo(pkg, 0).versionName
-            } catch (_: PackageManager.NameNotFoundException) {
-                null
-            }
-        }
-        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, resumeFlags)) {
+        if (player !is ApkMoonlightPlayer && !resumable(packageManager.getLaunchIntentForPackage(pkg)?.component?.className, intent.component?.className, launchFlags)) {
             foldcade.runningGames.noteHolding(pkg)
             return
         }
         // Where the game landed, which may not be where it was asked for when that screen was busy.
         val panel = landedPanel() ?: if (player.occupiesBothDisplays) Panel.Top else launchScreen
-        val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in resumeFlags
-        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in resumeFlags || player is ApkMoonlightPlayer
+        val movesBetweenScreens = LaunchFlag.MovesBetweenScreens in launchFlags
+        val sameStartResumes = movesBetweenScreens || LaunchFlag.SameStartResumes in launchFlags || player is ApkMoonlightPlayer
         val resumeStart = if (sameStartResumes) Intent(intent).apply {
-            flags = resumeStartFlags(flags, resumeFlags)
+            flags = resumeStartFlags(flags, launchFlags)
         } else null
         foldcade.runningGames.note(RunningGame(id, title, platformId, pkg, intent.component?.className, panel,
             player.occupiesBothDisplays, System.currentTimeMillis(), saves, resumeStart,

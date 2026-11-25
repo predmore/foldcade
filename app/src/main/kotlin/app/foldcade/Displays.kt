@@ -35,17 +35,27 @@ fun Context.startOnDisplay(activity: Class<*>, displayId: Int, bloom: Boolean = 
 }
 
 /**
- * Starts [intent] on [displayId] in a task of its own. A start that must reuse the
- * task its player already has, to bring a game back or to replace it, passes
- * [multipleTask] false and its own task flags. [bloom]: see [bloomStart].
+ * Starts [intent] on [displayId]. A start that must reuse the task its player
+ * already has passes [multipleTask] false or asks to clear the existing task.
+ * [bloom]: see [bloomStart].
  */
 fun Context.startOnDisplay(intent: Intent, displayId: Int, multipleTask: Boolean = true, bloom: Boolean = false) {
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or if (multipleTask) Intent.FLAG_ACTIVITY_MULTIPLE_TASK else 0)
+    intent.flags = displayStartFlags(intent.flags, multipleTask)
     if (bloom) bloomStart(intent)
     val options = ActivityOptions.makeBasic()
     options.launchDisplayId = displayId
     (applicationContext as? FoldcadeApp)?.authorizeApkPluginStart(intent)
     startActivity(intent, options.toBundle())
+}
+
+/** CLEAR_TASK needs Android to look for the task to clear. MULTIPLE_TASK skips that lookup. */
+internal fun displayStartFlags(flags: Int, multipleTask: Boolean): Int {
+    val flagsWithNewTask = flags or Intent.FLAG_ACTIVITY_NEW_TASK
+    return if (multipleTask && flags and Intent.FLAG_ACTIVITY_CLEAR_TASK == 0) {
+        flagsWithNewTask or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+    } else {
+        flagsWithNewTask and Intent.FLAG_ACTIVITY_MULTIPLE_TASK.inv()
+    }
 }
 
 /**

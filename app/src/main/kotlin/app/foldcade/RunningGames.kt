@@ -2,8 +2,6 @@ package app.foldcade
 
 import android.content.Intent
 import app.foldcade.api.plugin.LaunchFlag
-import app.foldcade.api.plugin.Player
-import app.foldcade.plugins.azahar.AzaharPlayer
 
 /**
  * A game Foldcade started that may still be open in its player. The Home button
@@ -156,15 +154,6 @@ internal fun resumable(frontDoor: String?, started: String?, flags: Set<LaunchFl
     LaunchFlag.SameStartResumes in flags || LaunchFlag.MovesBetweenScreens in flags ||
         (frontDoor != null && frontDoor != started)
 
-/** A bundled player can opt in to same-start resume for a supported installed release. */
-internal fun runningLaunchFlags(
-    player: Player,
-    flags: Set<LaunchFlag>,
-    installedVersion: () -> String?,
-): Set<LaunchFlag> =
-    if (player is AzaharPlayer && player.sameStartResumes(installedVersion())) flags + LaunchFlag.SameStartResumes
-    else flags
-
 /**
  * What a resume brought to the front, from the player's activities that resumed
  * since it was sent, oldest first. A task still there comes back without the
@@ -188,10 +177,11 @@ internal const val RESUME_CHECK_MS = 1_500L
 
 /**
  * The flags on the player's own launcher intent that bring its open task back
- * the way a launcher does. A player without same-start resume may load the game
- * again if sent its original start. With these flags Android can find the
- * player's task, bring it to the front and drop the start when the launcher
- * activity is not the task's root.
+ * the way a launcher does. Sending the game's start again would not: a player
+ * whose game activity is single-top, as Azahar's is, takes it as a new game
+ * and loads it over the one in progress. With these flags Android finds the
+ * player's task, brings it to the front and drops the start, because the
+ * launcher activity is not the task's root.
  */
 internal const val RESUME_FLAGS: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
 

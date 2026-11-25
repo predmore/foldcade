@@ -47,13 +47,40 @@ class ExternalPlayTest {
         val external = ExternalPlay()
         external.open(plays, "nintendo-ds.melonds", "Game", 2) {}
         assertEquals(listOf(PlayKind.Started), plays.events().map { it.kind })
-        external.endIfDisplayHome(plays, 1)
+        assertFalse(external.endIfDisplayHome(plays, 1))
         assertEquals(1, plays.events().size)
-        external.endIfDisplayHome(plays, 2)
+        assertTrue(external.endIfDisplayHome(plays, 2))
         assertEquals(listOf(PlayKind.Started, PlayKind.Ended), plays.events().map { it.kind })
         assertEquals("nintendo-ds.melonds", plays.events().last().gameId)
-        external.endIfDisplayHome(plays, 2)
+        assertFalse(external.endIfDisplayHome(plays, 2))
         assertEquals(2, plays.events().size)
+    }
+
+    @Test
+    fun returningToFoldcadeEndsPlayTimeAndKeepsTheGameAvailableForResume() {
+        val run = RunningGame(
+            tileId = "picross",
+            title = "Picross 3D: Round 2",
+            platformId = "nintendo-3ds",
+            packageName = "org.azahar_emu.azahar",
+            activity = "org.citra.citra_emu.activities.EmulationActivity",
+            panel = Panel.Top,
+            occupiesBoth = true,
+            startedAtMillis = 1_000L,
+            saves = null,
+        )
+        val plays = plays()
+        val external = ExternalPlay()
+        val games = RunningGames()
+        external.open(plays, run.tileId, run.title, 0, run.packageName) {}
+        games.note(run)
+
+        // Android can foreground this activity through Recents or another launcher without a Home intent.
+        assertTrue(external.endIfDisplayHome(plays, 0))
+        assertNull(external.sessionId)
+        assertEquals(PlayKind.Ended, plays.events().last().kind)
+        assertEquals(run, games.forTile(run.tileId))
+        assertTrue(games.mayHold(run.packageName))
     }
 
     @Test
