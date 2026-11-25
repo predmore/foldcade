@@ -795,12 +795,13 @@ class ShellController(
         val fix = model.saveFix?.let { page ->
             val previous = saveIncidents.firstOrNull { it.id == page.incidentId }
             val current = incidents.firstOrNull { it.id == page.incidentId }
-            when {
+            val next = when {
                 current == null && previous != null -> page.copy(index = 0, resolved = previous.copy(repair = app.foldcade.language.RepairState.Done),
                     offline = page.offline && !previous.automaticDone)
                 current != null && current.repair != previous?.repair -> page.copy(index = 0, note = null)
                 else -> page
             }
+            if (current != null && current.staged != previous?.staged) next.copy(stagedDestinations = null) else next
         }
         saveIncidents = incidents
         model = model.copy(saveIncidents = incidents, saveFix = fix)

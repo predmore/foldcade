@@ -181,6 +181,7 @@ enum class DialogButton {
     Allow,
     Ok,
     CloseIt,
+    ContinueFix,
     ForgetKey,
     KeepKey,
     OpenRetroArch,
@@ -245,6 +246,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.Allow -> Copy.allowUsage
     DialogButton.Ok -> Copy.ok
     DialogButton.CloseIt -> Copy.closeIt
+    DialogButton.ContinueFix -> Copy.continueGrant
     DialogButton.ForgetKey -> Copy.forgetKey
     DialogButton.KeepKey -> Copy.keepKey
     DialogButton.OpenRetroArch -> Copy.openRetroArch
@@ -1970,7 +1972,6 @@ sealed interface Effect {
     data class OpenSaveFix(val incidentId: String) : Effect
     data class ChooseRepairSave(val incidentId: String) : Effect
     data class RetrySaveRepair(val incidentId: String) : Effect
-    data class CloseRepairGame(val incidentId: String) : Effect
     data class PickFixFolder(val incidentId: String) : Effect
     data class FinishSaveFix(val incidentId: String, val openSaves: Boolean = true) : Effect
     data object CancelSaveFix : Effect

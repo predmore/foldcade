@@ -570,7 +570,7 @@ The notice gives DuckStation's Memory Cards steps and **It’s fine** dismisses 
 
 - Incidents and location checks live in `files/save-protection/*` (§1.4).
 - The session baseline lives in the pending return, so a process death between launch and return still judges the session on the next return.
-- Staged copies live in `save-handover` (existing). `incident.staged` names them, so the next connection uploads them as Backups before anything else for that game.
+- Staged copies live in `save-handover`. `incident.staged` names them. Each sidecar records the game’s library and the RomM origin when known. The next connection retries RomM copies as Backups. Local-folder copies stay on this device.
 
 ---
 
@@ -578,7 +578,7 @@ The notice gives DuckStation's Memory Cards steps and **It’s fine** dismisses 
 
 **Fix it** starts automatic repair when Foldcade knows the game, has a proven live root, and can read and write both roots using held grants or all-files access. The original and live bindings, local game URI, RomM origin, and each repair phase survive restart. Repair shares the save-flow lock with launches, read-backs, and save choices.
 
-1. **Wait for the game to close.** Home can leave the emulator holding a paused game. Foldcade waits on recorded holds, including emulator launches from Apps or **Open emulator** and holds from an earlier process. Those app launches do not create a Paused tile. A reboot releases holds recorded before startup. When Android cannot report an emulator’s exit, **Try again** on the waiting card confirms that the player has quit. It does not override a known active session. A confirmed close survives a restart.
+1. **Wait for the game to close.** Home can leave the emulator holding a paused game. Foldcade waits on its launch records, including emulator launches from Apps or **Open emulator** and holds from an earlier process. A reboot releases holds recorded before startup. On Android 15 or later, Foldcade can proceed after receiving Android’s package restart broadcast if the package is still marked stopped. It checks the stopped state again before binding and placing a save. A native quit can leave a launch record behind, and usage events can report a backgrounded activity that still holds the game. **Confirm close** opens **Already quit?**, focused on **Not now**. On **Continue**, Foldcade rechecks the hold. If it can clear the task, it uses the usual Close path and waits for shutdown and save read-back. When Foldcade knows the game is still running and cannot close it, the waiting card sends the player back to quit in the emulator. An explicit confirmation can release an unobservable hold and survives a restart.
 2. **Keep every distinct game copy.** Read its save from the bound root, live root, and a reachable beside-game file if the adapter declares one. Stage them in the existing Backup queue. Equal contents use one unslotted Backup, even when the same save is a slot version. Verify the unslotted IDs and RomM hashes. A new upload must also match its byte size. An equivalent existing ZIP can have a different container size. While RomM is unreachable, the repair stays at **Waiting for RomM** with the copies durably staged.
 3. **Bind to the proven root.** Check the working files with two reads two seconds apart. A change sends repair back to waiting for the game to close. Write the rebound fence before persisting the new binding, then bind every player sharing that folder. If access or the game’s save path cannot be resolved, offer the guided Fix. The picker checks the proven storage identity when one is known.
 4. **Choose the head.** Use RomM’s current slot head when the live file is absent, equivalent to the head, unchanged from the last verified sync, or structurally suspect. A different live history opens the two-saves card. All local copies are already unslotted Backups. The current RomM head is focused first.
@@ -696,7 +696,8 @@ Bottom card, by state (`saveFixActions`, `saveFixCard`):
 |---|---|---|
 | Keeping | **Keeping your saves on RomM.** | |
 | Waiting for RomM | **Waiting for RomM. Foldcade will try again when it can connect.** | **Try again** |
-| Waiting for Close | **Quit $game in $emulator, then come back.** | **Open $emulator** · **Close game** when Foldcade can close its task, otherwise **Try again** |
+| Waiting for Close | **Already quit $game in $emulator? Confirm to continue. If it’s still open, save and quit first.** | **Confirm close** · **Open $emulator** |
+| Waiting for a game Foldcade cannot close | **Quit $game in $emulator, then come back.** | **Open $emulator** |
 | Switching | **Switching Foldcade to $folder.** | |
 | Choosing | **Both are kept on RomM.** | **Choose save** |
 | Reset choice needs guided recovery | **Open Y › Saves to choose which progress to keep.** | **Open Saves** |
@@ -718,11 +719,13 @@ Top screen:
 
 | Step | Title | Value |
 |---|---|---|
-| Keep | `"Keep every copy on RomM"` | ✓ `"$n kept"`; ▸ `"Waiting for RomM"` while copies wait offline; ✓ `"Already on RomM"` with nothing to keep |
+| Keep on RomM | `"Keep every copy on RomM"` or `"Keep copies on RomM"` when the page also shows other copies | ✓ `"$n kept"` for verified Backups; ▸ `"Waiting for RomM"` for queued RomM copies |
+| Keep on this device | `"Keep a copy on this device"` | ✓ `"$n kept"` for staged local-folder copies |
 | Folder | `"Use the folder $emulator uses"` (known) / `"Choose $emulator’s folder"` (unknown) | ▸ until bound, then ✓ |
 | Choose | `"Choose which save to play"` | ○ until bound, then ▸ |
 
 - Two real columns: `"$emulator now saves in"` | `live.label`, and `"Foldcade was watching"` | `bound.label`. With no live folder, the evidence in words follows, e.g. `"Azahar didn’t use this folder last time you played."`
+- When Settings opens an emulator-wide incident, the checklist reads each staged copy’s sidecar before showing copy status. Local-folder copies count as kept here even when RomM is set up. Copies whose destination cannot be read show **Copies need checking**.
 
 Controls: B is **Later**. It closes the page, and the incident and gate stay. The bottom face button does nothing here, because there is no skip: a fix either happens or waits. For **MaybeWrongFolder**, Y opens **It's fine**, with the confirmation `"Keep watching ${bound.label}?"` / `"Only if $emulator saves there. Foldcade checks again next time."`.
 

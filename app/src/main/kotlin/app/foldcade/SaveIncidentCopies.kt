@@ -9,7 +9,10 @@ import app.foldcade.language.SaveIncident
 import app.foldcade.language.Evidence
 import app.foldcade.language.EvidenceKind
 import app.foldcade.language.IncidentKind
+import app.foldcade.language.SaveFixCopyDestination
 import app.foldcade.language.blocksLaunch
+import app.foldcade.localfolder.LocalFolderBackend
+import app.foldcade.plugins.romm.ROMM_LIBRARY_ID
 import app.foldcade.plugins.romm.keepRommRepairBackup
 import app.foldcade.language.hostedCardMismatch
 import app.foldcade.plugins.duckstation.DuckStationPlayer
@@ -37,6 +40,21 @@ internal class SaveIncidentCopies(
         val current = store.incident(id) ?: return
         val staged = (current.staged + uris).distinct()
         if (current.staged != staged) store.put(current.copy(staged = staged))
+    }
+
+    fun destinations(staged: List<String>): Map<String, SaveFixCopyDestination> {
+        if (staged.isEmpty()) return emptyMap()
+        val queued = try { saves.queuedCopies(staged.toSet()) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { return emptyMap() } // Fix can still proceed if its checklist cannot read the queue.
+        return queued.mapNotNull { copy ->
+            val destination = when {
+                copy.origin != null || copy.game.backendId == ROMM_LIBRARY_ID -> SaveFixCopyDestination.Romm
+                copy.game.backendId == LocalFolderBackend.ID -> SaveFixCopyDestination.Device
+                else -> return@mapNotNull null
+            }
+            copy.slot.contentUri?.let { it to destination }
+        }.toMap()
     }
 
     /** A pre-update session can still carry bytes from the slot it launched with. */

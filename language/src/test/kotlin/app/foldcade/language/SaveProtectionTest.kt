@@ -316,7 +316,8 @@ class SaveProtectionTest {
     }
 
     @Test fun theFixChecklistFollowsTheIncident() {
-        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
+        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true,
+            stagedDestinations = mapOf("file:///queued" to SaveFixCopyDestination.Romm))
         val waiting = incident.copy(staged = listOf("file:///queued"))
         assertEquals(listOf(SaveFixStepState.Now, SaveFixStepState.Now, SaveFixStepState.Later), saveFixSteps(waiting, page).map { it.state })
         assertEquals("Waiting for RomM", saveFixSteps(waiting, page).first().value)
@@ -334,7 +335,8 @@ class SaveProtectionTest {
     @Test fun localGuidedFixShowsStagedCopiesAndFinishesWithoutASaveChoice() {
         val localRetroArch = incident.copy(playerKey = "retroarch", playerName = "RetroArch",
             gameIds = listOf("lib:local-folder:nes"), staged = listOf("file:///save-handover/copy.save"), repair = RepairState.Guided)
-        val page = SaveFixPage(localRetroArch.id, HostScreen.Bottom, null, game = "NES game")
+        val page = SaveFixPage(localRetroArch.id, HostScreen.Bottom, null, game = "NES game",
+            stagedDestinations = mapOf(localRetroArch.staged.single() to SaveFixCopyDestination.Device))
         val done = localRetroArch.copy(repair = RepairState.Done)
         assertEquals(listOf(
             SaveFixStep("Keep a copy on this device", SaveFixStepState.Done, "1 kept"),
@@ -350,8 +352,76 @@ class SaveProtectionTest {
         }
     }
 
+    @Test fun theFixWaitingCardStartsWithAnExplicitCloseConfirmation() {
+        val waiting = incident.copy(repair = RepairState.WaitingForClose())
+        val page = SaveFixPage(waiting.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
+        val model = PickerModel(1, 1, saveIncidents = listOf(waiting), saveFix = page)
+        assertEquals(listOf(SaveFixAction.ConfirmClosed, SaveFixAction.OpenEmulator), saveFixActions(waiting, page))
+        assertEquals("Confirm close", saveFixLabel(SaveFixAction.ConfirmClosed, waiting))
+        assertTrue(saveFixCard(waiting, page).body.startsWith("Already quit Picross 3D: Round 2 in Azahar?"))
+        val (asked, firstPress) = reduce(model, Meaning.Activate, page.screen)
+        assertNull(firstPress)
+        val dialog = asked.dialog!!
+        assertEquals("Already quit?", dialog.title)
+        assertEquals("Only continue if you’ve quit Picross 3D: Round 2 in Azahar. Foldcade can’t tell if it’s still open.", dialog.body)
+        assertEquals(listOf(DialogButton.ContinueFix, DialogButton.NotNow), dialog.buttons)
+        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.index])
+        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
+        assertNull(reduce(asked, Meaning.Activate, page.screen, repeatCount = 1).second)
+        assertEquals(Effect.DialogChoice(DialogButton.NotNow, DialogKind.CloseGame, waiting.id), reduce(asked, Meaning.Back, page.screen).second)
+        val selected = reduce(asked, Meaning.MoveLeft, page.screen).first
+        assertEquals(Effect.DialogChoice(DialogButton.ContinueFix, DialogKind.CloseGame, waiting.id), reduce(selected, Meaning.Activate, page.screen).second)
+    }
+
+    @Test fun aRunningRetroArchGameMustQuitInTheEmulator() {
+        val waiting = incident.copy(playerKey = "retroarch", playerName = "RetroArch", repair = RepairState.WaitingForClose())
+        val page = SaveFixPage(waiting.id, HostScreen.Bottom, null, game = "NES game", hasRommDestination = true, mustQuitInEmulator = true)
+        assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(waiting, page))
+        assertEquals("Open RetroArch", saveFixLabel(SaveFixAction.OpenEmulator, waiting))
+        assertEquals("Quit NES game in RetroArch, then come back.", saveFixCard(waiting, page).body)
+        val model = PickerModel(1, 1, saveIncidents = listOf(waiting), saveFix = page)
+        assertEquals(Effect.OpenPlayer("retroarch"), reduce(model, Meaning.Activate, page.screen).second)
+    }
+
+    @Test fun emulatorWideFixCountsLocalCopiesEvenWithRommSetUp() {
+        val staged = incident.copy(subject = null, staged = listOf("file:///local-1", "file:///local-2"), repair = RepairState.Guided)
+        val page = SaveFixPage(staged.id, HostScreen.Bottom, null, hasRommDestination = true,
+            stagedDestinations = staged.staged.associateWith { SaveFixCopyDestination.Device })
+        val steps = saveFixSteps(staged, page)
+        assertEquals(SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, "2 kept"), steps.first())
+        assertTrue(steps.none { it.value == SaveProtectionCopy.stepWaiting || it.title == SaveProtectionCopy.stepKeep })
+        assertEquals(SaveProtectionCopy.guidedDoneLocal, saveFixCard(staged.copy(repair = RepairState.Done), page).body)
+    }
+
+    @Test fun mixedIncidentReportsRommAndDeviceCopiesIndependently() {
+        val mixed = incident.copy(subject = null, staged = listOf("file:///device", "file:///romm"), repair = RepairState.Guided)
+        val page = SaveFixPage(mixed.id, HostScreen.Bottom, null, hasRommDestination = true,
+            stagedDestinations = mapOf("file:///device" to SaveFixCopyDestination.Device, "file:///romm" to SaveFixCopyDestination.Romm))
+        val device = SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, "1 kept")
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepRomm, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting), device),
+            saveFixSteps(mixed, page).take(2))
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepRomm, SaveFixStepState.Done, "1 kept"), device),
+            saveFixSteps(mixed.copy(staged = listOf("file:///device"), kept = listOf("backup")), page).take(2))
+    }
+
+    @Test fun aMissingSidecarDoesNotClaimWhereTheCopyWasKept() {
+        val unchecked = incident.copy(staged = listOf("file:///unknown"), repair = RepairState.Guided)
+        val page = SaveFixPage(unchecked.id, HostScreen.Bottom, null, hasRommDestination = true, stagedDestinations = emptyMap())
+        assertEquals(SaveFixStep(SaveProtectionCopy.stepCopiesUnchecked, SaveFixStepState.Later), saveFixSteps(unchecked, page).first())
+    }
+
+    @Test fun theFixPageHidesCopyStatusWhileReadingSidecars() {
+        val staged = incident.copy(staged = listOf("file:///unknown"), repair = RepairState.Done)
+        val page = SaveFixPage(staged.id, HostScreen.Bottom, null)
+        assertEquals(listOf(SaveFixStep("Use the folder Azahar uses", SaveFixStepState.Done)), saveFixSteps(staged, page))
+        assertEquals("Folder set.", saveFixCard(staged, page).body)
+        val waiting = staged.copy(repair = RepairState.WaitingForRomm())
+        assertEquals(listOf("Use the folder Azahar uses", "Put your save back"),
+            saveFixSteps(waiting, page.copy(hasRommDestination = true)).map { it.title })
+    }
+
     @Test fun emulatorWideFixWithoutADestinationReportsMissingLocalCopies() {
-        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Local game")
+        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Local game", stagedDestinations = emptyMap())
         // An earlier repair can still be recorded after its RomM origin goes away.
         val waiting = incident.copy(repair = RepairState.WaitingForRomm())
         assertEquals(SaveFixStep("Keep a copy on this device", SaveFixStepState.Later, "Not kept yet"),
@@ -369,7 +439,7 @@ class SaveProtectionTest {
     @Test fun theFixChecklistShowsEdenSessionGuidanceForAnAccountChange() {
         val eden = SaveIncident("MaybeNewSave:eden", IncidentKind.MaybeNewSave, "eden", "Eden", listOf("game"),
             null, null, Evidence(EvidenceKind.Config, SaveProtectionCopy.edenUserChanged), 20, kept = listOf("backup"))
-        val page = SaveFixPage(eden.id, HostScreen.Bottom, null, hasRommDestination = true)
+        val page = SaveFixPage(eden.id, HostScreen.Bottom, null, hasRommDestination = true, stagedDestinations = emptyMap())
         assertEquals(listOf(
             SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(1)),
             SaveFixStep("Check your Eden user", SaveFixStepState.Now),
@@ -382,7 +452,8 @@ class SaveProtectionTest {
     @Test fun hostedCardFixOnlyOffersRommStepsWithADestination() {
         val mismatch = incident.copy(kind = IncidentKind.MaybeNewSave, playerKey = "duckstation", playerName = "DuckStation",
             evidence = Evidence(EvidenceKind.HostedOpen, "SLUS-00067_1.mcd"))
-        val local = SaveFixPage(mismatch.id, HostScreen.Bottom, SaveProtectionCopy.hostedCardSteps, game = "Castlevania", playerManagesFolder = true)
+        val local = SaveFixPage(mismatch.id, HostScreen.Bottom, SaveProtectionCopy.hostedCardSteps, game = "Castlevania",
+            playerManagesFolder = true, stagedDestinations = emptyMap())
         val romm = local.copy(hasRommDestination = true, safe = SaveFixSafe("Castlevania", 100))
         assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, local))
         assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, romm))

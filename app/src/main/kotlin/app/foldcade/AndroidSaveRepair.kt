@@ -69,18 +69,13 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
     return object : SaveRepairWork {
         override val slot = slot
 
-        override suspend fun running(): Boolean {
-            val packages = player.packageNames
-            val holding = withContext(Dispatchers.Main.immediate) {
-                launchWork.active || launchWork.waitingToLight ||
-                    (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
-                    packages.any(::repairHasRunningTask)
-            }
-            if (holding) return true
-            return packages.any { name ->
-                val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == packageInfo.packageName }
-                repairPlayerHolds.mayHold(name, fallback)
-            }
+        override suspend fun running(): Boolean = withContext(Dispatchers.Main.immediate) {
+            launchWork.active || launchWork.waitingToLight ||
+                (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
+                player.packageNames.any { name ->
+                    val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == packageInfo.packageName }
+                    name in closingPlayers || repairPlayerHolds.mayHold(name, fallback, repairHasRunningTask(name))
+                }
         }
 
         override suspend fun versions() = rommRepairSaves(library, game, origin)

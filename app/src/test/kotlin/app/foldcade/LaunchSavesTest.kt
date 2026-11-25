@@ -109,6 +109,23 @@ class LaunchSavesTest {
         assertTrue(server.calls.isEmpty())
     }
 
+    @Test fun incidentCopiesUseTheLibraryAndOriginRecordedInEachSidecar() {
+        val copies = SaveIncidentCopies(saves, plugins, SaveProtectionStore(Files.createTempDirectory("copy-destinations")))
+        val spot = SaveSpot("sav", SAVES, "Tetris DS (USA).sav")
+        val bytes = "working save".toByteArray()
+        val device = saves.stageCopy(owner.copy(backendId = app.foldcade.localfolder.LocalFolderBackend.ID), Melon, spot, bytes)
+        val romm = owner.copy(backendId = app.foldcade.plugins.romm.ROMM_LIBRARY_ID)
+        val fromOldServer = saves.stageCopy(romm, Melon, spot, bytes, "https://old.romm.test")
+        val legacy = saves.stageCopy(romm, Melon, spot, bytes)
+        val unknown = saves.stageCopy(owner.copy(backendId = "another-plugin"), Melon, spot, bytes)
+        assertEquals(mapOf(
+            device to SaveFixCopyDestination.Device,
+            fromOldServer to SaveFixCopyDestination.Romm,
+            legacy to SaveFixCopyDestination.Romm,
+        ), copies.destinations(listOf(device, fromOldServer, legacy, unknown, "file:///missing")))
+        assertEquals(mapOf(device to SaveFixCopyDestination.Device), copies.destinations(listOf(device)))
+    }
+
     @Test fun everyPreviouslyUnguardedAdapterStopsWhenAKnownSaveHasNoSpot() = runBlocking {
         val players = listOf(
             app.foldcade.plugins.azahar.AzaharPlayer(), app.foldcade.plugins.melonds.MelonDsPlayer(),
