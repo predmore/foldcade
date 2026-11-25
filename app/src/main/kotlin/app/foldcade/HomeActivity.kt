@@ -992,12 +992,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshSavesOnReturn(returnedFromGame = returned)
         val homeRecalled = foldcade.homeRecalledOn == displayId
         val leftRun = foldcade.runningGames.forPackage(leftPlayer)
-        if (leftPlayer != null && !tracksGameActivity(leftPlayer, leftRun?.activity) && forgetsRunOnReturn(
+        if (leftPlayer != null && forgetsRunOnReturn(
                 returned = returned,
                 homeRecalledOnThisDisplay = homeRecalled,
                 holdsHomeRole = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME),
                 replacesInPlayer = leftRun?.replacesInPlayer == true,
                 reopenedFromIntent = reopened,
+                hasActivityGrant = leftRun?.activityGrant != null,
             )
         ) {
             foldcade.runningGames.forget(leftPlayer)
@@ -2172,8 +2173,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.launchWork.job = foldcade.scope.launch {
             foldcade.saveFlow.withLock {
                 // A prior return can open an incident or clear a run while this press waits.
-                val tracksActivity = tracksGameActivity(running.packageName, running.activity)
-                val exited = !tracksActivity && try {
+                val exited = try {
                     playerDiedAfterStart(running.startedAtMillis, foldcade.playerExitTimestamps(running.packageName))
                 } catch (_: SecurityException) { false }
                 whenLit({ startPanels(running.occupiesBoth, requested = running.panel) }) {
@@ -2181,35 +2181,31 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         if (!launchCurrent(generation) || isDestroyed || isFinishing) return@withContext
                         val current = foldcade.runningOn(tileId)
                             ?.takeIf { it.packageName == running.packageName && it.startedAtMillis == running.startedAtMillis }
-                        if (current == null || exited || current.saveFolderKey?.let(foldcade.store::saveAwaitsLoad) == true) {
-                            if (current != null && exited) foldcade.runningGames.forget(current.packageName)
+                        val grant = current?.activityGrant
+                        val resume = gameActivityResume(exited, grant != null, grant?.heldByPlayer(this@FoldcadeHomeActivity), warned)
+                        if (current == null || resume == GameActivityResume.Launch || current.saveFolderKey?.let(foldcade.store::saveAwaitsLoad) == true) {
+                            if (current != null && resume == GameActivityResume.Launch) foldcade.runningGames.forget(current.packageName)
                             startAnew()
                             return@withContext
                         }
                         if (current.packageName in foldcade.closingPlayers) return@withContext
-                        if (tracksActivity) {
-                            val held = current.activityGrant?.heldByPlayer(this@FoldcadeHomeActivity)
-                            when (gameActivityResume(held, UsageAccess(this@FoldcadeHomeActivity).granted(), warned)) {
-                                GameActivityResume.Launch -> {
-                                    foldcade.runningGames.forget(current.packageName)
-                                    startAnew()
-                                }
-                                GameActivityResume.Warn -> if (foldcade.shell.present(resumeGameDialog(hostScreen()))) {
-                                    pendingGameResume = {
-                                        val run = foldcade.runningOn(tileId)
-                                        if (run == null) startAnew()
-                                        else if (run.startedAtMillis == current.startedAtMillis && run.packageName == current.packageName) {
-                                            if (!resumeRunning(tileId, title, platformId, warned = true, startAnew = startAnew)) startAnew()
-                                        }
+                        if (resume == GameActivityResume.Warn) {
+                            if (foldcade.shell.present(resumeGameDialog(hostScreen()))) {
+                                pendingGameResume = {
+                                    val run = foldcade.runningOn(tileId)
+                                    if (run == null) startAnew()
+                                    else if (run.startedAtMillis == current.startedAtMillis && run.packageName == current.packageName) {
+                                        if (!resumeRunning(tileId, title, platformId, warned = true, startAnew = startAnew)) startAnew()
                                     }
                                 }
-                                GameActivityResume.Resume -> {
-                                    val sentAt = System.currentTimeMillis()
-                                    if (sendResume(current, tileId, title, platformId, front)) {
-                                        checkGameActivityResume(current, sentAt, generation, warned, startAnew)
-                                    } else startAnew()
-                                }
                             }
+                            return@withContext
+                        }
+                        if (resume == GameActivityResume.Resume) {
+                            val sentAt = System.currentTimeMillis()
+                            if (sendResume(current, tileId, title, platformId, front)) {
+                                checkGameActivityResume(current, sentAt, generation, startAnew)
+                            } else startAnew()
                             return@withContext
                         }
                         // A press from the other screen brings the same visible game forward.
@@ -2243,7 +2239,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val started = rememberResume(running, continuing = false) {
             startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, front, resume = true)
         }
-        if (started && running.resumeStart == null && !tracksGameActivity(running.packageName, running.activity)) {
+        if (started && running.resumeStart == null && running.activityGrant == null) {
             checkResume(running, sentAt, front.component?.className)
         }
         return started
@@ -2301,17 +2297,17 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    private fun checkGameActivityResume(running: RunningGame, sentAt: Long, generation: Int, warned: Boolean, startAnew: () -> Unit) {
+    private fun checkGameActivityResume(running: RunningGame, sentAt: Long, generation: Int, startAnew: () -> Unit) {
         val session = foldcade.externalPlay.sessionId ?: return
         val displayId = foldcade.externalPlay.displayId ?: return
         foldcade.scope.launch {
             delay(RESUME_CHECK_MS)
-            val resumed = if (warned) emptyList() else UsageAccess(this@FoldcadeHomeActivity)
+            val resumed = UsageAccess(this@FoldcadeHomeActivity)
                 .resumedSince(running.packageName, sentAt, System.currentTimeMillis())
             withContext(Dispatchers.Main.immediate) {
                 if (isDestroyed || isFinishing || !launchCurrent(generation) || foldcade.externalPlay.sessionId != session) return@withContext
                 val held = running.activityGrant?.heldByPlayer(this@FoldcadeHomeActivity)
-                when (gameActivityResumed(held, resumed, running.activity, warned)) {
+                when (gameActivityResumed(held, resumed, running.activity)) {
                     GameActivityResume.Resume -> Unit
                     GameActivityResume.Warn -> Toast.makeText(applicationContext, Copy.azaharResumeWarning, Toast.LENGTH_LONG).show()
                     GameActivityResume.Launch -> {

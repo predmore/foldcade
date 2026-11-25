@@ -17,12 +17,12 @@ internal data class GameActivityGrant(val uri: Uri, val uid: Int) {
     }
 }
 
-internal fun tracksGameActivity(packageName: String, activity: String?): Boolean =
+internal fun supportsGameActivityGrant(packageName: String, activity: String?): Boolean =
     activity != null && activity == activityClass(packageName)
 
 internal fun Context.markGameActivity(start: Intent): GameActivityGrant? {
     val component = start.component ?: return null
-    if (!tracksGameActivity(component.packageName, component.className)) return null
+    if (!supportsGameActivityGrant(component.packageName, component.className)) return null
     val uid = try {
         packageManager.getPackageUid(component.packageName, 0)
     } catch (_: PackageManager.NameNotFoundException) {
@@ -37,15 +37,18 @@ internal fun Context.markGameActivity(start: Intent): GameActivityGrant? {
 
 internal enum class GameActivityResume { Resume, Warn, Launch }
 
-internal fun gameActivityResume(held: Boolean?, canObserveFront: Boolean, warned: Boolean): GameActivityResume = when {
+/** With no confirmed grant, null hands the decision back to the existing resume path. */
+internal fun gameActivityResume(exited: Boolean, hasActivityGrant: Boolean, held: Boolean?, warned: Boolean): GameActivityResume? = when {
+    exited -> GameActivityResume.Launch
+    !hasActivityGrant -> null
     held == false -> GameActivityResume.Launch
-    warned || (held == true && canObserveFront) -> GameActivityResume.Resume
+    held == true || warned -> GameActivityResume.Resume
     else -> GameActivityResume.Warn
 }
 
 /** A different activity, or missing usage history, never proves that a game has ended. */
-internal fun gameActivityResumed(held: Boolean?, resumed: List<String>, activity: String?, warned: Boolean): GameActivityResume = when {
+internal fun gameActivityResumed(held: Boolean?, resumed: List<String>, activity: String?): GameActivityResume = when {
     held == false -> GameActivityResume.Launch
-    warned || resumed.lastOrNull()?.let { it == activity } == true -> GameActivityResume.Resume
-    else -> GameActivityResume.Warn
+    resumed.lastOrNull()?.let { it != activity } == true -> GameActivityResume.Warn
+    else -> GameActivityResume.Resume
 }

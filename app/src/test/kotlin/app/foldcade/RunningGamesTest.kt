@@ -12,36 +12,50 @@ class RunningGamesTest {
     @Test
     fun azaharTracksOnlyItsGameActivityInBothDistributions() {
         val game = app.foldcade.plugins.azahar.EMULATION_ACTIVITY
-        assertTrue(tracksGameActivity("org.azahar_emu.azahar", game))
-        assertTrue(tracksGameActivity("io.github.lime3ds.android", game))
-        assertFalse(tracksGameActivity("org.azahar_emu.azahar", "org.citra.citra_emu.ui.main.MainActivity"))
-        assertFalse(tracksGameActivity("org.azahar_emu.azahar", null))
-        assertFalse(tracksGameActivity("com.github.stenzek.duckstation", game))
+        assertTrue(supportsGameActivityGrant("org.azahar_emu.azahar", game))
+        assertTrue(supportsGameActivityGrant("io.github.lime3ds.android", game))
+        assertFalse(supportsGameActivityGrant("org.azahar_emu.azahar", "org.citra.citra_emu.ui.main.MainActivity"))
+        assertFalse(supportsGameActivityGrant("org.azahar_emu.azahar", null))
+        assertFalse(supportsGameActivityGrant("com.github.stenzek.duckstation", game))
     }
 
     @Test
     fun confirmedClosureAlwaysUsesTheGate() {
-        for (canObserve in listOf(false, true)) for (warned in listOf(false, true)) {
-            assertEquals(GameActivityResume.Launch, gameActivityResume(false, canObserve, warned))
-            assertEquals(GameActivityResume.Launch, gameActivityResumed(false, emptyList(), "Game", warned))
+        for (warned in listOf(false, true)) {
+            assertEquals(GameActivityResume.Launch, gameActivityResume(exited = false, hasActivityGrant = true, held = false, warned = warned))
         }
+        assertEquals(GameActivityResume.Launch, gameActivityResumed(false, emptyList(), "Game"))
     }
 
     @Test
-    fun anUnverifiableResumeWarnsBeforeOpeningAzahar() {
-        assertEquals(GameActivityResume.Resume, gameActivityResume(true, canObserveFront = true, warned = false))
-        assertEquals(GameActivityResume.Warn, gameActivityResume(true, canObserveFront = false, warned = false))
-        assertEquals(GameActivityResume.Warn, gameActivityResume(null, canObserveFront = true, warned = false))
-        assertEquals(GameActivityResume.Resume, gameActivityResume(null, canObserveFront = false, warned = true))
+    fun aHeldGrantResumesDirectlyAndAnUnknownGrantCheckWarns() {
+        assertEquals(GameActivityResume.Resume, gameActivityResume(exited = false, hasActivityGrant = true, held = true, warned = false))
+        assertEquals(GameActivityResume.Warn, gameActivityResume(exited = false, hasActivityGrant = true, held = null, warned = false))
+        assertEquals(GameActivityResume.Resume, gameActivityResume(exited = false, hasActivityGrant = true, held = null, warned = true))
     }
 
     @Test
-    fun onlyTheRecordedGameActivityConfirmsTheResumeWithoutAWarning() {
-        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, listOf("Menu", "Game"), "Game", warned = false))
-        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Game", "Menu"), "Game", warned = false))
-        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Settings"), "Game", warned = false))
-        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, emptyList(), "Game", warned = false))
-        assertEquals(GameActivityResume.Resume, gameActivityResumed(null, emptyList(), "Game", warned = true))
+    fun onlyAnObservedDifferentActivityWarnsAfterResume() {
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, listOf("Menu", "Game"), "Game"))
+        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Game", "Menu"), "Game"))
+        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Settings"), "Game"))
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, emptyList(), "Game"))
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(null, emptyList(), "Game"))
+    }
+
+    @Test
+    fun aProcessExitAfterStartUsesTheGateEvenWhenTheGrantRemainsHeld() {
+        val exited = playerDiedAfterStart(startedAtMillis = 1_000L, exitTimestamps = listOf(1_100L))
+        assertEquals(GameActivityResume.Launch, gameActivityResume(exited, hasActivityGrant = true, held = true, warned = false))
+        assertEquals(GameActivityResume.Launch, gameActivityResume(exited, hasActivityGrant = false, held = null, warned = false))
+    }
+
+    @Test
+    fun aRunWithoutAConfirmedGrantUsesTheExistingReturnAndResumeHeuristics() {
+        assertNull(gameActivityResume(exited = false, hasActivityGrant = false, held = null, warned = false))
+        assertTrue(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true, hasActivityGrant = false))
+        assertFalse(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = true, hasActivityGrant = false))
+        assertFalse(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true, hasActivityGrant = true))
     }
 
     @Test

@@ -156,6 +156,7 @@ internal class RunningGames {
  * game without a Home recall, so keep tracking it for resume. A player with
  * its own switch/quit protocol also closes on a direct return to non-default
  * Home, while a new intent to reopen Foldcade keeps the run.
+ * A confirmed activity grant gives a separate signal for when the activity ends.
  */
 internal fun forgetsRunOnReturn(
     returned: Boolean,
@@ -163,7 +164,8 @@ internal fun forgetsRunOnReturn(
     holdsHomeRole: Boolean,
     replacesInPlayer: Boolean = false,
     reopenedFromIntent: Boolean = false,
-): Boolean = returned && !homeRecalledOnThisDisplay && !reopenedFromIntent && (holdsHomeRole || replacesInPlayer)
+    hasActivityGrant: Boolean = false,
+): Boolean = !hasActivityGrant && returned && !homeRecalledOnThisDisplay && !reopenedFromIntent && (holdsHomeRole || replacesInPlayer)
 
 /**
  * True when the player's front door ([frontDoor], its launcher activity) can bring
