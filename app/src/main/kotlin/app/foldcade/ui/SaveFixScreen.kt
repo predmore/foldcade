@@ -118,6 +118,10 @@ private fun FolderRows(incident: SaveIncident) {
     val design = theme.style
     val label = TextStyle(color = theme.muted, fontFamily = theme.font, fontSize = design.type.dialogBody)
     val value = label.copy(color = theme.onBackground, fontWeight = design.type.strongWeight)
+    if (incident.saveLayoutChanged) {
+        BasicText(SaveProtectionCopy.title(incident), style = label)
+        return
+    }
     val rows = listOfNotNull(
         incident.live?.let { (if (incident.isEdenGrant) "Allow this folder" else SaveProtectionCopy.nowSavesIn(incident.playerName)) to it.label },
         incident.bound?.let { SaveProtectionCopy.wasWatching to it.label },

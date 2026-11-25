@@ -117,4 +117,22 @@ class SaveProtectionStoreTest {
         SaveProtectionStore(dir).put(incident)
         assertEquals(subject, SaveProtectionStore(dir).incident(incident.id)?.subject)
     }
+
+    @Test fun retroArchCandidatesAndTheirGameScopeSurviveRestart() {
+        val game = app.foldcade.api.plugin.Game("romm", "37", "game-boy-advance", app.foldcade.api.plugin.Availability.Cached, "Game")
+        val storePath = Files.createTempDirectory("retroarch-incident")
+        val store = SaveProtectionStore(storePath)
+        val incident = SaveIncident("WrongFolder:retroarch:lib:romm:37", IncidentKind.WrongFolder, "retroarch", "RetroArch",
+            listOf(homeGameId(game.backendId, game.remoteKey)), root, live, Evidence(EvidenceKind.Config, "RetroArch configured /ROMs/Game.srm"), 100)
+        store.put(incident)
+        val restored = SaveProtectionStore(storePath).incidents().single()
+        assertTrue(restored.appliesTo(game))
+        assertFalse(restored.appliesTo(game.copy(remoteKey = "38")))
+        assertFalse(restored.appliesTo(game.copy(backendId = "local-folder")))
+
+        val candidate = RootReading(live, false, emptyList(), "hash", true, null, null, spotFile = "Game.srm")
+        val config = ConfigSavePath("/saves/mGBA/Game.srm", "/ROMs/Game.srm", live, true)
+        val snapshot = ProbeSnapshot(100, 10, "com.retroarch.aarch64", listOf(candidate), config)
+        assertEquals(snapshot, snapshotFromJson(snapshot.toJson()))
+    }
 }

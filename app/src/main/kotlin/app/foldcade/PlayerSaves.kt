@@ -285,6 +285,9 @@ internal class PlayerSaves(
             val name = uri?.let(docs::displayName)
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
             if (player is EdenPlayer) return unresolvedEdenSpot(player, game)
+            if (player is app.foldcade.plugins.retroarch.RetroArchPlayer) player.unsupportedSaveFormat(name)?.let { detail ->
+                return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedSaveFormat, detail)
+            }
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
             val sync = folder?.let { saveSync(player, it) }
             if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
@@ -297,6 +300,8 @@ internal class PlayerSaves(
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable) }
     }
+
+    fun romDisplayName(target: LaunchTarget.SharedFile): String? = docs.displayName(target.uri)
 
     /** Resolve against another readable root without rebinding the installed player or writing it. */
     fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {

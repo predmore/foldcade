@@ -214,11 +214,14 @@ private fun repairFromJson(json: JSONObject): RepairState = when (json.optString
 }
 
 internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", atMillis).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
+    .put("configSavePath", configSavePath?.let { path -> JSONObject()
+        .put("expected", path.expected ?: JSONObject.NULL).put("effective", path.effective ?: JSONObject.NULL)
+        .put("live", path.live?.toJson() ?: JSONObject.NULL).put("proves", path.proves) } ?: JSONObject.NULL)
     .put("packageName", packageName).put("roots", JSONArray(roots.map { root -> JSONObject()
         .put("root", root.root.toJson()).put("bound", root.bound).put("spotHash", root.spotHash ?: JSONObject.NULL)
         .put("spotReadable", root.spotReadable).put("markersPresent", root.markersPresent ?: JSONObject.NULL)
         .put("emulatorHolds", root.emulatorHolds ?: JSONObject.NULL).put("hadMarkers", root.hadMarkers)
-        .put("hasKnownSave", root.hasKnownSave).put("reachable", root.reachable)
+        .put("hasKnownSave", root.hasKnownSave).put("reachable", root.reachable).put("spotFile", root.spotFile ?: JSONObject.NULL)
         .put("signals", JSONArray(root.signals.map { signal -> JSONObject().put("source", signal.source)
             .put("names", signal.names ?: JSONObject.NULL).put("modifiedAtMillis", signal.modifiedAtMillis ?: JSONObject.NULL)
             .put("proves", signal.proves).put("perStart", signal.perStart) }))
@@ -232,8 +235,12 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
         }, root.optString("spotHash").takeUnless { root.isNull("spotHash") }, root.getBoolean("spotReadable"),
             if (root.isNull("markersPresent")) null else root.getBoolean("markersPresent"),
             if (root.isNull("emulatorHolds")) null else root.getBoolean("emulatorHolds"),
-            root.optBoolean("hadMarkers"), root.optBoolean("hasKnownSave"), root.optBoolean("reachable", true))
-    } })
+            root.optBoolean("hadMarkers"), root.optBoolean("hasKnownSave"), root.optBoolean("reachable", true),
+            root.optString("spotFile").takeUnless { root.isNull("spotFile") })
+    } }, json.optJSONObject("configSavePath")?.let { path -> ConfigSavePath(
+        path.optString("expected").takeUnless { path.isNull("expected") },
+        path.optString("effective").takeUnless { path.isNull("effective") },
+        path.optJSONObject("live")?.let(::folderFromJson), path.getBoolean("proves")) })
 
 internal fun EdenSaveSession.toJson(): JSONObject = JSONObject()
     .put("saveRoot", saveRoot).put("nandRoot", nandRoot).put("user", user ?: JSONObject.NULL)

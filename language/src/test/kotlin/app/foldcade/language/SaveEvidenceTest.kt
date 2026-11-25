@@ -63,6 +63,26 @@ class SaveEvidenceTest {
         assertEquals(SessionVerdict.WroteElsewhere(null), judgeSession(before, after, 400))
     }
 
+    @Test fun configMismatchComparesFilesAndRequiresPositivePrecedenceEvidence() {
+        val config = ConfigSavePath("/saves/mGBA/Game.srm", "/saves/Game.srm", bound, false)
+        val snapshot = snap(root()).copy(configSavePath = config)
+        assertEquals(RootVerdict.NoNews, judgeRoots(snapshot, last))
+        val verdict = judgeRoots(snapshot.copy(configSavePath = config.copy(proves = true)), last) as RootVerdict.UsesOther
+        assertEquals(EvidenceKind.Config, verdict.evidence.kind)
+        assertEquals(bound, verdict.live) // Turning core sorting off can leave the base folder unchanged.
+        assertTrue(verdict.evidence.detail.contains("/saves/Game.srm"))
+        assertEquals(RootVerdict.NoNews, judgeRoots(snapshot.copy(configSavePath = config.copy(proves = true, effective = config.expected)), last))
+    }
+
+    @Test fun candidateCanShareTheBoundDirectoryButStillNeedsAReadableBaseline() {
+        val beside = root(hash = null).copy(bound = false, spotFile = "Game.srm")
+        val before = snap(root(), beside, at = 100)
+        val after = snap(root(), beside.copy(spotHash = "played"))
+        assertEquals(SessionVerdict.WroteElsewhere(bound), judgeSession(before, after, 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(snap(root(), beside.copy(spotReadable = false)), after, 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(snap(root()), after, 400))
+    }
+
     @Test fun anApprovedPerStartSignalCatchesColdStartsWithoutLogMovement() {
         val before = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 100)
         val after = snap(root(signals = listOf(signal(bound, 50, perStart = true))), at = 30_100)

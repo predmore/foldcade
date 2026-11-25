@@ -71,7 +71,7 @@ sealed interface SpotFact {
 }
 
 /** Why a game's save has no place. Each one has its own sentence (§6.3). */
-enum class SpotIssue { NoTitleId, UnsupportedImage, NoProfile, CardNotFolder, ArchiveName, Unreadable, EdenLocation, EdenGrant, EdenProfile }
+enum class SpotIssue { NoTitleId, UnsupportedImage, UnsupportedSaveFormat, NoProfile, CardNotFolder, ArchiveName, Unreadable, EdenLocation, EdenGrant, EdenProfile }
 
 sealed interface OffDeviceFact {
     /** RomM accepted the bytes the working copy holds now. [atMillis] null for ledgers older than this design. */
@@ -143,6 +143,9 @@ data class SaveIncidentGame(
     val installFirstMillis: Long?,
     val edenContext: String? = null,
 )
+
+val SaveIncident.saveLayoutChanged: Boolean get() =
+    kind == IncidentKind.WrongFolder && live != null && live.identity == bound?.identity
 
 enum class IncidentKind {
     /** Positive evidence: the emulator uses another folder. Gates launch. */
@@ -336,14 +339,18 @@ object SaveProtectionCopy {
         "melonds" -> "1. Settings › Save Files › Save next to ROM file: Off.\n2. Save file directory › choose your saves folder."
         "armsx2" -> "1. ☰ › Setup / Change Folders › App Data Folder.\n2. Choose the folder that holds bios and memcards."
         "ppsspp" -> "1. Settings › System › Memory Stick Folder.\n2. Create or Choose a PSP folder › choose your PSP folder."
-        "retroarch" -> "1. Settings › Directory › Save Files › choose RetroArch/saves.\n2. Settings › Saving: Sort Saves into Folders by Core On; by Content Directory Off; Write Saves to Content Directory Off."
+        "retroarch" -> "1. In Settings › Directory › Save Files, choose the folder Foldcade watches.\n2. In Settings › Saving, turn on sorting by core. Turn off sorting by content directory and writing saves to content directory.\n3. Check Quick Menu › Overrides for the game, its content directory and its core. Save your configuration."
         "gba-emu", "gbc-emu", "nes-emu", "snes9x-ex", "md-emu" -> "1. Options › File Paths › Saves › Select Folder.\n2. Options › System › Launch Mode › Main Slot (No State)."
         "dolphin" -> "1. Settings › Config › GameCube › GameCube Slot A Device › GCI Folder.\n2. Check the game’s Game Settings for its own card."
         "eden" -> "1. Settings › Advanced settings › Custom Paths › Save Data Directory.\n2. Settings › Profile Manager: check the user you play as."
         else -> null
     }
     fun title(incident: SaveIncident): String = with(incident) { when (kind) {
-        IncidentKind.WrongFolder -> if (isEdenGrant) "Eden needs folder access" else "$playerName is saving somewhere else"
+        IncidentKind.WrongFolder -> when {
+            isEdenGrant -> "Eden needs folder access"
+            saveLayoutChanged -> "$playerName’s save layout changed"
+            else -> "$playerName is saving somewhere else"
+        }
         IncidentKind.MaybeWrongFolder -> "$playerName may be saving somewhere else"
         IncidentKind.FolderEmptied -> "$playerName’s save folder is empty"
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
@@ -356,9 +363,12 @@ object SaveProtectionCopy {
     }
     /** R1 has one line: lead with the problem and keep the action visible. */
     fun noticeBody(incident: SaveIncident): String = with(incident) { when (kind) {
-        IncidentKind.WrongFolder -> if (isEdenGrant) "Allow ${live?.label} to sync Eden saves."
-            else if (live != null) "Saving in ${live.label}. Fix it before you play."
-            else "Not saving in ${bound?.label ?: "this folder"}. Fix it before you play."
+        IncidentKind.WrongFolder -> when {
+            isEdenGrant -> "Allow ${live?.label} to sync Eden saves."
+            saveLayoutChanged -> "Save layout changed. Fix it before you play."
+            live != null -> "Saving in ${live.label}. Fix it before you play."
+            else -> "Not saving in ${bound?.label ?: "this folder"}. Fix it before you play."
+        }
         IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
         IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
         IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
@@ -380,9 +390,12 @@ object SaveProtectionCopy {
         val safe = safeOnRomm(receipt, hasVersions, now, style)
         listOf(when (kind) {
             // The folder and the emulator often share a name ("Azahar"), so the folder is called one.
-            IncidentKind.WrongFolder -> if (isEdenGrant) "Allow ${live?.label} so Foldcade can sync Eden’s saves."
-                else if (live != null) "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
-                else "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
+            IncidentKind.WrongFolder -> when {
+                isEdenGrant -> "Allow ${live?.label} so Foldcade can sync Eden’s saves."
+                saveLayoutChanged -> "$playerName uses a different save location inside ${live?.label ?: "the chosen folder"}."
+                live != null -> "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
+                else -> "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
+            }
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
             IncidentKind.MaybeWrongFolder -> "Check where it saves."
@@ -398,6 +411,7 @@ object SaveProtectionCopy {
     fun spot(issue: SpotIssue, azahar: Boolean = false): String = when (issue) {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."
         SpotIssue.UnsupportedImage -> "This file type doesn’t sync yet."
+        SpotIssue.UnsupportedSaveFormat -> "This core’s save format doesn’t sync yet."
         SpotIssue.NoProfile -> Copy.edenSaveNeedsUser
         SpotIssue.EdenLocation -> "Foldcade couldn’t check where Eden keeps this save."
         SpotIssue.EdenGrant -> "Allow access to Eden’s folder in Foldcade."

@@ -34,7 +34,8 @@ fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == Incide
  * access was lost, the folder it already watched. Null when only the emulator can say.
  */
 fun saveFixTarget(incident: SaveIncident): FolderRef? =
-    incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
+    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty()) null
+    else incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
 
 /**
  * A known folder needs one button, which opens the picker there: sending the player into the
@@ -118,6 +119,7 @@ fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
         incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
         incident.staged.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting)
         incident.isEdenGrant -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later)
+        incident.gameIds.isNotEmpty() -> null
         else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepAlreadyOnRomm)
     }
     if (incident.isEdenSessionChange) return listOfNotNull(
@@ -125,7 +127,7 @@ fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
         SaveFixStep("Check your Eden user", SaveFixStepState.Now),
         SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
     )
-    return listOf(
+    return listOfNotNull(
         keep,
         SaveFixStep(SaveProtectionCopy.stepFolder(incident.playerName, saveFixTarget(incident) != null), if (bound) SaveFixStepState.Done else SaveFixStepState.Now),
         SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later),
@@ -150,7 +152,8 @@ fun saveFolderState(incident: SaveIncident): String = incident.bound?.label ?: w
 
 /** Settings › Emulators' Check row during an incident: what the evidence says, once. */
 fun saveCheckState(incident: SaveIncident): String = when (incident.kind) {
-    IncidentKind.WrongFolder -> incident.live?.let { if (incident.isEdenGrant) "Allow ${it.label}" else "Saving in ${it.label}" } ?: "Not saving here"
+    IncidentKind.WrongFolder -> if (incident.saveLayoutChanged) "Save layout changed"
+        else incident.live?.let { if (incident.isEdenGrant) "Allow ${it.label}" else "Saving in ${it.label}" } ?: "Not saving here"
     IncidentKind.MaybeWrongFolder -> "May save elsewhere"
     IncidentKind.FolderEmptied -> "Folder empty"
     IncidentKind.LostAccess -> "No access"

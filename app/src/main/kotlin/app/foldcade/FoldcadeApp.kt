@@ -1716,7 +1716,8 @@ class FoldcadeApp : Application() {
 
     internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
     internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection, store::rommOrigin) }
-    internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies, ::edenSaveReadsAllowed) }
+    internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies,
+        sharedPaths::target, ::rommSharedRoot, ::edenSaveReadsAllowed) }
     internal val saveRegression by lazy {
         SaveRegression(playerSaves, saveProtection, baseline = { game, slot, folder ->
             val library = plugins.library(game.backendId)

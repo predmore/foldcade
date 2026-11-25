@@ -13,6 +13,7 @@ import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SaveLocationProbe
 import app.foldcade.api.plugin.StartDisplay
 import java.util.concurrent.atomic.AtomicReference
 
@@ -103,7 +104,7 @@ class RetroArchPlayer internal constructor(
     val cores: RetroArchCores,
     private val saves: SharedSaveFolder,
     val pinnedCore: String? = null,
-) : Player, SaveFolderHolder {
+) : Player, SaveFolderHolder, SaveLocationProbe {
     override val id: String = "$ID_PREFIX${system.platformId}"
     override val displayName: String = DISPLAY_NAME
     override val platformId: String = system.platformId
@@ -151,11 +152,36 @@ class RetroArchPlayer internal constructor(
      * active package would load. RetroArch takes off only the last extension.
      */
     override fun saveFileName(slot: String, romFileName: String): String? {
-        if (slot != SAVE_SLOT || romFileName.isBlank()) return null
-        val core = cores.activePackage()?.let { chosenCore(it) } ?: system.cores.first()
-        val base = romFileName.substringBeforeLast('.').ifEmpty { romFileName }
-        return "${core.libraryName}/$base.srm"
+        if (slot != SAVE_SLOT || romFileName.isBlank() || unsupportedSaveFormat(romFileName) != null) return null
+        return "${saveCore().libraryName}/${saveBaseName(romFileName)}.srm"
     }
+
+    override fun saveBesideGame(slot: String, romFileName: String): String? =
+        if (slot != SAVE_SLOT) null else standardSaveName(romFileName)
+
+    fun standardSaveName(romFileName: String, packageName: String? = cores.activePackage()): String? =
+        if (romFileName.isBlank() || romFileName.substringAfterLast('.').lowercase(java.util.Locale.ROOT) in setOf("zip", "7z") ||
+            '#' in romFileName || unsupportedSaveFormat(romFileName, packageName) != null) null
+        else "${saveBaseName(romFileName)}.srm"
+
+    /** An unresolved slot still declares its identity so an existing RomM save is protected. */
+    fun unsupportedSaveFormat(romFileName: String, packageName: String? = cores.activePackage()): String? {
+        val core = saveCore(packageName)
+        val extension = romFileName.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        return when {
+            core.file == "flycast" -> "Foldcade can’t sync Flycast’s VMU saves yet."
+            core.file == "ppsspp" -> "Foldcade can’t sync the RetroArch PPSSPP core’s save folders yet."
+            core.file == "melonds" -> "Foldcade can’t sync the older melonDS core’s .sav files yet."
+            platformId == "playstation" -> "Foldcade can’t resolve ${core.libraryName}’s memory card layout yet."
+            platformId == "saturn" -> "Foldcade can’t resolve ${core.libraryName}’s backup memory layout yet."
+            platformId == "sega-cd" && core.file == "genesis_plus_gx" -> "Foldcade can’t sync the Genesis Plus GX core’s Sega CD backup RAM yet."
+            core.file == "melondsds" && extension in setOf("dsi", "ids") -> "Foldcade can’t sync DSi save files yet."
+            else -> null
+        }
+    }
+
+    fun saveCore(packageName: String? = cores.activePackage()): Core =
+        packageName?.let(::chosenCore) ?: system.cores.first()
 
     // Firmware lands in the separately resolved system directory, never saves/.
     override fun firmwareFileName(name: String): String? {
@@ -218,7 +244,7 @@ class RetroArchPlayer internal constructor(
             extras = listOf(
                 PlayerExtra.Text("ROM", file.path),
                 PlayerExtra.Text("LIBRETRO", "$data/cores/${core.fileName}"),
-                PlayerExtra.Text("CONFIGFILE", "$external/retroarch.cfg"),
+                PlayerExtra.Text("CONFIGFILE", configPath(packageName)),
                 PlayerExtra.Text("DATADIR", data),
                 PlayerExtra.Text("SDCARD", SHARED_STORAGE),
                 PlayerExtra.Text("EXTERNAL", external),
@@ -259,6 +285,8 @@ class RetroArchPlayer internal constructor(
         const val DISPLAY_NAME: String = "RetroArch"
         const val SAVE_SLOT: String = "srm"
         const val SAVE_FOLDER_KEY: String = "retroarch"
+
+        fun configPath(packageName: String): String = "$SHARED_STORAGE/Android/data/$packageName/files/retroarch.cfg"
     }
 }
 
