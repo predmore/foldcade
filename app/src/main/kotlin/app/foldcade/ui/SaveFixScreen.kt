@@ -72,11 +72,12 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
                     style = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (incident.kind != IncidentKind.MaybeNewSave) {
+        val steps = saveFixSteps(incident)
+        if (steps.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                saveFixSteps(incident).forEach { step -> FixStep(step) }
+                steps.forEach { step -> FixStep(step) }
             }
-            if (!done) FolderRows(incident)
+            if (!done && !incident.isEdenSessionChange) FolderRows(incident)
         }
         page.note?.let { BasicText(it, style = body.copy(color = design.colors.attention)) }
     }

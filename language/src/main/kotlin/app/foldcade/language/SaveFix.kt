@@ -94,6 +94,7 @@ data class SaveFixStep(val title: String, val state: SaveFixStepState, val value
 enum class SaveFixStepState { Done, Now, Later }
 
 fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
+    if (incident.kind == IncidentKind.MaybeNewSave && !incident.isEdenSessionChange) return emptyList()
     if (incident.automaticDone || incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) ||
         incident.repair is RepairState.WaitingForRomm || incident.repair is RepairState.WaitingForClose ||
         incident.repair is RepairState.Choosing || incident.repair is RepairState.Placing) {
