@@ -191,8 +191,14 @@ private fun encrypt(plain: ByteArray, key: ByteArray, sector: Long): ByteArray {
 
 internal class Folder : SaveFolderAccess {
     val files = mutableMapOf<String, ByteArray>()
-    var users: List<SaveFolderEntry>? = null
-    override fun list(path: String) = if (path == EdenPlayer.SAVES) users else null
+    val directories = mutableSetOf<String>()
+    override fun list(path: String): List<SaveFolderEntry> {
+        val prefix = if (path.isEmpty()) "" else "$path/"
+        return directories.filter { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
+            .map { SaveFolderEntry(it.removePrefix(prefix), true, 0) } +
+            files.filterKeys { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
+                .map { (name, bytes) -> SaveFolderEntry(name.removePrefix(prefix), false, bytes.size.toLong()) }
+    }
     override fun read(path: String, limit: Int) = files[path]?.takeIf { it.size <= limit }
     override fun read(path: String, offset: Long, length: Int) = files[path]?.sliceAt(offset, length)
     override fun write(path: String, bytes: ByteArray): Boolean = error("Read only")

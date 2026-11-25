@@ -5,6 +5,7 @@ import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.LibraryBackend
 import app.foldcade.api.plugin.Player
 import app.foldcade.language.OffDeviceFact
+import app.foldcade.plugins.eden.EdenPlayer
 
 /** No launch or setup: only games with held saves need their readable local ROM resolved. */
 internal suspend fun resolveReceiptSpots(saves: PlayerSaves, backend: LibraryBackend, game: Game, player: Player,
@@ -12,6 +13,8 @@ internal suspend fun resolveReceiptSpots(saves: PlayerSaves, backend: LibraryBac
     local: suspend () -> LaunchTarget?): List<SaveSpot>? {
     if (backend.saves(game).slots.isEmpty()) {
         val known = cached ?: return null
+        // Eden's data grant can stay the same while the profile or save path changes.
+        if (player is EdenPlayer) return local()?.let { saves.spots(player, game, it) }
         val declarations = player.saveDeclarations(game)
         return known.takeIf { spots -> spots.all { spot -> declarations.any { declaration ->
             declaration.slot == spot.slot && declaration.locationUri?.let { storageIdentity(it) } == storageIdentity(spot.folderUri)

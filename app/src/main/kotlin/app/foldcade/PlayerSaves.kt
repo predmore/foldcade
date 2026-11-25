@@ -19,6 +19,9 @@ import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.SaveArchiveFilter
 import app.foldcade.plugins.dolphin.DolphinPlayer
+import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.eden.EdenProfile
+import app.foldcade.plugins.eden.edenAccountSave
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
@@ -226,6 +229,8 @@ internal class PlayerSaves(
     private val marks: SaveMarks,
     private val backups: Path,
     private val handover: Path,
+    private val edenGrant: (String) -> String? = { null },
+    private val edenReadsAllowed: () -> Boolean = { true },
     private val gameFile: (String) -> GameFileReader = { _ -> UnreadableGameFile },
 ) {
     /**
@@ -257,6 +262,7 @@ internal class PlayerSaves(
         target: LaunchTarget,
         forLaunch: Boolean = false,
         changed: MutableList<String>? = null,
+        eden: EdenSaveAccess? = null,
     ): List<SaveSpot> {
         val uri = when (target) {
             is LaunchTarget.ContentUri -> target.uri
@@ -267,7 +273,7 @@ internal class PlayerSaves(
         val header by lazy {
             if (player.romHeaderSize > 0) docs.head(uri, player.romHeaderSize) ?: ByteArray(0) else ByteArray(0)
         }
-        return resolveSpots(player, game, romName, { header }, gameFile(uri), forLaunch, changed)
+        return resolveSpots(player, game, romName, { header }, gameFile(uri), forLaunch, changed, eden)
     }
 
     /** A reason backed by the file type and the adapter’s existing setup checks. */
@@ -279,7 +285,8 @@ internal class PlayerSaves(
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
             val sync = folder?.let { saveSync(player, it) }
             if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
-            if (player is app.foldcade.plugins.eden.EdenPlayer && !edenHasUser(player, game)) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoProfile)
+            if (player is EdenPlayer && (edenSaveAccess(player, game) as? EdenSaveAccess.Ready)?.profile == EdenProfile.Missing)
+                return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoProfile)
             val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
             if (player is DolphinPlayer && extension !in setOf("iso", "gcm")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedImage,
                 app.foldcade.language.SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT).ifEmpty { "This file type" }, "ISO and GCM"))
@@ -352,15 +359,25 @@ internal class PlayerSaves(
     }
 
     /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
-    fun spotsForFileName(player: Player, game: Game, romName: String): List<SaveSpot> =
-        resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null)
+    fun spotsForFileName(player: Player, game: Game, romName: String, eden: EdenSaveAccess? = null): List<SaveSpot> =
+        resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null, eden)
 
     private fun resolveSpots(
         player: Player, game: Game, romName: String, header: () -> ByteArray, reader: GameFileReader,
-        forLaunch: Boolean, changed: MutableList<String>?,
+        forLaunch: Boolean, changed: MutableList<String>?, eden: EdenSaveAccess? = null,
     ): List<SaveSpot> {
         val namedReader = object : GameFileReader by reader {
             override val fileName: String = romName
+        }
+        if (player is EdenPlayer) {
+            val ready = (eden ?: edenSaveAccess(player, game)) as? EdenSaveAccess.Ready ?: return emptyList()
+            val profile = ready.profile as? EdenProfile.User ?: return emptyList()
+            val part = try {
+                edenAccountSave(namedReader, edenFolderAccess(player, ready.dataUri), edenFolderAccess(player, ready.save.uri), ready.save.prefix, profile)
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (_: Exception) { return emptyList() }
+            val zipName = romName.substringBeforeLast('.').ifEmpty { romName } + ".zip"
+            return part?.let { listOf(SaveSpot(EdenPlayer.SLOT, ready.save.uri, zipName, listOf(it))) }.orEmpty()
         }
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
@@ -806,15 +823,19 @@ internal class PlayerSaves(
         null
     }
 
-    /** Read-only profile check for an Eden save that has no destination yet. */
-    /** Whether Eden has a user in [folderUri], its granted folder. Read only. */
-    fun edenHasUser(player: app.foldcade.plugins.eden.EdenPlayer, folderUri: String): Boolean =
-        player.hasUser(folderAccess(player, folderUri, allowWrite = false))
+    fun edenSaveAccess(player: EdenPlayer, game: Game): EdenSaveAccess =
+        player.saveDeclarations(game).singleOrNull()?.locationUri?.let { edenSaveAccess(player, it) } ?: EdenSaveAccess.Unknown
 
-    fun edenHasUser(player: app.foldcade.plugins.eden.EdenPlayer, game: Game): Boolean {
-        val folder = player.saveDeclarations(game).singleOrNull()?.locationUri ?: return false
-        return player.hasUser(folderAccess(player, folder, allowWrite = false))
-    }
+    fun edenSaveAccess(player: EdenPlayer, folderUri: String): EdenSaveAccess = try {
+        if (edenReadsAllowed()) resolveEdenSaveAccess(folderUri, { edenFolderAccess(player, it) }, edenGrant) else EdenSaveAccess.Unknown
+    } catch (cancelled: CancellationException) { throw cancelled }
+      catch (_: Exception) { EdenSaveAccess.Unknown }
+
+    /** A missing layout and an unreadable one must lead to different decisions. */
+    private fun edenFolderAccess(player: EdenPlayer, uri: String): app.foldcade.api.plugin.SaveFolderAccess =
+        object : app.foldcade.api.plugin.SaveFolderAccess by folderAccess(player, uri, allowWrite = false) {
+            override fun list(path: String) = readableChildren(uri, path)?.map { app.foldcade.api.plugin.SaveFolderEntry(it.name, it.isFolder, it.size) }
+        }
 
     /**
      * What [player] needs once before it can start, read from [folderUri], or

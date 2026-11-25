@@ -32,15 +32,13 @@ internal fun SaveFixScreen(app: FoldcadeApp, page: SaveFixPage, controls: Boolea
     val faces = actionFaces(model.faceMap)
     val back = promptKeyOf(model.faceMap.backKey) ?: PromptKey.FaceB
     val hints = listOfNotNull(
-        HintKey(faces.optionsGlyph, SaveProtectionCopy.itsFine).takeIf {
-            incident.kind in setOf(IncidentKind.MaybeWrongFolder, IncidentKind.MaybeNewSave) && incident.repair != RepairState.Done
-        },
+        HintKey(faces.optionsGlyph, SaveProtectionCopy.itsFine).takeIf { canConfirmSaveLocation(incident) },
         HintKey(back, SaveProtectionCopy.later),
     )
     Box(Modifier.fillMaxSize().background(theme.background)) {
         DialogFrame(
             app = app,
-            title = SaveProtectionCopy.fixTitle(incident.playerName),
+            title = if (incident.isEdenSessionChange) SaveProtectionCopy.title(incident) else SaveProtectionCopy.fixTitle(incident.playerName),
             body = card.body,
             detail = card.detail,
             buttons = actions.map { saveFixLabel(it, incident) },
@@ -60,7 +58,7 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
     val body = TextStyle(color = theme.onBackground, fontFamily = theme.font, fontSize = design.type.dialogBody)
     val muted = body.copy(color = theme.muted)
     Column(Modifier.fillMaxSize().background(theme.background).padding(48.dp), verticalArrangement = Arrangement.spacedBy(28.dp)) {
-        BasicText(SaveProtectionCopy.fixTitle(incident.playerName),
+        BasicText(if (incident.isEdenSessionChange) "Check Eden’s user" else SaveProtectionCopy.fixTitle(incident.playerName),
             style = body.copy(fontFamily = theme.displayFont, fontSize = design.type.heroTitle, fontWeight = design.type.strongWeight))
         if (done) {
             saveFixWatching(model, page, incident)?.let { BasicText(SaveProtectionCopy.nowWatches(it), style = body) }
@@ -77,7 +75,7 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             saveFixSteps(incident).forEach { step -> FixStep(step) }
         }
-        if (!done) FolderRows(incident)
+        if (!done && !incident.isEdenSessionChange) FolderRows(incident)
         page.note?.let { BasicText(it, style = body.copy(color = design.colors.attention)) }
     }
 }
@@ -118,7 +116,7 @@ private fun FolderRows(incident: SaveIncident) {
     val label = TextStyle(color = theme.muted, fontFamily = theme.font, fontSize = design.type.dialogBody)
     val value = label.copy(color = theme.onBackground, fontWeight = design.type.strongWeight)
     val rows = listOfNotNull(
-        incident.live?.let { SaveProtectionCopy.nowSavesIn(incident.playerName) to it.label },
+        incident.live?.let { (if (incident.isEdenGrant) "Allow this folder" else SaveProtectionCopy.nowSavesIn(incident.playerName)) to it.label },
         incident.bound?.let { SaveProtectionCopy.wasWatching to it.label },
     )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

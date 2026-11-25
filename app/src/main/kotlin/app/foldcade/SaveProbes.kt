@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Environment
 import app.foldcade.api.plugin.*
 import app.foldcade.language.*
+import app.foldcade.plugins.eden.EdenPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Read-only snapshots, judged in language. Caller runs on IO under the existing save flow. */
@@ -14,11 +15,13 @@ internal class SaveProbes(
     private val store: SaveProtectionStore,
     private val folder: (Player) -> String?,
     private val copies: SaveIncidentCopies,
+    private val edenReadsAllowed: () -> Boolean = { true },
 ) {
     private val android by lazy { AndroidSaveFolderFinder(context) }
 
-    @Synchronized fun snapshot(player: Player, game: Game? = null, target: LaunchTarget? = null, hasKnownSave: Boolean = false, resolvedPackage: String? = null, discoverAfterMillis: Long? = null): ProbeSnapshot? {
+    @Synchronized fun snapshot(player: Player, game: Game? = null, target: LaunchTarget? = null, hasKnownSave: Boolean = false, resolvedPackage: String? = null, discoverAfterMillis: Long? = null, edenSpots: List<SaveSpot>? = null): ProbeSnapshot? {
         val holder = player as? SaveFolderHolder ?: return null
+        if (player is EdenPlayer && !edenReadsAllowed()) return null
         // DuckStation's data folder holds firmware; its actual saves are hosted.
         val boundUri = if (player is HostedSaveFolder) player.saveDeclarations(game ?: Game("", "", player.platformId, Availability.LocalOnly, "")).firstOrNull()?.locationUri
             else folder(player)
@@ -33,7 +36,8 @@ internal class SaveProbes(
         val resolved = installed.firstOrNull { it.packageName == resolvedPackage } ?: installed.firstOrNull()
         val key = player.saveFolderId()
         fun readRoot(uri: String): RootReading {
-            val ref = FolderRef(storageIdentity(uri, context.packageName), runCatching { folderPathLabel(uri) }.getOrDefault(uri))
+            val ref = FolderRef(storageIdentity(uri, context.packageName), if (player is EdenPlayer) player.displayName
+                else runCatching { folderPathLabel(uri) }.getOrDefault(uri))
             val isBound = ref.identity == boundIdentity
             val access = saves.folderAccess(player, uri, allowWrite = false)
             val children = access.list("")
@@ -44,7 +48,7 @@ internal class SaveProbes(
                 access.read(signals.first().source, 0, 32 * 1024)?.toString(Charsets.UTF_8)?.let(::azaharLogVersion) else null
             var readable = reachable
             val hashes = if (game == null || target == null) emptyList() else try {
-                val spots = saves.probeSpots(player, game, target, uri)
+                val spots = if (player is EdenPlayer) edenSpots.orEmpty() else saves.probeSpots(player, game, target, uri)
                 if (spots.isEmpty()) readable = false
                 spots.mapNotNull { spot -> saves.readSpot(spot, strict = true, limit = 256L * 1024 * 1024)?.first?.let { spot.slot + ":" + md5Hex(it) } }
             } catch (_: Exception) { readable = false; emptyList() }
@@ -68,7 +72,8 @@ internal class SaveProbes(
             }
         } else emptyList()
         val knownLive = store.incidents().filter { it.playerKey == player.saveFolderId() && it.blocksLaunch }.mapNotNull { it.live?.identity }
-        val candidates = discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
+        val candidates = if (player is EdenPlayer) emptyList() else
+            discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
         val roots = listOf(bound) + candidates.distinct().mapNotNull(finder::reachable)
             .filter { storageIdentity(it, context.packageName) != boundIdentity }.distinctBy { storageIdentity(it, context.packageName) }.take(4).map(::readRoot)
         return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(), roots)
@@ -100,10 +105,15 @@ internal class SaveProbes(
         return location(player, snapshot)
     }
 
-    fun check(player: Player, snapshot: ProbeSnapshot, game: Game? = null): RootVerdict {
+    fun check(player: Player, snapshot: ProbeSnapshot, game: Game? = null, eden: EdenSaveAccess? = null): RootVerdict {
         val bound = snapshot.roots.singleOrNull { it.bound }
         if (bound != null) store.incidents().filter { it.playerKey == player.saveFolderId() && it.causeResolved(bound) }.forEach { store.close(it.id) }
-        val verdict = judgeRoots(snapshot, location(player, snapshot))
+        val verdict = if (player is EdenPlayer && bound?.reachable == true) {
+            val uri = folder(player)
+            val access = eden ?: uri?.let { saves.edenSaveAccess(player, it) } ?: EdenSaveAccess.Unknown
+            (access as? EdenSaveAccess.Ready)?.session()?.let { store.observeEdenContext(player.saveFolderId(), it, snapshot.atMillis) }
+            edenRootVerdict(bound.root, access, snapshot.packageName, snapshot.atMillis)
+        } else judgeRoots(snapshot, location(player, snapshot))
         apply(player, snapshot, verdict, game)
         return verdict
     }
@@ -134,12 +144,13 @@ internal class SaveProbes(
             old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false))
     }
 
-    @Synchronized fun gate(player: Player, game: Game, hasKnownSave: Boolean = false, resolvedPackage: String? = null, onReading: (ProbeSnapshot?) -> Unit = {}) {
+    @Synchronized fun gate(player: Player, game: Game, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
+        eden: EdenSaveAccess? = null, onReading: (ProbeSnapshot?) -> Unit = {}) {
         var reading: ProbeSnapshot? = null
         try {
             // Root judgement needs no game hashes. A failed optional probe is not a positive fact.
             reading = snapshot(player, hasKnownSave = hasKnownSave, resolvedPackage = resolvedPackage)
-            reading?.let { check(player, it, game) }
+            reading?.let { check(player, it, game, eden) }
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { Unit
         } finally { onReading(reading) }
@@ -163,14 +174,16 @@ internal class SaveProbes(
 
     fun judgeReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, unprotected: Boolean = false,
         startedByFoldcade: Boolean = true, sessionStartedAtMillis: Long? = null, sessionEndedAtMillis: Long? = null,
+        edenSpots: List<SaveSpot>? = null,
     ): ProbeSnapshot? {
-        val after = snapshot(player, game, target, resolvedPackage = before?.packageName, discoverAfterMillis = before?.atMillis)
+        val after = snapshot(player, game, target, resolvedPackage = before?.packageName, discoverAfterMillis = before?.atMillis, edenSpots = edenSpots)
         if (before != null && after != null) noteSession(player, game, before, after,
             (sessionEndedAtMillis ?: after.atMillis) - (sessionStartedAtMillis ?: before.atMillis), startedByFoldcade, unprotected)
         return after
     }
 
     suspend fun captureReturn(player: Player, game: Game, target: LaunchTarget?) {
+        if (player is EdenPlayer) return // Eden stages only the account frozen for the session.
         if (target != null) {
             for (incident in store.incidents().filter { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder }) {
                 val live = incident.live ?: continue
@@ -183,6 +196,21 @@ internal class SaveProbes(
                 }
             }
         }
+    }
+}
+
+internal fun edenRootVerdict(bound: FolderRef, access: EdenSaveAccess, packageName: String, at: Long): RootVerdict = when (access) {
+    EdenSaveAccess.Unknown -> RootVerdict.NoNews
+    is EdenSaveAccess.NeedsGrant -> {
+        val id = access.documentId
+        RootVerdict.UsesOther(FolderRef(id, id.substringAfter(':').substringAfterLast('/').ifEmpty { "Storage" }),
+            Evidence(EvidenceKind.Config, "Eden’s configuration names a folder Foldcade can’t access."), at)
+    }
+    is EdenSaveAccess.Ready -> {
+        val own = java.net.URI(access.dataUri).authority == EdenFolders.authority(packageName)
+        val evidence = if (!access.configured && own) Evidence(EvidenceKind.OwnProvider, "Eden’s own folder")
+            else Evidence(EvidenceKind.Config, "Eden’s configuration names its save folder.")
+        RootVerdict.Uses(bound, evidence, at)
     }
 }
 

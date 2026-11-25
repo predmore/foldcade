@@ -6,6 +6,9 @@ import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.host.PluginHost
 import app.foldcade.language.SaveIncident
+import app.foldcade.language.Evidence
+import app.foldcade.language.EvidenceKind
+import app.foldcade.language.IncidentKind
 import app.foldcade.language.blocksLaunch
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +59,24 @@ internal class SaveIncidentCopies(
         store.handled(player.saveFolderId(), game)
         keep(game, player)
         return true
+    }
+
+    /** Read only the frozen account when its identity can no longer be attributed to this session. */
+    suspend fun preserveEdenReturn(pending: LibraryReturn, plan: EdenReturnPlan) {
+        val player = pending.player
+        val key = player.saveFolderId()
+        val game = pending.game
+        val incident = plan.change?.let { change ->
+            val id = "${IncidentKind.MaybeNewSave.name}:$key"
+            val old = store.incidents().firstOrNull { it.id == id }
+            SaveIncident(id, IncidentKind.MaybeNewSave, key, player.displayName, listOf(game.remoteKey), null, null,
+                Evidence(EvidenceKind.Config, change), old?.openedAtMillis ?: System.currentTimeMillis(), old?.kept.orEmpty(), old?.staged.orEmpty())
+                .also(store::put)
+        } ?: store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch }
+        if (plan.change != null || pending.edenSession != null && !pending.unprotectedSession && plan.spots.isNotEmpty()) store.rebound(key)
+        // The active account's outside bytes will still be fenced at the next launch or save selection.
+        stage(game, player, plan.spots, incident, mark = false)
+        keep(game, player)
     }
 
     /** First outside bytes after a rebind (or an unfinished bypass) never reach ordinary reconcile. */

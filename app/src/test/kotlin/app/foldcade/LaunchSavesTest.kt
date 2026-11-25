@@ -510,7 +510,7 @@ class LaunchSavesTest {
     @Test fun baselineIsTakenAfterFoldcadesOwnPlacement() = runBlocking {
         server.toPlace = "placed"
         var snapshotted = false
-        LaunchSaves(saves, plugins, baseline = { _, _, _ ->
+        LaunchSaves(saves, plugins, baseline = { _, _, _, _ ->
             assertEquals("placed", docs.files["$SAVES/Tetris DS (USA).sav"]?.toString(Charsets.UTF_8))
             snapshotted = true
             null

@@ -64,7 +64,24 @@ internal class SaveProtectionStore(private val directory: Path) {
 
     /** Written before binding, so even games never opened in this process get RomM-first recovery. */
     @Synchronized fun rebound(key: String, atMillis: Long = System.currentTimeMillis()) = editHandover(key) { row ->
-        row.put("reboundAtMillis", maxOf(atMillis, row.getLong("reboundAtMillis") + 1)).put("handled", JSONObject())
+        row.rebound(atMillis)
+    }
+
+    /** Eden keeps the same provider binding when its configured paths or account change. */
+    @Synchronized fun observeEdenContext(key: String, current: EdenSaveSession, atMillis: Long) {
+        val previous = handovers.optJSONObject(key)?.optJSONObject("edenSession")?.let(::edenSessionFromJson)
+        // A temporarily missing profile does not replace a previously established account.
+        val observed = current.copy(user = current.user ?: previous?.user)
+        if (observed == previous) return
+        editHandover(key) { row ->
+            if (previous != null && (previous.saveRoot != observed.saveRoot || previous.nandRoot != observed.nandRoot ||
+                    previous.user != null && previous.user != observed.user)) row.rebound(atMillis)
+            row.put("edenSession", observed.toJson())
+        }
+    }
+
+    private fun JSONObject.rebound(atMillis: Long) {
+        put("reboundAtMillis", maxOf(atMillis, getLong("reboundAtMillis") + 1)).put("handled", JSONObject())
     }
 
     @Synchronized fun requireBackup(key: String, game: Game) = editHandover(key) { row ->
@@ -162,3 +179,9 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
             if (root.isNull("emulatorHolds")) null else root.getBoolean("emulatorHolds"),
             root.optBoolean("hadMarkers"), root.optBoolean("hasKnownSave"), root.optBoolean("reachable", true))
     } })
+
+internal fun EdenSaveSession.toJson(): JSONObject = JSONObject()
+    .put("saveRoot", saveRoot).put("nandRoot", nandRoot).put("user", user ?: JSONObject.NULL)
+
+internal fun edenSessionFromJson(json: JSONObject): EdenSaveSession =
+    EdenSaveSession(json.getString("saveRoot"), json.getString("nandRoot"), json.optString("user").takeUnless { json.isNull("user") })

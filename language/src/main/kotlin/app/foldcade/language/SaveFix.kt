@@ -38,6 +38,7 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
  */
 fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> = when {
     incident.repair == RepairState.Done -> listOf(if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
+    incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, if (page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close)
     saveFixTarget(incident) != null -> listOf(SaveFixAction.ChooseFolder)
     else -> listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder)
 }
@@ -54,6 +55,7 @@ data class SaveFixCard(val body: String, val detail: String?)
 
 fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     if (incident.repair == RepairState.Done) return SaveFixCard(if (page.offline) SaveProtectionCopy.guidedDoneOffline else SaveProtectionCopy.guidedDone, page.note)
+    if (incident.isEdenSessionChange) return SaveFixCard("Check the user in Eden’s Profile Manager, then choose a save in Y › Saves.", page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)
     return SaveFixCard(steps, listOfNotNull(SaveProtectionCopy.thenChoose, page.note).joinToString(" "))
@@ -69,8 +71,14 @@ fun saveFixSteps(incident: SaveIncident): List<SaveFixStep> {
     val keep = when {
         incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
         incident.staged.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting)
+        incident.isEdenGrant -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later)
         else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepAlreadyOnRomm)
     }
+    if (incident.isEdenSessionChange) return listOfNotNull(
+        keep.takeIf { incident.kept.isNotEmpty() || incident.staged.isNotEmpty() },
+        SaveFixStep("Check your Eden user", SaveFixStepState.Now),
+        SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
+    )
     return listOf(
         keep,
         SaveFixStep(SaveProtectionCopy.stepFolder(incident.playerName, saveFixTarget(incident) != null), if (bound) SaveFixStepState.Done else SaveFixStepState.Now),
@@ -91,16 +99,16 @@ fun saveFolderState(incident: SaveIncident): String = incident.bound?.label ?: w
     IncidentKind.WrongFolder, IncidentKind.MaybeWrongFolder -> "Wrong folder"
     IncidentKind.FolderEmptied -> "Folder empty"
     IncidentKind.LostAccess -> "No access"
-    IncidentKind.MaybeNewSave -> "Two saves"
+    IncidentKind.MaybeNewSave -> if (incident.isEdenSessionChange) "Check Eden" else "Two saves"
 }
 
 /** Settings › Emulators' Check row during an incident: what the evidence says, once. */
 fun saveCheckState(incident: SaveIncident): String = when (incident.kind) {
-    IncidentKind.WrongFolder -> incident.live?.let { "Saving in ${it.label}" } ?: "Not saving here"
+    IncidentKind.WrongFolder -> incident.live?.let { if (incident.isEdenGrant) "Allow ${it.label}" else "Saving in ${it.label}" } ?: "Not saving here"
     IncidentKind.MaybeWrongFolder -> "May save elsewhere"
     IncidentKind.FolderEmptied -> "Folder empty"
     IncidentKind.LostAccess -> "No access"
-    IncidentKind.MaybeNewSave -> "Two saves"
+    IncidentKind.MaybeNewSave -> if (incident.isEdenSessionChange) "Check Eden" else "Two saves"
 }
 
 fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeatCount: Int): Pair<PickerModel, Effect?> {
@@ -109,7 +117,7 @@ fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeat
     val actions = saveFixActions(incident, page)
     val last = actions.lastIndex
     return when (meaning) {
-        Meaning.Options -> model to Effect.ConfirmSaveLocation(incident.id).takeIf { incident.kind in setOf(IncidentKind.MaybeWrongFolder, IncidentKind.MaybeNewSave) && incident.repair != RepairState.Done }
+        Meaning.Options -> model to Effect.ConfirmSaveLocation(incident.id).takeIf { canConfirmSaveLocation(incident) }
         Meaning.Back -> model.copy(saveFix = null) to Effect.CancelSaveFix
         Meaning.MoveUp, Meaning.MoveLeft -> model.copy(saveFix = page.copy(index = (page.index - 1).coerceAtLeast(0))) to null
         Meaning.MoveDown, Meaning.MoveRight -> model.copy(saveFix = page.copy(index = (page.index + 1).coerceAtMost(last))) to null
@@ -122,6 +130,9 @@ fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeat
         else -> model to null
     }
 }
+
+fun canConfirmSaveLocation(incident: SaveIncident): Boolean = !incident.isEdenSessionChange &&
+    incident.kind in setOf(IncidentKind.MaybeWrongFolder, IncidentKind.MaybeNewSave) && incident.repair != RepairState.Done
 
 fun saveProtectionDialog(
     incident: SaveIncident,

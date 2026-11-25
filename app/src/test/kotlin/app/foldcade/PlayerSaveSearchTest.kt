@@ -217,7 +217,7 @@ class PlayerSaveSearchTest {
         val secondPath = edenPath(2)
         assertFalse(secondPath in docs.folders)
         val destination = saves.spots(player, GAME, LaunchTarget.ContentUri(ROM), forLaunch = true)
-        assertEquals(secondPath.substringBeforeLast('/'), destination.single().search!!.parent)
+        assertEquals(secondPath, destination.single().folders.single().path)
         val placed = PlacedSave("savedata", SERVER, md5Hex(zip))
         assertTrue(saves.place("romm", GAME, player, destination, listOf(placed)))
         assertEquals("first device", docs.text("$secondPath/systemdata"))
@@ -253,7 +253,7 @@ class PlayerSaveSearchTest {
 
     @Test
     fun anIncomingEdenSaveWithoutAUserStopsBeforeNegotiationOrBaseline() = runBlocking {
-        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        val player = edenPlayer()
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
         val library = SaveLibrary().apply { remoteSlot = "savedata" }
         val awaiting = mutableListOf<String>()
@@ -288,7 +288,7 @@ class PlayerSaveSearchTest {
 
     @Test
     fun anIncomingSaveOnAnotherFoldedCopyAlsoStopsUnresolvedEden() = runBlocking {
-        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        val player = edenPlayer()
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
         val first = SaveLibrary()
         val second = SaveLibrary("other").apply { remoteSlot = "savedata" }
@@ -307,7 +307,7 @@ class PlayerSaveSearchTest {
 
     @Test
     fun anUnavailableListingCannotAcknowledgeAnUnplaceableEdenSave() = runBlocking {
-        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        val player = edenPlayer()
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
         val library = SaveLibrary().apply { listingFails = true }
         val failure = runCatching {
@@ -365,7 +365,7 @@ class PlayerSaveSearchTest {
 
     @Test
     fun playingEdenWithoutSyncingBypassesHeldAndIncomingSavesForOnlyThisLaunch() = runBlocking {
-        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        val player = edenPlayer()
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
         val library = SaveLibrary().apply { remoteSlot = "savedata" }
         val launch = LaunchSaves(saves, plugins(library)) { error("no save was placed") }
@@ -387,7 +387,7 @@ class PlayerSaveSearchTest {
 
     @Test
     fun freshEdenWithNoIncomingSaveStartsUnplacedAndHandsOverItsNewSaveOnReturn() = runBlocking {
-        val player = app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        val player = edenPlayer()
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
         val library = SaveLibrary().apply { remoteSlot = "autosave" }
         val plugins = plugins(library)
@@ -399,7 +399,9 @@ class PlayerSaveSearchTest {
         assertTrue(marks.stored.isEmpty())
         eden(1)
         docs.file("${edenPath(1)}/systemdata", "first boot progress")
-        val returning = returnSpots(saves, LibraryReturn("server", route.saves, player, prepared.spots, ROM))
+        val returnPlan = planEdenReturn(saves, LibraryReturn("server", route.saves, player, prepared.spots, ROM, edenSession = prepared.edenSession), player)
+        assertFalse(returnPlan.backupOnly)
+        val returning = returnPlan.spots
         assertEquals("savedata", returning.single().slot)
         val observed = saves.changedSince("server", route.saves, player, returning)
         assertEquals(1, observed.slots.size)
@@ -408,6 +410,42 @@ class PlayerSaveSearchTest {
         assertEquals("first boot progress", saveEntries(zip, setOf(TITLE))!!.getValue("$TITLE/systemdata")!!.toString(Charsets.UTF_8))
         saves.noteHandedOver("server", route.saves, player, returning, observed)
         assertTrue(saves.changedSince("server", route.saves, player, returning).slots.isEmpty())
+    }
+
+    @Test
+    fun switchedEdenUserKeepsOnlyTheFrozenAccountAsABackupAfterRestart() = runBlocking {
+        val player = eden(1)
+        val library = SaveLibrary().apply { placement = app.foldcade.api.plugin.Placement(LaunchTarget.ContentUri(ROM), emptyList()) }
+        val plugins = plugins(library)
+        val route = edenRoute(player)
+        val prepared = LaunchSaves(saves, plugins) { error("no save was placed") }.prepare(route, player, LaunchTarget.ContentUri(ROM))
+        docs.file("${edenPath(1)}/systemdata", "session progress")
+        docs.file("${edenPath(2)}/systemdata", "other user's progress")
+        docs.file("nand/system/save/8000000000000010/su/avators/profiles.dat", ByteArray(0x650).apply {
+            this[0x10] = 1
+            this[0x10 + 0xC8] = 2
+        })
+        docs.file("config/config.ini", "[System]\ncurrent_user\\default=false\ncurrent_user=1")
+        val recorded = LibraryReturn("server", route.saves, player, prepared.spots, ROM, edenSession = prepared.edenSession)
+        val pending = decodeLibraryReturn(recorded.encode()) { player }!!
+        assertEquals(recorded.edenSession, pending.edenSession)
+        val plan = planEdenReturn(saves, pending, player)
+        assertTrue(plan.backupOnly)
+        assertEquals(app.foldcade.language.SaveProtectionCopy.edenUserChanged, plan.change)
+        assertEquals(edenPath(1), plan.spots.single().folders.single().path)
+
+        val state = SaveProtectionStore(backups.resolve("protection"))
+        val copies = SaveIncidentCopies(saves, plugins, state)
+        copies.preserveEdenReturn(pending, plan)
+        assertTrue(library.captured.isEmpty())
+        assertEquals(app.foldcade.language.IncidentKind.MaybeNewSave, state.incidents().single().kind)
+        assertTrue(state.needsBackup(player.saveFolderId(), route.saves))
+        assertEquals(1, saves.queuedCopies().size)
+        library.backupsOnline = true
+        copies.keep(route.saves, player)
+        assertTrue(saves.queuedCopies().isEmpty())
+        assertEquals(listOf("backup-1"), state.incidents().single().kept)
+        assertEquals("session progress", library.backupEntries.single().getValue("$TITLE/systemdata")!!.decodeToString())
     }
 
     private fun edenRoute(player: Player): GameRoute {
@@ -432,6 +470,8 @@ class PlayerSaveSearchTest {
         var negotiations = 0
         var placement: app.foldcade.api.plugin.Placement? = null
         val captured = mutableListOf<ObservedSlot>()
+        var backupsOnline = false
+        val backupEntries = mutableListOf<Map<String, ByteArray?>>()
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
         override suspend fun listPlatforms() = emptyList<ListedPlatform>()
@@ -452,15 +492,29 @@ class PlayerSaveSearchTest {
             captured += observed.slots
             return SyncResult(SyncOutcome.Queued)
         }
+        override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> {
+            check(backupsOnline)
+            return observed.slots.map { slot ->
+                val bytes = Files.readAllBytes(java.nio.file.Path.of(java.net.URI.create(slot.contentUri)))
+                assertEquals(slot.contentHash, md5Hex(bytes))
+                backupEntries += saveEntries(bytes, setOf(TITLE))!!
+                "backup-${backupEntries.size}"
+            }
+        }
     }
 
     private fun eden(user: Int): app.foldcade.plugins.eden.EdenPlayer {
         docs.names[ROM] = "Fantasy Life [$TITLE].nsp"
-        docs.file(app.foldcade.plugins.eden.EdenPlayer.PROFILES, ByteArray(0x650).apply { this[0x10] = user.toByte() })
-        return app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder(TREE) }
+        docs.file("nand/system/save/8000000000000010/su/avators/profiles.dat", ByteArray(0x650).apply { this[0x10] = user.toByte() })
+        return edenPlayer()
     }
 
-    private fun edenPath(user: Int) = "${app.foldcade.plugins.eden.EdenPlayer.SAVES}/${"0".repeat(30)}0$user/$TITLE"
+    private fun edenPlayer(): app.foldcade.plugins.eden.EdenPlayer {
+        docs.file("config/config.ini", "[Data%20Storage]\nsave_directory=\n[System]\ncurrent_user=0")
+        return app.foldcade.plugins.eden.EdenPlayer().apply { bindSaveFolder("content://dev.eden.eden_emulator.user/tree/root") }
+    }
+
+    private fun edenPath(user: Int) = "nand/user/save/0000000000000000/${"0".repeat(30)}0$user/$TITLE"
 
     private fun placed() = PlacedSave("card1", SERVER, md5Hex(docs.library.getValue(SERVER)))
 
