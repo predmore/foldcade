@@ -3,7 +3,7 @@ package app.foldcade
 import app.foldcade.language.FolderRef
 import app.foldcade.plugins.duckstation.DuckStationCardSettings
 import java.net.URI
-import java.nio.file.Path
+import java.nio.file.Paths
 
 internal const val DUCKSTATION_SHARED_CARD_1 = "shared_card_1.mcd"
 
@@ -46,12 +46,13 @@ internal class DuckStationSaveEvidence(
             path.startsWith("content://") -> path
             else -> {
                 val raw = path.removePrefix("file://")
-                val absolute = (if (raw.startsWith('/')) Path.of(raw) else {
+                val absolute = (if (raw.startsWith('/')) Paths.get(raw) else {
                     val data = storageIdentity(dataUri, packageName).removePrefix("primary:")
-                    Path.of("/storage/emulated/0", data, raw)
+                    Paths.get("/storage/emulated/0", data, raw)
                 }).normalize().toString()
-                if (absolute.startsWith("/storage/") || absolute.startsWith("/sdcard/") || absolute.startsWith("/data/")) {
-                    return FolderRef(storageIdentity("file://$absolute", packageName), Path.of(absolute).fileName.toString())
+                val identity = storageIdentity(absolute, packageName)
+                if (identity != absolute || absolute.startsWith("/storage/") || absolute.startsWith("/data/")) {
+                    return FolderRef(identity, Paths.get(absolute).fileName.toString())
                 }
                 return null
             }
