@@ -81,16 +81,17 @@ internal object Ps2Card {
      * next launch can create. [Plan.NeedsSetup] is a file card that stays.
      */
     private fun plan(folder: SaveFolderAccess, serial: String?): Plan {
-        val root = folder.list("") ?: return Plan.Unavailable
-        val slot = slot1(root, folder, serial) ?: return Plan.Unavailable
-        if (!slot.enabled) return Plan.Unavailable
-        val name = cardName(slot.filename) ?: return Plan.Unavailable
-        val memcards = root.firstOrNull { it.isFolder && it.name.equals(MEMCARDS, ignoreCase = true) }?.name
-        if (memcards == null) return Plan.Make("$MEMCARDS/$name")
-        val parent = "$memcards/$name"
-        val children = folder.list(parent)
-        val listed = folder.list(memcards) ?: return Plan.Unavailable
+        val config = readPs2CardConfig(folder, serial)
+        val name = config.cardName ?: return Plan.Unavailable
+        val directory = config.directory ?: return Plan.Unavailable
+        val parent = listOf(directory, name).filter(String::isNotEmpty).joinToString("/")
+        val listed = folder.list(directory)
+        if (listed == null) {
+            // Only assume a missing path when its nearest readable ancestor shows it absent.
+            return if (missingDirectory(folder, directory)) Plan.Make(parent) else Plan.Unavailable
+        }
         val card = listed.firstOrNull { it.name == name } ?: return Plan.Make(parent)
+        val children = if (card.isFolder) folder.list(parent) else null
         if (card.isFolder) {
             if (children == null) return Plan.Unavailable
             val saves = children.any { it.isFolder }
@@ -108,20 +109,11 @@ internal object Ps2Card {
         }
     }
 
-    /**
-     * Slot 1 from the settings mirror when it can be read, and from the ini
-     * otherwise. [serial] null reads the global card, which is what Settings shows.
-     */
-    private fun slot1(root: List<SaveFolderEntry>, folder: SaveFolderAccess, serial: String?): Slot1? {
-        val mirror = root.firstOrNull { !it.isFolder && it.name == SETTINGS }
-        if (mirror != null && mirror.size <= SETTINGS_LIMIT) {
-            val text = folder.read(SETTINGS, SETTINGS_LIMIT)?.toString(Charsets.UTF_8)
-            if (text != null) slotFromMirror(text, serial)?.let { return it }
-        }
-        val ini = root.firstOrNull { !it.isFolder && it.name == INI } ?: return Slot1(enabled = true, filename = DEFAULT_FILE)
-        if (ini.size > INI_LIMIT) return null
-        val text = folder.read(INI, INI_LIMIT) ?: return null
-        return parseSlot1(text.toString(Charsets.UTF_8))
+    private fun missingDirectory(folder: SaveFolderAccess, path: String): Boolean {
+        if (path.isEmpty()) return false
+        val parent = path.substringBeforeLast('/', "")
+        val children = folder.list(parent) ?: return missingDirectory(folder, parent)
+        return children.none { it.name == path.substringAfterLast('/') }
     }
 
     /** A card file name that stays one file inside `memcards`. */
@@ -186,7 +178,6 @@ private fun erased(bytes: ByteArray): Boolean {
     return bytes.all { it == mark }
 }
 
-private const val SETTINGS_LIMIT = 2 * 1024 * 1024
 private const val SUPER_READ = 64 * 1024
 private const val CARD_RAW = 8_388_608L
 private const val CARD_ECC = 8_650_752L

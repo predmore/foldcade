@@ -84,7 +84,7 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
     val bound = after.roots.singleOrNull { it.bound } ?: return SessionVerdict.NoNews
     val oldBound = before.roots.singleOrNull { it.bound && it.root.identity == bound.root.identity } ?: return SessionVerdict.NoNews
     if (spotChanged(before, bound)) return SessionVerdict.Wrote(bound.root)
-    if (oldBound.spotReadable && bound.spotReadable && oldBound.spotHash == bound.spotHash) {
+    if (oldBound.spotReadable && bound.spotReadable && oldBound.spotFile == bound.spotFile && oldBound.spotHash == bound.spotHash) {
         val changedCandidates = after.roots.filter { !it.bound && spotChanged(before, it) }
         if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(changedCandidates.singleOrNull()?.root)
     }

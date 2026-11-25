@@ -40,7 +40,7 @@ fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == Incide
  * access was lost, the folder it already watched. Null when only the emulator can say.
  */
 fun saveFixTarget(incident: SaveIncident): FolderRef? =
-    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty()) null
+    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) null
     else incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
 
 /**
@@ -118,6 +118,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     if (incident.isEdenSessionChange) return SaveFixCard(
         if (page.hasRommDestination) "Check the user in Eden’s Profile Manager, then choose a save in Y › Saves."
         else "Check the user in Eden’s Profile Manager.", page.note)
+    if (incident.armsX2OutsideCard) return SaveFixCard(SaveProtectionCopy.armsX2OutsideCardSteps, page.note)
     if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)

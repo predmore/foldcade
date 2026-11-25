@@ -290,6 +290,9 @@ interface GameFileReader {
  * folders separated by `/`. Added in API minor 13.
  */
 interface SaveFolderAccess {
+    /** Shared-storage document id, such as `primary:ARMSX2`, when known. Added in API minor 27. */
+    val storageDocumentId: String? get() = null
+
     /** Last-modified epoch milliseconds, or null when unknown. Added in API minor 26. */
     fun modifiedAtMillis(path: String): Long? = null
 

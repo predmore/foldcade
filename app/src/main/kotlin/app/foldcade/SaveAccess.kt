@@ -97,9 +97,15 @@ internal class DocumentSaveFolder(
     private val folderUri: String,
     private val allowWrite: Boolean,
     private val reuseReads: Boolean = false,
+    private val sharedStorageAuthority: String? = null,
     private val backup: (String, ByteArray) -> Unit,
 ) : SaveFolderAccess, java.io.Closeable {
     init { require(!reuseReads || !allowWrite) }
+
+    override val storageDocumentId: String? get() = runCatching {
+        val authority = java.net.URI(folderUri).authority ?: return@runCatching null
+        if (authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY || authority == sharedStorageAuthority) folderDocumentId(folderUri) else null
+    }.getOrNull()
 
     private val reads = mutableMapOf<String, SaveDocumentRead?>()
 

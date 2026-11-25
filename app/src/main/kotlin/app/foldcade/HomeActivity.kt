@@ -95,6 +95,7 @@ import app.foldcade.language.isEdenGrant
 import app.foldcade.language.isEdenSessionChange
 import app.foldcade.language.canConfirmSaveLocation
 import app.foldcade.language.hostedCardMismatch
+import app.foldcade.language.armsX2OutsideCard
 import app.foldcade.language.edenWrongFolderDialog
 import app.foldcade.language.retroArchCoresDialog
 import app.foldcade.language.retroArchStorageDialog
@@ -109,6 +110,7 @@ import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
 import app.foldcade.plugins.eden.EDEN_PACKAGES
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.romm.ROMM_ORIGIN_KEY
@@ -328,10 +330,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     if (incident != null && player != null) {
                         val folder = pickedSaveFolder(uri, player, ask = false) ?: return@launch
                         val scopedRetroArch = player is RetroArchPlayer && incident.gameIds.isNotEmpty()
-                        val expected = if (scopedRetroArch) incident.bound?.identity else incident.live?.identity
+                        val repairInPlace = scopedRetroArch || incident.armsX2OutsideCard
+                        val expected = if (repairInPlace) incident.bound?.identity else incident.live?.identity
                         if (!repairFolderMatches(expected, storageIdentity(folder.toString(), packageName))) {
                             val copy = app.foldcade.language.SaveProtectionCopy
-                            foldcade.shell.noteSaveFix(if (scopedRetroArch) copy.chooseThere(incident.bound?.label.orEmpty())
+                            foldcade.shell.noteSaveFix(if (repairInPlace) copy.chooseThere(incident.bound?.label.orEmpty())
                                 else copy.wrongPick(incident.playerName, incident.live?.label.orEmpty()))
                             return@launch
                         }
@@ -345,6 +348,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                     incident.gameIds.firstNotNullOfOrNull(foldcade.shell::saveGame)
                                 } else null
                                 val preserved = withContext(Dispatchers.IO) {
+                                    if (player is ArmsX2Player && incident.armsX2OutsideCard) {
+                                        val config = player.cardConfig(foldcade.playerSaves.folderAccess(player, folder.toString(), allowWrite = false))
+                                        if (!config.nativeReadable || config.directory == null) {
+                                            val copy = app.foldcade.language.SaveProtectionCopy
+                                            val detail = if (config.nativeReadable) copy.armsX2CardOutside else copy.armsX2ConfigUnavailableDetail
+                                            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveFix(detail) }
+                                            return@withContext null
+                                        }
+                                    }
                                     foldcade.saveProtection.put(incident.copy(recoveryRequired = true))
                                     val copies = foldcade.cachedSaveSpots(player).filterKeys(incident::appliesTo)
                                         .mapValues { (_, spots) -> spots.map { it.copy(folderUri = folder.toString()) } }.toMutableMap()
@@ -366,7 +378,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                         foldcade.saveIncidentCopies.keep(game, player)
                                         Triple(game, spots, observed)
                                     }
-                                }
+                                } ?: return@withLock
                                 // Fence every game before the new binding can become visible, including after process death.
                                 if (!scopedRetroArch) withContext(Dispatchers.IO) { foldcade.saveProtection.rebound(player.saveFolderId()) }
                                 if (rememberSaveFolder(folder, player)) withContext(Dispatchers.IO) {
@@ -3469,12 +3481,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val player = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player).firstOrNull { it.saveFolderId() == incident.playerKey }
         val hosted = player is app.foldcade.plugins.duckstation.DuckStationPlayer &&
             (incident.kind != app.foldcade.language.IncidentKind.MaybeNewSave || incident.hostedCardMismatch)
-        val steps = if (incident.hostedCardMismatch) app.foldcade.language.SaveProtectionCopy.hostedCardSteps
-            else (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
+        val steps = when {
+            incident.hostedCardMismatch -> app.foldcade.language.SaveProtectionCopy.hostedCardSteps
+            else -> (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
                 ?: (player as? app.foldcade.api.plugin.HostedSaveFolder)?.hostedFolderSteps
+        }
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
         val owner = incident.subject?.game() ?: route?.saves?.takeIf(incident::appliesTo)
-            ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch }?.let(foldcade.shell::saveGame)
+            ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard }?.let(foldcade.shell::saveGame)
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
         foldcade.scope.launch { foldcade.refreshSaveFixDetails(incident) }
@@ -3593,7 +3607,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val player = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player).firstOrNull { it.saveFolderId() == incident.playerKey } ?: return@launch
             settingsPlayerId = player.id
             folderPurpose = FolderPurpose.Settings
-            val preferred = if (player is RetroArchPlayer && incident.gameIds.isNotEmpty()) incident.bound else app.foldcade.language.saveFixTarget(incident)
+            val preferred = if (player is RetroArchPlayer && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) incident.bound
+                else app.foldcade.language.saveFixTarget(incident)
             val initial = preferred?.identity?.takeIf { incident.isEdenGrant || it.startsWith("primary:") }?.let(::storageFolderDocument)
                 ?: foldcade.saveFolderStart(player)
             launchFolderPicker(initial?.let(Uri::parse))
@@ -3654,7 +3669,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             it.id == id && (it.repair == app.foldcade.language.RepairState.Done || it.isEdenSessionChange)
         }
             ?: foldcade.shell.model.saveFix?.resolved?.takeIf { it.id == id } ?: return
-        val tileId = incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch }
+        val tileId = incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard }
             ?: foldcade.hostedAsk?.pending?.route?.tileId ?: foldcade.savePickerRequest?.route?.tileId
             ?: incident.subject?.let { homeGameId(it.libraryId, it.gameId) }
         foldcade.scope.launch {
@@ -3683,7 +3698,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val copy = app.foldcade.language.SaveProtectionCopy
         val detail = when (val location = setting.location) {
             is app.foldcade.language.LocationFact.Verified -> copy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
-            is app.foldcade.language.LocationFact.Bound -> if (location.configUnavailable) copy.retroArchConfigUnavailableDetail else copy.checkByPlaying
+            is app.foldcade.language.LocationFact.Bound -> when {
+                location.cardOutside -> copy.armsX2CardOutside
+                !location.configUnavailable -> copy.checkByPlaying
+                playerId == ArmsX2Player.ID -> copy.armsX2ConfigUnavailableDetail
+                else -> copy.retroArchConfigUnavailableDetail
+            }
             else -> copy.checkByPlaying
         }
         foldcade.shell.showDialog(playerNotice("Check", detail, foldcade.shell.model.layout.menuScreen))
@@ -4619,7 +4639,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val preserved = try {
                 // A legacy Backup does not complete the fence for a compatible working slot.
                 if (legacyBackup) true
-                else foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
+                else foldcade.saveProbes.preserveArmsX2Return(pending, probeTarget, spots, after) ||
+                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.

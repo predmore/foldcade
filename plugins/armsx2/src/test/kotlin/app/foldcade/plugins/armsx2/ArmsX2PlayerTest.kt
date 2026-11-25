@@ -65,7 +65,7 @@ class ArmsX2PlayerTest {
             "content://com.android.externalstorage.documents/document/primary%3AAndroid%2Fdata%2Fcom.armsx2%2Ffiles",
             player.suggestedSaveFolder,
         )
-        assertEquals(setOf("memcards", "bios"), player.saveFolderMarkers)
+        assertEquals(setOf("memcards", "bios", "PCSX2-Android.ini"), player.saveFolderMarkers)
     }
 
     @Test
