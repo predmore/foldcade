@@ -2272,13 +2272,22 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             delay(RESUME_CHECK_MS)
             val resumed = UsageAccess(this@FoldcadeHomeActivity)
                 .resumedSince(running.packageName, sentAt, System.currentTimeMillis())
+            // Usage events name the target of an activity alias, including ARMSX2's game activity.
+            val activity = running.activity
+            val targetActivity = if (running.activityGrant != null && activity != null && resumed.isNotEmpty()) {
+                try {
+                    packageManager.getActivityInfo(ComponentName(running.packageName, activity), 0).targetActivity
+                } catch (_: PackageManager.NameNotFoundException) {
+                    null
+                }
+            } else null
             withContext(Dispatchers.Main.immediate) {
                 if (isDestroyed || isFinishing || foldcade.externalPlay.sessionId != session) return@withContext
                 val current = foldcade.runningGames.forPackage(running.packageName) ?: return@withContext
                 if (current.startedAtMillis != running.startedAtMillis) return@withContext
                 val grant = current.activityGrant
                 val held = grant?.heldByPlayer(this@FoldcadeHomeActivity)
-                when (launcherResumeResult(grant != null, held, resumed, frontDoor, current.activity)) {
+                when (launcherResumeResult(grant != null, held, resumed, frontDoor, activity, targetActivity)) {
                     LauncherResumeResult.KeepRun -> Unit
                     LauncherResumeResult.Warn -> Toast.makeText(applicationContext, Copy.resumeGameWarning(current.player?.displayName), Toast.LENGTH_LONG).show()
                     LauncherResumeResult.ForgetRun -> {

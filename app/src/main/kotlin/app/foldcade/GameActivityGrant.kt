@@ -65,9 +65,10 @@ internal fun launcherResumeResult(
     resumed: List<String>,
     frontDoor: String?,
     activity: String?,
+    targetActivity: String? = null,
 ): LauncherResumeResult {
     if (hasActivityGrant && held == false) return LauncherResumeResult.ForgetRun
-    val unexpected = if (hasActivityGrant) resumed.lastOrNull()?.let { it != activity } == true
+    val unexpected = if (hasActivityGrant) resumed.lastOrNull()?.let { it != (targetActivity ?: activity) } == true
         else resumeFound(resumed, frontDoor, activity) == false
     return if (unexpected) LauncherResumeResult.Warn else LauncherResumeResult.KeepRun
 }

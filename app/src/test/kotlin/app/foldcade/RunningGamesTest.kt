@@ -68,6 +68,19 @@ class RunningGamesTest {
     }
 
     @Test
+    fun armsx2ResumeRecognizesTheAliasTargetReportedByAndroid() {
+        val outcome = launcherResumeResult(
+            hasActivityGrant = true,
+            held = true,
+            resumed = listOf("com.armsx2.Main"),
+            frontDoor = "com.armsx2.BootSplashActivity",
+            activity = "com.armsx2.MainActivity",
+            targetActivity = "com.armsx2.Main",
+        )
+        assertEquals(LauncherResumeResult.KeepRun, outcome)
+    }
+
+    @Test
     fun anUnmarkedLauncherMenuWarnsAndKeepsThePossibleLiveRun() {
         assertEquals(LauncherResumeResult.Warn,
             launcherResumeResult(false, null, listOf("Splash", "Library"), "Splash", "Game"))

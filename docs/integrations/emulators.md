@@ -145,6 +145,8 @@ Older DuckStation builds, from before the rewrite, read the game differently and
 
 [ARMSX2](https://github.com/ARMSX2/ARMSX2) is the PlayStation 2 emulator to use on the Thor. Foldcade launches the GitHub build, then the Play Store build, then the nightly build, when more than one is installed. NetherSX2, AetherSX2, and EmuCoreX still launch when ARMSX2 is not.
 
+Leave ARMSX2’s **Exit to launcher on close** setting on (the default) so Foldcade can detect when a game closes.
+
 To install the GitHub build with Obtainium and get its updates, open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.armsx2%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FARMSX2%2FARMSX2%22%2C%22author%22%3A%22ARMSX2%22%2C%22name%22%3A%22ARMSX2%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22a13-armv8%5C%5C%5C%5C.2-sdk33%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D) on your Thor. It tracks [ARMSX2/ARMSX2](https://github.com/ARMSX2/ARMSX2) and takes the `a13-armv8.2-sdk33` APK. Open ARMSX2 once and finish its first-run setup before you launch a game from Foldcade.
 
 ### BIOS
