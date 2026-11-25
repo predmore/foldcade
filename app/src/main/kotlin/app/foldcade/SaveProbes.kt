@@ -9,7 +9,6 @@ import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
 import app.foldcade.plugins.retroarch.absoluteRetroArchPath
-import app.foldcade.plugins.retroarch.retroArchSavePath
 import java.nio.file.Path
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -28,7 +27,7 @@ internal class SaveProbes(
 
     @Synchronized fun snapshot(player: Player, game: Game? = null, target: LaunchTarget? = null, hasKnownSave: Boolean = false,
         resolvedPackage: String? = null, discoverAfterMillis: Long? = null, readSpots: Boolean = true, priorAlternate: String? = null,
-        edenSpots: List<SaveSpot>? = null): ProbeSnapshot? {
+        edenSpots: List<SaveSpot>? = null, launchReading: ProbeSnapshot? = null): ProbeSnapshot? {
         val holder = player as? SaveFolderHolder ?: return null
         if (player is EdenPlayer && !edenReadsAllowed()) return null
         // DuckStation's data folder holds firmware; its actual saves are hosted.
@@ -76,7 +75,9 @@ internal class SaveProbes(
         if (player is RetroArchPlayer) {
             val pkg = resolved?.packageName ?: return ProbeSnapshot(System.currentTimeMillis(), null, resolvedPackage.orEmpty(), listOf(bound))
             val launch = retroArchTarget(target)
-            return retroArchSnapshot(player, game, pkg, resolved.firstInstallTime, launch, bound, boundUri, grants, readSpots, priorAlternate)
+            val gate = launchReading?.takeIf { it.packageName == pkg && it.installFirstMillis == resolved.firstInstallTime &&
+                it.roots.singleOrNull { root -> root.bound }?.root?.identity == boundIdentity }
+            return retroArchSnapshot(player, game, pkg, resolved.firstInstallTime, launch, bound, boundUri, grants, readSpots, priorAlternate, gate)
         }
         val signature = probe?.signatureFile
         val discovered = if (discoverAfterMillis != null && signature != null && grants.any { it.allFiles } &&
@@ -99,37 +100,34 @@ internal class SaveProbes(
         else -> null
     }
 
-    private fun retroArchFiles(player: RetroArchPlayer, pkg: String, grants: List<SaveFolderGrant> = android.grants(emptyList())) =
-        RetroArchSaveFiles(grants, context.packageName, pkg, { uri -> saves.folderAccess(player, uri, allowWrite = false) }, rommMedia())
+    private fun retroArchFiles(pkg: String, grants: List<SaveFolderGrant> = android.grants(emptyList())) =
+        RetroArchSaveFiles(grants, context.packageName, pkg, saves.docs, rommMedia())
 
     private fun retroArchSnapshot(player: RetroArchPlayer, game: Game?, pkg: String, installedAt: Long, target: LaunchTarget.SharedFile?,
-        bound: RootReading, boundUri: String, grants: List<SaveFolderGrant>, readSpots: Boolean, priorAlternate: String?): ProbeSnapshot {
+        bound: RootReading, boundUri: String, grants: List<SaveFolderGrant>, readSpots: Boolean, priorAlternate: String?, gate: ProbeSnapshot?): ProbeSnapshot {
         val roots = mutableListOf(bound)
+        val files = retroArchFiles(pkg, grants)
         val rom = target?.path?.let(::absoluteRetroArchPath)
         val file = rom?.substringAfterLast('/')?.let { player.standardSaveName(it, pkg) }
-        val config = if (game != null && target != null && rom != null && file != null) {
-            val files = retroArchFiles(player, pkg, grants)
-            val relative = saves.romDisplayName(target.uri)?.let { player.saveFileName(RetroArchPlayer.SAVE_SLOT, it) }
-            val expected = files.pathOf(boundUri)?.let { path -> relative?.let { absoluteRetroArchPath("$path/$it") } }
-            val effective = retroArchSavePath(RetroArchPlayer.configPath(pkg), rom, player.saveCore(pkg).libraryName, files::config, files::isDirectory)
-            val live = effective.path?.substringBeforeLast('/')?.let(::retroArchFolderRef)
-            if (readSpots && expected != null) {
-                val known = scopedWrongFolders(player, game).mapNotNull { it.live?.let { root -> retroArchCandidatePath(root, file) } }
-                val paths = listOfNotNull(
-                    "${rom.substringBeforeLast('/')}/$file",
-                    priorAlternate,
-                    effective.path.takeIf { effective.strength == SignalStrength.Proves },
-                ) + known + listOfNotNull(relative?.let { "$SHARED_STORAGE/RetroArch/saves/$it" })
-                paths.distinct().filter { it != expected }.take(4).forEach { path ->
-                    val candidate = files.candidate(path)
-                    val bytes = (candidate.read as? FileReading.Bytes)?.bytes
-                    roots += RootReading(candidate.root, false, emptyList(), bytes?.let(::md5Hex),
-                        candidate.read != FileReading.Unreadable, null, null, spotFile = candidate.spot.fileName)
-                }
+        val config = when {
+            gate != null -> gate.configSavePath
+            game != null && target != null && file != null -> files.savePath(player, target, boundUri)
+            else -> null
+        }
+        val expected = config?.expected
+        if (readSpots && game != null && rom != null && file != null && expected != null) {
+            val known = scopedWrongFolders(player, game).mapNotNull { it.retroArchAlternate() ?: it.live?.let { root -> retroArchCandidatePath(root, file) } }
+            val relative = files.pathOf(boundUri)?.let { expected.removePrefix("$it/") }
+            val paths = listOfNotNull("${rom.substringBeforeLast('/')}/$file", priorAlternate, config.effective.takeIf { config.proves }) +
+                known + listOfNotNull(relative?.let { "$SHARED_STORAGE/RetroArch/saves/$it" })
+            paths.distinct().filter { it != expected }.take(4).forEach { path ->
+                val candidate = files.candidate(path)
+                val bytes = (candidate.read as? FileReading.Bytes)?.bytes
+                roots += RootReading(candidate.root, false, emptyList(), bytes?.let(::md5Hex),
+                    candidate.read != FileReading.Unreadable, null, null, spotFile = candidate.spot.fileName)
             }
-            ConfigSavePath(expected, effective.path, live, effective.strength == SignalStrength.Proves)
-        } else null
-        return ProbeSnapshot(System.currentTimeMillis(), installedAt, pkg, roots, config)
+        }
+        return ProbeSnapshot(System.currentTimeMillis(), installedAt, pkg, roots, config, !files.hasConfigGrant())
     }
 
     private fun scopedWrongFolders(player: Player, game: Game): List<SaveIncident> = store.incidents().filter {
@@ -140,8 +138,12 @@ internal class SaveProbes(
         val bound = snapshot.roots.single { it.bound }.root
         val last = store.location(player.saveFolderId(), bound, snapshot.packageName, snapshot.installFirstMillis)
         val mismatch = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.gameIds.isEmpty() && it.kind == IncidentKind.WrongFolder && it.repair != RepairState.Done && it.bound?.identity == bound.identity }
-        return if (mismatch == null) last else LocationFact.Mismatch(bound, mismatch.live, mismatch.evidence,
-            maxOf(mismatch.openedAtMillis, (last as? LocationFact.Verified)?.atMillis ?: 0))
+        return when {
+            mismatch != null -> LocationFact.Mismatch(bound, mismatch.live, mismatch.evidence,
+                maxOf(mismatch.openedAtMillis, (last as? LocationFact.Verified)?.atMillis ?: 0))
+            last is LocationFact.Bound && snapshot.configUnavailable -> last.copy(configUnavailable = true)
+            else -> last
+        }
     }
 
     @Synchronized fun markBound(player: Player) {
@@ -188,13 +190,13 @@ internal class SaveProbes(
                 store.incidents().filter { it.playerKey == key && it.gameIds.isEmpty() && it.kind != IncidentKind.MaybeNewSave }.forEach { store.close(it.id) }
             }
             is RootVerdict.UsesOther -> open(player, bound.root, verdict.live, IncidentKind.WrongFolder, verdict.evidence, verdict.atMillis,
-                game.takeIf { player is RetroArchPlayer })
+                game.takeIf { player is RetroArchPlayer }, snapshot.configSavePath?.effective.takeIf { verdict.evidence.kind == EvidenceKind.Config })
             is RootVerdict.Lost -> open(player, bound.root, null, verdict.kind, verdict.evidence, snapshot.atMillis, null)
             RootVerdict.NoNews -> Unit
         }
     }
 
-    private fun open(player: Player, bound: FolderRef, live: FolderRef?, kind: IncidentKind, evidence: Evidence, at: Long, game: Game?) {
+    private fun open(player: Player, bound: FolderRef, live: FolderRef?, kind: IncidentKind, evidence: Evidence, at: Long, game: Game?, alternate: String? = null) {
         val key = player.saveFolderId()
         val gameId = game?.let { homeGameId(it.backendId, it.remoteKey) }
         val id = if (gameId == null) "${kind.name}:$key" else "${kind.name}:$key:$gameId"
@@ -205,7 +207,8 @@ internal class SaveProbes(
         if (game != null) store.requireBackup(key, game)
         store.put(SaveIncident(id, kind, key, player.displayName, listOfNotNull(gameId), bound, live, evidence,
             old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
-            subject = old?.subject?.takeIf { sameLocation }))
+            subject = old?.subject?.takeIf { sameLocation },
+            alternateSavePath = alternate ?: old?.retroArchAlternate(), capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty()))
     }
 
     @Synchronized fun gate(player: Player, game: Game, target: LaunchTarget, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
@@ -215,24 +218,47 @@ internal class SaveProbes(
             // Root judgement needs no game hashes. A failed optional probe is not a positive fact.
             reading = snapshot(player, game, target, hasKnownSave, resolvedPackage, readSpots = false)
             reading?.let { now ->
-                val older = scopedWrongFolders(player, game)
-                val verdict = check(player, now, game, eden)
-                if (player is RetroArchPlayer) {
-                    val config = now.configSavePath
-                    if (config?.matches == true) older.filter { it.evidence.kind == EvidenceKind.Config && !it.recoveryRequired }.forEach { store.close(it.id) }
-                    val effective = config?.effective
-                    if (verdict is RootVerdict.UsesOther && verdict.evidence.kind == EvidenceKind.Config && effective != null) {
-                        val incident = scopedWrongFolders(player, game).firstOrNull()
-                        if (older.none { it.live == verdict.live && (it.kept.isNotEmpty() || it.staged.isNotEmpty()) }) {
-                            copies.stageCandidate(game, player, retroArchFiles(player, now.packageName).candidate(effective), incident)
-                        }
-                    }
-                }
+                if (player is RetroArchPlayer && now.configSavePath?.proves == true) checkRetroArchLaunch(player, game, now, retroArchFiles(now.packageName))
+                else check(player, now, game, eden)
             }
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { Unit
         } finally { onReading(reading) }
         store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(game) }?.let { throw SaveProtectionStop(it) }
+    }
+
+    internal fun checkRetroArchLaunch(player: RetroArchPlayer, game: Game, now: ProbeSnapshot, files: RetroArchSaveFiles) {
+        val config = now.configSavePath
+        val effective = config?.effective
+        if (config?.proves != true || config.expected == null || effective == null) {
+            check(player, now, game)
+            return
+        }
+        val previous = scopedWrongFolders(player, game).firstOrNull()
+        val oldPath = previous?.retroArchAlternate()
+        if (previous != null && oldPath != null && (config.matches || oldPath != effective)) {
+            val captured = recaptureAlternate(player, game, previous, files)
+            // An active incident stays open until the last known file has been read or found absent.
+            if (!captured && previous.blocksLaunch) return
+            if (captured && config.matches && (previous.repair == RepairState.Done ||
+                previous.evidence.kind == EvidenceKind.Config && !previous.recoveryRequired)) store.close(previous.id)
+        }
+        val verdict = check(player, now, game)
+        if (verdict is RootVerdict.UsesOther && verdict.evidence.kind == EvidenceKind.Config) {
+            val incident = scopedWrongFolders(player, game).firstOrNull() ?: return
+            recaptureAlternate(player, game, incident, files)
+        }
+    }
+
+    fun recaptureAlternate(player: RetroArchPlayer, game: Game, incident: SaveIncident): Boolean =
+        recaptureAlternate(player, game, incident, retroArchFiles(player.cores.activePackage() ?: player.packageNames.first()))
+
+    private fun recaptureAlternate(player: RetroArchPlayer, game: Game, incident: SaveIncident, files: RetroArchSaveFiles): Boolean {
+        val path = incident.retroArchAlternate() ?: return false
+        val candidate = files.candidate(path)
+        if (candidate.read == FileReading.Unreadable) return false
+        copies.stageCandidate(game, player, candidate, incident)
+        return true
     }
 
     fun noteSession(player: Player, game: Game, before: ProbeSnapshot, after: ProbeSnapshot,
@@ -270,7 +296,7 @@ internal class SaveProbes(
             // A fix can close the incident while a bypassed game still writes to its launch-time path.
             val priorAlternate = configAlternate(before).takeIf { backupOnly }
             if (incident == null && priorAlternate == null) return
-            val files = retroArchFiles(player, after.packageName)
+            val files = retroArchFiles(after.packageName)
             after.roots.filterNot { it.bound }.forEach { root ->
                 val path = root.spotFile?.let { retroArchCandidatePath(root.root, it) } ?: return@forEach
                 if (path == priorAlternate || incident != null && (root.root == incident.live || spotChanged(before, root))) {
@@ -312,6 +338,11 @@ internal fun edenRootVerdict(bound: FolderRef, access: EdenSaveAccess, packageNa
         RootVerdict.Uses(bound, evidence, at)
     }
 }
+
+/** Older drafts recorded the exact path in the Config evidence text. */
+internal fun SaveIncident.retroArchAlternate(): String? = (alternateSavePath ?: evidence.detail
+    .takeIf { playerKey == RetroArchPlayer.SAVE_FOLDER_KEY && evidence.kind == EvidenceKind.Config && it.startsWith("RetroArch configured ") }
+    ?.removePrefix("RetroArch configured "))?.let(::absoluteRetroArchPath)
 
 /** The host compares Azahar's version token with PackageInfo.versionName. */
 internal fun azaharLogVersion(text: String): String? = text.lineSequence()

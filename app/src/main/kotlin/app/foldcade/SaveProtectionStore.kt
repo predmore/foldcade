@@ -152,6 +152,7 @@ private fun JSONArray.strings(): List<String> = (0 until length()).map(::getStri
 private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("kind", kind.name).put("playerKey", playerKey)
     .put("playerName", playerName).put("gameIds", JSONArray(gameIds)).put("bound", bound?.toJson() ?: JSONObject.NULL)
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
+    .put("alternateSavePath", alternateSavePath ?: JSONObject.NULL).put("capturedAlternateHashes", JSONArray(capturedAlternateHashes))
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
     .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
@@ -165,6 +166,7 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.optBoolean("recoveryRequired"), json.optJSONObject("subject")?.let(::subjectFromJson), json.stringOrNull("quarantinedHash"),
     json.optBoolean("automaticDone"),
     json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
+    json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
@@ -214,6 +216,7 @@ private fun repairFromJson(json: JSONObject): RepairState = when (json.optString
 }
 
 internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", atMillis).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
+    .put("configUnavailable", configUnavailable)
     .put("configSavePath", configSavePath?.let { path -> JSONObject()
         .put("expected", path.expected ?: JSONObject.NULL).put("effective", path.effective ?: JSONObject.NULL)
         .put("live", path.live?.toJson() ?: JSONObject.NULL).put("proves", path.proves) } ?: JSONObject.NULL)
@@ -240,7 +243,7 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
     } }, json.optJSONObject("configSavePath")?.let { path -> ConfigSavePath(
         path.optString("expected").takeUnless { path.isNull("expected") },
         path.optString("effective").takeUnless { path.isNull("effective") },
-        path.optJSONObject("live")?.let(::folderFromJson), path.getBoolean("proves")) })
+        path.optJSONObject("live")?.let(::folderFromJson), path.getBoolean("proves")) }, json.optBoolean("configUnavailable"))
 
 internal fun EdenSaveSession.toJson(): JSONObject = JSONObject()
     .put("saveRoot", saveRoot).put("nandRoot", nandRoot).put("user", user ?: JSONObject.NULL)

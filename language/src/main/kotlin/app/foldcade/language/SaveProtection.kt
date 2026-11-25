@@ -36,7 +36,7 @@ sealed interface LocationFact {
     /** Setup missing: today's SaveIssue values, plus a grant that is gone. */
     data class Missing(val issue: SaveIssue) : LocationFact
     /** A folder is bound and reachable. No live evidence for it yet. Unknown, not fine. */
-    data class Bound(val root: FolderRef, val setAtMillis: Long? = null) : LocationFact
+    data class Bound(val root: FolderRef, val setAtMillis: Long? = null, val configUnavailable: Boolean = false) : LocationFact
     /** Live evidence that the emulator uses [root], taken at [atMillis]. */
     data class Verified(val root: FolderRef, val evidence: Evidence, val atMillis: Long) : LocationFact
     /** Positive evidence that the emulator uses another folder, [live] when known. */
@@ -128,6 +128,9 @@ data class SaveIncident(
     val automaticDone: Boolean = false,
     val quarantineSourceUri: String? = null,
     val quarantineBackupId: String? = null,
+    /** Exact alternate file named by the launch config, retained through guided repair. */
+    val alternateSavePath: String? = null,
+    val capturedAlternateHashes: List<String> = emptyList(),
 )
 
 /** The locally resolved game and player behind an incident, retained for repair after restart. */
@@ -284,6 +287,8 @@ object SaveProtectionCopy {
     const val folderSet = "Folder set"
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
+    const val retroArchConfigUnavailable = "Can’t read config"
+    const val retroArchConfigUnavailableDetail = "Foldcade can’t read RetroArch’s settings file. It can still check for save writes during play."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */

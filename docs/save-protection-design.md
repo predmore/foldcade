@@ -899,8 +899,8 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 **PR 5: RetroArch config.**
 
 - Read the selected package's launched `CONFIGFILE` and the override directory from the base config. Apply the global, core, content-directory, and game layers in that order. Apply the beside-content flag before the content-directory and core sort flags. Use held grants for config reads, without asking for new access.
-- Judge a proven alternate file path at launch. Inaccessible overrides, unsupported syntax, and unresolved directory fallbacks produce `Supports` only. Compare files even when the base folder is the same.
-- Use the persisted after-placement baseline to detect a changed file beside the ROM. Scope the incident to the affected game. Keep readable alternate bytes through the existing verified, unslotted Backups queue. Guided Fix restores the expected layout. Unsupported formats have an unresolved spot with a reason.
+- Judge a proven alternate file path at launch and reuse the result for the post-placement baseline. Inaccessible overrides, unsupported syntax, and unresolved directory fallbacks produce `Supports` only. Compare files even when the base folder is the same. Settings explains when no held grant covers the launched config.
+- Use the persisted after-placement baseline to detect a changed file beside the ROM. Scope the incident to the affected game. Keep new alternate bytes through the existing verified, unslotted Backups queue and re-read the last confirmed alternate file before automatically closing a config incident. Guided Fix restores the expected layout. Unsupported formats have an unresolved spot with a reason, and launch-time spots restored from older builds go to Backups.
 - Tests cover config precedence and flags, unreachable config, and readable beside-content baselines. Thor QA starts by backing up the existing RomM GBA game, then checks the normal layout, content-directory saves, a game override, and preservation without moving the RomM head.
 
 **PR 6: melonDS + EX beside-game and candidate places.**

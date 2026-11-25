@@ -26,7 +26,7 @@ data class ConfigSavePath(val expected: String?, val effective: String?, val liv
 }
 
 data class ProbeSnapshot(val atMillis: Long, val installFirstMillis: Long?, val packageName: String, val roots: List<RootReading>,
-    val configSavePath: ConfigSavePath? = null)
+    val configSavePath: ConfigSavePath? = null, val configUnavailable: Boolean = false)
 sealed interface RootVerdict {
     data class Uses(val root: FolderRef, val evidence: Evidence, val atMillis: Long) : RootVerdict
     data class UsesOther(val live: FolderRef?, val evidence: Evidence, val atMillis: Long) : RootVerdict

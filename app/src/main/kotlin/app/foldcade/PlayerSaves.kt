@@ -227,7 +227,7 @@ internal interface SaveMarks {
  * until the library has kept it.
  */
 internal class PlayerSaves(
-    private val docs: SaveDocuments,
+    internal val docs: SaveDocuments,
     private val marks: SaveMarks,
     private val backups: Path,
     private val handover: Path,
@@ -351,9 +351,9 @@ internal class PlayerSaves(
         Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
     }
 
-    internal fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, origin: String? = null): String {
+    internal fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, origin: String? = null, hash: String = md5Hex(bytes)): String {
         val identity = listOfNotNull(game.backendId, game.remoteKey, player.saveFolderId(), spot.slot, storageIdentity(spot.folderUri), origin)
-        val name = "live-${md5Hex(identity.joinToString(":").toByteArray())}-${md5Hex(bytes)}.save"
+        val name = "live-${md5Hex(identity.joinToString(":").toByteArray())}-$hash.save"
         val file = handover.resolve(name)
         app.foldcade.romm.writeDurably(file, bytes)
         // Keep enough identity to recover a queued copy even after the guided incident closes.
@@ -361,7 +361,7 @@ internal class PlayerSaves(
             .put("platform", game.platformId).put("label", game.label).put("player", player.id)
             .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
             .put("folderLabel", runCatching { folderPathLabel(spot.folderUri) }.getOrNull() ?: org.json.JSONObject.NULL)
-            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes)).put("origin", origin)
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", hash).put("origin", origin)
         app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
         return file.toUri().toString()
     }

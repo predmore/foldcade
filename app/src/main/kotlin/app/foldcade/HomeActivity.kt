@@ -338,6 +338,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         }
                         try {
                             foldcade.saveFlow.withLock {
+                                val knownGame = if (scopedRetroArch && incident.retroArchAlternate() != null) withContext(Dispatchers.Main.immediate) {
+                                    incident.gameIds.firstNotNullOfOrNull(foldcade.shell::saveGame)
+                                } else null
                                 val preserved = withContext(Dispatchers.IO) {
                                     foldcade.saveProtection.put(incident.copy(recoveryRequired = true))
                                     val copies = foldcade.cachedSaveSpots(player).filterKeys(incident::affects)
@@ -346,6 +349,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                     if (route != null && incident.appliesTo(route.saves)) {
                                         val target = foldcade.plugins.ensureLocal(route.play.backendId, route.play)
                                         copies[route.saves] = foldcade.playerSaves.probeSpots(player, route.saves, target, folder.toString())
+                                    }
+                                    if (player is RetroArchPlayer && incident.retroArchAlternate() != null) {
+                                        val game = copies.keys.firstOrNull() ?: knownGame
+                                        if (game != null) {
+                                            val gamePlayer = foldcade.plugins.player(RetroArchPlayer.ID_PREFIX + game.platformId) as? RetroArchPlayer ?: player
+                                            if (foldcade.saveProbes.recaptureAlternate(gamePlayer, game, incident)) foldcade.saveIncidentCopies.keep(game, gamePlayer)
+                                        }
                                     }
                                     // Keep a durable copy before binding, then mark its hash once binding succeeds.
                                     copies.map { (game, spots) ->
@@ -2554,23 +2564,23 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private suspend fun prepareSaves(route: GameRoute, player: Player, local: LaunchTarget, declinedFor: String?, resolvedPackage: String?): PreparedLaunch =
         foldcade.saveFlow.withLock {
+            var launchReading: app.foldcade.language.ProbeSnapshot? = null
             LaunchSaves(
                 foldcade.playerSaves,
                 foldcade.plugins,
                 protectionGate = { route, player, eden ->
                     val known = try { foldcade.plugins.saves(route.saves.backendId, route.saves).slots.isNotEmpty() }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
-                    var reading: app.foldcade.language.ProbeSnapshot? = null
-                    try { foldcade.saveProbes.gate(player, route.saves, local, known, resolvedPackage, eden) { reading = it } }
+                    try { foldcade.saveProbes.gate(player, route.saves, local, known, resolvedPackage, eden) { launchReading = it } }
                     finally {
                         val uri = (local as? LaunchTarget.ContentUri)?.uri ?: (local as? LaunchTarget.SharedFile)?.uri
-                        foldcade.associateSaveRepair(player, incidentGame(route.saves, player, uri, foldcade.store.rommOrigin(), reading))
-                        try { foldcade.publishSaveGate(player, reading) }
+                        foldcade.associateSaveRepair(player, incidentGame(route.saves, player, uri, foldcade.store.rommOrigin(), launchReading))
+                        try { foldcade.publishSaveGate(player, launchReading) }
                         catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
                     }
                 },
                 baseline = { player, game, target, spots ->
-                    try { foldcade.saveProbes.snapshot(player, game, target, resolvedPackage = resolvedPackage, edenSpots = spots) }
+                    try { foldcade.saveProbes.snapshot(player, game, target, resolvedPackage = resolvedPackage, edenSpots = spots, launchReading = launchReading) }
                     catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
                 },
                 preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
@@ -3629,10 +3639,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             ?: incident.subject?.let { homeGameId(it.libraryId, it.gameId) }
         foldcade.scope.launch {
             withContext(Dispatchers.IO) {
-                // Offline copies retain their incident reference, but Done never gates a launch.
+                // Keep offline-copy references and alternate paths for the next launch's recheck.
                 foldcade.saveFlow.withLock {
                     if (incident.isEdenSessionChange) foldcade.saveProtection.close(incident.id)
-                    foldcade.saveProtection.incidents().filter { it.playerKey == incident.playerKey && it.repair == app.foldcade.language.RepairState.Done && it.staged.isEmpty() }
+                    foldcade.saveProtection.incidents().filter { it.playerKey == incident.playerKey && it.repair == app.foldcade.language.RepairState.Done &&
+                        it.staged.isEmpty() && it.retroArchAlternate() == null }
                         .forEach { foldcade.saveProtection.close(it.id) }
                 }
             }
@@ -3649,9 +3660,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     private fun showSaveCheck(playerId: String) {
         val setting = foldcade.shell.model.playerSaves.firstOrNull { it.playerId == playerId } ?: return
-        val location = setting.location as? app.foldcade.language.LocationFact.Verified
-        val detail = if (location == null) app.foldcade.language.SaveProtectionCopy.checkByPlaying else
-            app.foldcade.language.SaveProtectionCopy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
+        val copy = app.foldcade.language.SaveProtectionCopy
+        val detail = when (val location = setting.location) {
+            is app.foldcade.language.LocationFact.Verified -> copy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
+            is app.foldcade.language.LocationFact.Bound -> if (location.configUnavailable) copy.retroArchConfigUnavailableDetail else copy.checkByPlaying
+            else -> copy.checkByPlaying
+        }
         foldcade.shell.showDialog(playerNotice("Check", detail, foldcade.shell.model.layout.menuScreen))
     }
 
@@ -4542,13 +4556,14 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.store.setPendingSaveReturn(pending.storeKey, null)
                 return true
             }
+            val legacyBackup = foldcade.saveIncidentCopies.preserveUnsupportedRetroArchReturn(pending)
             // Read the card again, and do not set one up: the player has just been holding it.
-            val spots = eden?.spots ?: returnSpots(saves, pending)
+            val spots = if (legacyBackup) emptyList() else eden?.spots ?: returnSpots(saves, pending)
             val reachable = spots.isNotEmpty() && pending.player.saveDeclarations(pending.game).all { declaration -> spots.any { it.slot == declaration.slot } }
             val probeTarget = pending.targetUri?.let { LaunchTarget.ContentUri(it) }
             val issue = if (reachable) null else probeTarget?.let { saves.unresolvedSpot(pending.player, pending.game, it) }
             withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, reachable, issue) }
-            val backupOnly = pending.preserveAsBackup || foldcade.saveProtection.pendingBackup(pending.player.saveFolderId(), pending.game)
+            val backupOnly = legacyBackup || pending.preserveAsBackup || foldcade.saveProtection.pendingBackup(pending.player.saveFolderId(), pending.game)
             // Judge and publish before reconcile can report Synced for the stale bound copy.
             // Optional probe failures still cannot block handing that copy back to the library.
             val key = pending.player.saveFolderId()
@@ -4577,10 +4592,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after, backupOnly)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return false }
             val preserved = try {
-                // A different core can leave this session without a supported slot. Keep its fence for the next compatible launch.
-                val unsupported = issue?.reason == app.foldcade.language.SpotIssue.UnsupportedSaveFormat ||
-                    (pending.player as? RetroArchPlayer)?.unsupportedSaveFormat("") != null
-                if (backupOnly && spots.isEmpty() && unsupported) true
+                // A legacy Backup does not complete the fence for a compatible working slot.
+                if (legacyBackup) true
                 else foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
@@ -4797,8 +4810,7 @@ internal data class LibraryReturn(
  * launch-time spots, except for known unsupported RetroArch formats in old records.
  */
 internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
-    val retroArch = pending.player as? RetroArchPlayer
-    if (retroArch != null && retroArch.unsupportedSaveFormat(pending.targetUri?.let(saves::romDisplayName).orEmpty()) != null) return emptyList()
+    if (unsupportedRetroArchReturn(saves, pending)) return emptyList()
     val uri = pending.targetUri ?: return pending.spots
     if (!pending.unprotectedSession && pending.spots.none { it.search != null }) return pending.spots
     val fresh = try {
@@ -4807,6 +4819,11 @@ internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveS
         return pending.spots
     }
     return fresh.ifEmpty { pending.spots }
+}
+
+internal fun unsupportedRetroArchReturn(saves: PlayerSaves, pending: LibraryReturn): Boolean {
+    val player = pending.player as? RetroArchPlayer ?: return false
+    return player.unsupportedSaveFormat(pending.targetUri?.let(saves::romDisplayName).orEmpty()) != null
 }
 
 /** One stored read-back per game. */

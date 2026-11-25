@@ -1773,6 +1773,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         RowText("Check", setting?.incident?.let { saveCheckState(it) } ?: when (val location = setting?.location) {
             is LocationFact.Verified -> "Checked ${saveAge(location.atMillis, System.currentTimeMillis())}"
+            is LocationFact.Bound -> if (location.configUnavailable) SaveProtectionCopy.retroArchConfigUnavailable else SaveProtectionCopy.notChecked
             else -> SaveProtectionCopy.notChecked
         })
     }

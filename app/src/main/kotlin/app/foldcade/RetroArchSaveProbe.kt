@@ -1,12 +1,15 @@
 package app.foldcade
 
-import app.foldcade.api.plugin.SaveFolderAccess
+import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.SignalStrength
+import app.foldcade.language.ConfigSavePath
 import app.foldcade.language.FolderRef
 import app.foldcade.plugins.retroarch.RetroArchConfigFile
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.retroarch.INTERNAL_DATA
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
 import app.foldcade.plugins.retroarch.absoluteRetroArchPath
+import app.foldcade.plugins.retroarch.retroArchSavePath
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.file.Files
@@ -15,13 +18,14 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.attribute.BasicFileAttributes
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Reads the launched config and candidate saves through existing grants or our own RomM media directory. */
 internal class RetroArchSaveFiles(
     grants: List<SaveFolderGrant>,
     private val appPackage: String,
     private val playerPackage: String,
-    private val access: (String) -> SaveFolderAccess,
+    private val docs: SaveDocuments,
     private val rommMedia: Path?,
 ) {
     private data class Tree(val uri: String, val path: String, val restricted: Boolean)
@@ -44,6 +48,17 @@ internal class RetroArchSaveFiles(
         }
     }.getOrNull()
 
+    fun hasConfigGrant(): Boolean = covering(RetroArchPlayer.configPath(playerPackage)).any()
+
+    fun savePath(player: RetroArchPlayer, target: LaunchTarget.SharedFile, boundUri: String): ConfigSavePath {
+        val relative = docs.displayName(target.uri)?.let { player.saveFileName(RetroArchPlayer.SAVE_SLOT, it) }
+        val expected = pathOf(boundUri)?.let { path -> relative?.let { absoluteRetroArchPath("$path/$it") } }
+        val effective = retroArchSavePath(RetroArchPlayer.configPath(playerPackage), target.path,
+            player.saveCore(playerPackage).libraryName, ::config, ::isDirectory)
+        val live = effective.path?.substringBeforeLast('/')?.let(::retroArchFolderRef)
+        return ConfigSavePath(expected, effective.path, live, effective.strength == SignalStrength.Proves)
+    }
+
     fun config(path: String): RetroArchConfigFile {
         if (foreignAppDirectory(path)) return RetroArchConfigFile.Unreadable
         return when (val read = read(path, CONFIG_LIMIT)) {
@@ -57,7 +72,7 @@ internal class RetroArchSaveFiles(
 
     fun isDirectory(path: String): Boolean = !foreignAppDirectory(path) &&
         (owned(path)?.let { Files.isDirectory(it, NOFOLLOW_LINKS) } == true ||
-            covering(path).any { (tree, relative) -> access(tree.uri).list(relative) != null })
+            covering(path).any { (tree, relative) -> readDocument { docs.children(tree.uri, relative) } != null })
 
     /** A grant to Foldcade cannot prove RetroArch can use another package's app data. */
     private fun foreignAppDirectory(path: String): Boolean {
@@ -91,8 +106,7 @@ internal class RetroArchSaveFiles(
         var missing = false
         var unreadable = false
         for ((tree, relative) in covering(path)) {
-            val folder = access(tree.uri)
-            when (val read = readTree(folder, relative, limit)) {
+            when (val read = readTree(tree.uri, relative, limit)) {
                 is FileReading.Bytes -> return read
                 FileReading.Missing -> missing = true
                 FileReading.Unreadable -> unreadable = true
@@ -123,21 +137,29 @@ internal class RetroArchSaveFiles(
         return file.takeIf { safe }
     }
 
-    private fun readTree(folder: SaveFolderAccess, relative: String, limit: Int): FileReading {
+    private fun readTree(treeUri: String, relative: String, limit: Int): FileReading {
         if (relative.isEmpty()) return FileReading.Unreadable
         val parts = relative.split('/')
-        var parent = ""
+        var parent = treeUri
         for ((index, name) in parts.withIndex()) {
-            val children = folder.list(parent) ?: return FileReading.Unreadable
+            val children = readDocument { docs.children(parent, "") } ?: return FileReading.Unreadable
             val matches = children.filter { it.name.equals(name, ignoreCase = true) }
             if (matches.isEmpty()) return FileReading.Missing
             val child = matches.singleOrNull()?.takeIf { it.name == name } ?: return FileReading.Unreadable
             val leaf = index == parts.lastIndex
             if (child.isFolder == leaf) return FileReading.Unreadable
-            parent = if (parent.isEmpty()) name else "$parent/$name"
+            if (leaf) {
+                if (child.size > limit) return FileReading.Unreadable
+                return readDocument { docs.readBounded(child.uri, limit) }?.let(FileReading::Bytes) ?: FileReading.Unreadable
+            }
+            parent = child.uri
         }
-        return folder.read(relative, limit)?.let(FileReading::Bytes) ?: FileReading.Unreadable
+        return FileReading.Unreadable
     }
+
+    private inline fun <T> readDocument(read: () -> T): T? = try { read() }
+    catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
 
     private companion object {
         const val CONFIG_LIMIT = 256 * 1024

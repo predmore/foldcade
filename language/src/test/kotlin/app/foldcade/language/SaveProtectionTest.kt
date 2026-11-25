@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SaveProtectionTest {
+    @Test fun retroArchSettingsExplainsAnInaccessibleConfigUntilASaveWriteVerifiesTheFolder() {
+        val id = "retroarch.game-boy-advance"
+        val root = FolderRef("primary:RetroArch/saves", "RetroArch/saves")
+        val setting = PlayerSaveSetting(id, "RetroArch", chosen = true, location = LocationFact.Bound(root, configUnavailable = true))
+        val model = PickerModel(count = 0, rowsPerPage = 1, playerSaves = listOf(setting))
+        assertEquals("Can’t read config", rowText(Row.SaveCheck(id), model).value)
+        val checked = setting.copy(location = LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "Game saved there"), System.currentTimeMillis()))
+        assertTrue(rowText(Row.SaveCheck(id), model.copy(playerSaves = listOf(checked))).value.orEmpty().startsWith("Checked "))
+    }
+
     private val root = FolderRef("primary:saves/Azahar", "saves/Azahar")
     private val live = FolderRef("primary:Azahar", "Azahar")
     private val evidence = Evidence(EvidenceKind.FreshLog, "Azahar’s log")

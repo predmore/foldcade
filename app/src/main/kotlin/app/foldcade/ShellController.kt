@@ -662,7 +662,8 @@ class ShellController(
         refreshSavePickerHealth()
     }
 
-    internal fun saveGame(libraryId: String, remoteKey: String): Game? = libraryGames[homeGameId(libraryId, remoteKey)]
+    internal fun saveGame(libraryId: String, remoteKey: String): Game? = saveGame(homeGameId(libraryId, remoteKey))
+    internal fun saveGame(homeId: String): Game? = libraryGames[homeId]
 
     /** The Settings row owns a shared folder's fix, such as RetroArch across several systems. */
     internal fun saveNoticePlayerId(playerId: String): String {
