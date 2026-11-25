@@ -425,7 +425,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 | **EX ×5** | `EmuEx`, beside-game `<content>.sav/.srm/.brm/.rtc` via `saveBesideGame` | none readable: config is private and binary | Session write. Beside-game diff catches **Same As Content**. Candidate diff catches a custom folder Foldcade also holds. | App Folder (private) and Launch Mode stay a standing setup step. Upstream common bridge. |
 | **melonDS** | `saves/nds` and others in `saveFolderPlaces`; beside-game `<rom>.sav` | none readable | Session write. **Beside-game diff catches "Save next to ROM file"** for RomM downloads (Foldcade owns `Android/media/app.foldcade/romm`). | Private-fallback `saves` is unreadable. Upstream `save_uri` extra. |
 | **PPSSPP** | `PSP`, `saves/PSP`, `Android/media/org.ppsspp.ppsspp/PSP`(*) | `SYSTEM/ppsspp.ini`: `Supports` only (audit: a copy doesn't certify the root) | Session write, plus candidate diff | Later: **PinnedLaunch** via `org.ppsspp.ppsspp.Args` + `--memstick`, version-gated (PR 9) |
-| **RetroArch** | beside-game `<rom>.srm` | the launched `CONFIGFILE` when a held grant reaches it: `savefile_directory`, `sort_savefiles_enable`, `sort_savefiles_by_content_enable`, `savefiles_in_content_dir` → `Proves` when they place saves elsewhere | Session write, plus beside-game diff, plus config when readable | Overrides per core, content and game (PR 5). Core companions. |
+| **RetroArch** | Exact `.srm` beside the ROM, under the default core-sorted root, or at the confirmed alternate path. Readable granted local folders and Foldcade's RomM media qualify. | The launched `CONFIGFILE` and applicable core, content-directory, and game overrides determine `savefile_directory`, `sort_savefiles_enable`, `sort_savefiles_by_content_enable`, and `savefiles_in_content_dir`. A proven different path gives `Config` / `UsesOther` for the affected game. | Session write, beside-ROM diff, and a complete config mismatch. A config match alone does not verify game bytes. | Private config, unsupported syntax, archive-member names, and unresolved directory fallbacks leave path checks inconclusive. Unsupported core-specific formats leave the spot unresolved. Save states and companions stay outside the `.srm` slot. |
 
 (*) Each `probePlaces` entry is checked only when Foldcade can already read it, so a guessed place costs nothing when it doesn't exist.
 
@@ -517,7 +517,7 @@ Helpers:
 
 ### 4.1 Read-back
 
-`reconcileLocked` resolves spots and handles a latched Backup-only return, then judges and publishes the session before a sync result can appear. The normal bound-copy handoff remains `changedSince` → `reconcile` → `noteHandedOver`. Optional live-copy staging and uploads run after that handoff; a probe or capture exception cannot block it. The evidence steps are:
+`reconcileLocked` resolves spots and publishes its session verdict before a sync result can appear. It stages confirmed RetroArch alternate saves and handles a latched Backup-only return before regression inspection or slot reconciliation. The normal bound-copy handoff remains `changedSince` → `reconcile` → `noteHandedOver`. Other optional live-copy capture runs after that handoff. The evidence steps are:
 
 1. Take an `after` snapshot, then run `judgeSession(before, after, sessionMillis)`.
 2. `Wrote(bound)` stores `Verified(SessionWrite, "${game.label} saved")`, and any `Maybe*` incident for this folder closes.
@@ -558,7 +558,7 @@ A readable live game's copy is staged and kept through the independent Backup qu
 
 - For an established save, new markers in the same root during play, a changed install stamp or Eden profile, or an open wrong-folder or empty-folder incident are reasons to ask. Hosted saves such as DuckStation's cards do not use the marker rule. A first save with no verified baseline goes through ordinary sync.
 - A save declared as folders is suspect if half its file members or more disappeared. Directory entries and compression are irrelevant. A single-file save above 1 KiB is suspect if it shrank to a quarter of its previous size or less.
-- The return inspects the bytes already captured by `changedSince`. Ordinary RomM reconciliation reads the same staged snapshot, including for single files. A failed inspection without other evidence leaves ordinary sync available. Context alone can quarantine an established save even when its shape is unavailable. A suspect copy is staged in the Backup queue before the handover mark advances and the return ends. It opens a game-specific `MaybeNewSave`. If RomM is offline, the choice waits for verified copies. Later legitimate progress is kept as a Backup and syncs normally. The choice then offers the new head alongside the original suspect copy.
+- The return inspects the bytes already captured by `changedSince`. Ordinary RomM reconciliation reads the same staged snapshot, including for single files. A failed inspection without other evidence leaves ordinary sync available. Context alone can quarantine an established save even when its shape is unavailable. A suspect copy is staged in the Backup queue before the handover mark advances and the return ends. It opens a game-specific `MaybeNewSave`. If RomM is offline, the choice waits for verified copies. Later legitimate progress is kept as a Backup and syncs normally. The choice then offers the new head alongside the original suspect copy. Resuming a running game with a blocking incident latches a Backup-only return and preserves any existing two-saves choice.
 - **Choose save** opens the existing two-saves card. The player can keep the head, play the Backup, or come back later. The incident never stops an ordinary launch. The structural rules are suspicion only, so rare legitimate changes can bring up a choice.
 
 ### 4.4 Across restarts
@@ -898,10 +898,10 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 5: RetroArch config.**
 
-- Read the launched `CONFIGFILE` when reachable, and override files per core, content and game.
-- Beside-content diff.
-- Tests on config precedence fixtures. QA: turn on content-directory saves, then a game override.
-- Risk: medium. Precedence is incomplete, so when unsure, report `Supports`.
+- Read the selected package's launched `CONFIGFILE` and the override directory from the base config. Apply the global, core, content-directory, and game layers in that order. Apply the beside-content flag before the content-directory and core sort flags. Use held grants for config reads, without asking for new access.
+- Judge a proven alternate file path at launch and reuse the result for the post-placement baseline. Inaccessible overrides, unsupported syntax, and unresolved directory fallbacks produce `Supports` only. Compare files even when the base folder is the same. Settings explains when no held grant covers the launched config.
+- Use the persisted after-placement baseline to detect a changed file beside the ROM. Scope the incident to the affected game. Keep new alternate bytes through the existing verified, unslotted Backups queue and re-read the last confirmed alternate file before automatically closing a config incident. Guided Fix restores the expected layout. Unsupported formats have an unresolved spot with a reason, and launch-time spots restored from older builds go to Backups.
+- Tests cover config precedence and flags, unreachable config, and readable beside-content baselines. Thor QA starts by backing up the existing RomM GBA game, then checks the normal layout, content-directory saves, a game override, and preservation without moving the RomM head.
 
 **PR 6: melonDS + EX beside-game and candidate places.**
 

@@ -86,13 +86,19 @@ Current upstream core behavior supplements stale required flags: gpSP and Beetle
 
 RetroArch keeps its own saves, so they work without any setup in Foldcade. For [RomM save sync](romm.md#save-sync), choose RetroArch's save folder once under **Settings › Emulators › RetroArch**. The picker opens at `RetroArch`; choose **Use this folder**. Foldcade resolves `saves` beneath it, leaving the same grant available for BIOS in `system`. One folder covers every system. Before a server launch, **Play without syncing** skips this setup for that launch. Foldcade asks again next time.
 
-Foldcade syncs battery saves, the `.srm` files RetroArch writes to `saves/<core name>/<game name>.srm`. That is RetroArch's default layout. Keep **Settings › Saving › Sort Saves into Folders by Core Name** on, and **Write Saves to Content Directory** off. Save states stay on the device.
+Foldcade syncs the standard `.srm` battery file at `<save folder>/<core name>/<game name>.srm`. In RetroArch, set **Settings › Directory › Save Files** to the folder Foldcade watches. Under **Settings › Saving**, turn **Sort Saves into Folders by Core Name** on and turn **Sort Saves into Folders by Content Directory** and **Write Saves to Content Directory** off. **Quick Menu › Overrides** can change these choices for the core, content directory, or game. Save the configuration and quit RetroArch through its menu so it reads the changes next time.
+
+When Foldcade can read the config used for launch and its applicable overrides with access it already holds, a confirmed mismatch opens a save warning for the affected game before Foldcade places a save. RetroArch's usual Cores grant covers its internal core data, and Android restricts access to the separate launch config in `Android/data`. **Settings › Emulators › RetroArch › Check** says **Can’t read config** when Foldcade has no grant for that file and hasn't verified a save write. Foldcade still checks for a new or changed `.srm` next to the ROM after play when it can read that folder.
+
+If you get a warning, **Fix saves** guides you back to the watched layout. Foldcade keeps readable progress from another location as a **Backup** in **Y › Saves** and checks the last known alternate file again when the settings return to the watched layout. The existing **Playing** save stays in place until you choose a different save.
+
+The Flycast core's VMUs, the PPSSPP core's save folders, the older melonDS core's `.sav` files, DSi save files, RetroArch PlayStation and Saturn cards or backup memory, and Genesis Plus GX's Sega CD backup RAM stay on the device. The config and beside-ROM checks are inconclusive for compressed ROMs, since RetroArch can name a save after an archive member. Save states, separate clock files, and other core companions stay local. Keep using the same core for an existing `.srm` save.
 
 ## Playing
 
 Press **A** to play on the top screen or **X** on the bottom. RetroArch opens straight into the game.
 
-Home leaves RetroArch running, and starting the same game again picks up where you were. When the game has a newer save from another device, Foldcade starts it fresh so the synced save loads.
+Home leaves RetroArch running. Press A to bring that game back, including when it has a save-location warning. Foldcade keeps readable progress from that resumed session as a Backup while the warning is open. A fresh launch still checks the save location. When you choose a newer save from another device, Foldcade starts the game fresh so it can load that save.
 
 Quit RetroArch through its own menu. Foldcade does not offer its generic Close or screen Move for RetroArch, and closing another game leaves a RetroArch companion alone. Clearing the installed 1.22.2 build's activity can deadlock its native shutdown. Foldcade also keeps its launcher intent out of game resumes: that intent can change the ROM/core identity RetroArch remembers and make the next start reload the game. See the [Thor checks](emulators.md#resume-and-move-on-the-thor).
 

@@ -184,7 +184,7 @@ class SaveRepairTest {
         assertNull(SaveRepair(store, { null }, settle = {}).advance(quarantine.id))
         val current = store.incident(quarantine.id)!!
         assertEquals(RepairState.Guided, current.repair)
-        assertEquals(listOf(SaveFixAction.OpenSaves), saveFixActions(current, SaveFixPage(current.id, HostScreen.Bottom, null)))
+        assertEquals(listOf(SaveFixAction.OpenSaves), saveFixActions(current, SaveFixPage(current.id, HostScreen.Bottom, null, hasRommDestination = true)))
     }
 
     @Test fun aSlotStillSyncingKeepsPlacementPendingUntilRommIsReady() = runBlocking {

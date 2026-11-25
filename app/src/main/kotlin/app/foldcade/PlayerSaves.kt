@@ -227,7 +227,7 @@ internal interface SaveMarks {
  * until the library has kept it.
  */
 internal class PlayerSaves(
-    private val docs: SaveDocuments,
+    internal val docs: SaveDocuments,
     private val marks: SaveMarks,
     private val backups: Path,
     private val handover: Path,
@@ -283,8 +283,11 @@ internal class PlayerSaves(
         try {
             val uri = when (target) { is LaunchTarget.ContentUri -> target.uri; is LaunchTarget.SharedFile -> target.uri; else -> null }
             val name = uri?.let(docs::displayName)
+            if (name != null && player is EdenPlayer) return unresolvedEdenSpot(player, game)
+            if (player is app.foldcade.plugins.retroarch.RetroArchPlayer) player.unsupportedSaveFormat(name.orEmpty())?.let { detail ->
+                return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedSaveFormat, detail)
+            }
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
-            if (player is EdenPlayer) return unresolvedEdenSpot(player, game)
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
             val sync = folder?.let { saveSync(player, it) }
             if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
@@ -297,6 +300,8 @@ internal class PlayerSaves(
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable) }
     }
+
+    fun romDisplayName(uri: String): String? = docs.displayName(uri)
 
     /** Resolve against another readable root without rebinding the installed player or writing it. */
     fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
@@ -346,9 +351,9 @@ internal class PlayerSaves(
         Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
     }
 
-    internal fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, origin: String? = null): String {
+    internal fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, origin: String? = null, hash: String = md5Hex(bytes)): String {
         val identity = listOfNotNull(game.backendId, game.remoteKey, player.saveFolderId(), spot.slot, storageIdentity(spot.folderUri), origin)
-        val name = "live-${md5Hex(identity.joinToString(":").toByteArray())}-${md5Hex(bytes)}.save"
+        val name = "live-${md5Hex(identity.joinToString(":").toByteArray())}-$hash.save"
         val file = handover.resolve(name)
         app.foldcade.romm.writeDurably(file, bytes)
         // Keep enough identity to recover a queued copy even after the guided incident closes.
@@ -356,7 +361,7 @@ internal class PlayerSaves(
             .put("platform", game.platformId).put("label", game.label).put("player", player.id)
             .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
             .put("folderLabel", runCatching { folderPathLabel(spot.folderUri) }.getOrNull() ?: org.json.JSONObject.NULL)
-            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes)).put("origin", origin)
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", hash).put("origin", origin)
         app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
         return file.toUri().toString()
     }

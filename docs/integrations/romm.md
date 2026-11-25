@@ -105,7 +105,7 @@ The firmware download shows on the game's tile. If RomM cannot be reached, or a 
 
 ## Save sync
 
-Save sync supports **melonDS `.sav` files**, **RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, **Eden Switch account saves**, **PPSSPP game saves**, **Dolphin GameCube GCI bundles**, and **EX-family battery saves (including GBC and SNES RTC)** with RomM **5.4.0 or newer**.
+Save sync supports **melonDS `.sav` files**, **standard RetroArch `.srm` battery saves**, **Azahar 3DS saves**, **DuckStation memory cards**, **ARMSX2 folder memory cards**, **aPS3e `savedata` folders**, **Eden Switch account saves**, **PPSSPP game saves**, **Dolphin GameCube GCI bundles**, and **EX-family battery saves (including GBC and SNES RTC)** with RomM **5.4.0 or newer**.
 
 Select **Choose folder** to point Foldcade at the emulator's save folder. **Play anyway**, or cancelling the folder picker, skips sync for this launch only. Foldcade asks again next time. DuckStation's hosted folder and ARMSX2's card setup offer **Set up** and **Play anyway** the same way. **B** on any of these asks closes it and cancels the launch, so a reflex press never starts a game without its saves.
 
@@ -141,7 +141,7 @@ For melonDS:
 
 Keep filenames consistent: `Puzzle.nds` uses `Puzzle.sav`.
 
-For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators › RetroArch** and keep RetroArch's default save layout; see [RetroArch saves](retroarch.md#saves). Every system shares that one folder.
+For RetroArch, choose `RetroArch/saves` in **Foldcade Settings › Emulators › RetroArch** and keep sorting by core on, sorting by content directory off, and writing saves to the content directory off. Every system shares that one folder. A confirmed config mismatch or a save written beside the ROM can stop the affected game's next synced launch. Readable progress from that other location can appear as a **Backup**, separate from the **Playing** save. See the supported formats and override settings in [RetroArch saves](retroarch.md#saves).
 
 For Azahar, choose Azahar's user folder, the one that holds `sdmc`, `nand` and `config`, in **Foldcade Settings › Emulators › Azahar** or at the save-folder prompt. Foldcade finds each game's save there from the title id in its `.cci` header, and syncs the save data and the game's extra data together as one zip, in the layout Argosy also uploads. A `.zcci` has no title id Foldcade can read, so its saves stay with Azahar.
 

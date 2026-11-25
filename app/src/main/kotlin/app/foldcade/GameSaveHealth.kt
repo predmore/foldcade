@@ -11,6 +11,7 @@ import app.foldcade.language.SaveStatus
 import app.foldcade.language.SaveIssue
 import app.foldcade.language.*
 import app.foldcade.plugins.emulators.EmulatorPlayer
+import app.foldcade.plugins.retroarch.RetroArchPlayer
 import kotlin.coroutines.cancellation.CancellationException
 
 /** Player-level setup, independent of the file format or a particular game's slots. */
@@ -69,7 +70,13 @@ internal fun gameSaveHealth(
         bound != null -> LocationFact.Bound(bound)
         else -> LocationFact.NotApplicable
     }
-    val spot = if (reachable == false) SpotFact.Unresolved(spotIssue ?: SpotIssue.NoTitleId, spotDetail) else if (reachable == true) SpotFact.Resolved else SpotFact.Unchecked
+    val coreIssue = (player as? RetroArchPlayer)?.unsupportedSaveFormat("")
+    val spot = when {
+        coreIssue != null -> SpotFact.Unresolved(SpotIssue.UnsupportedSaveFormat, coreIssue)
+        reachable == false -> SpotFact.Unresolved(spotIssue ?: SpotIssue.NoTitleId, spotDetail)
+        reachable == true -> SpotFact.Resolved
+        else -> SpotFact.Unchecked
+    }
     val destination = offDevice ?: when {
         !supportsSync && emulator -> OffDeviceFact.NoDestination(NoDestinationWhy.PlayerCantSync)
         !onServer && emulator -> OffDeviceFact.NoDestination(NoDestinationWhy.NotOnRomm)

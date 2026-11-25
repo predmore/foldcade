@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SaveProtectionTest {
+    @Test fun retroArchSettingsExplainsAnInaccessibleConfigUntilASaveWriteVerifiesTheFolder() {
+        val id = "retroarch.game-boy-advance"
+        val root = FolderRef("primary:RetroArch/saves", "RetroArch/saves")
+        val setting = PlayerSaveSetting(id, "RetroArch", chosen = true, location = LocationFact.Bound(root, configUnavailable = true))
+        val model = PickerModel(count = 0, rowsPerPage = 1, playerSaves = listOf(setting))
+        assertEquals("Can’t read config", rowText(Row.SaveCheck(id), model).value)
+        val checked = setting.copy(location = LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "Game saved there"), System.currentTimeMillis()))
+        assertTrue(rowText(Row.SaveCheck(id), model.copy(playerSaves = listOf(checked))).value.orEmpty().startsWith("Checked "))
+    }
+
     private val root = FolderRef("primary:saves/Azahar", "saves/Azahar")
     private val live = FolderRef("primary:Azahar", "Azahar")
     private val evidence = Evidence(EvidenceKind.FreshLog, "Azahar’s log")
@@ -244,7 +254,7 @@ class SaveProtectionTest {
 
     @Test fun theFinishedFixPageOpensSavesOnlyWhenItCan() {
         val done = incident.copy(repair = RepairState.Done)
-        val online = SaveFixPage(done.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2")
+        val online = SaveFixPage(done.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
         assertEquals(listOf(SaveFixAction.ChooseSave), saveFixActions(done, online))
         assertEquals("Choose save", saveFixLabel(SaveFixAction.ChooseSave, done))
         assertEquals(SaveProtectionCopy.guidedDone, saveFixCard(done, online).body)
@@ -262,25 +272,66 @@ class SaveProtectionTest {
     }
 
     @Test fun theFixChecklistFollowsTheIncident() {
+        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
         val waiting = incident.copy(staged = listOf("file:///queued"))
-        assertEquals(listOf(SaveFixStepState.Now, SaveFixStepState.Now, SaveFixStepState.Later), saveFixSteps(waiting).map { it.state })
-        assertEquals("Waiting for RomM", saveFixSteps(waiting).first().value)
+        assertEquals(listOf(SaveFixStepState.Now, SaveFixStepState.Now, SaveFixStepState.Later), saveFixSteps(waiting, page).map { it.state })
+        assertEquals("Waiting for RomM", saveFixSteps(waiting, page).first().value)
         val kept = incident.copy(kept = listOf("131", "133"), repair = RepairState.Done)
-        assertEquals(listOf(SaveFixStepState.Done, SaveFixStepState.Done, SaveFixStepState.Now), saveFixSteps(kept).map { it.state })
-        assertEquals("2 kept", saveFixSteps(kept).first().value)
-        assertEquals("Use the folder Azahar uses", saveFixSteps(incident)[1].title)
-        assertEquals("Choose Azahar’s folder", saveFixSteps(incident.copy(live = null))[1].title)
+        assertEquals(listOf(SaveFixStepState.Done, SaveFixStepState.Done, SaveFixStepState.Now), saveFixSteps(kept, page).map { it.state })
+        assertEquals("2 kept", saveFixSteps(kept, page).first().value)
+        assertEquals("Use the folder Azahar uses", saveFixSteps(incident, page)[1].title)
+        assertEquals("Choose Azahar’s folder", saveFixSteps(incident.copy(live = null), page)[1].title)
+        assertEquals(SaveFixStep("Keep every copy on RomM", SaveFixStepState.Later, "Not kept yet"), saveFixSteps(incident, page).first())
+        // RomM holding some copy of the game doesn't mean this incident's copies are kept.
+        assertEquals(SaveFixStep("Keep every copy on RomM", SaveFixStepState.Later, "Not kept yet"),
+            saveFixSteps(incident, page.copy(safe = SaveFixSafe("Picross 3D: Round 2", 100L))).first())
+    }
+
+    @Test fun localGuidedFixShowsStagedCopiesAndFinishesWithoutASaveChoice() {
+        val localRetroArch = incident.copy(playerKey = "retroarch", playerName = "RetroArch",
+            gameIds = listOf("lib:local-folder:nes"), staged = listOf("file:///save-handover/copy.save"), repair = RepairState.Guided)
+        val page = SaveFixPage(localRetroArch.id, HostScreen.Bottom, null, game = "NES game")
+        val done = localRetroArch.copy(repair = RepairState.Done)
+        assertEquals(listOf(
+            SaveFixStep("Keep a copy on this device", SaveFixStepState.Done, "1 kept"),
+            SaveFixStep("Choose RetroArch’s folder", SaveFixStepState.Now),
+        ), saveFixSteps(localRetroArch, page))
+        assertEquals(listOf(SaveFixStepState.Done, SaveFixStepState.Done), saveFixSteps(done, page).map { it.state })
+        for (offline in listOf(false, true)) {
+            val current = page.copy(offline = offline)
+            assertEquals("Folder set. A copy of your save is kept on this device.", saveFixCard(done, current).body)
+            val model = PickerModel(1, 1, saveIncidents = listOf(done), saveFix = current)
+            assertEquals(listOf(SaveFixAction.Close), saveFixActions(done, current))
+            assertEquals(Effect.FinishSaveFix(done.id, openSaves = false), applySaveFix(model, current, Meaning.Activate, 0).second)
+        }
+    }
+
+    @Test fun emulatorWideFixWithoutADestinationReportsMissingLocalCopies() {
+        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Local game")
+        // An earlier repair can still be recorded after its RomM origin goes away.
+        val waiting = incident.copy(repair = RepairState.WaitingForRomm())
+        assertEquals(SaveFixStep("Keep a copy on this device", SaveFixStepState.Later, "Not kept yet"),
+            saveFixSteps(waiting, page).first())
+        assertEquals(SaveFixCard("Choose Live, then tap Use this folder › Allow.", null), saveFixCard(waiting.copy(live = FolderRef("primary:Live", "Live")), page))
+        val done = incident.copy(repair = RepairState.Done)
+        assertEquals("Folder set. No copy is kept on this device yet.", saveFixCard(done, page).body)
+        assertEquals(listOf(SaveFixAction.Close), saveFixActions(done, page))
+        // Copies kept on RomM before its destination went away still count as kept.
+        val keptOnRomm = done.copy(kept = listOf("131"))
+        assertEquals(SaveFixStep("Keep every copy on RomM", SaveFixStepState.Done, "1 kept"), saveFixSteps(keptOnRomm, page).first())
+        assertEquals("Folder set. Your copies are kept on RomM.", saveFixCard(keptOnRomm, page).body)
     }
 
     @Test fun theFixChecklistShowsEdenSessionGuidanceForAnAccountChange() {
         val eden = SaveIncident("MaybeNewSave:eden", IncidentKind.MaybeNewSave, "eden", "Eden", listOf("game"),
             null, null, Evidence(EvidenceKind.Config, SaveProtectionCopy.edenUserChanged), 20, kept = listOf("backup"))
+        val page = SaveFixPage(eden.id, HostScreen.Bottom, null, hasRommDestination = true)
         assertEquals(listOf(
             SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(1)),
             SaveFixStep("Check your Eden user", SaveFixStepState.Now),
             SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
-        ), saveFixSteps(eden))
+        ), saveFixSteps(eden, page))
         val reset = eden.copy(evidence = Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.mayBeNewGame))
-        assertTrue(saveFixSteps(reset).isEmpty())
+        assertTrue(saveFixSteps(reset, page).isEmpty())
     }
 }

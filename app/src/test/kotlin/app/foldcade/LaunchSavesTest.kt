@@ -28,6 +28,9 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.host.PluginHost
 import app.foldcade.language.*
+import app.foldcade.plugins.retroarch.RetroArchEntry
+import app.foldcade.plugins.retroarch.RetroArchPlayer
+import app.foldcade.plugins.retroarch.SHARED_STORAGE
 import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -169,6 +172,120 @@ class LaunchSavesTest {
         assertTrue(server.observed.isEmpty())
     }
 
+    @Test fun aRetroArchBesideRomCopyRetriesAsABackupWithoutReconcilingTheSlot() = runBlocking {
+        val retroArch = app.foldcade.plugins.retroarch.RetroArchEntry().players.single { it.platformId == "game-boy-advance" }
+        val gba = owner.copy(platformId = "game-boy-advance")
+        val directory = Files.createTempDirectory("retroarch-backup")
+        val store = SaveProtectionStore(directory)
+        val live = FolderRef("primary:ROMs/GBA", "ROMs/GBA")
+        val incident = incident(IncidentKind.WrongFolder).copy(playerKey = "retroarch", gameIds = listOf(homeGameId(gba.backendId, gba.remoteKey)), live = live)
+        store.put(incident)
+        val content = "progress beside the ROM".toByteArray()
+        val candidate = RetroArchCandidate(live, SaveSpot("srm", storageFolderDocument(live.identity), "Game.srm"), FileReading.Bytes(content))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        server.backupsFail = true
+        copies.stageCandidate(gba, retroArch, candidate, incident)
+        copies.keep(gba, retroArch)
+        assertEquals("srm", saves.queuedCopies().single().slot.slot)
+        val restartedStore = SaveProtectionStore(directory)
+        server.backupsFail = false
+        SaveIncidentCopies(saves, plugins, restartedStore).keep(gba, retroArch)
+        assertEquals(listOf(md5Hex(content)), server.backups)
+        assertEquals(listOf("backup-1"), restartedStore.incidents().single().kept)
+        assertTrue(saves.queuedCopies().isEmpty())
+        assertTrue(server.calls.isEmpty())
+        assertTrue(server.observed.isEmpty())
+    }
+
+    @Test fun removingARetroArchOverrideKeepsTheNewestAlternateBytesBeforePlacingRommHead() = runBlocking {
+        val pkg = "com.retroarch.aarch64"
+        val authority = SharedPaths.EXTERNAL_STORAGE_AUTHORITY
+        val bound = treeUri(authority, "primary:RetroArch/saves")
+        val overrides = treeUri(authority, "primary:RetroArch/config")
+        val alternate = treeUri(authority, "primary:OtherSaves")
+        val config = treeUri("$pkg.documents", "$SHARED_STORAGE/Android/data/$pkg/files")
+        val target = LaunchTarget.SharedFile("$SHARED_STORAGE/ROMs/GBA/Game.v1.gba", "content://roms/opaque-id")
+        docs.names[target.uri] = "Game.v1.gba"
+        docs.folders += listOf("$bound/mGBA", "$overrides/mGBA")
+        docs.files["$config/retroarch.cfg"] = """
+            savefile_directory = "$SHARED_STORAGE/RetroArch/saves"
+            rgui_config_directory = "$SHARED_STORAGE/RetroArch/config"
+        """.trimIndent().toByteArray()
+        val override = "$overrides/mGBA/Game.v1.cfg"
+        docs.files[override] = """
+            savefile_directory = "$SHARED_STORAGE/OtherSaves"
+            sort_savefiles_enable = "false"
+        """.trimIndent().toByteArray()
+        val alternateFile = "$alternate/Game.v1.srm"
+        val a1 = "A1".toByteArray()
+        val a2 = "A2".toByteArray()
+        docs.files[alternateFile] = a1
+        val game = owner.copy(platformId = "game-boy-advance")
+        val player = RetroArchEntry().players.filterIsInstance<RetroArchPlayer>().single { it.platformId == game.platformId }
+        player.bindSaveFolder(bound)
+        val files = RetroArchSaveFiles(listOf(bound, overrides, alternate, config).map { SaveFolderGrant(it, true, false) },
+            "app.foldcade", pkg, docs, null)
+        val root = RootReading(FolderRef("primary:RetroArch/saves", "RetroArch/saves"), true, emptyList(), null, true, null, null)
+        val directory = Files.createTempDirectory("retroarch-config-incident")
+        var store = SaveProtectionStore(directory)
+        var copies = SaveIncidentCopies(saves, plugins, store)
+        fun checkLaunch() {
+            val reading = files.savePath(player, target, bound)
+            assertEquals("$SHARED_STORAGE/RetroArch/saves/mGBA/Game.v1.srm", reading.expected)
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { bound }, copies, { null }, { null })
+            probes.checkRetroArchLaunch(player, game, ProbeSnapshot(100, 1, pkg, listOf(root), reading), files)
+            store.incidents().firstOrNull { it.blocksLaunch }?.let { throw SaveProtectionStop(it) }
+        }
+
+        assertTrue(runCatching { checkLaunch() }.exceptionOrNull() is SaveProtectionStop)
+        assertEquals("$SHARED_STORAGE/OtherSaves/Game.v1.srm", store.incidents().single().alternateSavePath)
+        assertEquals(md5Hex(a1), saves.queuedCopies().single().slot.contentHash)
+        copies.keep(game, player)
+        assertEquals(listOf(md5Hex(a1)), server.backups)
+        store = SaveProtectionStore(directory)
+        copies = SaveIncidentCopies(saves, plugins, store)
+        assertTrue(runCatching { checkLaunch() }.exceptionOrNull() is SaveProtectionStop)
+        assertTrue(saves.queuedCopies().isEmpty()) // A1 already verified, including after restart.
+
+        docs.files[alternateFile] = a2 // Played directly in RetroArch before removing the override.
+        docs.files.remove(override)
+        docs.denied += alternateFile
+        assertTrue(runCatching { checkLaunch() }.exceptionOrNull() is SaveProtectionStop)
+        docs.denied.clear()
+        server.toPlace = "RomM head"
+        server.placementSlot = "srm"
+        val launch = LaunchSaves(saves, plugins, protectionGate = { _, _, _ ->
+            checkLaunch()
+            assertEquals(md5Hex(a2), saves.queuedCopies().single().slot.contentHash)
+            assertTrue(server.calls.isEmpty())
+        }, preserveOutside = copies::preserveBeforeLaunch) { awaiting += it }
+        launch.prepare(GameRoute("tile", game, game), player, target)
+        assertTrue(store.incidents().isEmpty())
+        assertEquals(listOf(md5Hex(a1), md5Hex(a2)), server.backups)
+        assertEquals("RomM head", docs.files.getValue("$bound/mGBA/Game.v1.srm").decodeToString())
+        assertArrayEquals(a2, docs.files.getValue(alternateFile))
+        assertTrue(server.observed.isEmpty())
+    }
+
+    @Test fun anOldRetroArchReturnKeepsAPreviouslyGuessedSaveFileOnlyAsABackup() = runBlocking {
+        val ds = RetroArchEntry().players.filterIsInstance<RetroArchPlayer>().single { it.platformId == "nintendo-ds" }
+        val oldSlot = SaveSpot("srm", SAVES, "melonDS/Tetris DS (USA).srm")
+        val bytes = "older session's progress".toByteArray()
+        docs.folders += "$SAVES/melonDS"
+        docs.files["$SAVES/${oldSlot.fileName}"] = bytes
+        val oldReturn = LibraryReturn(owner.backendId, owner, ds.withCore("melonds"), listOf(oldSlot), local.uri)
+        val restored = decodeLibraryReturn(oldReturn.encode()) { ds }!!
+        val store = SaveProtectionStore(Files.createTempDirectory("retroarch-legacy-return"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        assertTrue(copies.preserveUnsupportedRetroArchReturn(restored))
+        assertTrue(returnSpots(saves, restored).isEmpty())
+        assertEquals(listOf(oldSlot), returnSpots(saves, restored.copy(player = ds.withCore("melondsds"))))
+        copies.keep(owner, restored.player)
+        assertEquals(listOf(md5Hex(bytes)), server.backups)
+        assertTrue(server.calls.isEmpty())
+        assertTrue(server.observed.isEmpty())
+    }
+
     @Test fun bypassReturnsKeepEveryCopyWithoutReconciliationOrClearingTheAlarm() = runBlocking {
         for (kind in listOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)) {
             val store = SaveProtectionStore(Files.createTempDirectory("incident"))
@@ -220,6 +337,84 @@ class LaunchSavesTest {
         assertFalse(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = false))
     }
 
+    @Test fun existingRunsResumeAndKeepTheirProgressAsBackupsWhileFreshLaunchesStayGated() = runBlocking {
+        val bytesKept = mutableListOf<String>()
+        for (kind in listOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)) {
+            val dir = Files.createTempDirectory("resume-save-protection")
+            val store = SaveProtectionStore(dir)
+            val warning = incident(kind)
+            store.put(warning)
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+            var gateReads = 0
+            val fresh = LaunchSaves(saves, plugins, protectionGate = { route, player, eden ->
+                gateReads++
+                probes.gate(player, route.saves, local, eden = eden)
+            }) { awaiting += it }
+            val route = GameRoute("tile", owner, owner)
+            val pending = LibraryReturn(owner.backendId, owner, Melon, saves.spots(Melon, owner, local), local.uri)
+            val running = RunningGame(route.tileId, owner.label, owner.platformId, "melon", null, Panel.Top, false, 100, pending)
+
+            assertEquals(null, copies.resume(running) { false })
+            assertFalse(store.pendingBackup(Melon.id, owner))
+            var starts = 0
+            val resumed = copies.resume(running) { starts++; true }!!
+            assertEquals(1, starts)
+            assertEquals(0, gateReads)
+            val restored = decodeLibraryReturn(resumed.saves!!.encode()) { Melon }!!
+            assertTrue(restored.preserveAsBackup)
+            assertFalse(restored.startedByFoldcade)
+            assertTrue(SaveProtectionStore(dir).incidents().single().recoveryRequired)
+
+            val bytes = "resumed progress after $kind".toByteArray()
+            docs.files["$SAVES/Tetris DS (USA).sav"] = bytes
+            assertTrue(copies.preserveReturn(restored.game, restored.player, restored.spots, restored.preserveAsBackup))
+            bytesKept += md5Hex(bytes)
+            assertEquals(bytesKept, server.backups)
+            assertTrue(server.observed.isEmpty())
+            assertTrue(store.incidents().single().blocksLaunch)
+
+            assertTrue(runCatching { fresh.prepare(route, Melon, local) }.exceptionOrNull() is SaveProtectionStop)
+            assertEquals(1, gateReads)
+            assertTrue(server.calls.isEmpty())
+        }
+    }
+
+    @Test fun aResumedBackupLeavesTheExistingTwoSavesChoiceIntact() = runBlocking {
+        val dir = Files.createTempDirectory("resume-save-regression")
+        val store = SaveProtectionStore(dir)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val warning = incident(IncidentKind.WrongFolder)
+        store.put(warning)
+        val reset = "quarantined reset".toByteArray()
+        val subject = incidentGame(owner, Melon, local.uri, "https://romm.example", null)
+        val quarantine = warning.copy(
+            id = regressionIncidentId(owner, Melon), kind = IncidentKind.MaybeNewSave, gameIds = listOf(owner.remoteKey),
+            subject = subject, quarantinedHash = md5Hex(reset), quarantineBackupId = "reset-id",
+            repair = RepairState.Choosing("head-id", "reset-id", "head-hash", suspect = true),
+        )
+        store.put(quarantine)
+        val pending = LibraryReturn(owner.backendId, owner, Melon, saves.spots(Melon, owner, local), local.uri)
+        val running = RunningGame("tile", owner.label, owner.platformId, "melon", null, Panel.Top, false, 100, pending)
+        val resumed = decodeLibraryReturn(copies.resume(running) { true }!!.saves!!.encode()) { Melon }!!
+        assertTrue(resumed.preserveAsBackup)
+
+        // A repair can finish before this session returns. Its record must still carry the latch.
+        store.close(warning.id)
+        store.handled(Melon.id, owner)
+        assertFalse(store.pendingBackup(Melon.id, owner))
+        val bytes = "later resumed progress".toByteArray()
+        docs.files["$SAVES/Tetris DS (USA).sav"] = bytes
+        assertTrue(copies.preserveReturn(resumed.game, resumed.player, resumed.spots, resumed.preserveAsBackup))
+        assertEquals(listOf(md5Hex(bytes)), server.backups)
+        assertTrue(server.observed.isEmpty())
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> error("Already preserved") })
+        val (observed, returned) = regression.capture(owner.backendId, owner, Melon, resumed.spots)
+        assertTrue(observed.slots.isEmpty())
+        assertEquals(null, returned)
+        assertEquals(quarantine, SaveProtectionStore(dir).incident(quarantine.id))
+    }
+
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {
         val directory = Files.createTempDirectory("incident")
         val store = SaveProtectionStore(directory)
@@ -244,7 +439,7 @@ class LaunchSavesTest {
         plugins.reconcile(owner.backendId, owner, Melon, observed)
         saves.noteHandedOver(owner.backendId, owner, Melon, spots, observed)
         copies.keep(owner, Melon) // still offline
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
         val reading = RootReading(incident.bound!!, true, emptyList(), "normal", true, true, true)
         probes.apply(Melon, ProbeSnapshot(200, 1, "emulator", listOf(reading)), RootVerdict.Uses(reading.root, incident.evidence, 200))
         assertTrue(store.incidents().isEmpty())
@@ -417,14 +612,34 @@ class LaunchSavesTest {
             override fun bindSaveFolder(contentUri: String) = Unit
             override fun hasSaveFolder() = true
         }
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies, { null }, { null })
         var publications = 0
-        probes.gate(player, owner) { publications++; assertEquals(null, it) }
+        probes.gate(player, owner, local) { publications++; assertEquals(null, it) }
         assertEquals(1, publications)
         store.put(incident(IncidentKind.WrongFolder))
-        assertTrue(runCatching { probes.gate(player, owner) }.exceptionOrNull() is SaveProtectionStop)
+        assertTrue(runCatching { probes.gate(player, owner, local) }.exceptionOrNull() is SaveProtectionStop)
         store.put(incident(IncidentKind.WrongFolder).copy(repair = RepairState.Done))
-        probes.gate(player, owner)
+        probes.gate(player, owner, local)
+    }
+
+    @Test fun aRetroArchOverrideOnlyGatesTheAffectedGameAndFencesItsBytes() {
+        val store = SaveProtectionStore(Files.createTempDirectory("retroarch-gate"))
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val player = app.foldcade.plugins.retroarch.RetroArchEntry().players.single { it.platformId == "game-boy-advance" }
+        val gba = owner.copy(platformId = player.platformId)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val bound = FolderRef("primary:RetroArch/saves", "RetroArch/saves")
+        val live = FolderRef("primary:ROMs/GBA", "ROMs/GBA")
+        val config = ConfigSavePath("/saves/mGBA/Game.srm", "/ROMs/GBA/Game.srm", live, true)
+        val snapshot = ProbeSnapshot(100, 1, "com.retroarch.aarch64",
+            listOf(RootReading(bound, true, emptyList(), null, true, null, null)), config)
+        assertTrue(probes.check(player, snapshot, gba) is RootVerdict.UsesOther)
+        assertTrue(store.pendingBackup("retroarch", gba))
+        assertTrue(runCatching { probes.gate(player, gba, local) }.exceptionOrNull() is SaveProtectionStop)
+        val other = gba.copy(remoteKey = "other")
+        probes.gate(player, other, local)
+        assertFalse(store.pendingBackup("retroarch", other))
+        assertFalse(probes.location(player, snapshot) is LocationFact.Mismatch)
     }
 
     @Test fun anUnknownEdenConfigClearsTheCheckedLocationAcrossRestart() {
@@ -452,7 +667,7 @@ class LaunchSavesTest {
     @Test fun rootRecoveryClosesItsCauseAndUsesClosesBindingAndDoneButBypassesNeverVerify() {
         val store = SaveProtectionStore(Files.createTempDirectory("incident"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
         val incident = incident(IncidentKind.WrongFolder)
         val reading = RootReading(incident.bound!!, true, emptyList(), null, true, true, true)
         val snapshot = ProbeSnapshot(100, 1, "emulator", listOf(reading))
@@ -483,7 +698,7 @@ class LaunchSavesTest {
     @Test fun anUnmovedLaunchLogOpensAWrongFolderIncidentImmediatelyButAResumeDoesNot() {
         val store = SaveProtectionStore(Files.createTempDirectory("silent-start"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
         val root = FolderRef("primary:Azahar", "Azahar")
         val signal = SignalReading("log/azahar_log.txt", root.identity, 50, true, true)
         val reading = RootReading(root, true, listOf(signal), "unchanged", true, true, true)
@@ -510,7 +725,7 @@ class LaunchSavesTest {
     @Test fun aNewlyDiscoveredLiveRootIsKeptAsABackupWithoutChangingTheHead() = runBlocking {
         val store = SaveProtectionStore(Files.createTempDirectory("discovered-copy"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
         val bound = FolderRef("primary:Azahar", "Azahar")
         val live = FolderRef("primary:AzaharQA", "AzaharQA")
         val root = RootReading(bound, true, listOf(SignalReading("log", bound.identity, 50, true, true)), "old", true, true, true)
@@ -1063,6 +1278,8 @@ class LaunchSavesTest {
     private inner class Documents : SaveDocuments {
         val names = HashMap<String, String>()
         val files = HashMap<String, ByteArray>()
+        val folders = HashSet<String>()
+        val denied = HashSet<String>()
         var firmwarePublications = 0
         var failWrites = false
         var unreadable = false
@@ -1074,13 +1291,15 @@ class LaunchSavesTest {
         override fun find(folderUri: String, name: String): String? = "$folderUri/$name".takeIf { it in files }
         override fun create(folderUri: String, name: String): String = "$folderUri/$name".also { files[it] = ByteArray(0) }
         override fun read(uri: String): ByteArray? =
-            if (unreadable) null else if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.let { it.archiveToPlace ?: it.toPlace?.toByteArray() } else files[uri]
+            if (unreadable || uri in denied) null else if (uri.startsWith("lib://")) libraries[uri.removePrefix("lib://")]?.let { it.archiveToPlace ?: it.toPlace?.toByteArray() } else files[uri]
         override fun head(uri: String, size: Int): ByteArray? = read(uri)?.take(size)?.toByteArray()
         override fun children(folderUri: String, path: String): List<SaveChild>? {
             if (unreadable) return null
             val prefix = folderUri + "/" + if (path.isEmpty()) "" else "$path/"
             return files.filterKeys { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
-                .map { (uri, bytes) -> SaveChild(uri.substringAfterLast('/'), uri, false, bytes.size.toLong()) }
+                .map { (uri, bytes) -> SaveChild(uri.substringAfterLast('/'), uri, false, bytes.size.toLong()) } +
+                folders.filter { it.startsWith(prefix) && '/' !in it.removePrefix(prefix) }
+                    .map { uri -> SaveChild(uri.substringAfterLast('/'), uri, true, -1) }
         }
         override fun publishFirmware(folder: String, name: String, source: String, hash: String, header: ByteArray): Boolean =
             publishNewFirmware(this, folder, name, source, hash, header)

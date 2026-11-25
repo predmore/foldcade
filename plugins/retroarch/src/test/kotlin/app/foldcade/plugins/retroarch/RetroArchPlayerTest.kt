@@ -91,7 +91,7 @@ class RetroArchPlayerTest {
         assertEquals(ACTION_MAIN, intent.action)
         assertNull(intent.dataUri)
         assertFalse(intent.grantReadUri)
-        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning), intent.flags)
+        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning, LaunchFlag.SameStartResumes), intent.flags)
         assertEquals(
             listOf(
                 PlayerExtra.Text("ROM", shared.path),
@@ -171,12 +171,28 @@ class RetroArchPlayerTest {
         entry.cores.update(mapOf(AARCH64 to setOf("picodrive_libretro_android.so")))
         assertEquals("PicoDrive/Sonic.Hack (v1.1).srm", genesis.saveFileName("srm", "Sonic.Hack (v1.1).md"))
         assertEquals("PicoDrive/Game.srm", genesis.saveFileName("srm", "Game.zip"))
+        assertNull(genesis.saveBesideGame("srm", "Game.zip"))
         assertEquals("PicoDrive/NoExtension.srm", genesis.saveFileName("srm", "NoExtension"))
         assertNull(genesis.saveFileName("sav", "Game.md"))
         assertNull(genesis.saveFileName("srm", " "))
         // Unknown cores save under the core a launch would try.
         entry.cores.update(mapOf(AARCH64 to null))
         assertEquals("Genesis Plus GX/Game.srm", genesis.saveFileName("srm", "Game.md"))
+        assertEquals("Game.srm", genesis.saveBesideGame("srm", "Game.md"))
+    }
+
+    @Test fun unsupportedFormatsKeepTheSlotButHaveNoGuessedFile() {
+        val dreamcast = player("dreamcast")
+        assertEquals(listOf(SaveDeclaration("srm", null)), dreamcast.saveDeclarations(game("dreamcast")))
+        assertTrue(dreamcast.unsupportedSaveFormat("Game.chd")!!.contains("VMU"))
+        assertNull(dreamcast.saveFileName("srm", "Game.chd"))
+        assertNull(dreamcast.saveBesideGame("srm", "Game.chd"))
+        val ds = player("nintendo-ds")
+        assertEquals("melonDS DS/Game.srm", ds.saveFileName("srm", "Game.nds"))
+        assertNull(ds.saveFileName("srm", "Game.dsi"))
+        val legacy = ds.withCore("melonds")
+        assertTrue(legacy.unsupportedSaveFormat("Game.nds")!!.contains(".sav"))
+        assertNull(legacy.saveFileName("srm", "Game.nds"))
     }
 
     @Test

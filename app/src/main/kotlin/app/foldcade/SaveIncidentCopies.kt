@@ -37,14 +37,42 @@ internal class SaveIncidentCopies(
         if (current.staged != staged) store.put(current.copy(staged = staged))
     }
 
+    /** A pre-update session can still carry bytes from the slot it launched with. */
+    fun preserveUnsupportedRetroArchReturn(pending: LibraryReturn): Boolean {
+        if (!unsupportedRetroArchReturn(saves, pending)) return false
+        stage(pending.game, pending.player, pending.spots, mark = false)
+        return true
+    }
+
+    fun stageCandidate(game: Game, player: Player, candidate: RetroArchCandidate, incident: SaveIncident?) {
+        val bytes = (candidate.read as? FileReading.Bytes)?.bytes ?: return
+        val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
+        val hash = md5Hex(bytes)
+        val current = incident?.let { store.incident(it.id) }
+        if (current != null && (hash in current.capturedAlternateHashes || current.staged.any { it.endsWith("-$hash.save") })) return
+        val uri = saves.stageCopy(game, player, candidate.spot, bytes, origin, hash)
+        if (current != null) store.put(current.copy(staged = (current.staged + uri).distinct(),
+            capturedAlternateHashes = current.capturedAlternateHashes + hash))
+    }
+
     /** Called only after a successful external start, before its return record is saved. */
     suspend fun beginUnprotected(game: Game, player: Player): Boolean = withContext(NonCancellable + Dispatchers.IO) {
         val key = player.saveFolderId()
-        val incidents = store.incidents().filter { it.playerKey == key && it.blocksLaunch }
+        val incidents = store.incidents().filter { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
         if (incidents.isEmpty() && !store.needsBackup(key, game)) return@withContext false
         store.requireBackup(key, game)
         incidents.forEach { store.put(it.copy(recoveryRequired = true)) }
         true
+    }
+
+    /** Bring an existing run forward without save preparation, then latch any open incident. */
+    suspend fun resume(running: RunningGame, start: () -> Boolean): RunningGame? {
+        if (!start()) return null
+        val saves = running.saves?.let { pending ->
+            pending.copy(preserveAsBackup = beginUnprotected(pending.game, pending.player) || pending.preserveAsBackup,
+                startedByFoldcade = false)
+        }
+        return running.copy(saves = saves)
     }
 
     /** A checked head in the working folder ends the rebound fence, even without an outside copy. */
@@ -59,7 +87,7 @@ internal class SaveIncidentCopies(
         // Retained through strict-read failures and later launches until durable staging succeeds.
         store.requireBackup(player.saveFolderId(), game)
         if (spots.isEmpty()) throw SaveNotPlaced()
-        val incident = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch }
+        val incident = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(game) }
         stage(game, player, spots, incident, mark = true)
         store.handled(player.saveFolderId(), game)
         keep(game, player)
@@ -77,7 +105,7 @@ internal class SaveIncidentCopies(
             SaveIncident(id, IncidentKind.MaybeNewSave, key, player.displayName, listOf(game.remoteKey), null, null,
                 Evidence(EvidenceKind.Config, change), old?.openedAtMillis ?: System.currentTimeMillis(), old?.kept.orEmpty(), old?.staged.orEmpty())
                 .also(store::put)
-        } ?: store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch }
+        } ?: store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
         if (plan.change != null || pending.edenSession != null && !pending.unprotectedSession && plan.spots.isNotEmpty()) store.rebound(key)
         // The active account's outside bytes will still be fenced at the next launch or save selection.
         stage(game, player, plan.spots, incident, mark = false)
@@ -88,7 +116,7 @@ internal class SaveIncidentCopies(
     suspend fun preserveBeforeLaunch(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves): Boolean {
         val key = player.saveFolderId()
         val quarantine = store.incident(regressionIncidentId(game, player))
-        val blocked = store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch }
+        val blocked = store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
         if (!store.needsBackup(key, game) && quarantine == null && blocked == null) return false
         if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false

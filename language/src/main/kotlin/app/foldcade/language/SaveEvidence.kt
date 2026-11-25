@@ -17,8 +17,16 @@ data class RootReading(
     val hadMarkers: Boolean = false,
     val hasKnownSave: Boolean = false,
     val reachable: Boolean = true,
+    /** An exact candidate file, which can share a directory with a different bound spot. */
+    val spotFile: String? = null,
 )
-data class ProbeSnapshot(val atMillis: Long, val installFirstMillis: Long?, val packageName: String, val roots: List<RootReading>)
+
+data class ConfigSavePath(val expected: String?, val effective: String?, val live: FolderRef?, val proves: Boolean) {
+    val matches: Boolean get() = proves && effective != null && expected == effective
+}
+
+data class ProbeSnapshot(val atMillis: Long, val installFirstMillis: Long?, val packageName: String, val roots: List<RootReading>,
+    val configSavePath: ConfigSavePath? = null, val configUnavailable: Boolean = false)
 sealed interface RootVerdict {
     data class Uses(val root: FolderRef, val evidence: Evidence, val atMillis: Long) : RootVerdict
     data class UsesOther(val live: FolderRef?, val evidence: Evidence, val atMillis: Long) : RootVerdict
@@ -36,6 +44,10 @@ sealed interface SessionVerdict {
 fun judgeRoots(now: ProbeSnapshot, last: LocationFact, negativeEvidence: Boolean = SAVE_NEGATIVE_EVIDENCE_ENABLED): RootVerdict {
     val bound = now.roots.singleOrNull { it.bound } ?: return RootVerdict.NoNews
     if (!bound.reachable) return RootVerdict.Lost(IncidentKind.LostAccess, Evidence(EvidenceKind.Config, "Folder access is gone"))
+    now.configSavePath?.let { config ->
+        if (config.proves && config.expected != null && config.effective != null && !config.matches)
+            return RootVerdict.UsesOther(config.live, Evidence(EvidenceKind.Config, "RetroArch configured ${config.effective}"), now.atMillis)
+    }
     if (negativeEvidence && bound.emulatorHolds == false) {
         val other = now.roots.filter { !it.bound && it.emulatorHolds == true }.singleOrNull()
         return if (other != null) RootVerdict.UsesOther(other.root, Evidence(EvidenceKind.Config, "${now.packageName} holds ${other.root.label}, not ${bound.root.label}"), now.atMillis)
@@ -70,14 +82,10 @@ fun judgeRoots(now: ProbeSnapshot, last: LocationFact, negativeEvidence: Boolean
 fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Long, startedByFoldcade: Boolean = true): SessionVerdict {
     if (before.packageName != after.packageName || before.installFirstMillis != after.installFirstMillis) return SessionVerdict.NoNews
     val bound = after.roots.singleOrNull { it.bound } ?: return SessionVerdict.NoNews
-    fun changed(root: RootReading): Boolean {
-        val old = before.roots.singleOrNull { it.root.identity == root.root.identity } ?: return false
-        return old.spotReadable && root.spotReadable && root.spotHash != null && root.spotHash != old.spotHash
-    }
     val oldBound = before.roots.singleOrNull { it.bound && it.root.identity == bound.root.identity } ?: return SessionVerdict.NoNews
-    if (changed(bound)) return SessionVerdict.Wrote(bound.root)
+    if (spotChanged(before, bound)) return SessionVerdict.Wrote(bound.root)
     if (oldBound.spotReadable && bound.spotReadable && oldBound.spotHash == bound.spotHash) {
-        val changedCandidates = after.roots.filter { !it.bound && changed(it) }
+        val changedCandidates = after.roots.filter { !it.bound && spotChanged(before, it) }
         if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(changedCandidates.singleOrNull()?.root)
     }
     val advanced = after.roots.any { root -> root.signals.any { signal ->
@@ -85,7 +93,7 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
             before.roots.firstOrNull { it.root.identity == root.root.identity }?.signals
                 ?.firstOrNull { it.source == signal.source }?.modifiedAtMillis != signal.modifiedAtMillis
     } }
-    val signalled = if (advanced) judgeRoots(after,
+    val signalled = if (advanced) judgeRoots(after.copy(configSavePath = null),
         LocationFact.Verified(bound.root, Evidence(EvidenceKind.FreshLog, "Session baseline"), before.atMillis)) else RootVerdict.NoNews
     if (signalled is RootVerdict.UsesOther) return SessionVerdict.Signalled(signalled)
     if (startedByFoldcade && sessionMillis >= SAVE_START_CHECK_MIN_MILLIS) {
@@ -95,6 +103,12 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
     }
     if (signalled != RootVerdict.NoNews) return SessionVerdict.Signalled(signalled)
     return SessionVerdict.NoNews
+}
+
+fun spotChanged(before: ProbeSnapshot, root: RootReading): Boolean {
+    val old = before.roots.singleOrNull { it.bound == root.bound && it.root.identity == root.root.identity && it.spotFile == root.spotFile }
+        ?: return false
+    return old.spotReadable && root.spotReadable && root.spotHash != null && root.spotHash != old.spotHash
 }
 
 /** A candidate from another installed flavour needs a matching version line. */

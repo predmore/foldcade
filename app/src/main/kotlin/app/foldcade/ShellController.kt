@@ -662,7 +662,8 @@ class ShellController(
         refreshSavePickerHealth()
     }
 
-    internal fun saveGame(libraryId: String, remoteKey: String): Game? = libraryGames[homeGameId(libraryId, remoteKey)]
+    internal fun saveGame(libraryId: String, remoteKey: String): Game? = saveGame(homeGameId(libraryId, remoteKey))
+    internal fun saveGame(homeId: String): Game? = libraryGames[homeId]
 
     /** The Settings row owns a shared folder's fix, such as RetroArch across several systems. */
     internal fun saveNoticePlayerId(playerId: String): String {
@@ -853,8 +854,16 @@ class ShellController(
         return onMeaning(Meaning.Activate, page.screen)
     }
 
-    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, game: String? = null, offline: Boolean = false) {
-        publish(model.copy(panel = null, dialog = null, saveFix = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = game, offline = offline)))
+    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, owner: Game? = null, offline: Boolean = false): SaveFixPage {
+        val origin = store.rommOrigin()
+        val subject = incident.subject
+        // With no game in hand, an emulator-wide incident covers the RomM games it plays whenever RomM is set up.
+        val hasRommDestination = origin != null && (subject == null || subject.origin == origin) &&
+            (owner == null || owner.backendId == RommCredentials.PLUGIN_ID)
+        val page = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = owner?.label, offline = offline,
+            hasRommDestination = hasRommDestination)
+        publish(model.copy(panel = null, dialog = null, saveFix = page))
+        return page
     }
 
     /** Changes the open Fix page, if it is still [incidentId]'s: a RomM copy read late, or the network after a pick. */
@@ -3666,8 +3675,14 @@ class ShellController(
     fun savePickerFix(target: app.foldcade.language.SavePickerTarget): Effect? {
         if (model.savePicker?.target != target) return null
         val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) } ?: return null
+        val route = savesMenuRoute(target.gameId)
+        val owner = route?.servers?.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route?.saves
+        val incident = saveIncidents.firstOrNull {
+            it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done &&
+                (owner?.let(it::appliesTo) ?: it.gameIds.isEmpty())
+        }
         return when {
-            saveIncidents.any { it.playerKey == player.saveFolderId() } -> Effect.OpenSaveFix(saveIncidents.first { it.playerKey == player.saveFolderId() }.id)
+            incident != null -> Effect.OpenSaveFix(incident.id)
             player is app.foldcade.api.plugin.HostedSaveFolder && !player.hostedFolderInUse() -> Effect.SetUpHostedSaves(player.id)
             player is SaveFolderHolder && !player.hasSaveFolder() -> Effect.ChoosePlayerSave(player.id)
             saveSync[player.id] is SaveSyncState.NeedsSetup -> Effect.ShowSaveSync(player.id)

@@ -35,6 +35,8 @@ internal data class RunningGame(
     /** The started player's folder, even if the platform's chosen player changes later. */
     val saveFolderKey: String? = null,
     val player: app.foldcade.api.plugin.Player? = null,
+    /** The game switches and quits through the player's own start protocol. */
+    val replacesInPlayer: Boolean = false,
 )
 
 internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)
@@ -149,13 +151,17 @@ internal class RunningGames {
 /**
  * When Foldcade is Android Home, an unprompted return on the launch display means
  * the player closed. Outside the Home role, reopening Foldcade can cover a live
- * game without a Home recall, so keep tracking it for resume.
+ * game without a Home recall, so keep tracking it for resume. A player with
+ * its own switch/quit protocol also closes on a direct return to non-default
+ * Home, while a new intent to reopen Foldcade keeps the run.
  */
 internal fun forgetsRunOnReturn(
     returned: Boolean,
     homeRecalledOnThisDisplay: Boolean,
     holdsHomeRole: Boolean,
-): Boolean = returned && !homeRecalledOnThisDisplay && holdsHomeRole
+    replacesInPlayer: Boolean = false,
+    reopenedFromIntent: Boolean = false,
+): Boolean = returned && !homeRecalledOnThisDisplay && !reopenedFromIntent && (holdsHomeRole || replacesInPlayer)
 
 /**
  * True when the player's front door ([frontDoor], its launcher activity) can bring
