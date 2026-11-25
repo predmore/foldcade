@@ -150,6 +150,9 @@ data class SaveIncidentGame(
 val SaveIncident.saveLayoutChanged: Boolean get() =
     kind == IncidentKind.WrongFolder && live != null && live.identity == bound?.identity
 
+val SaveIncident.armsX2OutsideCard: Boolean get() =
+    kind == IncidentKind.WrongFolder && playerKey == "armsx2" && alternateSavePath != null
+
 enum class IncidentKind {
     /** Positive evidence: the emulator uses another folder. Gates launch. */
     WrongFolder,
@@ -302,8 +305,9 @@ object SaveProtectionCopy {
     const val folderSet = "Folder set"
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
-    const val retroArchConfigUnavailable = "Can’t read config"
     const val retroArchConfigUnavailableDetail = "Foldcade can’t read RetroArch’s settings file. It can still check for save writes during play."
+    const val armsX2ConfigUnavailableDetail = "Foldcade can’t read PCSX2-Android.ini. Choose the shared data folder ARMSX2 uses and allow access to it."
+    const val armsX2CardOutside = "ARMSX2’s MemoryCards folder is outside the chosen data folder. Keep the existing card and set MemoryCards to a folder inside the data folder."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */

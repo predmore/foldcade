@@ -203,6 +203,7 @@ class FoldcadeApp : Application() {
             filesDir.toPath().resolve("save-handover"),
             edenGrant = { id -> edenExternalGrant(id, folders.grants(emptyList())) },
             edenReadsAllowed = ::edenSaveReadsAllowed,
+            sharedStorageAuthority = packageName + SharedStorageProvider.AUTHORITY_SUFFIX,
         ) { uri -> ContentGameFile(contentResolver, uri) }
     }
 

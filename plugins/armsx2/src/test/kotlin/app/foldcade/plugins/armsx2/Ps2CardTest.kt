@@ -286,6 +286,69 @@ class Ps2CardTest {
     }
 
     @Test
+    fun memoryCardsIsReadOnlyFromTheFoldersSectionAndNormalizesInsidePaths() {
+        val ini = """
+            [MemoryCards]
+            MemoryCards = ignored
+            [Folders]
+            Bios = private/bios
+            MemoryCards = "cards/obsolete/../Per Game"
+        """.trimIndent()
+        assertEquals(CardDirectory("cards/Per Game"), cardDirectory(ini, "primary:ARMSX2"))
+        assertEquals(CardDirectory("memcards"), cardDirectory("[MemoryCards]\nMemoryCards = ignored", "primary:ARMSX2"))
+        assertEquals(CardDirectory(""), cardDirectory("[Folders]\nMemoryCards = .", "primary:ARMSX2"))
+        assertEquals(CardDirectory("cards"), cardDirectory("[Folders]\nMemoryCards = /sdcard/ARMSX2/cards", "primary:ARMSX2"))
+        assertEquals(CardDirectory("cards"), cardDirectory("[Folders]\nMemoryCards = /storage/emulated/0/ARMSX2/cards", "primary:ARMSX2"))
+        assertEquals(CardDirectory("cards"), cardDirectory("[Folders]\nMemoryCards = /storage/1234-ABCD/ARMSX2/cards", "1234-ABCD:ARMSX2"))
+    }
+
+    @Test
+    fun escapingOrUnidentifiedPathsNeverBecomeWritableSpots() {
+        val root = "primary:ARMSX2"
+        assertEquals(CardDirectory(null, "primary:ARMSX2-backup/cards"), cardDirectory("[Folders]\nMemoryCards = ../ARMSX2-backup/cards", root))
+        assertEquals(CardDirectory(null, "primary:ARMSX2-backup/cards"), cardDirectory("[Folders]\nMemoryCards = /sdcard/ARMSX2-backup/cards", root))
+        assertNull(cardDirectory("[Folders]\nMemoryCards = /sdcard/ARMSX2/cards", null).relative)
+        assertNull(cardDirectory("[Folders]\nMemoryCards = /data/user/0/com.armsx2/cards", root).outsideDocumentId)
+        assertFalse(cardDirectory("[Folders]\nMemoryCards = content://elsewhere/cards", root).valid)
+        val folder = Mem(root)
+        folder.file(Ps2Card.INI, "[Folders]\nMemoryCards = /sdcard/ARMSX2-backup/cards".toByteArray())
+        assertNull(Ps2Card.find(Ps2Card.SLOT, game, folder, forLaunch = true))
+        assertEquals(0, folder.writes)
+    }
+
+    @Test
+    fun aPerGameCardUsesTheNestedConfiguredFolderAndBothFilesOnlySupport() {
+        val folder = Mem("primary:ARMSX2")
+        folder.file(Ps2Card.INI, "[Folders]\nMemoryCards = /sdcard/ARMSX2/qa/cards\n[MemoryCards]\nSlot1_Filename = obsolete.ps2".toByteArray())
+        folder.file(Ps2Card.SETTINGS, mirror("\"memoryCardSlot1Filename\":\"global.ps2\"",
+            "\"SLUS-21065\":{\"memoryCardSlot1Filename\":\"dedicated.ps2\"},\"SLUS-98765\":{\"memoryCardSlot1Enabled\":false}"))
+        assertEquals(SaveFolderSearch("qa/cards/dedicated.ps2", "SLUS-21065"), Ps2Card.find(Ps2Card.SLOT, game, folder, forLaunch = true))
+        assertEquals("global.ps2", readPs2CardConfig(folder, null).cardName)
+        assertNull(readPs2CardConfig(folder, "SLUS-98765").cardName)
+        val config = readPs2CardConfig(folder, "SLUS-21065")
+        assertTrue(config.nativeReadable)
+        assertEquals(listOf(200L, 100L), config.signals.map { it.modifiedAtMillis })
+        assertTrue(config.signals.all { it.strength == app.foldcade.api.plugin.SignalStrength.Supports && !it.perStart })
+        assertTrue("memcards" !in folder.folders)
+    }
+
+    @Test
+    fun aNestedIniIsIgnoredAndAnUnreadableNativeIniPreventsPlacement() {
+        val folder = object : Mem("primary:ARMSX2") {
+            override fun read(path: String, limit: Int): ByteArray? =
+                if (path == Ps2Card.INI) null else super.read(path, limit)
+        }
+        folder.file("inis/PCSX2-Android.ini", "[Folders]\nMemoryCards = wrong".toByteArray())
+        assertFalse(readPs2CardConfig(folder, null).nativeReadable)
+        assertEquals("memcards", readPs2CardConfig(folder, null).directory)
+        folder.file(Ps2Card.INI, byteArrayOf(1))
+        folder.file(Ps2Card.SETTINGS, mirror(""))
+        assertFalse(readPs2CardConfig(folder, null).nativeReadable)
+        assertNull(Ps2Card.find(Ps2Card.SLOT, game, folder, forLaunch = true))
+        assertEquals(0, folder.writes)
+    }
+
+    @Test
     fun noSerialMeansNoSearchEvenWhenTheCardIsReady() {
         val folder = Mem()
         folder.dir("memcards/mcd001.ps2")
@@ -339,7 +402,7 @@ class Ps2CardTest {
     }
 
     /** The save folder, as paths below it. */
-    private open class Mem : SaveFolderAccess {
+    private open class Mem(override val storageDocumentId: String? = null) : SaveFolderAccess {
         val files = sortedMapOf<String, ByteArray>()
         val folders = sortedSetOf("")
         val backups = mutableListOf<String>()
@@ -347,6 +410,12 @@ class Ps2CardTest {
         val ranged = mutableListOf<Int>()
         val wholeReads = mutableListOf<String>()
         var writes = 0
+
+        override fun modifiedAtMillis(path: String): Long? = when (path) {
+            Ps2Card.INI -> 200L
+            Ps2Card.SETTINGS -> 100L
+            else -> null
+        }
 
         fun dir(path: String) {
             var folder = path

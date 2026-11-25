@@ -233,6 +233,7 @@ internal class PlayerSaves(
     private val handover: Path,
     private val edenGrant: (String) -> String? = { null },
     private val edenReadsAllowed: () -> Boolean = { true },
+    private val sharedStorageAuthority: String? = null,
     private val gameFile: (String) -> GameFileReader = { _ -> UnreadableGameFile },
 ) {
     /**
@@ -289,6 +290,12 @@ internal class PlayerSaves(
             }
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
+            if (folder != null && player is app.foldcade.plugins.armsx2.ArmsX2Player) {
+                val config = player.cardConfig(folderAccess(player, folder, allowWrite = false))
+                if (config.directory == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable,
+                    if (config.nativeReadable) app.foldcade.language.SaveProtectionCopy.armsX2CardOutside
+                    else app.foldcade.language.SaveProtectionCopy.armsX2ConfigUnavailableDetail)
+            }
             val sync = folder?.let { saveSync(player, it) }
             if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
             val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
@@ -302,6 +309,13 @@ internal class PlayerSaves(
     }
 
     fun romDisplayName(uri: String): String? = docs.displayName(uri)
+
+    fun namedGameFile(uri: String): GameFileReader? {
+        val name = romDisplayName(uri) ?: return null
+        return object : GameFileReader by gameFile(uri) {
+            override val fileName: String = name
+        }
+    }
 
     /** Resolve against another readable root without rebinding the installed player or writing it. */
     fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
@@ -836,7 +850,7 @@ internal class PlayerSaves(
 
     /** What Settings shows for [player], read from [folderUri]. Never writes. */
     fun saveSync(player: Player, folderUri: String): app.foldcade.api.plugin.SaveSyncState? = try {
-        DocumentSaveFolder(docs, folderUri, allowWrite = false, reuseReads = true, backup = { _, _ -> })
+        DocumentSaveFolder(docs, folderUri, allowWrite = false, reuseReads = true, sharedStorageAuthority = sharedStorageAuthority, backup = { _, _ -> })
             .use { player.saveSyncState(it) }?.let { state ->
                 if (state is app.foldcade.api.plugin.SaveSyncState.NeedsSetup && state.steps == DolphinPlayer.SETUP)
                     app.foldcade.api.plugin.SaveSyncState.NeedsSetup(app.foldcade.language.Copy.dolphinFolderCard) else state
@@ -896,7 +910,7 @@ internal class PlayerSaves(
     }
 
     internal fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
-        DocumentSaveFolder(docs, folderUri, allowWrite) { name, bytes -> backup(player, name, bytes) }
+        DocumentSaveFolder(docs, folderUri, allowWrite, sharedStorageAuthority = sharedStorageAuthority) { name, bytes -> backup(player, name, bytes) }
 
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
     internal fun readSpot(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Pair<ByteArray, String?>? {

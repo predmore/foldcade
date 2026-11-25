@@ -40,7 +40,7 @@ fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == Incide
  * access was lost, the folder it already watched. Null when only the emulator can say.
  */
 fun saveFixTarget(incident: SaveIncident): FolderRef? =
-    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty()) null
+    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) null
     else incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
 
 /**

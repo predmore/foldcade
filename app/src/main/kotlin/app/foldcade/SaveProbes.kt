@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Environment
 import app.foldcade.api.plugin.*
 import app.foldcade.language.*
+import app.foldcade.plugins.armsx2.ArmsX2CardConfig
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.duckstation.DuckStationPlayer
 import app.foldcade.plugins.duckstation.readDuckStationCardSettings
 import app.foldcade.plugins.eden.EdenPlayer
@@ -42,7 +44,7 @@ internal class SaveProbes(
             else folder(player)
         boundUri ?: return null
         val probe = player as? SaveLocationProbe
-        val grants = android.grants(if (player is RetroArchPlayer) emptyList() else listOf(holder))
+        val grants = android.grants(if (player is RetroArchPlayer || player is ArmsX2Player) emptyList() else listOf(holder))
         val finder = android.finder(player, grants)
         val boundIdentity = storageIdentity(boundUri, context.packageName)
         val installed = player.packageNames.mapNotNull { name ->
@@ -50,6 +52,8 @@ internal class SaveProbes(
         }
         val resolved = if (resolvedPackage == null) installed.firstOrNull() else installed.firstOrNull { it.packageName == resolvedPackage }
         val key = player.saveFolderId()
+        val arms = (player as? ArmsX2Player)?.let { ArmsX2SaveProbe(it, saves, target.takeIf { readSpots && game != null }?.let(::armsGameFile)) }
+        var armsConfig: ArmsX2CardConfig? = null
         fun readRoot(uri: String): RootReading {
             val label = when (player) {
                 is EdenPlayer -> player.displayName
@@ -61,13 +65,31 @@ internal class SaveProbes(
             val access = saves.folderAccess(player, uri, allowWrite = false)
             val children = access.list("")
             val reachable = children != null
-            val signals = if (!reachable) emptyList() else try { probe?.liveSignals(access).orEmpty() } catch (_: Exception) { emptyList() }
+            val cardConfig = if (reachable && player is ArmsX2Player) arms?.config(access) else null
+            if (isBound) armsConfig = cardConfig
+            val signals = if (!reachable) emptyList() else try {
+                cardConfig?.signals ?: probe?.liveSignals(access).orEmpty()
+            } catch (_: Exception) { emptyList() }
             // A candidate from another installed flavour must name the launched APK version.
-            val logVersion = if (!isBound && installed.size > 1 && signals.isNotEmpty())
+            val logVersion = if (!isBound && installed.size > 1 && signals.firstOrNull()?.strength == SignalStrength.Proves)
                 access.read(signals.first().source, 0, 32 * 1024)?.toString(Charsets.UTF_8)?.let(::azaharLogVersion) else null
             var readable = reachable
+            var spotFile: String? = null
             val hashes = if (!readSpots || game == null || target == null) emptyList() else try {
-                val spots = if (player is EdenPlayer) edenSpots.orEmpty() else saves.probeSpots(player, game, target, uri)
+                val spots = when {
+                    arms != null -> {
+                        // Compare the configured card, or the previous default location when the INI points outside.
+                        val fallback = if (isBound && cardConfig?.outsideDirectoryId != null)
+                            children?.firstOrNull { it.isFolder && it.name.equals("memcards", true) }?.name ?: "memcards"
+                        else null
+                        val directory = cardConfig?.directory ?: fallback
+                        val spot = directory?.let { arms.spot(uri, it, cardConfig?.cardName) }
+                        spotFile = spot?.search?.parent
+                        listOfNotNull(spot)
+                    }
+                    player is EdenPlayer -> edenSpots.orEmpty()
+                    else -> saves.probeSpots(player, game, target, uri)
+                }
                 if (spots.isEmpty()) readable = false
                 val limit = if (player is DuckStationPlayer) 128L * 1024 else 256L * 1024 * 1024
                 spots.mapNotNull { spot -> saves.readSpot(spot, strict = true, limit = limit)?.first?.let { spot.slot + ":" + md5Hex(it) } }
@@ -81,7 +103,7 @@ internal class SaveProbes(
                 if (holder.saveFolderPickedInPlayer) android.playerHolds(player, folderDocumentId(uri)) else null,
                 store.hadMarkers(key, ref), hasKnownSave,
                 // Hosted trees are inside our process and need no persisted grant of our own.
-                (player is HostedSaveFolder || android.holdsGrant(uri, grants)))
+                (player is HostedSaveFolder || android.holdsGrant(uri, grants)), spotFile = spotFile)
         }
         val bound = readRoot(boundUri)
         if (player is DuckStationPlayer) {
@@ -101,12 +123,32 @@ internal class SaveProbes(
                 finder.reachable(id)?.let { probe.liveSignals(saves.folderAccess(player, it, allowWrite = false)) }.orEmpty()
             }
         } else emptyList()
-        val knownLive = store.incidents().filter { it.playerKey == player.saveFolderId() && it.blocksLaunch }.mapNotNull { it.live?.identity }
+        val knownLive = store.incidents().filter { it.playerKey == key && it.blocksLaunch &&
+            (arms == null || !it.armsX2OutsideCard && (game == null || it.appliesTo(game))) }.mapNotNull { it.live?.identity }
         val candidates = if (player is EdenPlayer) emptyList() else
             discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
-        val roots = listOf(bound) + candidates.distinct().mapNotNull(finder::reachable)
+        val outside = armsConfig?.outsideCard()
+        val outsideReading = outside?.live?.takeIf { resolved?.packageName == ArmsX2Player.PACKAGES.first() && installed.size == 1 && readSpots }
+            ?.let { armsReadable(finder, it) }?.let { uri -> arms?.outsideReading(outside, uri) }
+        val roots = listOfNotNull(bound, outsideReading) + candidates.distinct().mapNotNull(finder::reachable)
+            .filter { arms == null || installed.size == 1 && storageIdentity(it, context.packageName) != outside?.live?.identity }
             .filter { storageIdentity(it, context.packageName) != boundIdentity }.distinctBy { storageIdentity(it, context.packageName) }.take(4).map(::readRoot)
-        return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(), roots)
+        return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(),
+            roots, outside, configUnavailable = arms != null && armsConfig?.nativeReadable != true)
+    }
+
+    private fun armsGameFile(target: LaunchTarget): GameFileReader? = when (target) {
+        is LaunchTarget.ContentUri -> saves.namedGameFile(target.uri)
+        is LaunchTarget.SharedFile -> saves.namedGameFile(target.uri)
+        else -> null
+    }
+
+    private fun armsReadable(finder: SaveFolderFinder, ref: FolderRef): String? {
+        val path = ref.identity.substringAfter(':').lowercase(java.util.Locale.ROOT)
+        if (path == "android/data" || path.startsWith("android/data/") || path == "android/obb" || path.startsWith("android/obb/")) return null
+        return finder.readable(ref.identity.toDocumentId())?.takeIf {
+            storageIdentity(it, context.packageName) == ref.identity && android.isDirectory(it)
+        }
     }
 
     private fun retroArchTarget(target: LaunchTarget?): LaunchTarget.SharedFile? = when (target) {
@@ -156,6 +198,8 @@ internal class SaveProbes(
         return when {
             mismatch != null -> LocationFact.Mismatch(bound, mismatch.live, mismatch.evidence,
                 maxOf(mismatch.openedAtMillis, (last as? LocationFact.Verified)?.atMillis ?: 0))
+            player is ArmsX2Player && (snapshot.configUnavailable || snapshot.configSavePath != null) ->
+                LocationFact.Bound(bound, (last as? LocationFact.Bound)?.setAtMillis, configUnavailable = snapshot.configUnavailable)
             last is LocationFact.Bound && snapshot.configUnavailable -> last.copy(configUnavailable = true)
             else -> last
         }
@@ -210,8 +254,13 @@ internal class SaveProbes(
                     hostedGame = game.takeIf { verdict.evidence.kind == EvidenceKind.HostedOpen })
                 store.incidents().filter { it.playerKey == key && it.gameIds.isEmpty() && it.kind != IncidentKind.MaybeNewSave }.forEach { store.close(it.id) }
             }
-            is RootVerdict.UsesOther -> open(player, bound.root, verdict.live, IncidentKind.WrongFolder, verdict.evidence, verdict.atMillis,
-                game.takeIf { player is RetroArchPlayer }, snapshot.configSavePath?.effective.takeIf { verdict.evidence.kind == EvidenceKind.Config })
+            is RootVerdict.UsesOther -> {
+                val config = snapshot.configSavePath
+                val alternate = config?.effective.takeIf { verdict.evidence.kind == EvidenceKind.Config ||
+                    player is ArmsX2Player && verdict.live != null && verdict.live == config?.live }
+                open(player, bound.root, verdict.live, IncidentKind.WrongFolder, verdict.evidence, verdict.atMillis,
+                    game.takeIf { player is RetroArchPlayer || player is ArmsX2Player }, alternate)
+            }
             is RootVerdict.Lost -> open(player, bound.root, null, verdict.kind, verdict.evidence, snapshot.atMillis, null)
             RootVerdict.NoNews -> Unit
         }
@@ -230,7 +279,8 @@ internal class SaveProbes(
             if (player is DuckStationPlayer && evidence.kind == EvidenceKind.Config) at else old?.openedAtMillis ?: at,
             old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
             subject = old?.subject?.takeIf { sameLocation },
-            alternateSavePath = alternate ?: old?.retroArchAlternate(), capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty()))
+            alternateSavePath = alternate ?: if (player is ArmsX2Player) old?.alternateSavePath.takeIf { sameLocation } else old?.retroArchAlternate(),
+            capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty()))
     }
 
     @Synchronized fun gate(player: Player, game: Game, target: LaunchTarget, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
@@ -286,7 +336,10 @@ internal class SaveProbes(
     fun noteSession(player: Player, game: Game, before: ProbeSnapshot, after: ProbeSnapshot,
         sessionMillis: Long = after.atMillis - before.atMillis, startedByFoldcade: Boolean = true, unprotected: Boolean = false) {
         when (val verdict = judgeSession(before, after, sessionMillis, startedByFoldcade)) {
-            is SessionVerdict.Wrote -> if (!unprotected) apply(player, after, RootVerdict.Uses(verdict.root, Evidence(EvidenceKind.SessionWrite, "${game.label} saved there"), after.atMillis), game)
+            is SessionVerdict.Wrote -> if (!unprotected && (player !is ArmsX2Player || !after.configUnavailable &&
+                before.configSavePath == null && after.configSavePath == null)) {
+                apply(player, after, RootVerdict.Uses(verdict.root, Evidence(EvidenceKind.SessionWrite, "${game.label} saved there"), after.atMillis), game)
+            }
             is SessionVerdict.WroteElsewhere -> apply(player, after, RootVerdict.UsesOther(verdict.live, Evidence(EvidenceKind.SessionWrite, verdict.live?.let { "${game.label} saved in ${it.label}" } ?: "${game.label} saved in another folder"), after.atMillis), game)
             is SessionVerdict.Signalled -> if (!unprotected || verdict.verdict !is RootVerdict.Uses) apply(player, after, verdict.verdict, game)
             is SessionVerdict.SilentStart -> {
@@ -352,6 +405,7 @@ internal class SaveProbes(
         if (player is DuckStationPlayer) return
         if (target != null) {
             for (incident in store.incidents().filter { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.appliesTo(game) }) {
+                if (player is ArmsX2Player && incident.gameIds.isNotEmpty()) continue
                 val live = incident.live ?: continue
                 val holder = player as? SaveFolderHolder ?: continue
                 val finder = android.finder(player, android.grants(listOf(holder)))
@@ -362,6 +416,14 @@ internal class SaveProbes(
                 }
             }
         }
+    }
+
+    fun preserveArmsX2Return(pending: LibraryReturn, target: LaunchTarget?, spots: List<SaveSpot>, after: ProbeSnapshot?): Boolean {
+        val player = pending.player as? ArmsX2Player ?: return false
+        val probe = ArmsX2SaveProbe(player, saves, target?.let(::armsGameFile))
+        val incident = scopedWrongFolders(player, pending.game).firstOrNull { it.blocksLaunch }
+        val finder = android.finder(player, android.grants(emptyList()))
+        return probe.preserveReturn(pending, spots, after, incident, store, copies, context.packageName) { armsReadable(finder, it) }
     }
 
     private fun configAlternate(snapshot: ProbeSnapshot?): String? = snapshot?.configSavePath

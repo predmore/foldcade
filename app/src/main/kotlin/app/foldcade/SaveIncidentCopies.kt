@@ -66,8 +66,12 @@ internal class SaveIncidentCopies(
 
     fun stageCandidate(game: Game, player: Player, candidate: RetroArchCandidate, incident: SaveIncident?) {
         val bytes = (candidate.read as? FileReading.Bytes)?.bytes ?: return
+        stageBackup(game, player, candidate.spot, bytes, incident)
+    }
+
+    fun stageBackup(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?) {
         val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
-        stageAlternate(game, player, candidate.spot, bytes, incident, origin)
+        stageAlternate(game, player, spot, bytes, incident, origin)
     }
 
     fun stageAlternate(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?, origin: String? = null) {

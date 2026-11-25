@@ -56,8 +56,12 @@ internal class SaveFolderFinder(
         )
     }
 
-    fun reachable(documentId: String): String? = grants.asSequence()
-        .filter { it.read && it.write && containsFolder(folderTreeId(it.uri), documentId) }
+    fun reachable(documentId: String): String? = reachable(documentId, requireWrite = true)
+
+    fun readable(documentId: String): String? = reachable(documentId, requireWrite = false)
+
+    private fun reachable(documentId: String, requireWrite: Boolean): String? = grants.asSequence()
+        .filter { it.read && (!requireWrite || it.write) && containsFolder(folderTreeId(it.uri), documentId) }
         .minWithOrNull(compareBy<SaveFolderGrant> { it.allFiles }.thenByDescending { folderTreeId(it.uri).length })
         ?.let { if (folderTreeId(it.uri) == documentId) folderGrantUri(it.uri) else folderDocumentUri(it.uri, documentId) }
 

@@ -164,9 +164,13 @@ When slot 1 has no card, or its card is an empty 8 MB file card, Foldcade makes 
 1. In ARMSX2, open ☰ › **Memory Cards** and tap **＋**. Set **Type** to **Folder**, tap **Create**, then tap **Slot 1** on the new card.
 2. Saves on your old card stay there and don't sync. Some games can load a save from slot 2: tap **Slot 2** on your old card, load the save in the game, and save it to slot 1.
 
-Once slot 1 is a folder card, the row reads **ARMSX2 memory card: Syncing**. A card you set for one game in ARMSX2 is used for that game instead of slot 1's.
+Foldcade uses the slot 1 folder card selected for each game. A per-game choice or disabled slot takes precedence over the global choice in the mirror. Under `[Folders]`, `MemoryCards` in `PCSX2-Android.ini` can name a relative or absolute folder inside the chosen data folder. Foldcade uses that folder for placement and read-back. Stock Android 11 and later restricts access to another app’s `Android/data` folder. Choose ARMSX2’s shared **App Data Folder** when the private folder is unavailable.
 
 ARMSX2 2.8.4’s reachable `armsx2-settings.json` is a backup mirror of private preferences. It is imported only for fresh-install recovery, then rewritten when ARMSX2 saves settings. Editing it cannot safely switch a populated file card to a folder card. Foldcade keeps the existing empty-card conversion; populated cards still use the steps above, so their saves remain accessible.
+
+The **Check** row reads **Can’t read config** when Foldcade cannot read the native INI. With readable settings, Foldcade checks the folder after it sees a change to the game’s save during play. A config or its timestamp alone leaves the folder unconfirmed. If Foldcade sees the game write to a readable card folder outside the chosen data folder, the next ordinary launch of that game offers **Fix it** or **Play anyway**. To fix it, keep the outside card and put the `MemoryCards` setting back inside the ARMSX2 data folder, then choose the data folder again in Foldcade. Foldcade keeps suspect copies as verified RomM **Backups**, or keeps them on the device for local-only games.
+
+The `xyz.aethersx2.android` and `xyz.aethersx2.tturnip` packages launch through Foldcade’s NetherSX2 player. That player leaves saves on the device.
 
 ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. Save states stay with ARMSX2. Restoring happens before a game starts, so quit the game in ARMSX2 before playing it on another device.
 

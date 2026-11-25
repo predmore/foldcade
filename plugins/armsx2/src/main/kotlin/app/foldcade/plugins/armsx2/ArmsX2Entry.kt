@@ -5,6 +5,7 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
+import app.foldcade.api.plugin.LiveSignal
 import app.foldcade.api.plugin.PLUGIN_API_MINOR
 import app.foldcade.api.plugin.PLUGIN_API_VERSION
 import app.foldcade.api.plugin.Player
@@ -16,6 +17,7 @@ import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveFolderSearch
+import app.foldcade.api.plugin.SaveLocationProbe
 import app.foldcade.api.plugin.SaveSyncState
 import app.foldcade.api.plugin.StartDisplay
 import java.util.Locale
@@ -72,7 +74,7 @@ class ArmsX2Entry : PluginEntry {
  * ARMSX2 draws on one screen. Its second-screen panel is off unless the user
  * turns it on. The game opens on the screen the picker targets.
  */
-class ArmsX2Player : Player, SaveFolderHolder {
+class ArmsX2Player : Player, SaveFolderHolder, SaveLocationProbe {
     override val id: String = ID
     override val displayName: String = DISPLAY_NAME
     override val platformId: String = PLATFORM_ID
@@ -81,6 +83,17 @@ class ArmsX2Player : Player, SaveFolderHolder {
     override val startDisplay: StartDisplay = StartDisplay.PickerChoice
     override val occupiesBothDisplays: Boolean = false
     override val requiresImportedGame: Boolean = false
+
+    override val probePlaces: List<String> = listOf("ARMSX2")
+    override val locationSteps: String =
+        "1. In ARMSX2, open ☰ › Setup / Change Folders › App Data Folder.\n" +
+            "2. Choose the ARMSX2 data folder that should keep your saves."
+
+    override fun liveSignals(root: SaveFolderAccess): List<LiveSignal> = cardConfig(root).signals
+
+    fun cardConfig(root: SaveFolderAccess, serial: String? = null): ArmsX2CardConfig = readPs2CardConfig(root, serial)
+
+    fun saveSerial(game: GameFileReader): String? = ps2Serial(game)
 
     @Volatile
     private var saveFolder: String? = null
@@ -186,6 +199,7 @@ class ArmsX2Player : Player, SaveFolderHolder {
         const val ID: String = "armsx2"
         const val DISPLAY_NAME: String = "ARMSX2"
         const val PLATFORM_ID: String = "playstation-2"
+        const val SAVE_SLOT: String = Ps2Card.SLOT
 
         /** GitHub stable, then the Play Store build, then nightly. */
         val PACKAGES: List<String> = listOf(
