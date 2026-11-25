@@ -307,11 +307,11 @@ object SaveProtectionCopy {
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
     const val retroArchConfigUnavailableDetail = "Foldcade can’t read RetroArch’s settings file. It can still check for save writes during play."
-    const val armsX2ConfigUnavailableDetail = "Foldcade can't read PCSX2-Android.ini in this folder. Open ARMSX2 once, or choose the shared data folder ARMSX2 uses and allow access."
-    const val armsX2CardOutside = "ARMSX2's MemoryCards folder is outside its data folder, so Foldcade can't sync this card. " +
+    const val armsX2ConfigUnavailableDetail = "Foldcade can’t read PCSX2-Android.ini in this folder. Open ARMSX2 once, or choose the shared data folder ARMSX2 uses and allow access."
+    const val armsX2CardOutside = "ARMSX2’s MemoryCards folder is outside its data folder, so Foldcade can’t sync this card. " +
         "With ARMSX2 closed, open PCSX2-Android.ini and, under [Folders], set MemoryCards = memcards."
     const val armsX2OutsideCardSteps = "1. Close ARMSX2.\n" +
-        "2. In PCSX2-Android.ini in the ARMSX2 data folder, under [Folders], set MemoryCards = memcards. Don't delete the outside card. Other games' saves may be on it.\n" +
+        "2. In PCSX2-Android.ini in the ARMSX2 data folder, under [Folders], set MemoryCards = memcards. Don’t delete the outside card. Other games’ saves may be on it.\n" +
         "3. Choose the ARMSX2 data folder again."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
