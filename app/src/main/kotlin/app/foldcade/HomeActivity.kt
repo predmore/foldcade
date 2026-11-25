@@ -3719,7 +3719,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         val candidate = foldcade.saveProbes.besideCandidate(gamePlayer, game, target, bound)
                         val bytes = besideBytesForRepair(candidate, current)
                         if (candidate != null && bytes != null)
-                            foldcade.saveIncidentCopies.stageCandidate(game, gamePlayer, candidate.spot, bytes, current)
+                            foldcade.saveIncidentCopies.stageBackup(game, gamePlayer, candidate.spot, bytes, current)
                         candidate?.source ?: BesideSaveSource.Missing
                     } },
                     remember = { rememberSaveFolder(folder, player) })

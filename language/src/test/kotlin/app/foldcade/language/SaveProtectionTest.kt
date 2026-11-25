@@ -28,7 +28,8 @@ class SaveProtectionTest {
             val noHead = done.copy(automaticDone = false, kept = listOf("1"))
             assertEquals("Folder set. The save from beside the ROM is in Y › Saves under Backups.", saveFixCard(noHead, page).body)
             val localDone = done.copy(automaticDone = false, staged = listOf("file:///save"), besideSource = BesideSaveSource.Progress)
-            val localPage = page.copy(hasRommDestination = false)
+            val localPage = page.copy(hasRommDestination = false,
+                stagedDestinations = mapOf(localDone.staged.single() to SaveFixCopyDestination.Device))
             assertEquals("Folder set. Your save beside the ROM is still there. Move it into saves/QA to keep playing it.", saveFixCard(localDone, localPage).body)
             assertEquals(SaveProtectionCopy.guidedDoneLocal, saveFixCard(localDone.copy(besideSource = BesideSaveSource.Missing), localPage).body)
             val setting = PlayerSaveSetting(key, player, chosen = true, location = LocationFact.Bound(bound, configUnavailable = true))

@@ -81,9 +81,10 @@ class ArmsX2SaveProbeTest {
         assertEquals("WrongFolder:armsx2", incident.id)
         assertEquals(live, saveFixTarget(incident))
         assertNull(incident.alternateSavePath)
-        assertTrue(incident.blocksLaunch && incident.appliesTo(game))
-        assertTrue(incident.appliesTo(game.copy(remoteKey = "second")))
-        assertTrue(incident.appliesTo(game.copy(backendId = LocalFolderBackend.ID)))
+        assertTrue(incident.gatesLaunch(player, game))
+        assertTrue(incident.gatesLaunch(player, game.copy(remoteKey = "second")))
+        assertTrue(incident.gatesLaunch(player, game.copy(backendId = LocalFolderBackend.ID)))
+        assertEquals(live, (probes.location(player, now) as LocationFact.Mismatch).live)
     }
 
     @Test fun noteSessionDoesNotVerifyAWatchedWriteWhileTheConfiguredCardIsOutside() {
@@ -112,14 +113,16 @@ class ArmsX2SaveProbeTest {
         docs.progress = byteArrayOf(17)
         docs.otherGame = true
         val after = snapshot(boundRead, probe.outsideReading(config, outsideUri))
-        saveProbes(saves, store).apply(player, after,
+        val probes = saveProbes(saves, store)
+        probes.apply(player, after,
             RootVerdict.UsesOther(outside, Evidence(EvidenceKind.SessionWrite, "Game saved there"), after.atMillis), game)
         val incident = store.incidents().single()
         assertEquals("WrongFolder:armsx2:${homeGameId(game.backendId, game.remoteKey)}", incident.id)
         assertEquals(config.effective, incident.alternateSavePath)
-        assertTrue(incident.blocksLaunch && incident.appliesTo(game))
-        assertFalse(incident.appliesTo(game.copy(remoteKey = "second")))
-        assertFalse(incident.appliesTo(game.copy(backendId = LocalFolderBackend.ID)))
+        assertTrue(incident.gatesLaunch(player, game))
+        assertFalse(incident.gatesLaunch(player, game.copy(remoteKey = "second")))
+        assertFalse(incident.gatesLaunch(player, game.copy(backendId = LocalFolderBackend.ID)))
+        assertTrue((probes.location(player, after) as LocationFact.Bound).cardOutside)
         assertNull(saveFixTarget(incident))
         var archives = 0
         val server = object : LibraryBackend by LocalFolderBackend() {

@@ -291,7 +291,7 @@ class LaunchSavesTest {
         val copies = SaveIncidentCopies(saves, plugins, store)
         server.backupsFail = true
         repeat(2) {
-            copies.stageCandidate(owner, Melon, spot, bytes, incident)
+            copies.stageBackup(owner, Melon, spot, bytes, incident)
             copies.keep(owner, Melon)
         }
         val staged = saves.queuedCopies().single()
@@ -300,7 +300,7 @@ class LaunchSavesTest {
         val resumedCopies = SaveIncidentCopies(saves, plugins, restarted)
         server.backupsFail = false
         resumedCopies.keep(owner, Melon)
-        resumedCopies.stageCandidate(owner, Melon, spot, bytes, incident)
+        resumedCopies.stageBackup(owner, Melon, spot, bytes, incident)
         resumedCopies.keep(owner, Melon)
         assertTrue(saves.queuedCopies().isEmpty())
         assertEquals(listOf(md5Hex(bytes)), server.backups)
@@ -387,7 +387,7 @@ class LaunchSavesTest {
         val bytes = byteArrayOf(3, 2, 1)
         store.put(incident)
         SaveIncidentCopies(saves, plugins, store, rommOrigin = { "https://another-server.test" })
-            .stageCandidate(game, Melon, spot, bytes, incident)
+            .stageBackup(game, Melon, spot, bytes, incident)
         SaveIncidentCopies(saves, plugins, SaveProtectionStore(dir)).keep(game, Melon)
         val localCopy = saves.queuedCopies().single()
         assertEquals(game.backendId, localCopy.game.backendId)

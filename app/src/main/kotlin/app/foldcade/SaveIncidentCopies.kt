@@ -69,9 +69,6 @@ internal class SaveIncidentCopies(
         stageBackup(game, player, candidate.spot, bytes, incident)
     }
 
-    fun stageCandidate(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?) =
-        stageBackup(game, player, spot, bytes, incident)
-
     fun stageBackup(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?) {
         val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
         if (incident != null && incident.gameIds.isEmpty()) {

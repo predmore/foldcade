@@ -139,7 +139,7 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
                 val bytes = besideBytesForRepair(candidate, current)
                 val hash = bytes?.let { rommSaveHash(it) ?: throw RepairFoldersUnavailable() }
                 if (stage && bytes != null && candidate != null && hash != null && seen.add(hash)) {
-                    saveIncidentCopies.stageCandidate(game, player, candidate.spot, bytes, current)
+                    saveIncidentCopies.stageBackup(game, player, candidate.spot, bytes, current)
                 }
                 if (stage) candidate?.source?.takeUnless { it == BesideSaveSource.Missing }
                     ?.let { saveProtection.noteBesideSaveSource(current.id, it) }

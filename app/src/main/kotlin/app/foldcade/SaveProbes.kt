@@ -487,7 +487,7 @@ internal class SaveProbes(
             val beside = readBeside(bound)
             val bytes = (beside?.read as? FileReading.Bytes)?.bytes
             if (beside != null && bytes != null) {
-                if (!beside.blankBattery) copies.stageCandidate(game, player, beside.spot, bytes, incident)
+                if (!beside.blankBattery) copies.stageBackup(game, player, beside.spot, bytes, incident)
                 beside.source?.let { source -> incident?.let { store.noteBesideSaveSource(it.id, source) } }
             } else if (changed.any { it.besideGame }) throw SaveNotPlaced()
         }
@@ -501,7 +501,7 @@ internal class SaveProbes(
                     saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first?.let { spot to it }
                 }
                 if (captured.isEmpty() && identity in written) throw SaveNotPlaced()
-                for ((spot, bytes) in captured) copies.stageCandidate(game, player, spot, bytes, shared ?: incident?.takeUnless { it.besideGame })
+                for ((spot, bytes) in captured) copies.stageBackup(game, player, spot, bytes, shared ?: incident?.takeUnless { it.besideGame })
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (identity in written) throw failure
