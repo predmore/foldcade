@@ -347,9 +347,9 @@ class LaunchSavesTest {
             val copies = SaveIncidentCopies(saves, plugins, store)
             val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
             var gateReads = 0
-            val fresh = LaunchSaves(saves, plugins, protectionGate = { route, player, target ->
+            val fresh = LaunchSaves(saves, plugins, protectionGate = { route, player, eden ->
                 gateReads++
-                probes.gate(player, route.saves, target)
+                probes.gate(player, route.saves, local, eden = eden)
             }) { awaiting += it }
             val route = GameRoute("tile", owner, owner)
             val pending = LibraryReturn(owner.backendId, owner, Melon, saves.spots(Melon, owner, local), local.uri)
@@ -378,6 +378,41 @@ class LaunchSavesTest {
             assertEquals(1, gateReads)
             assertTrue(server.calls.isEmpty())
         }
+    }
+
+    @Test fun aResumedBackupLeavesTheExistingTwoSavesChoiceIntact() = runBlocking {
+        val dir = Files.createTempDirectory("resume-save-regression")
+        val store = SaveProtectionStore(dir)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val warning = incident(IncidentKind.WrongFolder)
+        store.put(warning)
+        val reset = "quarantined reset".toByteArray()
+        val subject = incidentGame(owner, Melon, local.uri, "https://romm.example", null)
+        val quarantine = warning.copy(
+            id = regressionIncidentId(owner, Melon), kind = IncidentKind.MaybeNewSave, gameIds = listOf(owner.remoteKey),
+            subject = subject, quarantinedHash = md5Hex(reset), quarantineBackupId = "reset-id",
+            repair = RepairState.Choosing("head-id", "reset-id", "head-hash", suspect = true),
+        )
+        store.put(quarantine)
+        val pending = LibraryReturn(owner.backendId, owner, Melon, saves.spots(Melon, owner, local), local.uri)
+        val running = RunningGame("tile", owner.label, owner.platformId, "melon", null, Panel.Top, false, 100, pending)
+        val resumed = decodeLibraryReturn(copies.resume(running) { true }!!.saves!!.encode()) { Melon }!!
+        assertTrue(resumed.preserveAsBackup)
+
+        // A repair can finish before this session returns. Its record must still carry the latch.
+        store.close(warning.id)
+        store.handled(Melon.id, owner)
+        assertFalse(store.pendingBackup(Melon.id, owner))
+        val bytes = "later resumed progress".toByteArray()
+        docs.files["$SAVES/Tetris DS (USA).sav"] = bytes
+        assertTrue(copies.preserveReturn(resumed.game, resumed.player, resumed.spots, resumed.preserveAsBackup))
+        assertEquals(listOf(md5Hex(bytes)), server.backups)
+        assertTrue(server.observed.isEmpty())
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> error("Already preserved") })
+        val (observed, returned) = regression.capture(owner.backendId, owner, Melon, resumed.spots)
+        assertTrue(observed.slots.isEmpty())
+        assertEquals(null, returned)
+        assertEquals(quarantine, SaveProtectionStore(dir).incident(quarantine.id))
     }
 
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {

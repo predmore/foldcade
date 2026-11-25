@@ -19,8 +19,8 @@ internal class SaveProbes(
     private val store: SaveProtectionStore,
     private val folder: (Player) -> String?,
     private val copies: SaveIncidentCopies,
-    private val sharedTarget: (String) -> LaunchTarget.SharedFile?,
-    private val rommMedia: () -> Path?,
+    private val sharedTarget: (String) -> LaunchTarget.SharedFile? = { null },
+    private val rommMedia: () -> Path? = { null },
     private val edenReadsAllowed: () -> Boolean = { true },
 ) {
     private val android by lazy { AndroidSaveFolderFinder(context) }

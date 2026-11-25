@@ -344,7 +344,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                 } else null
                                 val preserved = withContext(Dispatchers.IO) {
                                     foldcade.saveProtection.put(incident.copy(recoveryRequired = true))
-                                    val copies = foldcade.cachedSaveSpots(player).filterKeys(incident::affects)
+                                    val copies = foldcade.cachedSaveSpots(player).filterKeys(incident::appliesTo)
                                         .mapValues { (_, spots) -> spots.map { it.copy(folderUri = folder.toString()) } }.toMutableMap()
                                     val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
                                     if (route != null && incident.appliesTo(route.saves)) {
