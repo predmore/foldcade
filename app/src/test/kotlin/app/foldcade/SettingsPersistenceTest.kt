@@ -511,7 +511,7 @@ class SettingsPersistenceTest {
         assertFalse(holds.mayHold("other.retroarch", fallbackAtMillis = 120))
     }
 
-    @Test fun tryAgainConfirmsAnUnobservableCloseUntilTheNextOpen() {
+    @Test fun confirmingClosedReleasesAnUnobservableOpenUntilTheNextOpen() {
         val prefs = MemoryPrefs()
         val name = "com.retroarch.aarch64"
         val store = SessionStore(prefs)
@@ -527,13 +527,32 @@ class SettingsPersistenceTest {
         assertTrue(holds(restored).mayHold(name, fallbackAtMillis = 120))
     }
 
-    @Test fun tryAgainDoesNotOverrideReadableExitHistory() {
+    @Test fun confirmingClosedDoesNotOverrideReadableExitHistory() {
         val store = SessionStore(MemoryPrefs())
         val name = "azahar.app"
         store.noteRepairPlayerOpened(name, 120)
         val holds = RepairPlayerHolds(store, { 100 }) { listOf(110) }
         holds.confirmClosed(name, fallbackAtMillis = null, confirmedAtMillis = 130)
         assertNull(store.repairPlayerClosedAt(name))
+        assertTrue(holds.mayHold(name, fallbackAtMillis = null))
+    }
+
+    @Test fun azaharTaskRecordStillHoldsAfterHomeWithNoReadableExit() {
+        val holds = RepairPlayerHolds(SessionStore(MemoryPrefs()), { 100 }) { throw SecurityException("another uid") }
+        assertTrue(holds.mayHold("azahar.app", fallbackAtMillis = null, hasRunningTask = true))
+        assertFalse(holds.mayHold("azahar.app", fallbackAtMillis = null, hasRunningTask = false))
+    }
+
+    @Test fun aConfirmedPackageStopOverridesEarlierHoldsOnlyWhileStillStopped() {
+        val store = SessionStore(MemoryPrefs())
+        val name = "azahar.app"
+        store.noteRepairPlayerOpened(name, 120)
+        var stopped = true
+        val holds = RepairPlayerHolds(store, { 100 }, { it == name && stopped }) { throw SecurityException("another uid") }
+        assertFalse(holds.mayHold(name, fallbackAtMillis = null, hasRunningTask = true))
+        assertFalse(holds.mayHold(name, fallbackAtMillis = null))
+        stopped = false
+        assertTrue(holds.mayHold(name, fallbackAtMillis = null, hasRunningTask = true))
         assertTrue(holds.mayHold(name, fallbackAtMillis = null))
     }
 

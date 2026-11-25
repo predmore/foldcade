@@ -324,18 +324,20 @@ internal class PlayerSaves(
     })
 
     /** Sidecars are the queue; incidents are only presentation and may close at any time. */
-    fun queuedCopies(): List<StagedSaveCopy> {
+    fun queuedCopies(contentUris: Set<String>? = null): List<StagedSaveCopy> {
         if (!Files.isDirectory(handover)) return emptyList()
         return Files.newDirectoryStream(handover, "live-*.save.json").use { paths ->
             paths.mapNotNull { sidecar ->
                 try {
                     val file = sidecar.resolveSibling(sidecar.fileName.toString().removeSuffix(".json"))
+                    val uri = file.toUri().toString()
+                    if (contentUris != null && uri !in contentUris) return@mapNotNull null
                     if (!Files.isRegularFile(file)) return@mapNotNull null
                     val json = org.json.JSONObject(Files.readAllBytes(sidecar).toString(Charsets.UTF_8))
                     val game = Game(json.getString("library"), json.getString("game"), json.getString("platform"), Availability.Cached, json.getString("label"))
                     val hash = json.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
                     StagedSaveCopy(game, json.getString("playerKey"), json.getString("player"),
-                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), file.toUri().toString()),
+                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), uri),
                         json.optString("origin").takeIf { it.isNotBlank() })
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (_: Exception) { null } // An unreadable row cannot hide the rest of the queue.

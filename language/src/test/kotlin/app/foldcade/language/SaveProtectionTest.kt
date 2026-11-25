@@ -316,7 +316,8 @@ class SaveProtectionTest {
     }
 
     @Test fun theFixChecklistFollowsTheIncident() {
-        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
+        val page = SaveFixPage(incident.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true,
+            stagedDestinations = mapOf("file:///queued" to SaveFixCopyDestination.Romm))
         val waiting = incident.copy(staged = listOf("file:///queued"))
         assertEquals(listOf(SaveFixStepState.Now, SaveFixStepState.Now, SaveFixStepState.Later), saveFixSteps(waiting, page).map { it.state })
         assertEquals("Waiting for RomM", saveFixSteps(waiting, page).first().value)
@@ -334,7 +335,8 @@ class SaveProtectionTest {
     @Test fun localGuidedFixShowsStagedCopiesAndFinishesWithoutASaveChoice() {
         val localRetroArch = incident.copy(playerKey = "retroarch", playerName = "RetroArch",
             gameIds = listOf("lib:local-folder:nes"), staged = listOf("file:///save-handover/copy.save"), repair = RepairState.Guided)
-        val page = SaveFixPage(localRetroArch.id, HostScreen.Bottom, null, game = "NES game")
+        val page = SaveFixPage(localRetroArch.id, HostScreen.Bottom, null, game = "NES game",
+            stagedDestinations = mapOf(localRetroArch.staged.single() to SaveFixCopyDestination.Device))
         val done = localRetroArch.copy(repair = RepairState.Done)
         assertEquals(listOf(
             SaveFixStep("Keep a copy on this device", SaveFixStepState.Done, "1 kept"),
@@ -348,6 +350,49 @@ class SaveProtectionTest {
             assertEquals(listOf(SaveFixAction.Close), saveFixActions(done, current))
             assertEquals(Effect.FinishSaveFix(done.id, openSaves = false), applySaveFix(model, current, Meaning.Activate, 0).second)
         }
+    }
+
+    @Test fun theFixWaitingCardStartsWithAnExplicitCloseConfirmation() {
+        val waiting = incident.copy(repair = RepairState.WaitingForClose())
+        val page = SaveFixPage(waiting.id, HostScreen.Bottom, null, game = "Picross 3D: Round 2", hasRommDestination = true)
+        val model = PickerModel(1, 1, saveIncidents = listOf(waiting), saveFix = page)
+        assertEquals(listOf(SaveFixAction.ConfirmClosed, SaveFixAction.OpenEmulator), saveFixActions(waiting, page))
+        assertEquals("Confirm close", saveFixLabel(SaveFixAction.ConfirmClosed, waiting))
+        assertTrue(saveFixCard(waiting, page).body.startsWith("Already quit Picross 3D: Round 2 in Azahar?"))
+        assertEquals(Effect.ConfirmRepairGameClosed(waiting.id), applySaveFix(model, page, Meaning.Activate, 0).second)
+        val clearable = page.copy(canCloseGame = true)
+        assertEquals(listOf(SaveFixAction.CloseGame, SaveFixAction.OpenEmulator), saveFixActions(waiting, clearable))
+        assertEquals(Effect.CloseRepairGame(waiting.id), applySaveFix(model, clearable, Meaning.Activate, 0).second)
+        val dialog = saveFixCloseDialog(page.screen, waiting)
+        assertEquals(DialogButton.ContinueFix, dialog.buttons.first())
+        assertEquals(DialogButton.NotNow, dialog.buttons[dialog.safeIndex])
+    }
+
+    @Test fun emulatorWideFixCountsLocalCopiesEvenWithRommSetUp() {
+        val staged = incident.copy(subject = null, staged = listOf("file:///local-1", "file:///local-2"), repair = RepairState.Guided)
+        val page = SaveFixPage(staged.id, HostScreen.Bottom, null, hasRommDestination = true,
+            stagedDestinations = staged.staged.associateWith { SaveFixCopyDestination.Device })
+        val steps = saveFixSteps(staged, page)
+        assertEquals(SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, "2 kept"), steps.first())
+        assertTrue(steps.none { it.value == SaveProtectionCopy.stepWaiting || it.title == SaveProtectionCopy.stepKeep })
+        assertEquals(SaveProtectionCopy.guidedDoneLocal, saveFixCard(staged.copy(repair = RepairState.Done), page).body)
+    }
+
+    @Test fun mixedIncidentReportsRommAndDeviceCopiesIndependently() {
+        val mixed = incident.copy(subject = null, staged = listOf("file:///device", "file:///romm"), repair = RepairState.Guided)
+        val page = SaveFixPage(mixed.id, HostScreen.Bottom, null, hasRommDestination = true,
+            stagedDestinations = mapOf("file:///device" to SaveFixCopyDestination.Device, "file:///romm" to SaveFixCopyDestination.Romm))
+        val device = SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, "1 kept")
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepRomm, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting), device),
+            saveFixSteps(mixed, page).take(2))
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepRomm, SaveFixStepState.Done, "1 kept"), device),
+            saveFixSteps(mixed.copy(staged = listOf("file:///device"), kept = listOf("backup")), page).take(2))
+    }
+
+    @Test fun aMissingSidecarDoesNotClaimWhereTheCopyWasKept() {
+        val unchecked = incident.copy(staged = listOf("file:///unknown"), repair = RepairState.Guided)
+        val page = SaveFixPage(unchecked.id, HostScreen.Bottom, null, hasRommDestination = true)
+        assertEquals(SaveFixStep(SaveProtectionCopy.stepCopiesUnchecked, SaveFixStepState.Later), saveFixSteps(unchecked, page).first())
     }
 
     @Test fun emulatorWideFixWithoutADestinationReportsMissingLocalCopies() {

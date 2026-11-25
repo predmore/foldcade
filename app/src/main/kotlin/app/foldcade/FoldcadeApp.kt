@@ -924,13 +924,31 @@ class FoldcadeApp : Application() {
 
     private fun bootAtMillis() = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
-    internal val repairPlayerHolds by lazy { RepairPlayerHolds(store, ::bootAtMillis, ::playerExitTimestamps) }
+    // The stopped flag can be set before Android kills the processes. Require the system's
+    // completed stop broadcast as well, and recheck the flag in case the player reopened.
+    private val stoppedRepairPlayers = mutableSetOf<String>()
+
+    private fun repairPackageStopped(name: String): Boolean {
+        if (name !in stoppedRepairPlayers) return false
+        return try {
+            packageManager.getApplicationInfo(name, 0).flags and android.content.pm.ApplicationInfo.FLAG_STOPPED != 0
+        } catch (_: PackageManager.NameNotFoundException) { false }
+        catch (_: SecurityException) { false }
+    }
+
+    internal val repairPlayerHolds by lazy {
+        RepairPlayerHolds(store, ::bootAtMillis, ::repairPackageStopped, ::playerExitTimestamps)
+    }
 
     /** Opening an emulator by its icon does not create a Paused tile. Save repair still waits for release. */
     internal fun noteRepairAppOpened(packageName: String) {
-        if (plugins.playerIds().mapNotNull(plugins::player).any { it is SaveFolderHolder && packageName in it.packageNames })
+        stoppedRepairPlayers.remove(packageName)
+        if (isSaveFolderPlayer(packageName))
             store.noteRepairPlayerOpened(packageName, System.currentTimeMillis())
     }
+
+    private fun isSaveFolderPlayer(packageName: String): Boolean =
+        plugins.playerIds().asSequence().mapNotNull(plugins::player).any { it is SaveFolderHolder && packageName in it.packageNames }
 
     /** "0.1.2 (230)" from the installed package. The build has no BuildConfig to read it from. */
     private fun installedVersion(): String = try {
@@ -951,6 +969,14 @@ class FoldcadeApp : Application() {
     private val packageChanges = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
+                Intent.ACTION_PACKAGE_RESTARTED -> {
+                    val name = intent.data?.schemeSpecificPart ?: return
+                    if (android.os.Build.VERSION.SDK_INT >= 35 && isSaveFolderPlayer(name)) {
+                        stoppedRepairPlayers.add(name)
+                        resumeSaveRepairs()
+                    }
+                }
+                Intent.ACTION_PACKAGE_UNSTOPPED -> intent.data?.schemeSpecificPart?.let(stoppedRepairPlayers::remove)
                 Intent.ACTION_PACKAGE_ADDED,
                 Intent.ACTION_PACKAGE_REMOVED,
                 Intent.ACTION_PACKAGE_CHANGED,
@@ -967,7 +993,10 @@ class FoldcadeApp : Application() {
                     componentUpdates.observeInstalled()
                     // A game cannot still run in an emulator that is gone, so its tile falls back
                     // to the game's choice, and Close and Move find the run that replaces it.
-                    if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) runningGames.forget(changed)
+                    if (intent.action == Intent.ACTION_PACKAGE_REMOVED && changed != null) {
+                        stoppedRepairPlayers.remove(changed)
+                        runningGames.forget(changed)
+                    }
                     if (changed in GameNativePlayer.PACKAGES || changed == DroidDeckPlayer.PACKAGE) rerouteSteamFiles()
                     if (changed in RETROARCH_PACKAGES) refreshRetroArchCores()
                     if (changed in EDEN_PACKAGES) refreshEdenSetting()
@@ -1258,6 +1287,8 @@ class FoldcadeApp : Application() {
                 addAction(Intent.ACTION_PACKAGE_REMOVED)
                 addAction(Intent.ACTION_PACKAGE_CHANGED)
                 addAction(Intent.ACTION_PACKAGE_REPLACED)
+                addAction(Intent.ACTION_PACKAGE_RESTARTED)
+                addAction(Intent.ACTION_PACKAGE_UNSTOPPED)
                 addDataScheme("package")
             },
             RECEIVER_EXPORTED,
@@ -1783,7 +1814,7 @@ class FoldcadeApp : Application() {
 
     /** Active sessions and Android handoffs still take precedence over a confirmation in Fix. */
     internal fun repairHasRunningTask(packageName: String): Boolean =
-        packageName in runningGames.holdingPackages() || packageName in closingPlayers ||
+        packageName in runningGames.holdingPackages() ||
             (externalPlay.sessionId != null && externalPlay.packageName == packageName) ||
             Panel.entries.any { store.session.externalOn(it)?.id == "android:$packageName" }
 
@@ -1795,7 +1826,7 @@ class FoldcadeApp : Application() {
         val installed = player.packageNames.filter(::packageInstalled)
         val repairPackage = subject.packageName?.takeIf { it in installed } ?: installed.singleOrNull()
         for (name in installed) {
-            if (repairHasRunningTask(name)) continue
+            if (name in closingPlayers || repairHasRunningTask(name)) continue
             val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == repairPackage }
             repairPlayerHolds.confirmClosed(name, fallback, confirmedAtMillis)
         }
@@ -1849,12 +1880,21 @@ class FoldcadeApp : Application() {
     private suspend fun publishSaveProtection(locations: Map<String, app.foldcade.language.LocationFact>, replace: Boolean) = withContext(Dispatchers.Main.immediate) {
         val incidents = saveProtection.incidents()
         shell.setSaveProtection(locations, incidents, replace, saveProbes.duckStationConfigReadable)
-        shell.model.saveFix?.let { page ->
-            val canClose = incidents.firstOrNull { it.id == page.incidentId }?.let { repairClosePackage(it) } != null
-            if (page.canCloseGame != canClose) shell.updateSaveFix(page.incidentId) { it.copy(canCloseGame = canClose) }
-        }
         saveIncidentNotices.update(incidents)
         publishNotices()
+        shell.model.saveFix?.let { page ->
+            incidents.firstOrNull { it.id == page.incidentId }?.let { refreshSaveFixDetails(it) }
+        }
+    }
+
+    internal suspend fun refreshSaveFixDetails(incident: app.foldcade.language.SaveIncident) {
+        val destinations = withContext(Dispatchers.IO) { saveIncidentCopies.destinations(incident.staged) }
+        withContext(Dispatchers.Main.immediate) {
+            val current = saveProtection.incident(incident.id) ?: return@withContext
+            if (current.staged != incident.staged) return@withContext
+            val canClose = repairClosePackage(current) != null
+            shell.updateSaveFix(incident.id) { it.copy(canCloseGame = canClose, stagedDestinations = destinations) }
+        }
     }
 
     /** A restored Android task may still hold a game even though its Paused tile is gone. */
@@ -1863,7 +1903,7 @@ class FoldcadeApp : Application() {
         val bootAt = bootAtMillis()
         return incident.subject?.playerId?.let(plugins::player)?.packageNames?.filter { name ->
             (name in runningGames.holdingPackages() || store.repairPlayerOpenedAt(name)?.let { it >= bootAt } == true) &&
-                name !in closingPlayers && canClearPlayerTask(name) &&
+                name !in closingPlayers && canClearPlayerTask(name) && !repairPackageStopped(name) &&
                 packageManager.getLaunchIntentForPackage(name) != null
         }?.singleOrNull()
     }
@@ -2377,12 +2417,13 @@ class FoldcadeApp : Application() {
      */
     fun noteStarted(player: Player, intent: PlayerIntent): Boolean {
         store.setSaveAwaitsLoad(player.saveFolderId(), false)
+        val installed = launchWork.retroArchCore?.installedIntent(intent) ?: intent
+        stoppedRepairPlayers.remove(installed.packageName)
         if (player is RetroArchPlayer) {
-            val installed = launchWork.retroArchCore?.installedIntent(intent) ?: intent
             store.noteRepairPlayerOpened(installed.packageName, System.currentTimeMillis())
         }
         if (LaunchFlag.ReplaceRunning !in intent.flags) return false
-        val key = startKey(launchWork.retroArchCore?.installedIntent(intent) ?: intent)
+        val key = startKey(installed)
         val replacing = store.lastPlayerStart(intent.packageName) != key
         store.setLastPlayerStart(intent.packageName, key)
         return replacing

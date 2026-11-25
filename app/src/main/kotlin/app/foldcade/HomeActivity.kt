@@ -647,14 +647,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             is Effect.LoadSavePicker -> loadSavePicker(effect.target)
             is Effect.OpenSaveFix -> openSaveFix(effect.incidentId)
             is Effect.ChooseRepairSave -> chooseRepairSave(effect.incidentId)
-            is Effect.RetrySaveRepair -> {
-                val waiting = foldcade.shell.model.saveIncidents.firstOrNull { it.id == effect.incidentId }?.repair
-                val confirmedAt = System.currentTimeMillis().takeIf { waiting is app.foldcade.language.RepairState.WaitingForClose }
-                retrySaveRepair(effect.incidentId, confirmedAtMillis = confirmedAt)
-            }
+            is Effect.RetrySaveRepair -> retrySaveRepair(effect.incidentId)
+            is Effect.ConfirmRepairGameClosed -> retrySaveRepair(effect.incidentId, confirmedAtMillis = System.currentTimeMillis())
             is Effect.CloseRepairGame -> foldcade.saveProtection.incident(effect.incidentId)?.let { incident ->
                 if (foldcade.repairClosePackage(incident) != null)
-                    foldcade.shell.present(closeGameDialog(hostScreen()).copy(subject = incident.id))
+                    foldcade.shell.present(app.foldcade.language.saveFixCloseDialog(hostScreen(), incident))
             }
             is Effect.PickFixFolder -> pickFixFolder(effect.incidentId)
             is Effect.FinishSaveFix -> finishSaveFix(effect.incidentId, effect.openSaves)
@@ -3200,10 +3197,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             DialogKind.CloseGame -> {
                 val asked = foldcade.closeGameAsk
                 foldcade.closeGameAsk = null
-                if (effect.button == DialogButton.CloseIt) {
-                    if (effect.subject != null) effect.subject?.let(::closeGameForRepair)
-                    else if (asked != null) closeGame(asked)
-                }
+                if (effect.button == DialogButton.ContinueFix) effect.subject?.let(::closeGameForRepair)
+                if (effect.button == DialogButton.CloseIt && asked != null) closeGame(asked)
             }
             DialogKind.RestartGame -> {
                 val id = restartId
@@ -3487,6 +3482,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch }?.let(foldcade.shell::saveGame)
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
+        foldcade.scope.launch { foldcade.refreshSaveFixDetails(incident) }
         if (!hosted && !incident.isEdenGrant && !incident.isEdenSessionChange) {
             if (page.hasRommDestination && incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
                 chooseRepairSave(id)
