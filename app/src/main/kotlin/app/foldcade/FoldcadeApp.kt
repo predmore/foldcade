@@ -974,6 +974,9 @@ class FoldcadeApp : Application() {
                     val name = intent.data?.schemeSpecificPart ?: return
                     if (android.os.Build.VERSION.SDK_INT >= 35 && isSaveFolderPlayer(name)) {
                         stoppedRepairPlayers.add(name)
+                        if (runningGames.forPackage(name)?.activityGrant != null && repairPackageStopped(name)) {
+                            runningGames.forget(name)
+                        }
                         resumeSaveRepairs()
                     }
                 }

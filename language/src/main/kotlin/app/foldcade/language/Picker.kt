@@ -100,6 +100,9 @@ enum class DialogKind {
     /** Restart a game still open in its player. Not now leaves it paused. */
     RestartGame,
 
+    /** Try Azahar's task when Foldcade cannot verify what it will show. */
+    ResumeGame,
+
     /** Close a paused game and the apps opened beside its current run. */
     CloseGame,
 
@@ -549,6 +552,16 @@ fun restartGameDialog(screen: HostScreen): DialogState = DialogState(
     title = Copy.restartTitle,
     body = Copy.restartBody,
     buttons = listOf(DialogButton.Restart, DialogButton.NotNow),
+    index = 1,
+    safeIndex = 1,
+    screen = screen,
+)
+
+fun resumeGameDialog(screen: HostScreen): DialogState = DialogState(
+    kind = DialogKind.ResumeGame,
+    title = Copy.azaharResumeTitle,
+    body = Copy.azaharResumeBody,
+    buttons = listOf(DialogButton.ContinueGrant, DialogButton.NotNow),
     index = 1,
     safeIndex = 1,
     screen = screen,

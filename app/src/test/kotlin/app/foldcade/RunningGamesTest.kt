@@ -10,6 +10,55 @@ import org.junit.Test
 
 class RunningGamesTest {
     @Test
+    fun azaharTracksOnlyItsGameActivityInBothDistributions() {
+        val game = app.foldcade.plugins.azahar.EMULATION_ACTIVITY
+        assertTrue(supportsGameActivityGrant("org.azahar_emu.azahar", game))
+        assertTrue(supportsGameActivityGrant("io.github.lime3ds.android", game))
+        assertFalse(supportsGameActivityGrant("org.azahar_emu.azahar", "org.citra.citra_emu.ui.main.MainActivity"))
+        assertFalse(supportsGameActivityGrant("org.azahar_emu.azahar", null))
+        assertFalse(supportsGameActivityGrant("com.github.stenzek.duckstation", game))
+    }
+
+    @Test
+    fun confirmedClosureAlwaysUsesTheGate() {
+        for (warned in listOf(false, true)) {
+            assertEquals(GameActivityResume.Launch, gameActivityResume(exited = false, hasActivityGrant = true, held = false, warned = warned))
+        }
+        assertEquals(GameActivityResume.Launch, gameActivityResumed(false, emptyList(), "Game"))
+    }
+
+    @Test
+    fun aHeldGrantResumesDirectlyAndAnUnknownGrantCheckWarns() {
+        assertEquals(GameActivityResume.Resume, gameActivityResume(exited = false, hasActivityGrant = true, held = true, warned = false))
+        assertEquals(GameActivityResume.Warn, gameActivityResume(exited = false, hasActivityGrant = true, held = null, warned = false))
+        assertEquals(GameActivityResume.Resume, gameActivityResume(exited = false, hasActivityGrant = true, held = null, warned = true))
+    }
+
+    @Test
+    fun onlyAnObservedDifferentActivityWarnsAfterResume() {
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, listOf("Menu", "Game"), "Game"))
+        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Game", "Menu"), "Game"))
+        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Settings"), "Game"))
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, emptyList(), "Game"))
+        assertEquals(GameActivityResume.Resume, gameActivityResumed(null, emptyList(), "Game"))
+    }
+
+    @Test
+    fun aProcessExitAfterStartUsesTheGateEvenWhenTheGrantRemainsHeld() {
+        val exited = playerDiedAfterStart(startedAtMillis = 1_000L, exitTimestamps = listOf(1_100L))
+        assertEquals(GameActivityResume.Launch, gameActivityResume(exited, hasActivityGrant = true, held = true, warned = false))
+        assertEquals(GameActivityResume.Launch, gameActivityResume(exited, hasActivityGrant = false, held = null, warned = false))
+    }
+
+    @Test
+    fun aRunWithoutAConfirmedGrantUsesTheExistingReturnAndResumeHeuristics() {
+        assertNull(gameActivityResume(exited = false, hasActivityGrant = false, held = null, warned = false))
+        assertTrue(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true, hasActivityGrant = false))
+        assertFalse(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = true, hasActivityGrant = false))
+        assertFalse(forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true, hasActivityGrant = true))
+    }
+
+    @Test
     fun aPlayerHoldsOneGameSoANewStartThereReplacesTheLast() {
         val games = RunningGames()
         val seen = mutableListOf<Set<String>>()
