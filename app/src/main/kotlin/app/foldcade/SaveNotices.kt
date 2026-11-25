@@ -221,7 +221,7 @@ internal class SaveIncidentNotices {
         return incidents.filter { it.id !in dismissed }.map { incident -> FoldNotice(
             noticeId(incident.id), app.foldcade.language.SaveProtectionCopy.title(incident),
             // No unconditional RomM reassurance: a folder-wide incident may concern a local-only game.
-            app.foldcade.language.SaveProtectionCopy.body(incident), postedMillis = incident.openedAtMillis,
+            app.foldcade.language.SaveProtectionCopy.noticeBody(incident), postedMillis = incident.openedAtMillis,
         ) }
     }
     private fun noticeId(id: String) = "foldcade:save-incident:$id"

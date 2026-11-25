@@ -777,15 +777,15 @@ New class `SaveIncidentNotices` in `SaveNotices.kt`. It shows one notice per inc
 
 | Incident | Title | Body | A |
 |---|---|---|---|
-| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"$emulator now saves in ${live.label} instead of the ${bound.label} folder. Fix it before you play."` | Fix saves page |
-| WrongFolder, live root unknown | same | `"$emulator didn’t use the folder ${bound.label} last time you played. Fix it before you play."` | Fix saves page |
-| FolderEmptied | `"$emulator’s save folder is empty"` | `"Your save is safe on RomM. Put it back before you play."` | Fix saves page |
-| LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Allow its folder again so saves reach RomM."` | picker |
-| MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"Check where it saves."` | Fix saves page |
-| MaybeNewSave | `"Two saves for $game"` | `"Both are kept on RomM. Choose which to play."` | two-saves card |
-| Repair Done | `"Fixed: $game"` | `"Your RomM save is back in ${live.label}."` | — |
+| WrongFolder, live root known | `"$emulator is saving somewhere else"` | `"Saving in ${live.label}. Fix it before you play."` | Fix saves page |
+| WrongFolder, live root unknown | same | `"Not saving in ${bound.label}. Fix it before you play."` | Fix saves page |
+| FolderEmptied | `"$emulator’s save folder is empty"` | `"${bound.label} is empty. Fix it before you play."` | Fix saves page |
+| LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Can’t see ${bound.label}. Fix it before you play."` | picker |
+| MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"May be saving elsewhere. Check before you play."` | Fix saves page |
+| MaybeNewSave | `"Two saves for $game"` | `"Two saves. Choose which to play."` | two-saves card |
+| Repair Done | — | No incident notice | — |
 
-R1 uses the gate’s body helper without a receipt or server-version claim: a folder-wide notice does not know every game has a RomM copy.
+R1 uses its own short `noticeBody` helper: the problem first, then the action, about 50 characters with ordinary folder names so both fit its one-line renderer. The stop dialog, hero detail and Fix page keep the longer copy. A folder-wide notice makes no receipt or server-version claim, because it does not know every game has a RomM copy. Done incidents do not keep an R1 alarm.
 
 Dismiss works "for now", as `SaveSetupNotices` does. The notice comes back when any game on that emulator is launched, and at every cold start, until the incident closes. If several incidents are open, they merge into `"$n emulators need a fix"`, using the merged-notice pattern, with `settingsCategory = Players`.
 

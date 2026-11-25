@@ -301,9 +301,18 @@ object SaveProtectionCopy {
         hasVersions -> safeHeadlineVersions
         else -> ""
     }
+    /** R1 has one line: lead with the problem and keep the action visible. */
+    fun noticeBody(incident: SaveIncident): String = with(incident) { when (kind) {
+        IncidentKind.WrongFolder -> if (live != null) "Saving in ${live.label}. Fix it before you play."
+            else "Not saving in ${bound?.label ?: "this folder"}. Fix it before you play."
+        IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
+        IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
+        IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
+        IncidentKind.MaybeNewSave -> "Two saves. Choose which to play."
+    } }
     /**
      * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it
-     * says what playing now costs. R1 and the other surfaces end with "Fix it before you play."
+     * says what playing now costs. The other detail surfaces end with "Fix it before you play."
      */
     fun body(
         incident: SaveIncident,

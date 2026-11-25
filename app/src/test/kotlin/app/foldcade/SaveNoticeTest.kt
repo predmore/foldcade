@@ -12,7 +12,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveNoticeTest {
-    @Test fun anUnknownLiveRootUsesTheLastSessionCopyInR1() {
+    @Test fun anUnknownLiveRootUsesShortCopyInR1() {
         val root = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
         val evidence = app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog,
             app.foldcade.language.SaveProtectionCopy.unchangedLog("Azahar"))
@@ -23,7 +23,22 @@ class SaveNoticeTest {
         val notice = notices.notices(10).single()
         assertEquals("Azahar is saving somewhere else", notice.title)
         // R1 says what to do; only the launch stop says what this session costs.
-        assertEquals("Azahar didn’t use the folder Azahar last time you played. Fix it before you play.", notice.body)
+        assertEquals("Not saving in Azahar. Fix it before you play.", notice.body)
+    }
+
+    @Test fun aKnownLiveRootKeepsTheR1ActionWithinOneShortLine() {
+        val root = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
+        val live = app.foldcade.language.FolderRef("primary:AzaharQA", "AzaharQA")
+        val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
+            "azahar", "Azahar", emptyList(), root, live, app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog, "elsewhere"), 10)
+        val notices = SaveIncidentNotices()
+        notices.update(listOf(incident))
+        val notice = notices.notices(10).single()
+        assertEquals("Azahar is saving somewhere else", notice.title)
+        assertEquals("Saving in AzaharQA. Fix it before you play.", notice.body)
+        assertTrue(notice.body.length <= 50)
+        assertEquals("Azahar now saves in AzaharQA instead of the Azahar folder. Fix it before you play.",
+            app.foldcade.language.SaveProtectionCopy.body(incident))
     }
 
     @Test fun completedIncidentsDoNotKeepAnR1AlarmAndCanReopenLater() {

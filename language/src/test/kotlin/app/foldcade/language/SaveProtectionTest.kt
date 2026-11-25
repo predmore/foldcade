@@ -151,6 +151,25 @@ class SaveProtectionTest {
         assertTrue(stop.body.endsWith("this session’s progress isn’t protected."))
     }
 
+    @Test fun r1IncidentBodiesLeadWithTheProblemAndKeepTheActionShort() {
+        val known = incident.copy(bound = live, live = FolderRef("primary:AzaharQA", "AzaharQA"))
+        val cases = listOf(
+            known to "Saving in AzaharQA. Fix it before you play.",
+            known.copy(live = null) to "Not saving in Azahar. Fix it before you play.",
+            known.copy(kind = IncidentKind.LostAccess, live = null) to "Can’t see Azahar. Fix it before you play.",
+            known.copy(kind = IncidentKind.FolderEmptied, live = null) to "Azahar is empty. Fix it before you play.",
+            known.copy(kind = IncidentKind.MaybeWrongFolder, live = null) to "May be saving elsewhere. Check before you play.",
+            known.copy(kind = IncidentKind.MaybeNewSave) to "Two saves. Choose which to play.",
+        )
+        for ((problem, expected) in cases) {
+            val body = SaveProtectionCopy.noticeBody(problem)
+            assertEquals(expected, body)
+            assertTrue(body, body.length <= 50)
+            assertFalse(body.contains('\n'))
+            assertFalse(body.contains("RomM")) // A folder-wide notice has no game receipt.
+        }
+    }
+
     @Test fun checkDetailSaysTheEvidenceInWords() {
         val checked = at(24, 13, 27)
         val whenText = saveWhen(checked, now, clock24, inSentence = true)
