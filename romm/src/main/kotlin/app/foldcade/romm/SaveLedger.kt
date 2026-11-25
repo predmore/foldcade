@@ -4,6 +4,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
@@ -56,6 +58,7 @@ class SaveLedger(private val file: Path) {
                 syncedHash = obj.optString("synced_hash"),
                 archivedHash = obj.optString("archived_hash"),
                 emulator = obj.optString("emulator"),
+                syncedAtMillis = obj["synced_at"]?.jsonPrimitive?.longOrNull,
             )
         }.toMap()
     }
@@ -78,7 +81,7 @@ class SaveLedger(private val file: Path) {
     }
 
     fun markSynced(slot: String, hash: String, emulator: String?) =
-        update(slot) { it.copy(syncedHash = hash, emulator = emulator ?: it.emulator) }
+        update(slot) { it.copy(syncedHash = hash, emulator = emulator ?: it.emulator, syncedAtMillis = System.currentTimeMillis()) }
 
     private fun write(slots: Map<String, SlotRecord>) {
         val root = buildJsonObject {
@@ -92,6 +95,7 @@ class SaveLedger(private val file: Path) {
                                 putNullable("synced_hash", record.syncedHash)
                                 putNullable("archived_hash", record.archivedHash)
                                 putNullable("emulator", record.emulator)
+                                put("synced_at", record.syncedAtMillis?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: JsonNull)
                             },
                         )
                     }
@@ -117,4 +121,5 @@ data class SlotRecord(
     val syncedHash: String? = null,
     val archivedHash: String? = null,
     val emulator: String? = null,
+    val syncedAtMillis: Long? = null,
 )

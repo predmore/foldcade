@@ -64,7 +64,9 @@ class ServerSavesTest {
         ops.onArchive = { save, _, hash, content ->
             assertEquals(rommSaveHash(content), hash)
             events += "archive:${save.id}"
-            add(content, null, save.emulator, at = 0).id
+            val kept = add(content, null, save.emulator, at = 0)
+            server[server.indexOf(kept)] = kept.copy(fileName = "foldcade-kept-${java.util.UUID.randomUUID()}.${if (save.fileName.endsWith(".zip")) "zip" else "sav"}")
+            kept.id
         }
         ops.onUploadSave = { rom, _, slot, emulator, _, hash, content ->
             assertEquals(ROM, rom)
@@ -79,6 +81,112 @@ class ServerSavesTest {
     }
 
     @After fun cleanup() { root.toFile().deleteRecursively() }
+
+    @Test fun incidentCopiesAreVerifiedBackupsAndNeverChangeHeldBytesLedgerOrSlotHeads() = runBlocking {
+        hold("RomM head")
+        val ledger = data.ledger(ROM).slots()
+        val heads = server.filter { it.slot != null }
+        val library = library()
+        for (body in listOf("live copy".toByteArray(), zip())) {
+            val file = root.resolve("live.save")
+            writeDurably(file, body)
+            val observed = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+            val ids = library.keepAsBackups(GAME, player, observed)
+            assertEquals(1, ids.size)
+            val kept = server.single { it.id.toString() == ids.single() }
+            assertNull(kept.slot)
+            assertArrayEquals(body, bytes.getValue(kept.id))
+            assertEquals(ids, library.keepAsBackups(GAME, player, observed))
+            assertEquals(heads, server.filter { it.slot != null })
+            assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
+            assertEquals(ledger, data.ledger(ROM).slots())
+            assertEquals(emptyList<String>(), events.filter { it == "sync" || it.startsWith("upload:") })
+            library.serverSaves(GAME, player)
+            assertTrue(ids.single() in library.serverSaveBackups(GAME))
+        }
+        assertEquals(2, events.count { it.startsWith("archive:") })
+    }
+
+    @Test fun backupResponseLossRetriesWithoutDuplicatesAndUnverifiedIdsAreRefused() = runBlocking {
+        hold("RomM head")
+        val file = root.resolve("live.save")
+        writeDurably(file, "live".toByteArray())
+        val observed = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+        val archive = ops.onArchive
+        ops.onArchive = { save, device, hash, content -> archive(save, device, hash, content); throw RommUnavailable("lost response") }
+        val library = library()
+        assertNotNull(runCatching { library.keepAsBackups(GAME, player, observed) }.exceptionOrNull())
+        ops.onArchive = { _, _, _, _ -> error("Must reuse verified archive") }
+        assertEquals(1, library.keepAsBackups(GAME, player, observed).size)
+        assertEquals(1, server.count { it.slot == null })
+        writeDurably(file, "different".toByteArray())
+        val other = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+        ops.onArchive = { _, _, _, _ -> 99999 }
+        assertNotNull(runCatching { library.keepAsBackups(GAME, player, other) }.exceptionOrNull())
+        assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
+    }
+
+    @Test fun preservationArchivesSlotMatchesAndOnlyReusesUnslottedMemberAwareCopies() = runBlocking {
+        hold("RomM head")
+        val head = server.single()
+        val zipped = add(zip(), "sav", player.id, at = -1)
+        val sameMembers = zip(level = 0)
+        assertFalse(bytes.getValue(zipped.id).contentEquals(sameMembers))
+        assertNotEquals(zipped.sizeBytes, sameMembers.size.toLong())
+        assertEquals(zipped.contentHash, rommSaveHash(sameMembers))
+        val before = server.toList()
+        val ledger = data.ledger(ROM).slots()
+        val archiveIds = mutableListOf<Long>()
+        val library = library()
+        for ((body, expected) in listOf("RomM head".toByteArray() to head, sameMembers to zipped)) {
+            val file = root.resolve("live.save")
+            writeDurably(file, body)
+            val ids = library.keepAsBackups(GAME, player,
+                ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString()))))
+            val kept = server.single { it.id.toString() == ids.single() }
+            assertNull(kept.slot)
+            assertNotEquals(expected.id, kept.id)
+            assertEquals(expected.contentHash, kept.contentHash)
+            archiveIds += kept.id
+        }
+        assertEquals(before, server.filter { it.slot != null })
+        assertEquals(2, events.count { it.startsWith("archive:") })
+        // Slot retention can remove both matches without losing either preserved copy.
+        server.removeAll { it.slot != null }
+        assertTrue(server.map { it.id }.containsAll(archiveIds))
+        val file = root.resolve("live.save")
+        writeDurably(file, zip())
+        assertEquals(listOf(archiveIds.last().toString()), library.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))))
+        assertEquals(2, events.count { it.startsWith("archive:") })
+        assertEquals(ledger, data.ledger(ROM).slots())
+        assertFalse(events.any { it.startsWith("upload:") || it == "sync" })
+    }
+
+    @Test fun aBackupRemembersItsFolderAcrossRestartAndKeepsOtherServersAndRomsSeparate() = runBlocking {
+        hold("RomM head")
+        val file = root.resolve("live.save")
+        writeDurably(file, "live progress".toByteArray())
+        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"folderLabel\":\"AzaharQA\"}")
+        val id = library().keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))).single()
+        val restored = library()
+        val listed = restored.serverSaves(GAME, player)
+        assertEquals("AzaharQA", listed.single { it.id == id }.source)
+        assertTrue(id in restored.serverSaveBackups(GAME))
+        // A reused Backup retains its original folder instead of inheriting a later copy's origin.
+        Files.writeString(file.resolveSibling("${file.fileName}.json"), "{\"identity\":\"primary:Elsewhere\"}")
+        assertEquals(listOf(id), restored.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))))
+        assertEquals(mapOf(id to "AzaharQA"), RommData(root.resolve("data"), ORIGIN).backupFolders(ROM))
+        assertTrue(RommData(root.resolve("data"), "https://other.example").backupFolders(ROM).isEmpty())
+        assertTrue(data.backupFolders(ROM + 1).isEmpty())
+        // A still-unlabelled legacy queue entry can fill the origin from storage identity.
+        writeDurably(file, "legacy copy".toByteArray())
+        val legacy = restored.keepAsBackups(GAME, player,
+            ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))).single()
+        assertEquals("Elsewhere", data.backupFolders(ROM)[legacy])
+    }
 
     @Test fun listsEverySlotAndUsesTheOriginsDeviceNameAndTheHeldHash() = runBlocking {
         val old = add("current".toByteArray(), "sav", "melonds", at = 1)
@@ -412,11 +520,13 @@ class ServerSavesTest {
         hold("current")
         val source = add("choice".toByteArray(), "sav", "melonds")
         val destination = add("old target".toByteArray(), "autosave", "argosy")
-        val ledger = Files.readString(data.romSaves(ROM).resolve(SaveLedger.FILE_NAME))
+        val ledger = data.ledger(ROM).slots()
         assertTrue(library().copyServerSave(GAME, source.id.toString(), "autosave", "argosy", player).isEmpty())
         assertTrue(events.contains("upload:autosave:argosy"))
         assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
-        assertEquals(ledger, Files.readString(data.romSaves(ROM).resolve(SaveLedger.FILE_NAME)))
+        val after = data.ledger(ROM).slots()
+        assertEquals(ledger.mapValues { it.value.copy(syncedAtMillis = null) }, after.mapValues { it.value.copy(syncedAtMillis = null) })
+        assertTrue(after.getValue("sav").syncedAtMillis!! >= ledger.getValue("sav").syncedAtMillis!!)
         assertTrue(server.any { it.id == source.id })
         assertTrue(server.any { it.id == destination.id })
     }
@@ -494,7 +604,8 @@ class ServerSavesTest {
     }.toByteArray()
 
     private fun library(): RommLibrary {
-        val wiring = RommWiring(ORIGIN, RommTokenSource { token }, root.resolve("cache"), root.resolve("data"))
+        val wiring = RommWiring(ORIGIN, RommTokenSource { token }, root.resolve("cache"), root.resolve("data"),
+            saveBytes = SaveBytes { Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(it))) })
         wiring.open = { _, _ -> ops }
         return RommLibrary(RommGate { wiring })
     }
@@ -534,7 +645,7 @@ class ServerSavesTest {
     }
 
     private fun report() = SaveSyncReport(1, "5.4.1", emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), true)
-    private fun zip(): ByteArray = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { it.putNextEntry(ZipEntry("sdmc/save.bin")); it.write("progress".toByteArray()); it.closeEntry() } }.toByteArray()
+    private fun zip(level: Int = 6): ByteArray = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { it.setLevel(level); it.putNextEntry(ZipEntry("sdmc/save.bin").apply { time = 0 }); it.write("progress".toByteArray()); it.closeEntry() } }.toByteArray()
     companion object {
         const val ROM = 1234L
         const val ORIGIN = "https://romm.example"

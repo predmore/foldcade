@@ -5,4 +5,5 @@
     <include domain="sharedpref" path="foldcade.xml" />
     <include domain="file" path="." />
     <exclude domain="file" path="datastore" />
+    <exclude domain="file" path="save-protection" />
 </full-backup-content>

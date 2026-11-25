@@ -12,6 +12,48 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveNoticeTest {
+    @Test fun anUnknownLiveRootUsesShortCopyInR1() {
+        val root = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
+        val evidence = app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog,
+            app.foldcade.language.SaveProtectionCopy.unchangedLog("Azahar"))
+        val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
+            "azahar", "Azahar", emptyList(), root, null, evidence, 10)
+        val notices = SaveIncidentNotices()
+        notices.update(listOf(incident))
+        val notice = notices.notices(10).single()
+        assertEquals("Azahar is saving somewhere else", notice.title)
+        // R1 says what to do; only the launch stop says what this session costs.
+        assertEquals("Not saving in Azahar. Fix it before you play.", notice.body)
+    }
+
+    @Test fun aKnownLiveRootKeepsTheR1ActionWithinOneShortLine() {
+        val root = app.foldcade.language.FolderRef("primary:Azahar", "Azahar")
+        val live = app.foldcade.language.FolderRef("primary:AzaharQA", "AzaharQA")
+        val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
+            "azahar", "Azahar", emptyList(), root, live, app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.FreshLog, "elsewhere"), 10)
+        val notices = SaveIncidentNotices()
+        notices.update(listOf(incident))
+        val notice = notices.notices(10).single()
+        assertEquals("Azahar is saving somewhere else", notice.title)
+        assertEquals("Saving in AzaharQA. Fix it before you play.", notice.body)
+        assertTrue(notice.body.length <= 50)
+        assertEquals("Azahar now saves in AzaharQA instead of the Azahar folder. Fix it before you play.",
+            app.foldcade.language.SaveProtectionCopy.body(incident))
+    }
+
+    @Test fun completedIncidentsDoNotKeepAnR1AlarmAndCanReopenLater() {
+        val notices = SaveIncidentNotices()
+        val incident = app.foldcade.language.SaveIncident("WrongFolder:azahar", app.foldcade.language.IncidentKind.WrongFolder,
+            "azahar", "Azahar", emptyList(), null, null, app.foldcade.language.Evidence(app.foldcade.language.EvidenceKind.SessionWrite, "elsewhere"), 10)
+        notices.update(listOf(incident))
+        val notice = notices.notices(10).single()
+        notices.dismiss(notice.id)
+        notices.update(listOf(incident.copy(repair = app.foldcade.language.RepairState.Done, staged = listOf("file:///queued"))))
+        assertTrue(notices.notices(20).isEmpty())
+        notices.update(listOf(incident.copy(openedAtMillis = 30)))
+        assertEquals(1, notices.notices(30).size)
+    }
+
     @Test
     fun ledgerNoticeCleanupRemovesOnlyNoticesItPosted() {
         val ledger = WaitingSaveNotices(patienceMillis = 100)

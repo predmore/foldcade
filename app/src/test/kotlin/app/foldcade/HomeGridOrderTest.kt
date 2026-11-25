@@ -766,7 +766,7 @@ class HomeGridOrderTest {
         focus(shell, hole)
         assertNull(shell.focusedHero())
         focus(shell, at)
-        assertEquals(lifted, (shell.focusedHero() as? app.foldcade.language.HeroSubject.Item)?.item?.title)
+        assertEquals(lifted, shell.focusedHero()?.let { app.foldcade.language.heroCopy(it).title })
     }
 
     @Test

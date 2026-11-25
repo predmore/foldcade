@@ -37,6 +37,12 @@ class SaveSetupTest {
     private fun PickerModel.saves(id: String, change: (PlayerSaveSetting) -> PlayerSaveSetting) =
         copy(playerSaves = playerSaves.map { if (it.playerId == id) change(it) else it })
 
+    @Test fun unverifiedHomeEmulatorsNeverClaimTheGamesSync() {
+        assertEquals(SaveProtectionCopy.folderSet, SaveSetupCopy.head(0, 2, unverified = true))
+        assertEquals(SaveProtectionCopy.folderSet, SaveSetupCopy.head(0, 0, unverified = true))
+        assertEquals(SaveSetupCopy.toGo(1), SaveSetupCopy.head(1, 2, unverified = true))
+    }
+
     @Test fun exLaunchModeIsVisibleBeforeAndAfterPickingItsFolder() {
         for (key in listOf("gba-emu.game-boy-advance", "gbc-emu.game-boy", "nes-emu.nes", "snes9x-ex.snes", "md-emu.genesis")) {
             for (done in listOf(false, true)) {
@@ -49,6 +55,7 @@ class SaveSetupTest {
 
     @Test fun aFolderFoundWithoutAskingSaysWhereOnThePageAndInSettings() {
         val found = model.saves("melonds") { it.copy(chosen = true, foundIn = "saves/nds") }
+        // The emulator page names the folder, checked or not; "Folder set" is Set up saves' word alone.
         assertEquals("saves/nds", rowText(Row.PlayerSave("melonds"), found).value)
         assertEquals(Copy.playerSavesSet, rowText(Row.PlayerSave("melonds"), model.saves("melonds") { it.copy(chosen = true) }).value)
         val tile = found.openSaveSetup(HostScreen.Top).tile("melonds")
@@ -157,7 +164,7 @@ class SaveSetupTest {
             val attention = settingsTileStatus(row, played) == TileStatus.Attention
             assertEquals(tile.key, attention, !tile.done)
             // With none, one still waiting wears nothing: no saves are at stake yet.
-            assertEquals(tile.key, if (tile.done) TileStatus.Fine else null, settingsTileStatus(row, ready))
+            assertEquals(tile.key, null, settingsTileStatus(row, ready))
         }
         val aps = tiles.first { it.key == "aps3e" }
         assertEquals(SetupStep.InApp("aps3e", InAppStep.Setup, "Install firmware in aPS3e.", done = false), aps.step)

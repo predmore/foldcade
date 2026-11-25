@@ -48,7 +48,7 @@ internal class AndroidSaveFolderFinder(private val context: Context) {
         false
     }
 
-    private fun playerHolds(player: Player, documentId: String): Boolean {
+    fun playerHolds(player: Player, documentId: String): Boolean {
         val uid = player.packageNames.firstNotNullOfOrNull { name ->
             try {
                 context.packageManager.getApplicationInfo(name, 0).uid

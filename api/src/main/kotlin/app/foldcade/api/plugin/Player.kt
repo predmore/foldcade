@@ -290,6 +290,9 @@ interface GameFileReader {
  * folders separated by `/`. Added in API minor 13.
  */
 interface SaveFolderAccess {
+    /** Last-modified epoch milliseconds, or null when unknown. Added in API minor 26. */
+    fun modifiedAtMillis(path: String): Long? = null
+
     /** What the folder at [path] holds, or null when it is missing or cannot be listed. "" is the folder itself. */
     fun list(path: String): List<SaveFolderEntry>?
 

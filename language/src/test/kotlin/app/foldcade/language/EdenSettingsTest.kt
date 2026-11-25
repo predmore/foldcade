@@ -32,7 +32,7 @@ class EdenSettingsTest {
 
         val granted = setup.copy(eden = EdenSetting(fromRomm = true))
         assertEquals(Copy.edenFromRomm, rowText(Row.EdenFolder, granted).value)
-        assertEquals(TileStatus.Fine, settingsTileStatus(eden, granted))
+        assertNull(settingsTileStatus(eden, granted))
 
         val both = granted.copy(retroArch = RetroArchSetting(cores = 3))
         assertEquals(

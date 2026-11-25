@@ -14,6 +14,7 @@ data class SavePickerSave(
     val origin: SavePickerOrigin? = null,
     /** The emulator's own name, "melonDS" for RomM's "melonds". Only shown; [emulator] is what RomM keeps. */
     val emulatorLabel: String? = null,
+    val folderLabel: String? = null,
 )
 
 data class SavePickerOrigin(val client: String?, val deviceName: String?, val thisDevice: Boolean)
@@ -30,9 +31,11 @@ data class SavePickerState(
     val target: SavePickerTarget,
     val gameLabel: String,
     val playerName: String,
-    val health: SaveHealth,
+    val health: SaveStatus,
     val ownSlots: List<String> = emptyList(),
     val saves: List<SavePickerSave> = emptyList(),
+    /** This device's model as players call it, "Thor", for the Play confirmation. */
+    val deviceName: String? = null,
     /** The status chip is 0; save rows start at 1. See [firstIndex]. */
     val index: Int = 0,
     val loading: Boolean = true,
@@ -61,7 +64,7 @@ data class SavePickerState(
      * Nothing on RomM yet and the emulator needs setting up: the card's centre is the one way
      * on, Set up saves with A on its cap, so the head's chip only says how things are.
      */
-    val setupInCard: Boolean get() = health is SaveHealth.NotSyncing && saves.isEmpty() && !loading && !error && !busy && copying == null
+    val setupInCard: Boolean get() = (health is SaveStatus.NotSyncing || health is SaveStatus.Problem) && saves.isEmpty() && !loading && !error && !busy && copying == null
     val firstIndex: Int get() = if (statusActs || saves.isEmpty()) 0 else 1
 
     /** [index] moved onto a row that can hold it, after the saves or the health change. */
@@ -115,13 +118,13 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
         Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(state.firstIndex), message = null) to null
         Meaning.MoveDown -> state.copy(index = (state.index + 1).coerceAtMost(state.saves.size), message = null) to null
         Meaning.Activate -> if (state.index == 0) when (state.health) {
-            is SaveHealth.NotSyncing -> state to Effect.FixSavePicker(state.target)
-            SaveHealth.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
+            is SaveStatus.Problem, is SaveStatus.NotSyncing -> state to Effect.FixSavePicker(state.target)
+            is SaveStatus.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
         } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
             // Set up loses nothing and is the only way on, so it is the one focused.
-            is SaveHealth.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
-            SaveHealth.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
+            is SaveStatus.Problem, is SaveStatus.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
+            is SaveStatus.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
             else -> state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
         }
         Meaning.Options -> state.copy(copying = state.focused, destinationIndex = 0) to null
@@ -153,7 +156,6 @@ object SavePickerCopy {
     const val noDestinations = "No other slots yet"
     const val unknown = "Unknown"
     const val thisDevice = "This device"
-    const val noSlot = "No slot"
     const val backup = "Backup"
     const val downloadFirst = "Download the game first."
     const val restartOpen = "The open game restarts. Anything not saved is lost."
@@ -183,6 +185,8 @@ object SavePickerCopy {
             .joinToString(" ").takeIf { it.isNotEmpty() }
     }
     fun source(save: SavePickerSave): String {
+        // A Backup's row names the folder it was kept from beside a folder mark.
+        save.folderLabel?.let { return it }
         val origin = save.origin ?: return fallbackSource(save)
         return when {
             origin.thisDevice -> thisDevice
@@ -192,6 +196,7 @@ object SavePickerCopy {
     }
     /** The detail page and confirmation keep the client, device and emulator together. */
     fun sourceDetail(save: SavePickerSave): String {
+        save.folderLabel?.let { return fromFolder(it) }
         val client = clientName(save.origin?.client)
         val device = deviceName(save.origin?.deviceName)
         // Every Foldcade names its RomM device Foldcade, so the device is named once, not "Foldcade on Foldcade".
@@ -210,13 +215,18 @@ object SavePickerCopy {
         "retroarch" -> "RetroArch"
         else -> name.split(Regex("[\\s_-]+")).joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
     }
-    fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: noSlot
+    fun fromFolder(folder: String) = "From the folder $folder"
+    /** This device as a player names it: "Thor" for an AYN Thor, the maker left off. */
+    fun thisDeviceName(manufacturer: String, model: String): String? =
+        (if (model.startsWith(manufacturer, ignoreCase = true)) model.drop(manufacturer.length) else model).trim().takeIf { it.isNotEmpty() }
+    /** A slot by name. One without a name is called by its time instead ([saveNames]), never "No slot". */
+    fun slot(save: SavePickerSave): String = if (save.backup) backup else save.slot?.takeIf { it.isNotBlank() } ?: unknown
     const val today = "Today"
     const val yesterday = "Yesterday"
     const val emptySlot = "Empty slot"
     /** The save a named slot holds now, in "Its current save is kept on RomM." */
     const val currentSave = "current"
-    fun row(save: SavePickerSave): String = "${source(save)} · ${slot(save)}"
+    fun row(save: SavePickerSave): String = if (save.folderLabel != null) "$backup · ${sourceDetail(save)}" else "${source(save)} · ${slot(save)}"
     fun destination(destination: SaveDestination): String = "${destination.source} · ${destination.slot}"
     /** Under the game's name on the top screen, once the saves are known. */
     fun count(saves: Int): String = when (saves) {
@@ -224,20 +234,14 @@ object SavePickerCopy {
         1 -> "1 save on RomM"
         else -> "$saves saves on RomM"
     }
-    fun header(health: SaveHealth): String = when (health) {
-        SaveHealth.Fine -> "Syncing with RomM"
-        // What to do is said once, beside A: in the footer, or on the card's Set up saves.
-        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot) "Saves aren’t syncing" else Copy.notSyncing
-        SaveHealth.Waiting -> "Waiting to upload"
-        SaveHealth.DeviceOnly -> Copy.savesDeviceOnly
-    }
-    fun explanation(health: SaveHealth): String = when (health) {
-        SaveHealth.Fine -> "Foldcade keeps this game’s saves on RomM."
-        is SaveHealth.NotSyncing -> if (health.reason == SaveIssue.NoSlot)
-            "Check the save folder, game file type and emulator’s save layout."
-            else "Set up the emulator to keep this game’s saves on RomM."
-        SaveHealth.Waiting -> "Progress on this device is waiting to reach RomM."
-        SaveHealth.DeviceOnly -> "This emulator keeps its saves on this device."
+    fun header(health: SaveStatus): String = saveStatusLine(health)
+    fun explanation(health: SaveStatus, azahar: Boolean = false): String = when (health) {
+        is SaveStatus.Problem -> SaveProtectionCopy.body(health.incident)
+        is SaveStatus.NotSyncing -> health.detail ?: health.spot?.let { SaveProtectionCopy.spot(it, azahar) }
+            ?: "Set up the emulator to keep this game’s saves on RomM."
+        is SaveStatus.Waiting -> "Progress on this device is waiting to reach RomM."
+        is SaveStatus.DeviceOnly -> "This emulator keeps its saves on this device."
+        else -> saveStatusLine(health)
     }
     /**
      * The confirmation's title. A copy names where it lands: a slot someone named by its name, and
@@ -278,6 +282,14 @@ object SavePickerCopy {
         return listOfNotNull(next, kept).joinToString(" ")
     }
 
+    /** Where a save to play came from: a Backup's folder, this device by its emulator, or another device by name. */
+    fun playFrom(save: SavePickerSave, device: String?): String {
+        save.folderLabel?.let { return fromFolder(it) }
+        val emulator = named(save.emulator, save)
+        if (save.origin?.thisDevice == true && emulator != null) return "From $emulator on ${device?.let { "this $it" } ?: "this device"}"
+        return "From ${sourceDetail(save)}"
+    }
+
     fun confirmationBody(
         choice: SavePickerChoice,
         playerId: String?,
@@ -286,8 +298,11 @@ object SavePickerCopy {
         restartsOpenGame: Boolean = false,
         ownSlots: List<String> = emptyList(),
         current: String? = null,
+        /** This device's model, "Thor", so a save from here reads "From Azahar on this Thor". */
+        device: String? = null,
+        now: Long = System.currentTimeMillis(),
     ): String = when (choice) {
-        is SavePickerChoice.Play -> "From ${sourceDetail(choice.save)}, ${formatSaveWhen(choice.save.updatedAtMillis, style)}. Your current save stays on RomM." +
+        is SavePickerChoice.Play -> "${playFrom(choice.save, device)}, ${saveWhen(choice.save.updatedAtMillis, now, style, inSentence = true)}. Your current save stays on RomM." +
             (if (emulatorMismatch(choice.save.emulator, playerId)) " Made by ${named(choice.save.emulator, choice.save)}. It may not load in $player." else "") +
             (if (restartsOpenGame) " $restartOpen" else "")
         is SavePickerChoice.Copy -> copyBody(choice.destination, current) +
@@ -325,11 +340,11 @@ fun saveNames(saves: List<SavePickerSave>, ownSlots: List<String>, style: DateSt
             else -> style.monthDayYear(at)
         }
     }
-    val dated = saves.filter { !it.backup && genericSlot(it.slot, ownSlots) }
+    // A Backup is named by its time like any other dated save; its chip says it is a Backup.
+    val dated = saves.filter { it.backup || genericSlot(it.slot, ownSlots) }
     val days = dated.groupBy(::day)
     return saves.associate { save ->
         save.id to when {
-            save.backup -> SavePickerCopy.backup
             save !in dated -> SavePickerCopy.slot(save)
             else -> {
                 val name = day(save)
@@ -364,6 +379,25 @@ fun keptSave(destination: SaveDestination, saves: List<SavePickerSave>, name: St
 
 fun emulatorMismatch(emulator: String?, player: String?): Boolean = !emulator.isNullOrBlank() && !player.isNullOrBlank() &&
     emulator.substringBefore('.').lowercase() != player.substringBefore('.').lowercase()
+
+/**
+ * When a save was made, the one way save surfaces say it: "Today, 13:37", "Yesterday, 13:37",
+ * "Nov 24, 13:37", with the year only once it is not this one. [inSentence] lowers Today and
+ * Yesterday for the middle of a sentence: "Azahar saved here today, 13:37."
+ */
+fun saveWhen(millis: Long, now: Long, style: DateStyle = DateStyle(), zone: ZoneId = ZoneId.systemDefault(), inSentence: Boolean = false): String {
+    val at = Instant.ofEpochMilli(millis).atZone(zone)
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val day = at.toLocalDate()
+    val date = when {
+        day == today -> SavePickerCopy.today
+        day == today.minusDays(1) -> SavePickerCopy.yesterday
+        day.year == today.year -> style.monthDay(at)
+        else -> style.monthDayYear(at)
+    }
+    val said = if (inSentence && (day == today || day == today.minusDays(1))) date.lowercase(Locale.ROOT) else date
+    return "$said, ${style.time(at)}"
+}
 
 /**
  * A save row's time, short enough to sit beside its slot: "Just now", "5m ago" and
@@ -402,8 +436,8 @@ fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
     if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
     if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
     return when (state.health) {
-        is SaveHealth.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
-        SaveHealth.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
+        is SaveStatus.Problem, is SaveStatus.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
+        is SaveStatus.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
         else -> emptyList()
     }
 }

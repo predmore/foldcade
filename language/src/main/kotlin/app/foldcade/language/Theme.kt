@@ -262,10 +262,10 @@ object Copy {
     const val saveFolderBody = "Choose where your emulator keeps its saves."
     /** The same ask before a game whose saves sync with its server. */
     const val saveFolderSyncBody = "Choose your emulator’s save folder so its saves reach RomM."
-    const val playWithoutSyncing = "Play without syncing"
+    const val playWithoutSyncing = "Play anyway"
     const val savesNotSyncing = "Saves not syncing"
     const val savesWaiting = "Saves waiting to upload"
-    const val savesDeviceOnly = "Saves stay on this device"
+    const val savesDeviceOnly = "Saves only on this device"
     const val notSyncing = "Not syncing"
     fun savesNotSyncingTitle(player: String) = "$player saves aren’t syncing"
     const val savesFoundTitle = "Saves found"

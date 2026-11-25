@@ -21,6 +21,10 @@ internal class LaunchSaves(
     private val plugins: PluginHost,
     private val firmwareAvailable: (Player, Game, LaunchTarget) -> Boolean = { player, game, _ -> firmwareRequired(player, game) && canPrepareFirmware(player) },
     private val onSpots: suspend (Game, Player, List<SaveSpot>) -> Unit = { _, _, _ -> },
+    private val protectionGate: suspend (GameRoute, Player, LaunchTarget) -> Unit = { _, _, _ -> },
+    private val baseline: (Player, Game, LaunchTarget) -> app.foldcade.language.ProbeSnapshot? = { _, _, _ -> null },
+    private val preserveOutside: suspend (Game, Player, List<SaveSpot>, app.foldcade.api.plugin.ObservedSaves) -> Boolean = { _, _, _, _ -> false },
+    private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -38,7 +42,7 @@ internal class LaunchSaves(
             }
             val available = firmware && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { firmwareAvailable(player, route.saves, local) }
             if (!available) {
-                return PreparedLaunch(local, emptyList(), route.saves)
+                return PreparedLaunch(local, emptyList(), route.saves, baseline(player, route.saves, local), unprotectedSession = true)
             }
             // Firmware is independent of save sync. Ask the library with no save slots.
             val firmwareOnly = object : Player by player {
@@ -46,18 +50,24 @@ internal class LaunchSaves(
                 override fun saveDeclarations(game: Game) = emptyList<app.foldcade.api.plugin.SaveDeclaration>()
             }
             val placement = plugins.prepareSaves(route.saves.backendId, route.saves, firmwareOnly, local)
-            return PreparedLaunch(placement.target, emptyList(), route.saves)
+            return PreparedLaunch(placement.target, emptyList(), route.saves, baseline(player, route.saves, local), unprotectedSession = true)
         }
+        try {
+            protectionGate(route, player, local)
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (stopped: SaveNotPlaced) { throw stopped
+        } catch (_: Exception) { Unit }
         val candidates = candidates(route)
-        val guarded = player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is ExPlusPlayer
-        val resolvedSpots = if (guarded) saves.spots(player, route.saves, local, forLaunch = true) else null
+        val setup = mutableListOf<String>()
+        val resolvedSpots = saves.spots(player, route.saves, local, forLaunch = true, changed = setup)
         // A profile or a content-derived game id can be unresolved. Do not let
         // negotiation acknowledge a save this device cannot place.
-        if (guarded && resolvedSpots?.isEmpty() == true) {
-            onSpots(route.saves, player, emptyList())
-            if (player is app.foldcade.api.plugin.SaveFolderHolder && player.hasSaveFolder()) {
+        val unresolvedSlots = player.saveDeclarations(route.saves).map { it.slot }.toSet() - resolvedSpots.map { it.slot }.toSet()
+        if (unresolvedSlots.isNotEmpty()) {
+            onSpots(route.saves, player, resolvedSpots)
+            if (player.supportsSaveSync(route.saves)) {
                 try {
-                    val slots = player.saveDeclarations(route.saves).map { it.slot }.toSet()
+                    val slots = unresolvedSlots
                     for (owner in candidates) {
                         val held = plugins.saves(owner.backendId, owner).slots.any { it.slot in slots }
                         val incoming = held || try {
@@ -87,9 +97,9 @@ internal class LaunchSaves(
             }
             // No known incoming save: allow first-run setup or unsupported-image offline play.
             // Return discovery can hand over a resolved save without a baseline from this launch.
-            return PreparedLaunch(local, emptyList(), route.saves)
+            if (resolvedSpots.isEmpty() && (player is EdenPlayer || player is PpssppPlayer || player is DolphinPlayer || player is ExPlusPlayer))
+                return PreparedLaunch(local, emptyList(), route.saves)
         }
-        val setup = mutableListOf<String>()
         var chosen: Negotiated? = null
         for (owner in candidates) {
             val negotiated = try {
@@ -121,7 +131,9 @@ internal class LaunchSaves(
             // Card setup counts as a change too: a running player would still be holding the old card.
             if (written.isNotEmpty() || setup.isNotEmpty()) awaitLoad(player.saveFolderId())
             if (!placed) throw SaveNotPlaced()
-            return PreparedLaunch(placement.target, spots, owner)
+            if (placement.savesToPlace.isNotEmpty() && placement.savesToPlace.all { save -> spots.any { it.slot == save.slot } })
+                onHeadPlaced(owner, player)
+            return PreparedLaunch(placement.target, spots, owner, baseline(player, owner, local))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -150,7 +162,8 @@ internal class LaunchSaves(
         val syncingPlayer = playerForSaveSpots(player, owner, spots, allowFirmware = available)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
-            if (outside.slots.isNotEmpty()) {
+            val preserved = preserveOutside(owner, player, spots, outside)
+            if (outside.slots.isNotEmpty() && !preserved) {
                 plugins.reconcile(libraryId, owner, syncingPlayer, outside)
                 saves.noteHandedOver(libraryId, owner, player, spots, outside)
             }
@@ -193,13 +206,19 @@ internal class LaunchSaves(
 }
 
 /** [owner] is the copy whose library kept the saves, which the read-back returns them to. */
-internal class PreparedLaunch(val target: LaunchTarget, val spots: List<SaveSpot>, val owner: Game? = null)
+internal class PreparedLaunch(
+    val target: LaunchTarget, val spots: List<SaveSpot>, val owner: Game? = null,
+    val baseline: app.foldcade.language.ProbeSnapshot? = null,
+    val unprotectedSession: Boolean = false,
+)
 
 /** A library save could not be written into the player's folder and checked. */
 internal open class SaveNotPlaced : Exception("save could not be placed")
 
 /** No compatible destination, before any write; an explicit per-launch opt-out is safe. */
-internal class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false, val incompatible: Boolean = false) : SaveNotPlaced()
+internal open class UnresolvedSaveNotPlaced(val needsEdenUser: Boolean = false, val incompatible: Boolean = false) : SaveNotPlaced()
+
+internal class SaveProtectionStop(val incident: app.foldcade.language.SaveIncident) : UnresolvedSaveNotPlaced()
 
 /** A library sees only slots the shell can reach; all other player behavior delegates unchanged. */
 internal fun playerForSaveSpots(player: Player, game: Game, spots: List<SaveSpot>, allowFirmware: Boolean = true): Player {

@@ -163,8 +163,7 @@ import app.foldcade.language.typingFaces
 import app.foldcade.language.FindEntry
 import app.foldcade.language.FindKind
 import app.foldcade.language.withFindHint
-import app.foldcade.language.heroFacts
-import app.foldcade.language.heroGameFacts
+import app.foldcade.language.heroFactText
 import app.foldcade.language.GameAboutCopy
 import app.foldcade.language.gameAboutHints
 import app.foldcade.language.settingsHints
@@ -286,7 +285,9 @@ import app.foldcade.language.rowLabel
 import app.foldcade.language.retargetHero
 import app.foldcade.language.Row as LanguageRow
 import app.foldcade.language.rowText
-import app.foldcade.language.SaveHealth
+import app.foldcade.language.UnconfirmedWhy
+import app.foldcade.language.SaveStatus
+import app.foldcade.language.attentionLine
 import app.foldcade.language.needsAttention
 import app.foldcade.language.saveHealthLine
 import app.foldcade.language.heroActivityLine
@@ -387,7 +388,7 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
         snap = heldBlur != null,
     )
     // Set up saves beside an emulator shows that emulator's steps, so it stays at the panel's own brightness.
-    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null && model.folderGuide == null
+    val dimmed = panel != null && app.commandCenter.dimmed(panel) && model.saveSetup == null && model.saveFix == null && model.folderGuide == null
     val dark = panel != null && session.surfaceOn(panel) == Surface.Dark
     // Either panel's level can move while dimmed, and a darker one still wins.
     LaunchedEffect(dimmed, dark, app.brightness.revision) { activity.applyCommandCenterDim(dimmed, dark) }
@@ -462,6 +463,9 @@ fun PanelHost(activity: FoldcadeHomeActivity, displays: Displays) {
                             SaveSetupSingle(app, shown, screen, scale, activity::dispatch)
                     }
                 }
+            }
+            model.saveFix?.let { page ->
+                if (heroHere || controlsHere) SaveFixScreen(app, page, controlsHere, activity::dispatch)
             }
             // Y's menu, beside its tile, over the grid it came from and under any dialog it asks.
             if (panel != null && screen != null && drawsHere) {
@@ -1972,53 +1976,33 @@ private fun heroFactLine(
     game: ShelfGame?,
 ): AnnotatedString {
     val theme = foldTheme()
-    val copy = heroCopy(shown)
     val item = (shown as? HeroSubject.Item)?.item
     val dateStyle = rememberDateStyle(app)
-    if (item?.emptyShelfHint == true) {
-        return AnnotatedString(copy.detail)
-    } else {
-        val focusedGame = game?.takeIf { it.id == item?.key }
-        // What the library is doing with this game leads the line, in the focus colour.
-        val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) } ?: SaveHealth.Fine
-        val activity = focusedGame?.let { app.shell.activityFor(it.id) }
-        val saveLine = if (saveHealthLeads(health, activity)) saveHealthLine(health) else null
-        val stopped = app.shell.stoppedDownload?.takeIf { it.first == item?.key }
-        val live = stopped?.let { Copy.downloadStopped } ?: activity?.let { heroActivityLine(health, it) }
-        val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
-        val rest = listOf(
-            item?.availability.takeIf { live == null },
-            played?.let {
-                heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, game = item.game)
-            },
-        )
-        val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
-        val year = details?.releaseYear
-        val genre = details?.genres?.firstOrNull()
-        // A game is measured with or without a year or genre, so its play line stays either way.
-        val facts = if (item == null) {
-            heroFacts(copy.title, copy.detail, *rest.toTypedArray())
-        } else {
-            // The line is measured as the card draws it, the save or activity word in front included.
-            val measurer = rememberTextMeasurer()
-            val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
-            val lead = listOfNotNull(saveLine, live).joinToString(" · ")
-            heroGameFacts(copy.title, copy.detail, year, genre, rest) { line ->
-                val whole = listOfNotNull(lead, line.ifEmpty { null }).joinToString(" · ")
-                measurer.measure(whole, metaStyle, maxLines = 1, softWrap = false).size.width <= room
-            }
+    val focusedGame = game?.takeIf { item != null && it.id == item.key }
+    val health = focusedGame?.let { app.shell.saveHealthOf(it.id, app.shell.artRecord(it)) }
+    val activity = focusedGame?.let { app.shell.activityFor(it.id) }
+    val played = item?.let { app.plays.run { stamp; shown(app.shell.playId(it.key)) } }
+    val rest = listOf(
+        played?.let { heroPlayLine(it.activeMillis, it.lastPlayedMillis, System.currentTimeMillis(), ZoneId.systemDefault(), dateStyle, game = item.game) },
+    )
+    val metaStyle = text(theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta, theme)
+    val measurer = rememberTextMeasurer()
+    val room = with(LocalDensity.current) { (maxWidth - px(80f)).roundToPx() }
+    val line = heroFactText(shown, health, activity,
+        stopped = app.shell.stoppedDownload?.first == item?.key && item != null,
+        year = details?.releaseYear, genre = details?.genres?.firstOrNull(), rest = rest) {
+        measurer.measure(it, metaStyle, maxLines = 1, softWrap = false).size.width <= room
+    }
+    return buildAnnotatedString {
+        line.save?.let {
+            withStyle(SpanStyle(color = if (health?.attentionLine == true) theme.style.colors.attention else theme.muted)) { append(it) }
+            if (line.live != null || line.facts.isNotEmpty()) append(" · ")
         }
-        return buildAnnotatedString {
-            if (saveLine != null) {
-                withStyle(SpanStyle(color = if (health.needsAttention) theme.style.colors.attention else theme.muted)) { append(saveLine) }
-                if (live != null || facts.isNotEmpty()) append(" · ")
-            }
-            if (live != null) {
-                withStyle(SpanStyle(color = theme.focus)) { append(live) }
-                if (facts.isNotEmpty()) append(" · ")
-            }
-            append(facts)
+        line.live?.let {
+            withStyle(SpanStyle(color = theme.focus)) { append(it) }
+            if (line.facts.isNotEmpty()) append(" · ")
         }
+        append(line.facts)
     }
 }
 
@@ -3609,7 +3593,7 @@ private fun GridHints(app: FoldcadeApp, modifier: Modifier = Modifier, page: Lis
         },
     )
     // The grid's own keys only count while nothing covers it.
-    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && !model.connectOpen
+    val gridKeys = model.panel == null && model.dialog == null && model.saveConflict == null && model.savePicker == null && model.saveFix == null && !model.connectOpen
     val pageKeys = page ?: model.playActivity?.takeIf { model.dialog == null }?.let {
         // Read from the history kept for the page, which follows removals and usage changes.
         playActivityHints(model, app.playHistory(it.game).daySessions(it.cursor).isNotEmpty())
@@ -4683,7 +4667,7 @@ private fun TileStatus(
     focused: Boolean,
     downloading: Boolean,
     activity: TileActivity?,
-    saveHealth: SaveHealth,
+    saveHealth: SaveStatus,
     animatorScale: Float,
     modifier: Modifier,
 ) {
@@ -4845,7 +4829,7 @@ private fun Cell(
     onServer: Boolean = false,
     downloading: Boolean = false,
     activity: TileActivity? = null,
-    saveHealth: SaveHealth = SaveHealth.Fine,
+    saveHealth: SaveStatus = SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked),
     library: Boolean = false,
     /** When this tile last took a new look (see [ShellController.settledAt]), or 0. */
     settledAt: Long = 0L,

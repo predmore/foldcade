@@ -569,6 +569,53 @@ class RommLibraryTest {
         }
     }
 
+    @Test fun backgroundSaveChecksOnlyReturnVerifiedLocalRomsWithoutNetworkOrAdoption() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onHeartbeat = { error("No network for a receipt check") }
+        ops.onDownload = { _, _, _, _, _, _ -> error("No download for a receipt check") }
+        val harness = harness(ops)
+        try {
+            val game = Game(ROMM_LIBRARY_ID, "1234", "nintendo-3ds", Availability.Cached, "Game")
+            val spec = RomBytes("game.cci", emptyList(), 9, "0".repeat(32))
+            writeRomSpec(harness.wiring.romRoot, 1234, spec)
+            assertNull(cachedRommSaveTarget(harness.library, game))
+            val file = RommClient.romCacheFile(harness.wiring.romRoot, 1234, spec.fileName, spec.fileIds)
+            Files.createDirectories(file.parent)
+            Files.write(file, ByteArray(9))
+            val marker = file.resolveSibling("${file.fileName}.verified")
+            Files.writeString(marker, "{\"size\":9,\"md5\":\"${spec.md5}\"}")
+            assertTrue(cachedRommSaveTarget(harness.library, game) is LaunchTarget.ContentUri)
+            Files.delete(marker)
+            assertNull(cachedRommSaveTarget(harness.library, game))
+            assertFalse(Files.exists(marker))
+        } finally {
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
+    @Test fun backgroundSaveChecksSkipAnActiveRomDownloadInsteadOfWaitingForItsLock() = runBlocking {
+        val ops = ScriptedOps()
+        ops.onPlatforms = { listOf(platform(3, "3ds")) }
+        ops.onRoms = { page(rom("3ds", 3)) }
+        val started = CompletableDeferred<Unit>()
+        ops.onDownload = { _, _, _, _, _, _ -> started.complete(Unit); CompletableDeferred<Path>().await() }
+        val harness = harness(ops)
+        val game = harness.library.listGames("3ds", GameQuery()).games.single()
+        val download = launch { harness.library.ensureLocal(game) }
+        try {
+            withTimeout(2_000) { started.await() }
+            assertNull(withTimeout(2_000) { cachedRommSaveTarget(harness.library, game) })
+            assertTrue(download.isActive)
+            download.cancelAndJoin()
+            assertNull(withTimeout(2_000) { cachedRommSaveTarget(harness.library, game) })
+        } finally {
+            download.cancelAndJoin()
+            harness.wiring.cacheRoot.toFile().deleteRecursively()
+            harness.wiring.dataRoot.toFile().deleteRecursively()
+        }
+    }
+
     @Test
     fun systemsLastReportedEmptyDoNotResurrectOldCachedGames() = runBlocking {
         val ops = ScriptedOps()

@@ -55,7 +55,8 @@ import app.foldcade.language.Meaning
 import app.foldcade.language.HintKey
 import app.foldcade.language.PromptKey
 import app.foldcade.language.SaveDestination
-import app.foldcade.language.SaveHealth
+import app.foldcade.language.SaveProtectionCopy
+import app.foldcade.language.SaveStatus
 import app.foldcade.language.SavePickerChoice
 import app.foldcade.language.SavePickerCopy
 import app.foldcade.language.SavePickerSave
@@ -64,7 +65,7 @@ import app.foldcade.language.SaveSetupCopy
 import app.foldcade.language.Theme
 import app.foldcade.language.actionFaces
 import app.foldcade.language.formatSaveSize
-import app.foldcade.language.formatSaveWhen
+import app.foldcade.language.saveWhen
 import app.foldcade.language.needsAttention
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.relativeSaveWhen
@@ -148,7 +149,10 @@ private fun TopArt(app: FoldcadeApp, art: RunningApp?, screenshot: String?, modi
     }
 }
 
-/** The focused save, large: its slot, then when, who made it, and how big, each led by its symbol. */
+/**
+ * The focused save, large: its name (a slot someone named, else its time), its Playing or Backup
+ * chip, then when, where it came from (a Backup's folder), and how big, each led by its symbol.
+ */
 @Composable
 private fun SaveFacts(save: SavePickerSave, name: String, dates: DateStyle, theme: Theme, modifier: Modifier) {
     val design = theme.style
@@ -159,17 +163,19 @@ private fun SaveFacts(save: SavePickerSave, name: String, dates: DateStyle, them
             .padding(CARD_PAD),
         verticalArrangement = Arrangement.spacedBy(design.saves.gapDp.dp),
     ) {
-        if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
-        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
         BasicText(
-            if (save.backup) save.slot?.takeIf { it.isNotBlank() } ?: SavePickerCopy.noSlot else name,
+            name,
             style = saveStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
+        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
         // A save named by its day and time already says when.
-        if (!saveNameSaysTime(name, save.updatedAtMillis, dates)) Fact("clock", formatSaveWhen(save.updatedAtMillis, dates), theme)
-        Fact("handheld", SavePickerCopy.sourceDetail(save), theme, lines = 2)
+        if (!saveNameSaysTime(name, save.updatedAtMillis, dates)) Fact("clock", saveWhen(save.updatedAtMillis, System.currentTimeMillis(), dates), theme)
+        val folder = save.folderLabel
+        if (folder != null) Fact("folder", SavePickerCopy.fromFolder(folder), theme, lines = 2)
+        else Fact("handheld", SavePickerCopy.sourceDetail(save), theme, lines = 2)
         Fact("cartridge", formatSaveSize(save.sizeBytes), theme)
     }
 }
@@ -196,6 +202,8 @@ private fun Overview(state: SavePickerState, theme: Theme, scale: Float, modifie
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (state.health is SaveStatus.NotSyncing) BasicText(SavePickerCopy.explanation(state.health, state.target.playerId == "azahar"),
+            style = saveStyle(theme.muted, design.type.dialogBody, theme))
         when {
             state.loading -> Pulsing(SavePickerCopy.loading, theme, design.type.heroMeta, scale)
             state.error -> BasicText(if (state.offline) Copy.noInternet else SavePickerCopy.error, style = saveStyle(theme.muted, design.type.heroMeta, theme))
@@ -240,6 +248,12 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                     lit = state.confirmation == null,
                     scale = scale,
                 ) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
+            }
+            val incident = (state.health as? SaveStatus.Problem)?.incident
+            if (incident != null && !state.loading && !state.error && state.saves.isNotEmpty()) {
+                BasicText(SaveProtectionCopy.fixBeforeChoosing(incident),
+                    style = saveStyle(design.colors.attention, design.type.dialogBody, theme),
+                    modifier = Modifier.hostPress { dispatch(app.shell.touchSavePickerHeader(state.target)) })
             }
             val card = RoundedCornerShape(design.metrics.cardCornerDp.dp)
             Box(
@@ -341,7 +355,9 @@ private fun SetUpInCard(app: FoldcadeApp, scale: Float, onClick: () -> Unit) {
     ) {
         val cloud = themeIcon("badge.unsynced", R.drawable.ic_badge_unsynced)
         Image(cloud.painter, contentDescription = null, colorFilter = cloud.tint(design.colors.attention), modifier = Modifier.size(NOTE_ART))
-        CardButton(app, SaveSetupCopy.title, scale, onClick)
+        val problem = app.shell.model.savePicker?.health as? SaveStatus.Problem
+        if (problem != null) BasicText(SaveProtectionCopy.incidentEmpty, style = saveStyle(LocalFoldTheme.current.theme.muted, design.type.dialogBody, LocalFoldTheme.current.theme))
+        CardButton(app, if (problem != null) SaveProtectionCopy.fix else SaveSetupCopy.title, scale, onClick)
     }
 }
 
@@ -466,15 +482,16 @@ private fun SaveRow(app: FoldcadeApp, save: SavePickerSave, name: String, whenTe
             overflow = TextOverflow.Ellipsis,
         )
         val meta = Modifier.graphicsLayer { alpha = if (save.backup) rest + (1f - rest) * lit.value else 1f }
-        if (save.origin?.thisDevice != true) {
+        if (save.origin?.thisDevice != true || save.folderLabel != null) {
             Row(meta.widthIn(max = SOURCE_MAX), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box(Modifier.size(MARK_SIZE), contentAlignment = Alignment.Center) { SymbolIcon("handheld", 1f, theme.muted) }
+                Box(Modifier.size(MARK_SIZE), contentAlignment = Alignment.Center) { SymbolIcon(if (save.folderLabel != null) "folder" else "handheld", 1f, theme.muted) }
                 BasicText(SavePickerCopy.source(save), style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         // A save named by its day already says when; "5m ago" beside Today still adds something.
         if (!name.startsWith(whenText)) BasicText(whenText, modifier = meta, style = saveStyle(theme.muted, design.type.hint, theme), maxLines = 1, softWrap = false)
         if (save.playing) Tag(SavePickerCopy.playing, theme.focus)
+        else if (save.backup) Tag(SavePickerCopy.backup, theme.muted)
     }
 }
 
@@ -583,7 +600,7 @@ private fun HeaderPill(title: String, back: PromptKey, enabled: Boolean, scale: 
  * while setup or an upload is waiting it is the first thing focused, and wears the ring A acts on.
  */
 @Composable
-private fun StatusChip(health: SaveHealth, focused: Boolean, lit: Boolean, scale: Float, onClick: () -> Unit) {
+private fun StatusChip(health: SaveStatus, focused: Boolean, lit: Boolean, scale: Float, onClick: () -> Unit) {
     val theme = LocalFoldTheme.current.theme
     val design = theme.style
     val ring = eased(if (focused) 1f else 0f, theme.motion.durationFocus, scale)
@@ -625,10 +642,10 @@ private fun StatusChip(health: SaveHealth, focused: Boolean, lit: Boolean, scale
 }
 
 /** The sync badge in focus while saves reach RomM, the unsynced cloud in amber while they can't. */
-private fun healthBadge(health: SaveHealth, theme: Theme): Pair<Int, Color> = when (health) {
-    SaveHealth.Fine -> R.drawable.ic_badge_sync to theme.focus
-    is SaveHealth.NotSyncing, SaveHealth.Waiting -> R.drawable.ic_badge_unsynced to theme.style.colors.attention
-    SaveHealth.DeviceOnly -> R.drawable.ic_badge_cloud to theme.muted
+private fun healthBadge(health: SaveStatus, theme: Theme): Pair<Int, Color> = when (health) {
+    is SaveStatus.Protected -> R.drawable.ic_badge_check to theme.focus
+    is SaveStatus.Problem, is SaveStatus.NotSyncing, is SaveStatus.Waiting -> R.drawable.ic_badge_unsynced to theme.style.colors.attention
+    else -> R.drawable.ic_badge_cloud to theme.muted
 }
 
 /**
@@ -652,7 +669,7 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
     DialogFrame(
         app = app,
         title = SavePickerCopy.confirmationTitle(choice, state.playerName, destination, generic),
-        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current),
+        body = SavePickerCopy.confirmationBody(choice, state.target.playerId, state.playerName, dates, state.restartsOpenGame, state.ownSlots, current, state.deviceName),
         buttons = listOf(action, SavePickerCopy.cancel),
         focused = state.confirmIndex,
         // B is Cancel, which wears Back's key.

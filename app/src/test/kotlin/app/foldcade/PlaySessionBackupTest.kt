@@ -15,6 +15,7 @@ class PlaySessionBackupTest {
             assertEquals(setOf("sharedpref" to "foldcade.xml", "file" to "."), mode.rules("include"))
             val excluded = mode.rules("exclude")
             assertTrue("file" to "datastore" in excluded)
+            assertTrue("file" to "save-protection" in excluded)
             assertFalse("sharedpref" to "." in excluded)
             assertFalse("sharedpref" to "foldcade.xml" in excluded)
             assertFalse("file" to "." in excluded)

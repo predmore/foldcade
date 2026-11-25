@@ -49,6 +49,55 @@ class PlayerSavesTest {
         assertTrue(saves.spots(Melon(FOLDER, named = false), GAME, LaunchTarget.ContentUri(ROM_URI)).isEmpty())
     }
 
+    @Test fun unresolvedReasonsComeFromTheFileAndExistingAdapterChecks() {
+        val target = LaunchTarget.ContentUri(ROM_URI)
+        docs.names[ROM_URI] = "Game.rvz"
+        val unsupported = saves.unresolvedSpot(app.foldcade.plugins.dolphin.DolphinPlayer(), GAME, target)
+        assertEquals(app.foldcade.language.SpotIssue.UnsupportedImage, unsupported.reason)
+        assertEquals("RVZ doesn’t sync yet. ISO and GCM do.", unsupported.detail)
+        docs.names[ROM_URI] = "Game.zcci"
+        val azahar = app.foldcade.plugins.azahar.AzaharPlayer()
+        assertEquals(app.foldcade.language.SpotIssue.Unreadable, saves.unresolvedSpot(azahar, GAME, target).reason)
+        docs.library[ROM_URI] = ByteArray(512)
+        assertEquals(app.foldcade.language.SpotIssue.NoTitleId, saves.unresolvedSpot(azahar, GAME, target).reason)
+    }
+
+    @Test fun uncappedSingleFilesAndMultiFileFoldersUsePlainReads() {
+        val bytes = "save".toByteArray()
+        val reading = object : SaveDocuments by docs {
+            override fun readBounded(uri: String, limit: Int): ByteArray? = error("Uncapped saves use read")
+            override fun read(uri: String): ByteArray = bytes
+            override fun list(folderUri: String, name: String) = listOf(
+                SaveEntry("a.sav", "content://a", false), SaveEntry("b.sav", "content://b", false))
+        }
+        val working = PlayerSaves(reading, marks, backups, backups.resolve("handover"))
+        docs.put(FOLDER, SAVE_NAME, "save")
+        assertArrayEquals(bytes, working.readSpot(SaveSpot("sav", FOLDER, SAVE_NAME))!!.first)
+        val archive = working.readSpot(SaveSpot("sav", FOLDER, "save.zip", folders = listOf(app.foldcade.api.plugin.SaveFolderPart("", "game"))))!!.first
+        assertTrue(archive.isNotEmpty())
+    }
+
+    @Test fun aLiveCopyIsDurableAndKeepsItsRecoveryIdentityWithoutChangingMarks() {
+        docs.put(FOLDER, SAVE_NAME, "live progress")
+        val spot = saves.spots(PLAYER, GAME, LaunchTarget.ContentUri(ROM_URI)).single()
+        val readable = object : SaveDocuments by docs {
+            override fun children(folderUri: String, path: String): List<SaveChild>? =
+                if (folderUri == FOLDER && path.isEmpty()) listOf(SaveChild(SAVE_NAME, "$FOLDER/$SAVE_NAME", false, "live progress".length.toLong())) else null
+        }
+        val staging = PlayerSaves(readable, marks, backups, backups.resolve("live-handover"))
+        val uri = staging.stageLiveCopy(GAME, PLAYER, spot)!!
+        val file = java.nio.file.Paths.get(java.net.URI(uri))
+        assertEquals("live progress", Files.readString(file))
+        val metadata = org.json.JSONObject(Files.readString(file.resolveSibling("${file.fileName}.json")))
+        assertEquals(GAME.remoteKey, metadata.getString("game"))
+        assertEquals(spot.slot, metadata.getString("slot"))
+        assertEquals(spot.folderUri, metadata.getString("folder"))
+        assertEquals(uri, staging.stageLiveCopy(GAME, PLAYER, spot))
+        assertTrue(saves.changedSince("romm", GAME, PLAYER, listOf(spot)).slots.isNotEmpty())
+        assertEquals("live progress", docs.text(FOLDER, SAVE_NAME))
+        assertEquals(0, docs.writes)
+    }
+
     @Test
     fun aNewSaveIsWrittenCheckedAndMarked() {
         docs.library["lib://sav"] = "server".toByteArray()

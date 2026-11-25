@@ -102,6 +102,47 @@ class LibraryReturnTest {
         assertEquals(listOf(stored), returnSpots(shelf(), pending))
     }
 
+    @Test fun baselineAndUnprotectedChoiceSurviveProcessDeath() {
+        val root = app.foldcade.language.FolderRef("primary:saves", "saves")
+        val baseline = app.foldcade.language.ProbeSnapshot(100, 1, "emulator", listOf(app.foldcade.language.RootReading(root, true, emptyList(), "hash", true, true, null)))
+        val pending = LibraryReturn("romm", game, player, emptyList(), "content://roms/game.iso", baseline, true, preserveAsBackup = true,
+            sessionStartedAtMillis = 150, sessionEndedAtMillis = 5_150)
+        val restored = decodeLibraryReturn(pending.encode()) { player }!!
+        assertEquals(baseline, restored.baseline)
+        assertEquals(true, restored.unprotectedSession)
+        assertEquals(true, restored.preserveAsBackup)
+        assertEquals(true, restored.startedByFoldcade)
+        assertEquals(150L, restored.sessionStartedAtMillis)
+        assertEquals(5_150L, restored.sessionEndedAtMillis)
+        assertFalse(decodeLibraryReturn(pending.copy(startedByFoldcade = false).encode()) { player }!!.startedByFoldcade)
+        assertEquals(pending.targetUri, restored.targetUri)
+        val old = org.json.JSONObject(pending.encode()).apply { remove("baseline"); remove("unprotectedSession"); remove("preserveAsBackup"); remove("startedByFoldcade"); remove("sessionStartedAtMillis"); remove("sessionEndedAtMillis") }
+        val legacy = decodeLibraryReturn(old.toString()) { player }!!
+        val corrupt = org.json.JSONObject(pending.encode()).put("baseline", org.json.JSONObject().put("atMillis", 50))
+        assertEquals(null, decodeLibraryReturn(corrupt.toString()) { player }!!.baseline)
+        assertEquals(null, legacy.baseline)
+        assertFalse(legacy.unprotectedSession)
+        assertFalse(legacy.preserveAsBackup)
+        assertFalse(legacy.startedByFoldcade)
+        val oldOptOut = org.json.JSONObject(pending.encode()).apply { remove("preserveAsBackup") }
+        assertEquals(true, decodeLibraryReturn(oldOptOut.toString()) { player }!!.preserveAsBackup)
+    }
+
+    @Test fun sharedFilesRetainTheReadableUriInsteadOfTheLaunchPath() {
+        val shared = LaunchTarget.SharedFile("/sdcard/roms/game.iso", "content://readable/game.iso")
+        assertEquals("content://readable/game.iso", shared.saveReadUri())
+        assertEquals("content://readable/game.iso", LaunchTarget.ContentUri(shared.saveReadUri()!!).saveReadUri())
+    }
+
+    @Test fun anOptedOutSessionStillReadsReachableSpotsOnReturn() {
+        val plain = object : Player by player {
+            override fun saveDeclarations(game: Game) = listOf(SaveDeclaration("sav", "content://saves"))
+            override fun saveFileName(slot: String, romFileName: String) = "game.sav"
+        }
+        val pending = LibraryReturn("romm", game, plain, emptyList(), "content://roms/game.iso", unprotectedSession = true)
+        assertEquals("game.sav", returnSpots(shelf(), pending).single().fileName)
+    }
+
     private fun shelf(): PlayerSaves {
         val docs = object : SaveDocuments {
             override fun displayName(uri: String) = "game.iso"

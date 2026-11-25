@@ -67,6 +67,44 @@ class ServerSaveFlowTest {
         assertEquals(listOf("current progress"), backup.map { Files.readString(it) })
     }
 
+    @Test fun pickingAndSyncingKeepFencedOrPendingCopiesAsBackupsInsteadOfPromotingThem() = runBlocking {
+        for (pending in listOf(false, true)) for (saveId in listOf(null, "chosen-id")) {
+            events.clear(); marks.clear(); awaiting.clear(); library.observed.clear(); library.backups.clear()
+            docs.current = "new-folder progress".toByteArray()
+            val directory = root.resolve("protection-$pending-${saveId ?: "sync"}")
+            val store = SaveProtectionStore(directory)
+            if (pending) store.requireBackup(player.id, game) else store.rebound(player.id, 100)
+            // No incident or process-local cached spots are needed by the recovery checks.
+            val restored = SaveProtectionStore(directory)
+            val copies = SaveIncidentCopies(saves, plugins, restored)
+            val protected = ServerSaveFlow(saves, plugins, { awaiting[it] == true },
+                preserveOutside = copies::preserveBeforeLaunch, onHeadPlaced = copies::headPlaced,
+                awaitLoad = { key, waiting -> awaiting[key] = waiting })
+            protected.perform(request, saveId)
+            assertTrue(library.observed.isEmpty())
+            assertFalse(events.any { it.startsWith("capture:") })
+            assertEquals(listOf(md5Hex("new-folder progress".toByteArray())), library.backups.map { it.contentHash })
+            assertEquals(if (saveId == null) "new-folder progress" else "chosen", String(docs.current!!))
+            assertFalse(SaveProtectionStore(directory).needsBackup(player.id, game))
+            assertTrue(saves.queuedCopies().isEmpty())
+        }
+    }
+
+    @Test fun aVerifiedChoiceClearsTheFenceForAnInitiallyMissingSave() = runBlocking {
+        val store = SaveProtectionStore(root.resolve("protection"))
+        store.rebound(player.id, 100)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val protected = ServerSaveFlow(saves, plugins, { awaiting[it] == true },
+            preserveOutside = copies::preserveBeforeLaunch, onHeadPlaced = copies::headPlaced,
+            awaitLoad = { key, waiting -> awaiting[key] = waiting })
+        protected.perform(request, "chosen-id")
+        assertFalse(store.needsBackup(player.id, game))
+        docs.current = "later legitimate progress".toByteArray()
+        protected.perform(request, null)
+        assertEquals(listOf(md5Hex("later legitimate progress".toByteArray())), library.observed.map { it.contentHash })
+        assertTrue(library.backups.isEmpty())
+    }
+
     @Test fun anUnreadableSaveOrFolderRefusesBeforeAnyPromotion() = runBlocking {
         docs.current = "current progress".toByteArray()
         docs.readable = false
@@ -225,6 +263,7 @@ class ServerSaveFlowTest {
         override val id = "server"
         override val displayName = "Server"
         val observed = mutableListOf<ObservedSlot>()
+        val backups = mutableListOf<ObservedSlot>()
         override suspend fun connect() = Unit
         override suspend fun disconnect() = Unit
         override suspend fun listPlatforms(): List<ListedPlatform> = emptyList()
@@ -235,6 +274,11 @@ class ServerSaveFlowTest {
         override suspend fun prepareLaunch(game: Game, player: Player) = error("Must not use launch sync to capture")
         override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult {
             events += "capture:${game.remoteKey}"; this.observed += observed.slots; return SyncResult(SyncOutcome.Queued)
+        }
+        override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> = observed.slots.map { slot ->
+            assertEquals(slot.contentHash, md5Hex(Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(slot.contentUri!!)))))
+            backups += slot
+            "backup-${backups.size}"
         }
         override suspend fun syncServerSaves(game: Game, player: Player?): SyncResult { events += "sync:${game.remoteKey}"; onSync(); return SyncResult(SyncOutcome.Unchanged) }
         override suspend fun playServerSave(game: Game, player: Player, saveId: String, beforeCommit: () -> Unit): List<PlacedSave> {

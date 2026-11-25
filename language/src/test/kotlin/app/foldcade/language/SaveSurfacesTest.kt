@@ -33,9 +33,9 @@ class SaveSurfacesTest {
         assertEquals("Oct 25, 9:05 AM", names["b"])
         assertEquals(SavePickerCopy.yesterday, names["c"])
         assertEquals(SavePickerCopy.today, names["d"])
-        // A slot someone named keeps its name; a Backup says it is one.
+        // A slot someone named keeps its name; a Backup goes by its time too, and its chip says it is one.
         assertEquals("Boss rush", names["e"])
-        assertEquals(SavePickerCopy.backup, names["f"])
+        assertEquals("Oct 24", names["f"])
         assertEquals("Oct 12", names["g"])
         // A name with its time already says when; one with its day alone does not.
         assertTrue(saveNameSaysTime(names["a"]!!, at(25, 20, 47), style, zone))
@@ -152,7 +152,7 @@ class SaveSurfacesTest {
         assertEquals(RowControl.Value(Copy.notSyncing, attention = true, opens = true), rowControl(Row.HostedSaves("duckstation"), model))
         // Once in use, the state wears the check.
         val inUse = model.copy(playerSaves = listOf(duck.copy(hostedInUse = true)))
-        assertEquals(RowControl.Value(Copy.hostedSavesSet, opens = true, healthy = true), rowControl(Row.HostedSaves("duckstation"), inUse))
+        assertEquals(RowControl.Value(Copy.playerSavesSet, opens = true), rowControl(Row.HostedSaves("duckstation"), inUse))
         assertEquals(RowText(Copy.saveFolder, Copy.notSyncing), rowText(Row.PlayerSave("azahar"), model.copy(playerSaves = listOf(PlayerSaveSetting("azahar", "Azahar", false, installed = true)), boardEmulators = setOf("azahar"))))
         // Set up saves says how many are left, and nothing once all sync.
         assertEquals(1, savesDue(model).size)

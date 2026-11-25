@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.FirmwareOffer
 import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameFileReader
@@ -51,6 +52,8 @@ internal data class SaveSpot(
     val search: SaveFolderSearch? = null,
     val filter: SaveArchiveFilter? = null,
 )
+
+internal data class StagedSaveCopy(val game: Game, val playerKey: String, val playerId: String, val slot: ObservedSlot)
 
 /**
  * Held while the shell checks a save file and writes it, and while a player
@@ -265,6 +268,87 @@ internal class PlayerSaves(
             if (player.romHeaderSize > 0) docs.head(uri, player.romHeaderSize) ?: ByteArray(0) else ByteArray(0)
         }
         return resolveSpots(player, game, romName, { header }, gameFile(uri), forLaunch, changed)
+    }
+
+    /** A reason backed by the file type and the adapter’s existing setup checks. */
+    fun unresolvedSpot(player: Player, game: Game, target: LaunchTarget): app.foldcade.language.SpotFact.Unresolved {
+        try {
+            val uri = when (target) { is LaunchTarget.ContentUri -> target.uri; is LaunchTarget.SharedFile -> target.uri; else -> null }
+            val name = uri?.let(docs::displayName)
+            if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
+            val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
+            val sync = folder?.let { saveSync(player, it) }
+            if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
+            if (player is app.foldcade.plugins.eden.EdenPlayer && !edenHasUser(player, game)) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoProfile)
+            val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+            if (player is DolphinPlayer && extension !in setOf("iso", "gcm")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedImage,
+                app.foldcade.language.SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT).ifEmpty { "This file type" }, "ISO and GCM"))
+            if (player is app.foldcade.plugins.explus.ExPlusPlayer && extension in setOf("zip", "7z")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.ArchiveName)
+            if (player.romHeaderSize > 0 && docs.head(uri!!, player.romHeaderSize) == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
+            return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoTitleId)
+        } catch (cancelled: CancellationException) { throw cancelled
+        } catch (_: Exception) { return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable) }
+    }
+
+    /** Resolve against another readable root without rebinding the installed player or writing it. */
+    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
+        val candidate = object : Player by player {
+            override fun saveDeclarations(game: Game) = player.saveDeclarations(game).map { it.copy(locationUri = root) }
+        }
+        return spots(candidate, game, target, forLaunch = false)
+    }
+
+    /** Stable, durable bytes for incident recovery. Never handed to ordinary slot reconciliation. */
+    fun stageLiveCopy(game: Game, player: Player, spot: SaveSpot): String? {
+        val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return null
+        if (bytes.size > 256 * 1024 * 1024) throw SaveNotPlaced()
+        return stageCopy(game, player, spot, bytes)
+    }
+
+    fun stageCopies(game: Game, player: Player, spots: List<SaveSpot>): ObservedSaves = ObservedSaves(spots.mapNotNull { spot ->
+        val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return@mapNotNull null
+        ObservedSlot(spot.slot, md5Hex(bytes), player.id, stageCopy(game, player, spot, bytes))
+    })
+
+    /** Sidecars are the queue; incidents are only presentation and may close at any time. */
+    fun queuedCopies(): List<StagedSaveCopy> {
+        if (!Files.isDirectory(handover)) return emptyList()
+        return Files.newDirectoryStream(handover, "live-*.save.json").use { paths ->
+            paths.mapNotNull { sidecar ->
+                try {
+                    val file = sidecar.resolveSibling(sidecar.fileName.toString().removeSuffix(".json"))
+                    if (!Files.isRegularFile(file)) return@mapNotNull null
+                    val json = org.json.JSONObject(Files.readAllBytes(sidecar).toString(Charsets.UTF_8))
+                    val game = Game(json.getString("library"), json.getString("game"), json.getString("platform"), Availability.Cached, json.getString("label"))
+                    val hash = json.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
+                    StagedSaveCopy(game, json.getString("playerKey"), json.getString("player"),
+                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), file.toUri().toString()))
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: Exception) { null } // An unreadable row cannot hide the rest of the queue.
+            }.toList()
+        }
+    }
+
+    fun removeQueuedCopy(copy: StagedSaveCopy) {
+        val file = java.nio.file.Paths.get(java.net.URI(copy.slot.contentUri!!))
+        require(file.toAbsolutePath().normalize().parent == handover.toAbsolutePath().normalize())
+        // Both removals follow verification. A crash between them leaves only a skipped sidecar.
+        Files.deleteIfExists(file)
+        Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
+    }
+
+    private fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray): String {
+        val name = "live-${md5Hex((game.backendId + ":" + game.remoteKey + ":" + player.saveFolderId() + ":" + spot.slot + ":" + storageIdentity(spot.folderUri)).toByteArray())}-${md5Hex(bytes)}.save"
+        val file = handover.resolve(name)
+        app.foldcade.romm.writeDurably(file, bytes)
+        // Keep enough identity to recover a queued copy even after the guided incident closes.
+        val metadata = org.json.JSONObject().put("library", game.backendId).put("game", game.remoteKey)
+            .put("platform", game.platformId).put("label", game.label).put("player", player.id)
+            .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
+            .put("folderLabel", runCatching { folderPathLabel(spot.folderUri) }.getOrNull() ?: org.json.JSONObject.NULL)
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes))
+        app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
+        return file.toUri().toString()
     }
 
     /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
@@ -758,14 +842,14 @@ internal class PlayerSaves(
         null
     }
 
-    private fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
+    internal fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
         DocumentSaveFolder(docs, folderUri, allowWrite) { name, bytes -> backup(player, name, bytes) }
 
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
-    private fun readSpot(spot: SaveSpot, strict: Boolean = false): Pair<ByteArray, String?>? {
+    internal fun readSpot(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Pair<ByteArray, String?>? {
         if (strict) readableChildren(spot.folderUri, "")
         if (spot.folders.isNotEmpty() || spot.search != null) {
-            val folders = readFolders(spot, strict)
+            val folders = readFolders(spot, strict, limit)
             if (strict && folders == Held.Unreadable) throw SaveNotPlaced()
             val held = folders as? Held.Found ?: return null
             // Folders with no file are no save, and a zip of them could never be placed.
@@ -778,11 +862,14 @@ internal class PlayerSaves(
             val listed = readableChildren(spot.folderUri, parent) ?: return null
             val file = listed.firstOrNull { it.name == name } ?: return null
             if (file.isFolder) throw SaveNotPlaced()
-            return (docs.read(file.uri) ?: throw SaveNotPlaced()) to file.uri
+            return (readSave(file.uri, limit) ?: throw SaveNotPlaced()) to file.uri
         }
         val uri = docs.find(spot.folderUri, spot.fileName) ?: return null
-        return (docs.read(uri) ?: return null) to uri
+        return (readSave(uri, limit) ?: return null) to uri
     }
+
+    private fun readSave(uri: String, limit: Long): ByteArray? =
+        if (limit == Long.MAX_VALUE) docs.read(uri) else docs.readBounded(uri, minOf(limit, Int.MAX_VALUE.toLong()).toInt())
 
     /** Distinguish a verified missing folder from one that exists but cannot be listed. */
     private fun readableChildren(folder: String, path: String): List<SaveChild>? {
@@ -798,7 +885,7 @@ internal class PlayerSaves(
     }
 
     /** Everything in [spot]'s folders, named as in its zip. A search lists its parent and takes the matches. */
-    private fun readFolders(spot: SaveSpot, strict: Boolean = false): Held {
+    private fun readFolders(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Held {
         val parts = try {
             folderParts(spot, strict)
         } catch (_: Exception) {
@@ -807,6 +894,7 @@ internal class PlayerSaves(
         if (parts.isEmpty()) return Held.Missing
         val entries = sortedMapOf<String, ByteArray?>()
         val uris = HashMap<String, String>()
+        var remaining = limit
         try {
             for (part in parts) {
                 if (strict && readableChildren(spot.folderUri, part.path) == null) continue
@@ -819,7 +907,11 @@ internal class PlayerSaves(
                         if (!filter.accepts(name, head)) continue
                     }
                     if (spot.filter != null && entry.isFolder) continue
-                    entries[name] = if (entry.isFolder) null else docs.read(entry.uri) ?: return Held.Unreadable
+                    entries[name] = if (entry.isFolder) null else {
+                        val bytes = readSave(entry.uri, remaining) ?: return Held.Unreadable
+                        if (limit != Long.MAX_VALUE) remaining -= bytes.size
+                        bytes
+                    }
                     uris[name] = entry.uri
                 }
             }
@@ -1169,11 +1261,35 @@ internal fun copyFirmwareBytes(input: InputStream, output: java.io.OutputStream,
 private const val FIRMWARE_RESTORE_LIMIT = 16 * 1024 * 1024
 internal const val MAX_FIRMWARE_BYTES = 512L * 1024 * 1024
 
+/** Reads at most limit + 1 bytes, growing with the body rather than the caller's ceiling. */
+internal fun readSaveStream(input: InputStream, limit: Int): ByteArray? {
+    require(limit >= 0)
+    val output = ByteArrayOutputStream(minOf(limit, 8192))
+    val buffer = ByteArray(8192)
+    var total = 0L
+    while (total <= limit) {
+        val count = input.read(buffer, 0, minOf(buffer.size.toLong(), limit.toLong() + 1 - total).toInt())
+        if (count < 0) return output.toByteArray()
+        if (count == 0) {
+            val byte = input.read()
+            if (byte < 0) return output.toByteArray()
+            if (++total > limit) return null
+            output.write(byte)
+        } else {
+            total += count
+            if (total > limit) return null
+            output.write(buffer, 0, count)
+        }
+    }
+    return null
+}
+
 /** [SaveDocuments] over a [ContentResolver] and the tree grants the user gave. */
 internal class AndroidSaveDocuments(private val resolver: ContentResolver) : SaveDocuments {
     override val firmwareNewOnly = true
-    override fun readBounded(uri: String, limit: Int): ByteArray? =
-        if (limit < 0) null else head(uri, if (limit == Int.MAX_VALUE) limit else limit + 1)?.takeIf { it.size <= limit }
+    override fun readBounded(uri: String, limit: Int): ByteArray? = try {
+        if (limit < 0) null else resolver.openInputStream(Uri.parse(uri))?.use { readSaveStream(it, limit) }
+    } catch (_: Exception) { null }
     override fun displayName(uri: String): String? = try {
         resolver.query(Uri.parse(uri), arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) cursor.getString(0) else null

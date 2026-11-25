@@ -358,11 +358,17 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
                 // The save row the player must act on comes first: a hosted player's own folder only holds its BIOS.
                 if (setting.hostedTitle != null) add(Row.HostedSaves(setting.playerId))
                 add(Row.PlayerSave(setting.playerId))
+                // Nothing to check until a folder is bound.
+                if (setting.incident != null || boundFolderLabel(setting.location) != null || setting.chosen || setting.hostedInUse || setting.saveSyncing)
+                    add(Row.SaveCheck(setting.playerId))
                 if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
                 if (setting.thorSetup != null) add(Row.ThorSetup(setting.playerId))
                 if (setting === retroArchOwner) add(Row.RetroArchCores)
-                if (setting === edenOwner) add(Row.EdenFolder)
+                if (setting === edenOwner) {
+                    add(Row.EdenFolder)
+                    if (eden?.fromRomm == true && eden.setupSteps != null) add(Row.EdenUser)
+                }
             },
         )
     }
@@ -546,7 +552,7 @@ fun settingsTileStatus(row: Row, model: PickerModel): TileStatus? {
     if (inner !is SettingsInner.Emulator) return null
     val needsYou = settingsInnerRows(inner, model).any { rowNeedsYou(it, model) }
     return when {
-        !needsYou -> TileStatus.Fine
+        !needsYou -> TileStatus.Fine.takeIf { model.playerSaves.firstOrNull { it.playerId == inner.key }?.location is LocationFact.Verified }
         inner.key in model.boardEmulators -> TileStatus.Attention
         else -> null
     }
@@ -750,7 +756,7 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
     Row.SaveSetup -> value?.let { RowControl.Value(it, attention = true, opens = true) } ?: RowControl.Opens
     // An emulator's own rows each open something: a state, the check once it is as it should be,
     // and the way-in mark, so the one row on the page says what A does.
-    is Row.PlayerSave, is Row.HostedSaves, is Row.SaveSync, is Row.PlayerSetup, is Row.ThorSetup,
+    is Row.SaveCheck, is Row.PlayerSave, is Row.HostedSaves, is Row.SaveSync, is Row.PlayerSetup, is Row.ThorSetup,
     Row.RetroArchCores, Row.EdenFolder, Row.EdenUser,
     -> value?.takeIf { it.isNotEmpty() }?.let { RowControl.Value(it, attention = emulatorRowAttention(row, model, it), opens = true, healthy = emulatorRowHealthy(row, model)) }
         ?: RowControl.Opens
@@ -768,16 +774,26 @@ fun rowControl(row: Row, model: PickerModel, value: String? = rowText(row, model
 private fun emulatorRowAttention(row: Row, model: PickerModel, value: String): Boolean = when (row) {
     Row.RetroArchCores -> model.retroArch?.cores == null
     is Row.ThorSetup -> false
+    // An incident lights the folder and what the check found, each in its own words.
+    is Row.PlayerSave, is Row.HostedSaves, is Row.SaveCheck -> value == Copy.notSyncing ||
+        model.playerSaves.firstOrNull { it.playerId == emulatorRowPlayer(row) }?.incident != null
     else -> value == Copy.notSyncing
+}
+
+private fun emulatorRowPlayer(row: Row): String? = when (row) {
+    is Row.PlayerSave -> row.playerId
+    is Row.HostedSaves -> row.playerId
+    is Row.SaveCheck -> row.playerId
+    else -> null
 }
 
 /** The check: the save folder held, the hosted folder or card in use, the cores seen, Eden's files held, Azahar set for both screens. */
 private fun emulatorRowHealthy(row: Row, model: PickerModel): Boolean {
     val setting = { id: String -> model.playerSaves.firstOrNull { it.playerId == id } }
     return when (row) {
-        is Row.PlayerSave -> setting(row.playerId)?.chosen == true
-        is Row.HostedSaves -> setting(row.playerId)?.hostedInUse == true
-        is Row.SaveSync -> setting(row.playerId)?.saveSyncing == true
+        is Row.PlayerSave -> setting(row.playerId)?.let { it.chosen && it.incident == null && it.location is LocationFact.Verified } == true
+        is Row.HostedSaves -> setting(row.playerId)?.let { it.hostedInUse && it.incident == null && it.location is LocationFact.Verified } == true
+        is Row.SaveSync -> setting(row.playerId)?.let { it.saveSyncing && it.incident == null && it.location is LocationFact.Verified } == true
         is Row.ThorSetup -> setting(row.playerId)?.thorSetup?.status == ThorSetupStatus.Applied
         Row.RetroArchCores -> model.retroArch?.cores != null
         Row.EdenFolder -> model.eden?.fromRomm == true

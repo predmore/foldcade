@@ -93,6 +93,8 @@ enum class DialogKind {
     MissingPlayer,
     ClosePlayer,
     SaveFolder,
+    SaveProtection,
+    SaveFolderFine,
     FirmwareFolder,
 
     /** Restart a game still open in its player. Not now leaves it paused. */
@@ -169,6 +171,9 @@ enum class DialogButton {
     ApplyThorSetup, RestoreThorSetup, ThorAppInfo, ThorFileAccess,
     ChooseSaveFolder,
     PlayWithoutSyncing,
+    FixSaves,
+    KeepWatchingSaveFolder,
+    PutSaveBack,
     SetUpSaves,
     UseAsHome,
     NotNow,
@@ -229,7 +234,10 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.ThorAppInfo -> ThorSetupCopy.appInfo
     DialogButton.ThorFileAccess -> ThorSetupCopy.fileAccess
     DialogButton.ChooseSaveFolder -> Copy.playerSavesUnset
-    DialogButton.PlayWithoutSyncing -> Copy.playWithoutSyncing
+    DialogButton.PlayWithoutSyncing -> SaveProtectionCopy.playAnyway
+    DialogButton.KeepWatchingSaveFolder -> SaveProtectionCopy.itsFine
+    DialogButton.FixSaves -> SaveProtectionCopy.fix
+    DialogButton.PutSaveBack -> "Put it back"
     DialogButton.SetUpSaves -> Copy.setUp
     DialogButton.UseAsHome -> Copy.useAsHome
     DialogButton.NotNow -> Copy.notNow
@@ -938,6 +946,7 @@ sealed interface Row {
     data class SignOut(val pluginId: String, val label: String) : Row
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PickFolderAgain(val uri: String) : Row
+    data class SaveCheck(val playerId: String) : Row
     data class PlayerSave(val playerId: String) : Row
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
@@ -1203,6 +1212,8 @@ data class PlayerSaveSetting(
     /** Where Foldcade found the folder on its own, such as `saves/Azahar`, so it is never bound unseen. Null for a chosen one. */
     val foundIn: String? = null,
     val thorSetup: ThorSetupSetting? = null,
+    val location: LocationFact? = null,
+    val incident: SaveIncident? = null,
 )
 
 /**
@@ -1680,6 +1691,14 @@ data class RowText(val label: String, val value: String? = null)
  * so its saves are at stake, and a quiet Not set up while none does, as its tile and Set up
  * saves say (review-B S10).
  */
+/** The folder a player's saves are bound to, by the name the player sees, or null before one is. */
+fun boundFolderLabel(location: LocationFact?): String? = when (location) {
+    is LocationFact.Bound -> location.root.label
+    is LocationFact.Verified -> location.root.label
+    is LocationFact.Mismatch -> location.bound.label
+    else -> null
+}
+
 private fun unsetSaves(playerId: String, model: PickerModel): String =
     if (playerId in model.boardEmulators) Copy.notSyncing else SaveSetupCopy.notSetUp
 
@@ -1750,10 +1769,19 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.Notice -> RowText(model.notices.firstOrNull { it.id == row.id }?.title ?: "")
     Row.NoticeAccess -> RowText(NoticeCopy.access, NoticeCopy.accessValue)
     Row.ClearNotices -> RowText(NoticeCopy.clearAll)
+    is Row.SaveCheck -> {
+        val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
+        RowText("Check", setting?.incident?.let { saveCheckState(it) } ?: when (val location = setting?.location) {
+            is LocationFact.Verified -> "Checked ${saveAge(location.atMillis, System.currentTimeMillis())}"
+            else -> SaveProtectionCopy.notChecked
+        })
+    }
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
-            setting?.chosen == true -> setting.foundIn ?: Copy.playerSavesSet
+            setting?.incident != null -> saveFolderState(setting.incident)
+            // Checked or not, the row names the folder. Only the check beside it says it was proven.
+            setting?.chosen == true -> setting.foundIn ?: boundFolderLabel(setting.location) ?: Copy.playerSavesSet
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
             else -> unsetSaves(row.playerId, model)
         }
@@ -1764,7 +1792,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val inUse = when {
-            setting?.hostedInUse == true -> Copy.hostedSavesSet
+            setting?.incident != null -> saveFolderState(setting.incident)
+            // Syncing is a claim only the check makes; until then the folder is set, said as the Save folder row says it.
+            setting?.hostedInUse == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else Copy.playerSavesSet
             setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
@@ -1773,7 +1803,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.SaveSync -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val state = when {
-            setting?.saveSyncing == true -> Copy.hostedSavesSet
+            setting?.saveSyncing == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else Copy.playerSavesSet
             setting?.installed == true -> unsetSaves(row.playerId, model)
             else -> Copy.hostedSavesUnset
         }
@@ -1930,6 +1960,12 @@ sealed interface Effect {
     data object EditField : Effect
     data object RequestHome : Effect
     data object OpenAllFilesAccess : Effect
+    data class OpenSaveFix(val incidentId: String) : Effect
+    data class PickFixFolder(val incidentId: String) : Effect
+    data class FinishSaveFix(val incidentId: String, val openSaves: Boolean = true) : Effect
+    data object CancelSaveFix : Effect
+    data class ShowSaveCheck(val playerId: String) : Effect
+    data class ConfirmSaveLocation(val incidentId: String) : Effect
     data class ChoosePlayerSave(val playerId: String) : Effect
     data class ChooseFirmwareFolder(val playerId: String) : Effect
     /** How to point the player at the folder Foldcade hosts for its saves. */
@@ -2263,6 +2299,8 @@ data class PickerModel(
     val savePicker: SavePickerState? = null,
     /** Set up saves. Null while it is closed. */
     val saveSetup: SaveSetupPage? = null,
+    val saveFix: SaveFixPage? = null,
+    val saveIncidents: List<SaveIncident> = emptyList(),
     /** True while Foldcade reads what each emulator's folder still needs, as just after a pick. Set up saves waits on it before moving on. */
     val checkingSaves: Boolean = false,
     /** Every library is being read again. */
@@ -2311,7 +2349,7 @@ fun reduce(
     if (dialog != null) {
         // Asks that open by themselves, or under a held press, take only a fresh one.
         if (dialog.kind in setOf(DialogKind.Backup, DialogKind.RestoreBackup, DialogKind.BackupDone, DialogKind.PlayHistory, DialogKind.RommSignOut,
-                DialogKind.AddGames, DialogKind.FindGames, DialogKind.RetroArchCores, DialogKind.ThorSetup, DialogKind.RestoreThorSetup) && repeatCount > 0 &&
+                DialogKind.SaveFolderFine, DialogKind.SaveProtection, DialogKind.AddGames, DialogKind.FindGames, DialogKind.RetroArchCores, DialogKind.ThorSetup, DialogKind.RestoreThorSetup) && repeatCount > 0 &&
             meaning in setOf(Meaning.Activate, Meaning.ActivateBottom, Meaning.Back, Meaning.Dismiss)) return coerced to null
         if (dialog.kind == DialogKind.CloseGame && repeatCount > 0 &&
             (meaning == Meaning.Activate || meaning == Meaning.ActivateBottom)) return coerced to null
@@ -2330,6 +2368,9 @@ fun reduce(
         }
         val cleared = if (choice != null) null else next
         return coerced.copy(dialog = cleared) to chosen
+    }
+    coerced.saveFix?.let { page ->
+        return applySaveFix(coerced, page, meaning, repeatCount)
     }
     coerced.saveSetup?.let { page ->
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
@@ -3230,7 +3271,10 @@ private fun activateRow(
             notices = model.notices.filter { !it.dismissable },
         ) to Effect.ClearNotices
         // Android's folder picker returns to the emulator's page it was opened from.
-        is Row.PlayerSave -> model.copy(panel = panel) to Effect.ChoosePlayerSave(row.playerId)
+        is Row.SaveCheck -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident
+            ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ShowSaveCheck(row.playerId))
+        is Row.PlayerSave -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident
+            ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ChoosePlayerSave(row.playerId))
         is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to Effect.SetUpHostedSaves(row.playerId)
         is Row.SaveSync -> {
             val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
@@ -3363,6 +3407,9 @@ private fun openNotice(model: PickerModel, panel: SidePanel, id: String): Pair<P
     if (notice.id == ROMM_SIGN_IN_NOTICE) return model.openRommSignIn(panel.grid)
     // The save-setup notices open Set up saves: the merged one at the first emulator that needs
     // you, one emulator's on its own tile.
+    model.saveIncidents.firstOrNull { "foldcade:save-incident:${it.id}" == notice.id }?.let {
+        return model.copy(panel = null) to Effect.OpenSaveFix(it.id)
+    }
     if (notice.settingsCategory == SettingsCategory.Players && notice.id.startsWith("foldcade:save-setup:")) return model.openSaveSetup(panel.screen, grid = panel.grid) to null
     // A system's fallback notice opens Systems on that system's row, where its choice is changed.
     if (notice.settingsCategory == SettingsCategory.Players && notice.id.startsWith(PLAYER_CHOICE_SYSTEM_NOTICE)) {

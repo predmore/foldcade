@@ -1,7 +1,7 @@
 package app.foldcade
 
 import app.foldcade.api.plugin.*
-import app.foldcade.language.SaveHealth
+import app.foldcade.language.*
 import app.foldcade.language.SaveIssue
 import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.aps3e.Aps3ePlayer
@@ -29,10 +29,10 @@ class GameSaveHealthTest {
     @Test fun everySyncingPlayerWithoutAFolderNeedsAttention() {
         for (player in players()) {
             val issue = if (player is HostedSaveFolder) SaveIssue.HostedFolder else SaveIssue.NoFolder
-            assertEquals(player.id, SaveHealth.NotSyncing(issue), health(player))
+            assertEquals(player.id, SaveStatus.NotSyncing(issue), health(player))
             // A held save reaching the server would still leave this player's own save unprotected.
-            assertEquals(player.id, SaveHealth.NotSyncing(issue), health(player, waiting = true))
-            assertEquals(player.id, SaveHealth.DeviceOnly, health(player, server = false))
+            assertEquals(player.id, SaveStatus.NotSyncing(issue), health(player, waiting = true))
+            assertEquals(player.id, SaveStatus.NotSyncing(issue), health(player, server = false))
         }
     }
 
@@ -40,48 +40,55 @@ class GameSaveHealthTest {
         for (player in players()) {
             (player as SaveFolderHolder).bindSaveFolder("content://saves")
             (player as? HostedSaveFolder)?.bindHostedFolder("content://hosted", true)
-            assertEquals(player.id, SaveHealth.Fine, health(player))
-            assertEquals(player.id, SaveHealth.Waiting, health(player, waiting = true))
-            assertEquals(player.id, SaveHealth.Fine, health(player, waiting = false))
-            assertEquals(player.id, SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
-            assertEquals(player.id, SaveHealth.Fine, health(player, reachable = true))
+            assertEquals(player.id, SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(player))
+            assertEquals(player.id, SaveStatus.Waiting(0), health(player, waiting = true))
+            assertEquals(player.id, SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(player, waiting = false))
+            assertEquals(player.id, SaveStatus.NotSyncing(SaveIssue.NoSlot, SpotIssue.NoTitleId), health(player, reachable = false))
+            assertEquals(player.id, SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(player, reachable = true))
         }
     }
 
     @Test fun edenWithAGrantWaitsForAnActualUnreachableCheckBeforeShowingNoSlot() {
         val player = EdenPlayer()
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), health(player))
         player.bindSaveFolder("content://eden/tree/root")
-        assertEquals(SaveHealth.Fine, health(player))
-        assertEquals(SaveHealth.Waiting, health(player, waiting = true))
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player, reachable = false))
-        assertEquals(SaveHealth.Fine, health(player, reachable = true))
-        assertEquals(SaveHealth.Waiting, health(player, reachable = true, waiting = true))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(player))
+        assertEquals(SaveStatus.Waiting(0), health(player, waiting = true))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot, SpotIssue.NoTitleId), health(player, reachable = false))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(player, reachable = true))
+        assertEquals(SaveStatus.Waiting(0), health(player, reachable = true, waiting = true))
         player.bindSaveFolder("")
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), health(player))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), health(player))
     }
 
     @Test fun hostedGrantAndPlayerSetupMustBothBeReady() {
         val duck = DuckStationPlayer().apply { bindSaveFolder("content://saves") }
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), health(duck))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.HostedFolder), health(duck))
         duck.bindHostedFolder("content://hosted", false)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), health(duck))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.HostedFolder), health(duck))
         duck.bindHostedFolder("content://hosted", true)
-        assertEquals(SaveHealth.Fine, health(duck))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(duck))
         val arms = ArmsX2Player().apply { bindSaveFolder("content://saves") }
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NeedsSetup), health(arms, sync = SaveSyncState.NeedsSetup("Keep the file card")))
-        assertEquals(SaveHealth.Fine, health(arms, sync = SaveSyncState.Syncing))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NeedsSetup), health(arms, sync = SaveSyncState.NeedsSetup("Keep the file card")))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(arms, sync = SaveSyncState.Syncing))
         val ps3 = Aps3ePlayer().apply { bindSaveFolder("content://saves") }
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NeedsSetup), health(ps3, setup = "Install firmware"))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NeedsSetup), health(ps3, setup = "Install firmware"))
     }
 
     @Test fun hostedCardsSyncWithoutADataFolder() {
         val duck = DuckStationPlayer().apply { bindHostedFolder("content://hosted", true) }
         assertFalse(duck.hasSaveFolder())
-        assertEquals(SaveHealth.Fine, health(duck))
-        assertEquals(SaveHealth.Waiting, health(duck, waiting = true))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), health(duck))
+        assertEquals(SaveStatus.Waiting(0), health(duck, waiting = true))
         duck.bindHostedFolder("content://hosted", false)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), health(duck))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.HostedFolder), health(duck))
+    }
+
+    @Test fun aPastLocationCheckCannotHideNewSetupTrouble() {
+        val player = ArmsX2Player().apply { bindSaveFolder("content://saves") }
+        val verified = LocationFact.Verified(FolderRef("primary:saves", "saves"), Evidence(EvidenceKind.SessionWrite, "Game saved"), 1)
+        val status = gameSaveHealth(game(player), player, true, false, sync = SaveSyncState.NeedsSetup("Use a folder card"), location = verified)
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NeedsSetup), status)
     }
 
     @Test fun onlySettledActivityRefreshesTheLedger() {
@@ -96,17 +103,17 @@ class GameSaveHealthTest {
     @Test fun standaloneEmulatorsAreDeviceOnlyButExternalGamesAreQuiet() {
         val emulators = EmulatorsEntry().players
         for (player in emulators) {
-            assertEquals(player.id, SaveHealth.DeviceOnly, health(player))
-            assertEquals(player.id, SaveHealth.DeviceOnly, health(player, server = false))
+            assertEquals(player.id, SaveStatus.DeviceOnly(NoDestinationWhy.PlayerCantSync, emulator = player.displayName), health(player))
+            assertEquals(player.id, SaveStatus.DeviceOnly(NoDestinationWhy.PlayerCantSync, emulator = player.displayName), health(player, server = false))
         }
         for (id in listOf("android", "moonlight", "gamenative", "droiddeck")) {
             val app = object : Player by emulators.first() {
                 override val id = id
                 override val needsLocalFile = false
             }
-            assertEquals(id, SaveHealth.Fine, health(app, waiting = true))
+            assertEquals(id, SaveStatus.Waiting(0), health(app, waiting = true))
         }
-        assertEquals(SaveHealth.Fine, gameSaveHealth(game(emulators.first()), null, true, false))
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer), gameSaveHealth(game(emulators.first()), null, true, false))
     }
 
     @Test fun emptyOrNullDeclarationsFromASyncingPlayerNeverLookFine() {
@@ -115,7 +122,7 @@ class GameSaveHealthTest {
             val player = object : Player by base, SaveFolderHolder by base {
                 override fun saveDeclarations(game: Game) = declarations
             }
-            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(player))
+            assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot), health(player))
         }
     }
 
@@ -127,7 +134,7 @@ class GameSaveHealthTest {
             assertTrue(player.id, wrapped.supportsSaveSync(game))
             assertFalse(wrapped is SaveFolderHolder)
             val issue = if (player is HostedSaveFolder) SaveIssue.HostedFolder else SaveIssue.NoFolder
-            assertEquals(SaveHealth.NotSyncing(issue), health(player))
+            assertEquals(SaveStatus.NotSyncing(issue), health(player))
         }
         for (player in EmulatorsEntry().players) {
             val game = game(player)
@@ -136,6 +143,6 @@ class GameSaveHealthTest {
         val explicitSupport = object : Player by EmulatorsEntry().players.first() {
             override fun supportsSaveSync(game: Game) = true
         }
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health(explicitSupport))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot), health(explicitSupport))
     }
 }

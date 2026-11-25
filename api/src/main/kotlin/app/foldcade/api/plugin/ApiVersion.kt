@@ -21,7 +21,7 @@ package app.foldcade.api.plugin
  * an open type bumps [PLUGIN_API_MINOR] and does not bump this major:
  * [Availability], [ArtworkRole], [StartDisplay], [LaunchFlag], [SyncOutcome],
  * [LaunchTarget], [PlayerExtra], [PluginException], [Credential], [GameActivity],
- * [Setup], [DeviceCodePoll], and [SaveSyncState].
+ * [Setup], [DeviceCodePoll], [SaveSyncState], [SignalStrength], and [SaveServiceState].
  * Any other enum or sealed type in this module is closed. Adding a value
  * or a subclass there bumps this major.
  *
@@ -37,4 +37,4 @@ const val PLUGIN_API_VERSION = 1
  * Additive revision of [PLUGIN_API_VERSION].
  * The host loads an older or equal plugin minor and rejects a newer one.
  */
-const val PLUGIN_API_MINOR = 25
+const val PLUGIN_API_MINOR = 26

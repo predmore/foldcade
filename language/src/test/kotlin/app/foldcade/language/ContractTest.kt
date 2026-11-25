@@ -723,6 +723,7 @@ class ContractTest {
             boardEmulators = setOf("azahar"),
         )
         assertEquals(listOf(Row.SettingsTile(SettingsInner.Emulator("azahar")), Row.SaveSetup, Row.FindSaves), settingsRows(SettingsCategory.Players, opened))
+        // No folder yet, so nothing to check: the Check row waits for one.
         assertEquals(listOf(Row.PlayerSave("azahar")), settingsInnerRows(SettingsInner.Emulator("azahar"), opened))
         val onRow = opened.onSetting(Row.PlayerSave("azahar"))
         val (closed, effect) = reduce(onRow, Meaning.Activate)
@@ -765,10 +766,10 @@ class ContractTest {
         val syncing = PlayerSaveSetting("armsx2", "ARMSX2", chosen = true, saveSyncing = true, installed = true)
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(syncing), boardEmulators = setOf("armsx2"))
         assertEquals(
-            listOf(Row.PlayerSave("armsx2"), Row.SaveSync("armsx2")),
+            listOf(Row.PlayerSave("armsx2"), Row.SaveCheck("armsx2"), Row.SaveSync("armsx2")),
             settingsInnerRows(SettingsInner.Emulator("armsx2"), model),
         )
-        assertEquals("Memory card  Syncing", rowLabel(Row.SaveSync("armsx2"), model))
+        assertEquals("Memory card  Set", rowLabel(Row.SaveSync("armsx2"), model))
         val (leftSyncing, open) = reduce(model.onSetting(Row.SaveSync("armsx2")), Meaning.Activate)
         assertEquals(Effect.OpenPlayer("armsx2"), open)
         assertNull(leftSyncing.settings)
@@ -796,7 +797,7 @@ class ContractTest {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting), boardEmulators = setOf(setting.playerId))
             val row = Row.PlayerSave(setting.playerId)
             assertEquals(Copy.playerSavesSet, rowText(row, model).value)
-            assertEquals(RowControl.Value(Copy.playerSavesSet, opens = true, healthy = true), rowControl(row, model))
+            assertEquals(RowControl.Value(Copy.playerSavesSet, opens = true), rowControl(row, model))
             assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(row), Meaning.Activate).second)
             val fix = when (setting.playerId) {
                 "duckstation" -> Row.HostedSaves(setting.playerId)
@@ -815,7 +816,7 @@ class ContractTest {
             val model = PickerModel(count = 1, rowsPerPage = 1, playerSaves = listOf(setting), boardEmulators = setOf("duckstation"))
             assertEquals(Copy.choose, rowText(Row.PlayerSave(setting.playerId), model).value)
             assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(setting.playerId), model))
-            assertEquals(if (inUse) Copy.hostedSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
+            assertEquals(if (inUse) Copy.playerSavesSet else Copy.notSyncing, rowText(Row.HostedSaves(setting.playerId), model).value)
             assertEquals(Effect.ChoosePlayerSave(setting.playerId), reduce(model.onSetting(Row.PlayerSave(setting.playerId)), Meaning.Activate).second)
         }
     }
@@ -838,7 +839,7 @@ class ContractTest {
         val setting = PlayerSaveSetting("aps3e", "aPS3e", chosen = true, setupSteps = steps, installed = true)
         val model = PickerModel(count = 1, rowsPerPage = 1, homeRoleHeld = true, playerSaves = listOf(setting), boardEmulators = setOf("aps3e"))
         assertEquals(
-            listOf(Row.PlayerSave("aps3e"), Row.PlayerSetup("aps3e")),
+            listOf(Row.PlayerSave("aps3e"), Row.SaveCheck("aps3e"), Row.PlayerSetup("aps3e")),
             settingsInnerRows(SettingsInner.Emulator("aps3e"), model),
         )
         assertEquals("Setup  Not syncing", rowLabel(Row.PlayerSetup("aps3e"), model))
@@ -856,7 +857,7 @@ class ContractTest {
         assertEquals("aPS3e", dialog.subject)
         assertEquals("Open aPS3e", openPlayerLabel(dialog.subject))
         val ready = model.copy(playerSaves = listOf(setting.copy(setupSteps = null)))
-        assertEquals(listOf(Row.PlayerSave("aps3e")), settingsInnerRows(SettingsInner.Emulator("aps3e"), ready))
+        assertEquals(listOf(Row.PlayerSave("aps3e"), Row.SaveCheck("aps3e")), settingsInnerRows(SettingsInner.Emulator("aps3e"), ready))
     }
 
     @Test

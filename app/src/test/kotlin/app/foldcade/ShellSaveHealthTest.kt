@@ -16,6 +16,48 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun anAndroidAppKeepsItsOwnSavesWithoutAPlayerRoute() {
+        val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        shell.setInstalledApps(listOf(LaunchableApp("example.game", "Android game", true)), emptySet())
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.AppKeepsSaves), shell.saveHealthOf(androidHomeId("example.game")))
+    }
+
+    @Test fun aServiceRefreshClearsSignedOutStatusWithoutRestartingAndCanInvalidateAReceipt() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val entry = MelonDsEntry()
+        plugins.register(entry)
+        val player = entry.players.single()
+        (player as SaveFolderHolder).bindSaveFolder("content://test/tree/saves")
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.setInstalledApps(emptyList(), player.packageNames.toSet(), player.packageNames.toSet())
+        val game = Game("romm", "12", player.platformId, Availability.Cached, "Tetris")
+        shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
+        val id = homeGameId(game.backendId, game.remoteKey)
+        val root = FolderRef("primary:saves", "saves")
+        val checked = LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "saved here"), 100)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), emptyList())
+        shell.noteSaveReachable(game, player.id, true)
+        shell.setSaveDestination(game, OffDeviceFact.OnRomm(200))
+        shell.setSaveService("romm", SaveServiceState.SignedOut)
+        assertEquals(SaveStatus.NotSyncing(destination = NoDestinationWhy.SignedOut), shell.saveHealthOf(id))
+        shell.setSaveService("romm", SaveServiceState.Ready)
+        assertEquals(SaveStatus.Protected(200, 100), shell.saveHealthOf(id))
+        shell.setSaveDestination(game, OffDeviceFact.Unknown)
+        assertFalse(shell.saveHealthOf(id) is SaveStatus.Protected)
+        val incident = SaveIncident("WrongFolder:melonds", IncidentKind.WrongFolder, player.saveFolderId(), player.displayName,
+            emptyList(), root, null, checked.evidence, 200)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), listOf(incident))
+        shell.openSaveFix(incident, "Choose the folder", player.id)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), emptyList(), replace = false)
+        assertEquals(RepairState.Done, shell.model.saveFix!!.resolved!!.repair)
+        // Opened with no game to choose a save for, the finished page only closes.
+        assertEquals(Effect.FinishSaveFix(incident.id, openSaves = false), reduce(shell.model, Meaning.Activate).second)
+        shell.openSaveFix(incident, "Choose the folder", player.id, game = game.label)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to checked), listOf(incident.copy(repair = RepairState.Done)))
+        assertEquals(Effect.FinishSaveFix(incident.id), reduce(shell.model, Meaning.Activate).second)
+    }
+
     @Test fun healthAndNoticesStayQuietUntilAnEmulatorIsKnownToBeInstalled() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())
@@ -34,7 +76,7 @@ class ShellSaveHealthTest {
         shell.ingestLibrary("romm", games.map { GridEntry(it.remoteKey, it.label, "", it.platformId, null, false, it) }, emptyList())
         fun assertQuiet(game: Game) {
             assertNull(shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game)))
-            assertEquals(SaveHealth.Fine, shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey)))
+            assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.NoPlayer), shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey)))
         }
         // The catalog may arrive before the first installed-app scan.
         games.forEach(::assertQuiet)
@@ -52,7 +94,7 @@ class ShellSaveHealthTest {
         shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage))
         games.take(2).forEach(::assertQuiet)
         assertEquals("melonds", shell.model.notices.single().savePlayerId)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId("romm", "2")))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId("romm", "2")))
         val retroSetting = shell.model.playerSaves.first { it.label == "RetroArch" }
         assertFalse(retroSetting.installed)
         assertEquals(RowControl.Value(Copy.choose, opens = true), rowControl(Row.PlayerSave(retroSetting.playerId), shell.model))
@@ -60,7 +102,7 @@ class ShellSaveHealthTest {
         val retroPackage = retro.players.first().packageNames.first()
         shell.setInstalledApps(emptyList(), packages, installedPlayers = setOf(melonPackage, retroPackage))
         games.forEach {
-            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId(it.backendId, it.remoteKey)))
+            assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(homeGameId(it.backendId, it.remoteKey)))
         }
         assertEquals(Copy.savesNotSyncingEmulatorsBody(2), shell.model.notices.single().body)
         // Settings › Emulators and Set up saves count the same two the notice does.
@@ -90,17 +132,18 @@ class ShellSaveHealthTest {
         val game = Game("romm", "35", entry.player.platformId, Availability.Cached, "Fantasy Life i")
         shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
         val id = homeGameId(game.backendId, game.remoteKey)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
-        assertTrue(shell.model.playerSaves.isEmpty())
-        assertEquals(listOf(Row.EdenFolder), emulatorShelf(shell.model).single().rows)
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
+        assertEquals(listOf("eden"), shell.model.playerSaves.map { it.playerId })
+        // No folder yet, so no Check row.
+        assertEquals(listOf(Row.PlayerSave("eden"), Row.EdenFolder), emulatorShelf(shell.model).single().rows)
         entry.player.bindSaveFolder("content://eden/tree/root")
         shell.setEden(EdenSetting(true, pkg))
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         shell.noteSaveReachable(game, entry.player.id, true)
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         entry.player.bindSaveFolder("")
         shell.setEden(EdenSetting(false, pkg))
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
     }
 
     @Test fun hostedSetupIsTheOnlyStandingIssueWithoutADuckStationDataFolder() {
@@ -114,11 +157,11 @@ class ShellSaveHealthTest {
         val game = Game("romm", "42", "playstation", Availability.Cached, "Game")
         shell.ingestLibrary("romm", listOf(GridEntry(game.remoteKey, game.label, "", game.platformId, null, false, game)), emptyList())
         val id = homeGameId(game.backendId, game.remoteKey)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.HostedFolder), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.HostedFolder), shell.saveHealthOf(id))
         assertEquals(mapOf(duck.player.id to duck.player.displayName), setupPlayers)
         duck.player.bindHostedFolder("content://hosted", true)
         shell.refreshPlayerSaves()
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         assertTrue(setupPlayers.isEmpty())
         assertFalse(shell.model.playerSaves.single().chosen)
     }
@@ -165,26 +208,26 @@ class ShellSaveHealthTest {
         val game = games.first()
         val id = homeGameId(game.backendId, game.remoteKey)
         val shown = ShelfGame(id, game.label, "", platformId = game.platformId)
-        assertEquals(SaveHealth.Fine, shell.saveHealthAt(0, shown))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthAt(0, shown))
         val reads = player.declarationReads
         assertTrue(reads > 0)
         repeat(100) {
-            assertEquals(SaveHealth.Fine, shell.saveHealthAt(0, shown))
-            assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+            assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthAt(0, shown))
+            assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         }
         assertEquals(reads, player.declarationReads)
         shell.saveHealthOf(homeGameId("romm", "1"))
         assertTrue(player.declarationReads > reads)
         shell.noteSaveReachable(game, player.id, false)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot, app.foldcade.language.SpotIssue.NoTitleId), shell.saveHealthOf(id))
         player.bindSaveFolder("content://second")
         store.setPlayerSaveFolder(player.id, "content://second")
         shell.refreshPlayerSaves() // Folder changed even though the row still reads Folder set.
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         shell.setSaveSync(emptyMap(), mapOf(player.id to "Finish setup"))
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NeedsSetup), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NeedsSetup), shell.saveHealthOf(id))
         shell.setSaveSync(emptyMap(), emptyMap())
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
     }
 
     private class CountingSavePlayer(private val delegate: MelonDsPlayer = MelonDsPlayer()) :
@@ -233,7 +276,7 @@ class ShellSaveHealthTest {
             val player = shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game))!!
             shell.noteSaveReachable(game, player.id, false)
             val health = shell.saveHealthOf(homeGameId(game.backendId, game.remoteKey))
-            assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), health)
+            assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot, app.foldcade.language.SpotIssue.NoTitleId), health)
             assertTrue(health.needsAttention)
             assertEquals(Copy.savesNotSyncing, saveHealthLine(health))
             assertTrue(setupPlayers.isEmpty())
@@ -310,25 +353,25 @@ class ShellSaveHealthTest {
         shell.ingestLibrary("romm", listOf(entry(server, "Tetris.nds"), entry(other, "Puzzle.nds")), emptyList())
         shell.ingestLibrary("local-folder", listOf(entry(local, "Tetris.nds")), emptyList())
         val id = homeGameId("local-folder", "tree")
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(id))
         assertEquals(mapOf(player.id to player.displayName), setupPlayers) // Two server games, one player notice.
         shell.noteSaveReachable(server, player.id, false)
         (player as SaveFolderHolder).bindSaveFolder("content://saves")
         shell.refreshPlayerSaves()
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         assertTrue(setupPlayers.isEmpty())
         shell.setUnsyncedSaves("romm", setOf("42"))
-        assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Waiting(0), shell.saveHealthOf(id))
         val until = shell.noteActivity("romm", "42", GameActivity.Synced(SyncResult(SyncOutcome.Queued)), 100)!!
-        assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Waiting(0), shell.saveHealthOf(id))
         shell.expireActivity("romm", "42", until)
-        assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Waiting(0), shell.saveHealthOf(id))
         shell.setUnsyncedSaves("romm", emptySet())
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         shell.noteSaveReachable(server, player.id, false)
-        assertEquals(SaveHealth.NotSyncing(SaveIssue.NoSlot), shell.saveHealthOf(id))
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot, app.foldcade.language.SpotIssue.NoTitleId), shell.saveHealthOf(id))
         shell.noteSaveReachable(server, player.id, true)
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
     }
 
     @Test fun aSaveWaitingForTheServerStaysVisibleAfterItsEmulatorIsUninstalled() {
@@ -343,8 +386,8 @@ class ShellSaveHealthTest {
         shell.setUnsyncedSaves("romm", setOf("42"))
         shell.setInstalledApps(emptyList(), plugins.playerPackageNames(), installedPlayers = emptySet())
         assertNull(shell.savePlayer(GameRoute(homeGameId(game.backendId, game.remoteKey), game, game)))
-        assertEquals(SaveHealth.Waiting, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Waiting(0), shell.saveHealthOf(id))
         shell.setUnsyncedSaves("romm", emptySet())
-        assertEquals(SaveHealth.Fine, shell.saveHealthOf(id))
+        assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.NoPlayer), shell.saveHealthOf(id))
     }
 }

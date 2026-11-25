@@ -81,7 +81,22 @@ enum class ExtensionAcceptance {
  * stop launch: Azahar keeps its own saves and none sync. This type does not
  * invent a directory and does not read private storage.
  */
-class AzaharPlayer : Player, SaveFolderHolder {
+class AzaharPlayer : Player, SaveFolderHolder, app.foldcade.api.plugin.SaveLocationProbe {
+    override val signatureFile: String = LOG
+    override val locationSteps: String = "1. In Azahar, choose Select User Folder.\n2. Choose the folder that should keep your saves, then Use this folder › Allow."
+
+    override fun liveSignals(root: app.foldcade.api.plugin.SaveFolderAccess): List<app.foldcade.api.plugin.LiveSignal> {
+        val log = root.read(LOG, 0L, 32 * 1024)?.toString(Charsets.UTF_8) ?: return emptyList()
+        val uri = log.lineSequence().firstOrNull { "User directory path: " in it }
+            ?.substringAfter("User directory path: ")?.trim()?.takeIf { it.startsWith("content://") }
+            ?: return emptyList()
+        // Upstream's file backend stops logging after 100 MiB until the process restarts.
+        val perStart = root.read(LOG, 100L * 1024 * 1024 - 1, 1) == null
+        return listOf(app.foldcade.api.plugin.LiveSignal(LOG, uri, root.modifiedAtMillis(LOG),
+            app.foldcade.api.plugin.SignalStrength.Proves, perStart = perStart))
+    }
+
+
     override val id: String = ID
     override val displayName: String = DISPLAY_NAME
     override val platformId: String = Nintendo3ds.ID
@@ -137,6 +152,7 @@ class AzaharPlayer : Player, SaveFolderHolder {
     }
 
     companion object {
+        const val LOG = "log/azahar_log.txt"
         const val ID: String = "azahar"
         const val DISPLAY_NAME: String = "Azahar"
         const val ACTION_VIEW: String = "android.intent.action.VIEW"
