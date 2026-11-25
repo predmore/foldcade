@@ -524,7 +524,7 @@ Helpers:
 3. `WroteElsewhere(live)` or `Signalled(UsesOther)` opens a `WrongFolder` incident for this game. Then:
    - After the normal bound-copy handoff, capture the live root's copy: `readSpot` against the live root goes into `save-handover`.
    - Call `keepAsBackups`, then record the ids in `incident.kept`. If RomM is unreachable, they go in `incident.staged`.
-   - The bound root's bytes go through the normal `reconcile`, unchanged from today.
+   - The bound root’s bytes still go through the normal handoff. If a changed return has a verified prior save, the open folder incident can quarantine the changed copy first (§4.3).
 4. `SilentStart` opens `WrongFolder`, only for approved signals marked `perStart` on an actual Foldcade launch (§4.2).
 5. **The profile is frozen (Eden).** The pending return stores the profile UUID and effective save and NAND paths selected at prepare. A different UUID opens `MaybeNewSave` and the return stages only the original account's save as an unslotted Backup. A detected account or location change fences the newly selected folder before later save operations. A verified first run with an absent profile database can discover Eden's first account on return when the paths match.
 6. **Unprotected sessions.** With an open `WrongFolder` and a readable live root, the live copy is captured and kept as a Backup on return. Eden uses its frozen account for return capture. When Eden's configured folder becomes accessible later, the next save operation keeps its local bytes as a Backup before placing a head.

@@ -146,7 +146,6 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
                 saveProtection.verified(incident.playerKey, live, incident.evidence, System.currentTimeMillis(),
                     packageInfo.packageName, packageInfo.firstInstallTime, present)
             }
-            refreshSaveReceipt(game, player, listOf(spot(liveUri)))
         }
     }
 }

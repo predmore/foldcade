@@ -45,6 +45,7 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.GameActivity
 import app.foldcade.api.plugin.HostedSaveFolder
 import app.foldcade.api.plugin.LaunchFlag
+import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginException
@@ -1724,9 +1725,20 @@ class FoldcadeApp : Application() {
             saveFoldersReady.await()
             saveFlow.withLock {
                 val done = saveRepair.advance(id, start, choice)
-                val player = done?.subject?.playerId?.let(plugins::player)
-                if (player != null) refreshSaveProtection(player, flowHeld = true)
-                else publishSaveProtection(emptyMap(), replace = false)
+                val subject = done?.subject
+                val player = subject?.playerId?.let(plugins::player)
+                if (subject != null && player != null) {
+                    refreshSaveProtection(player, flowHeld = true)
+                    // Publish after the binding update invalidates the receipt for the old folder.
+                    val game = subject.game()
+                    val spots = try {
+                        subject.targetUri?.let { playerSaves.spots(player, game, LaunchTarget.ContentUri(it)) }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { null }
+                    if (spots != null) {
+                        refreshSaveReceipt(game, player, spots)
+                    }
+                } else publishSaveProtection(emptyMap(), replace = false)
                 done
             }
         }
