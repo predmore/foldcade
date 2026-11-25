@@ -50,7 +50,7 @@ Shared formats need a [system folder](local-games.md#folder-names-and-formats).
 
 ## Resume and Move on the Thor
 
-Press **A** on a game Foldcade left open to return to its existing session. Usage access is optional: turning it off must never turn that press into a restart. **Y › Restart** explicitly starts over. Without usage access, Foldcade cannot tell that a game was closed elsewhere; if A opens the emulator's menu, use Restart. Choosing a save to load also requires a fresh launch.
+Press **A** on a game Foldcade left open to return to its existing session. **Y › Restart** explicitly starts over. Choosing a save to load also requires a fresh launch. Usage access is optional. For Azahar, Foldcade recognizes when Android removes the game activity, including when **Close Game** leaves Azahar's menu open. The next **A** starts through the save check. If Foldcade cannot verify which screen will open, it warns before attempting a resume. If you land in Azahar's menu, return to Foldcade for the save check.
 
 **Move** is offered only for a tested one-screen emulator that preserves its running game on the other panel. DuckStation keeps its existing support. Both-screen games keep their emulator's own layout; changing a task's display does not by itself prove that its second screen survives.
 

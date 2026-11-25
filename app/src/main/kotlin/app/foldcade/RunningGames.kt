@@ -37,6 +37,8 @@ internal data class RunningGame(
     val player: app.foldcade.api.plugin.Player? = null,
     /** The game switches and quits through the player's own start protocol. */
     val replacesInPlayer: Boolean = false,
+    /** Set only after Android confirmed the grant was attached to this start. */
+    val activityGrant: GameActivityGrant? = null,
 )
 
 internal data class GameCompanion(val packageName: String, val title: String, val panel: Panel)
