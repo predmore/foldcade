@@ -110,8 +110,8 @@ class ArmsX2Player : Player, SaveFolderHolder, SaveLocationProbe {
     /** The GitHub build's data folder. Android lets the picker choose it on the Thor. */
     override val suggestedSaveFolder: String = DATA_FOLDER
 
-    /** The data folder holds these, and so does a folder they were moved to. */
-    override val saveFolderMarkers: Set<String> = setOf(MEMCARDS, BIOS)
+    /** A redirected card and private BIOS can leave only the native INI in the shared data root. */
+    override val saveFolderMarkers: Set<String> = setOf(MEMCARDS, BIOS, Ps2Card.INI)
 
     /** Slot 1, once the data folder is picked. The card itself is chosen in [findSaveFolders]. */
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
