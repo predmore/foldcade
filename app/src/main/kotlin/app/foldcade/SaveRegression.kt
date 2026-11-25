@@ -17,11 +17,15 @@ internal fun regressionIncidentId(game: Game, player: Player) =
 
 internal fun SaveIncidentGame.game() = Game(libraryId, gameId, platformId, Availability.Cached, label)
 
-internal fun SaveIncident.appliesTo(game: Game): Boolean {
+internal fun SaveIncident.appliesTo(game: Game) = appliesTo(game.backendId, game.remoteKey)
+
+internal fun SaveIncident.appliesTo(libraryId: String, remoteKey: String): Boolean {
     if (gameIds.isEmpty()) return true
+    val homeId = homeGameId(libraryId, remoteKey)
+    if (hostedCardMismatch) return homeId in gameIds
     // A subject's game may be stored bare or as its home id; either names the same game.
-    subject?.let { return it.libraryId == game.backendId && (game.remoteKey in gameIds || homeGameId(game.backendId, game.remoteKey) in gameIds) }
-    return if (kind == IncidentKind.WrongFolder) homeGameId(game.backendId, game.remoteKey) in gameIds else game.remoteKey in gameIds
+    subject?.let { return it.libraryId == libraryId && (remoteKey in gameIds || homeId in gameIds) }
+    return if (kind == IncidentKind.WrongFolder) homeId in gameIds else remoteKey in gameIds
 }
 
 internal fun incidentGame(game: Game, player: Player, targetUri: String?, origin: String?, reading: ProbeSnapshot?) =

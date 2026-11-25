@@ -1106,6 +1106,7 @@ class FoldcadeApp : Application() {
             },
         )
         shell.runningPlayer = { id -> runningOn(id)?.takeIf { packageInstalled(it.packageName) }?.player }
+        shell.hostedCardChecked = { player, game -> saveProtection.hostedCardChecked(player.saveFolderId(), game) }
         shell.onPlayerChoiceChanged = { scope -> dismissNotice("foldcade:player-choice:$scope") }
         shell.onPlayerAvailabilityChanged = ::clearUsablePlayerChoiceNotices
         shell.canCloseGame = ::canCloseGame
@@ -1717,7 +1718,8 @@ class FoldcadeApp : Application() {
     internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
     internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection, store::rommOrigin) }
     internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies,
-        sharedPaths::target, ::rommSharedRoot, ::edenSaveReadsAllowed) }
+        sharedTarget = sharedPaths::target, rommMedia = ::rommSharedRoot,
+        hostedCardOpens = hostedCardOpens, edenReadsAllowed = ::edenSaveReadsAllowed) }
     internal val saveRegression by lazy {
         SaveRegression(playerSaves, saveProtection, baseline = { game, slot, folder ->
             val library = plugins.library(game.backendId)
@@ -1730,7 +1732,7 @@ class FoldcadeApp : Application() {
     }
 
     internal fun associateSaveRepair(player: Player, subject: app.foldcade.language.SaveIncidentGame) {
-        if (subject.targetUri == null || !app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId))) return
+        if (player is HostedSaveFolder || subject.targetUri == null || !app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId))) return
         val incident = saveProtection.incident("WrongFolder:${player.saveFolderId()}") ?: return
         if (incident.live != null && incident.repair == app.foldcade.language.RepairState.NotStarted && incident.subject == null)
             saveProtection.put(incident.copy(subject = subject))
@@ -1989,6 +1991,8 @@ class FoldcadeApp : Application() {
 
     /** The manifest's [HostedSavesProvider] authority. */
     val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"
+
+    internal val hostedCardOpens = HostedCardOpens()
 
     /** The save folders [HostedSavesProvider] serves: one for each player that keeps its saves there. */
     internal val hostedFolders: HostedFolders by lazy {

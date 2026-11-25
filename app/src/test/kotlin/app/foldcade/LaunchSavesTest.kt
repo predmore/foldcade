@@ -28,6 +28,7 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.host.PluginHost
 import app.foldcade.language.*
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
@@ -413,6 +414,38 @@ class LaunchSavesTest {
         assertTrue(observed.slots.isEmpty())
         assertEquals(null, returned)
         assertEquals(quarantine, SaveProtectionStore(dir).incident(quarantine.id))
+    }
+
+    @Test fun duckStationCardMismatchKeepsChangedCopiesOutOfTheSlotAndIsScopedToTheGame() = runBlocking {
+        val duck = DuckStationPlayer()
+        val game = owner.copy(platformId = duck.platformId)
+        val other = game.copy(remoteKey = "another game")
+        val spot = SaveSpot(DuckStationPlayer.CARD_SLOT, SAVES, "RomM name_1.mcd")
+        val alternate = spot.copy(fileName = "DuckStation title_1.mcd")
+        val store = SaveProtectionStore(Files.createTempDirectory("duckstation-mismatch"))
+        val incident = SaveIncident("different-card", IncidentKind.MaybeNewSave, duck.id, duck.displayName,
+            listOf(homeGameId(game.backendId, game.remoteKey)), null, null, Evidence(EvidenceKind.HostedOpen, alternate.fileName), 1)
+        store.put(incident)
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        val head = "existing head".toByteArray()
+        docs.files["$SAVES/${spot.fileName}"] = head
+        val placed = saves.changedSince(server.id, game, duck, listOf(spot))
+        saves.noteHandedOver(server.id, game, duck, listOf(spot), placed)
+        assertFalse(incident.blocksLaunch)
+        assertTrue(copies.preserveReturn(game, duck, listOf(spot), preserveAsBackup = false))
+        assertTrue(server.backups.isEmpty())
+        assertFalse(copies.preserveReturn(other, duck, listOf(spot), preserveAsBackup = false))
+
+        val live = "live card progress".toByteArray()
+        docs.files["$SAVES/${alternate.fileName}"] = live
+        copies.stage(game, duck, listOf(alternate), incident, mark = false)
+        val changed = "uncertain card progress".toByteArray()
+        docs.files["$SAVES/${spot.fileName}"] = changed
+        assertTrue(copies.preserveReturn(game, duck, listOf(spot), preserveAsBackup = false))
+        assertEquals(setOf(md5Hex(live), md5Hex(changed)), server.backups.toSet())
+        assertTrue(saves.changedSince(server.id, game, duck, listOf(spot)).slots.isEmpty())
+        assertTrue(server.observed.isEmpty())
+        assertTrue(server.calls.isEmpty())
     }
 
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {

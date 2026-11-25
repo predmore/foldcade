@@ -11,6 +11,8 @@ import app.foldcade.language.EvidenceKind
 import app.foldcade.language.IncidentKind
 import app.foldcade.language.blocksLaunch
 import app.foldcade.plugins.romm.keepRommRepairBackup
+import app.foldcade.language.hostedCardMismatch
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -83,13 +85,22 @@ internal class SaveIncidentCopies(
 
     /** The launch's persisted decision wins even if a guided fix closed the incident meanwhile. */
     suspend fun preserveReturn(game: Game, player: Player, spots: List<SaveSpot>, preserveAsBackup: Boolean): Boolean {
-        if (!preserveAsBackup && !store.pendingBackup(player.saveFolderId(), game)) return false
+        val key = player.saveFolderId()
+        val incident = backupIncident(game, player)
+        if (!preserveAsBackup && !store.pendingBackup(key, game)) {
+            if (player !is DuckStationPlayer || incident == null) return false
+            if (spots.isEmpty()) return true
+            store.requireBackup(key, game)
+            // A stale card must not announce a sync. An unchanged card needs no new archive.
+            val outside = saves.changedSince(game.backendId, game, player, spots, strict = true)
+            if (outside.slots.isEmpty()) store.handled(key, game) else preserveChanged(game, player, spots, outside, incident)
+            return true
+        }
         // Retained through strict-read failures and later launches until durable staging succeeds.
-        store.requireBackup(player.saveFolderId(), game)
+        store.requireBackup(key, game)
         if (spots.isEmpty()) throw SaveNotPlaced()
-        val incident = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(game) }
         stage(game, player, spots, incident, mark = true)
-        store.handled(player.saveFolderId(), game)
+        store.handled(key, game)
         keep(game, player)
         return true
     }
@@ -117,16 +128,27 @@ internal class SaveIncidentCopies(
         val key = player.saveFolderId()
         val quarantine = store.incident(regressionIncidentId(game, player))
         val blocked = store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
-        if (!store.needsBackup(key, game) && quarantine == null && blocked == null) return false
+        val incident = blocked ?: if (player is DuckStationPlayer) backupIncident(game, player) else null
+        if (!store.needsBackup(key, game) && quarantine == null && incident == null) return false
         if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false
-        val observed = stage(game, player, spots, blocked, mark = false)
-        if (outside.slots.any { slot -> observed.slots.none { it.slot == slot.slot } }) throw SaveNotPlaced()
-        saves.noteHandedOver(game.backendId, game, player, spots, observed)
-        if (blocked == null) store.handled(key, game)
-        keep(game, player)
+        preserveChanged(game, player, spots, outside, incident, completeHandover = blocked == null)
         return true
     }
+
+    private suspend fun preserveChanged(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves,
+        incident: SaveIncident?, completeHandover: Boolean = true) {
+        val observed = stage(game, player, spots, incident, mark = false)
+        if (outside.slots.any { slot -> observed.slots.none { it.slot == slot.slot } }) throw SaveNotPlaced()
+        saves.noteHandedOver(game.backendId, game, player, spots, observed)
+        if (completeHandover) store.handled(player.saveFolderId(), game)
+        keep(game, player)
+    }
+
+    private fun backupIncident(game: Game, player: Player): SaveIncident? =
+        store.incidents().firstOrNull {
+            it.playerKey == player.saveFolderId() && it.affectsGame(game) && (it.blocksLaunch || it.hostedCardMismatch)
+        }
 
     suspend fun keep(game: Game, player: Player) {
         for (copy in queued(game, player)) keepCopy(copy, player)

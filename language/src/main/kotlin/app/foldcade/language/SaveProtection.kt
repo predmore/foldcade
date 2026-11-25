@@ -169,6 +169,9 @@ val SaveIncident.isEdenGrant: Boolean get() = playerKey == "eden" && kind == Inc
 val SaveIncident.isEdenSessionChange: Boolean get() = playerKey == "eden" && kind == IncidentKind.MaybeNewSave &&
     evidence.kind == EvidenceKind.Config
 
+val SaveIncident.hostedCardMismatch: Boolean get() =
+    kind == IncidentKind.MaybeNewSave && evidence.kind == EvidenceKind.HostedOpen
+
 sealed interface RepairState {
     data object NotStarted : RepairState
     data object Keeping : RepairState
@@ -300,6 +303,7 @@ object SaveProtectionCopy {
     const val chooseFolder = "Choose folder"
     const val chooseSave = "Choose save"
     const val thenChoose = "Then choose the same folder here."
+    const val hostedCardSteps = "In DuckStation, check Memory Card 1 for this game. Keep a copy of your card before changing its type."
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."
@@ -364,7 +368,11 @@ object SaveProtectionCopy {
         IncidentKind.MaybeWrongFolder -> "$playerName may be saving somewhere else"
         IncidentKind.FolderEmptied -> "$playerName’s save folder is empty"
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) evidence.detail.trimEnd('.') else subject?.let { "Two saves for ${it.label}" } ?: "Two saves · choose one"
+        IncidentKind.MaybeNewSave -> when {
+            isEdenSessionChange -> evidence.detail.trimEnd('.')
+            hostedCardMismatch -> "$playerName used a different memory card"
+            else -> subject?.let { "Two saves for ${it.label}" } ?: "Two saves · choose one"
+        }
     } }
     fun safeOnRomm(receipt: Long?, hasVersions: Boolean, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String = when {
         receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt, now, style, inSentence = true)}."
@@ -382,8 +390,12 @@ object SaveProtectionCopy {
         IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
         IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
         IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "Check Eden’s user, then choose a save." else
-            if (repair is RepairState.WaitingForRomm) "Keeping both saves. Waiting for RomM." else "Two saves. Choose which to play."
+        IncidentKind.MaybeNewSave -> when {
+            isEdenSessionChange -> "Check Eden’s user, then choose a save."
+            hostedCardMismatch -> "Different memory card. Check before you play."
+            repair is RepairState.WaitingForRomm -> "Keeping both saves. Waiting for RomM."
+            else -> "Two saves. Choose which to play."
+        }
     } }
     /**
      * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it
@@ -409,8 +421,11 @@ object SaveProtectionCopy {
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
             IncidentKind.MaybeWrongFolder -> "Check where it saves."
-            IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "${evidence.detail} Check Eden’s user before choosing a save."
-                else "Choose which save to play."
+            IncidentKind.MaybeNewSave -> when {
+                isEdenSessionChange -> "${evidence.detail} Check Eden’s user before choosing a save."
+                hostedCardMismatch -> evidence.detail
+                else -> "Choose which save to play."
+            }
         }, safe, when (kind) {
             IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
             IncidentKind.FolderEmptied -> "Put it back before you play."

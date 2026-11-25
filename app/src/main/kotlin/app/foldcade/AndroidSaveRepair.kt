@@ -37,7 +37,9 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
     if (player.saveFolderId() != incident.playerKey) return null
     val holder = player as? SaveFolderHolder ?: return null
     val isQuarantine = incident.kind == IncidentKind.MaybeNewSave
-    if (!isQuarantine && (incident.kind != IncidentKind.WrongFolder || player is HostedSaveFolder || player is EdenPlayer)) return null
+    // Hosted cards belong to the provider. A separate data/BIOS grant is never a repair destination.
+    if (player is HostedSaveFolder) return null
+    if (!isQuarantine && (incident.kind != IncidentKind.WrongFolder || player is EdenPlayer)) return null
     val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) } ?: return null
     val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: return null
     val eden = if (player is EdenPlayer) {

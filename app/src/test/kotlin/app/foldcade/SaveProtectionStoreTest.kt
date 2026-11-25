@@ -38,6 +38,27 @@ class SaveProtectionStoreTest {
         assertTrue(judgeRoots(ProbeSnapshot(200, 10, "azahar.app", listOf(reading.copy(signals = listOf(SignalReading("log", root.identity, 150, true, false))))), bound) is RootVerdict.Uses)
     }
 
+    @Test fun hostedFolderEvidenceRequiresItsOwnCardOpenForEveryGame() {
+        val dir = Files.createTempDirectory("hosted-card-check")
+        val store = SaveProtectionStore(dir)
+        val hosted = FolderRef("app.foldcade.saves:foldcade:duckstation", "DuckStation memory cards")
+        val game = app.foldcade.api.plugin.Game("romm", "37", "playstation", app.foldcade.api.plugin.Availability.Cached, "Game")
+        val other = game.copy(remoteKey = "38")
+        val opened = Evidence(EvidenceKind.HostedOpen, "Game_1.mcd")
+        store.verified("duckstation", hosted, opened, 30, "duckstation.app", 10, null, hostedGame = game)
+        assertTrue(SaveProtectionStore(dir).hostedCardChecked("duckstation", game))
+        assertFalse(store.hostedCardChecked("duckstation", other))
+
+        store.bound("duckstation", hosted, "duckstation.app", 10, 40, clearHostedCards = true)
+        store.verified("duckstation", hosted, opened, 50, "duckstation.app", 10, null, hostedGame = other)
+        assertFalse(store.hostedCardChecked("duckstation", game))
+        assertTrue(store.hostedCardChecked("duckstation", other))
+
+        store.verified("duckstation", hosted, opened, 60, "duckstation.app", 55, null, hostedGame = game)
+        assertTrue(store.hostedCardChecked("duckstation", game))
+        assertFalse(store.hostedCardChecked("duckstation", other))
+    }
+
     @Test fun reboundFencesAndPendingBypassesSurviveBindingVerificationAndIncidentClosure() {
         val dir = Files.createTempDirectory("save-handovers")
         val store = SaveProtectionStore(dir)

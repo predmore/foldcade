@@ -2,14 +2,19 @@ package app.foldcade
 
 import android.database.Cursor
 import android.database.MatrixCursor
+import android.os.Binder
 import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import java.io.File
 import java.io.FileNotFoundException
+import java.io.IOException
 
 /**
  * The save folders Foldcade hosts for players that cannot keep saves anywhere
@@ -29,7 +34,17 @@ import java.io.FileNotFoundException
 class HostedSavesProvider : DocumentsProvider() {
     override fun onCreate(): Boolean = true
 
-    private fun folders(): HostedFolders? = (context?.applicationContext as? FoldcadeApp)?.hostedFolders
+    private val app: FoldcadeApp? get() = context?.applicationContext as? FoldcadeApp
+    private val closeHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    private fun folders(): HostedFolders? = app?.hostedFolders
+
+    private fun cardCaller(documentId: String): HostedCardCaller? {
+        if (HostedFolders.folderOf(documentId) != DuckStationPlayer.ID) return null
+        // ContentProvider verifies the calling package against the Binder caller UID.
+        val name = try { callingPackage } catch (_: SecurityException) { null }
+        return if (name == DuckStationPlayer.PACKAGE) HostedCardCaller(Binder.getCallingUid(), name) else null
+    }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val cursor = MatrixCursor(projection ?: ROOT_COLUMNS)
@@ -72,9 +87,25 @@ class HostedSavesProvider : DocumentsProvider() {
         if (file.isDirectory) throw FileNotFoundException(documentId)
         val flags = ParcelFileDescriptor.parseMode(mode)
         if (flags and ParcelFileDescriptor.MODE_CREATE == 0 && !file.isFile) throw FileNotFoundException(documentId)
+        val caller = cardCaller(documentId)
+        val canWrite = flags and ParcelFileDescriptor.MODE_WRITE_ONLY != 0
+        fun open(): ParcelFileDescriptor {
+            val descriptor = ParcelFileDescriptor.open(file, flags)
+            val log = app?.hostedCardOpens ?: return descriptor
+            if (caller == null) return descriptor
+            val id = log.opened(HostedCardOpen(caller, documentId, mode,
+                canRead = flags and ParcelFileDescriptor.MODE_READ_ONLY != 0, canWrite = canWrite,
+                openedAtMillis = System.currentTimeMillis()))
+            return try {
+                ParcelFileDescriptor.wrap(descriptor, closeHandler) { error ->
+                    log.closed(id, System.currentTimeMillis(), failed = error != null)
+                }
+            } catch (_: IOException) {
+                descriptor
+            }
+        }
         // Opening to write can empty the file, so it waits for a placement in progress.
-        if (flags and ParcelFileDescriptor.MODE_WRITE_ONLY == 0) return ParcelFileDescriptor.open(file, flags)
-        return synchronized(SaveFileLock) { ParcelFileDescriptor.open(file, flags) }
+        return if (canWrite) synchronized(SaveFileLock) { open() } else open()
     }
 
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String = synchronized(SaveFileLock) {
@@ -95,8 +126,12 @@ class HostedSavesProvider : DocumentsProvider() {
         if (name == file.name) return@synchronized documentId
         val target = renameTarget(file, name)
         if (!file.renameTo(target)) throw IllegalStateException("$documentId could not be renamed")
+        val targetId = HostedFolders.childId(parentId, target.name)
+        if (target.isFile && target.name.endsWith(".mcd", ignoreCase = true)) {
+            cardCaller(documentId)?.let { app?.hostedCardOpens?.published(it, documentId, targetId, System.currentTimeMillis()) }
+        }
         changed(parentId)
-        HostedFolders.childId(parentId, target.name)
+        targetId
     }
 
     override fun deleteDocument(documentId: String) = synchronized(SaveFileLock) {

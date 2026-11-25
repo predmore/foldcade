@@ -19,6 +19,7 @@ data class SaveFixPage(
     val offline: Boolean = false,
     val canCloseGame: Boolean = false,
     val hasRommDestination: Boolean = false,
+    val playerManagesFolder: Boolean = false,
 )
 
 /** A RomM copy of [game] the host has seen: [atMillis] its receipt, or null when only versions are known. */
@@ -27,7 +28,7 @@ data class SaveFixSafe(val game: String, val atMillis: Long?)
 /** What each of the Fix page's buttons does, in the order they sit. */
 enum class SaveFixAction { ChooseFolder, OpenEmulator, CloseGame, ChooseSave, ChooseProgress, OpenSaves, Retry, Close }
 
-fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == IncidentKind.MaybeNewSave) SaveProtectionCopy.twoSaves
+fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == IncidentKind.MaybeNewSave && !incident.hostedCardMismatch) SaveProtectionCopy.twoSaves
     else SaveProtectionCopy.fixTitle(incident.playerName)
 
 /**
@@ -54,6 +55,7 @@ fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixActio
         repair is RepairState.WaitingForRomm -> listOf(SaveFixAction.Retry)
         repair is RepairState.WaitingForClose -> listOf(SaveFixAction.OpenEmulator, if (page.canCloseGame) SaveFixAction.CloseGame else SaveFixAction.Retry)
         repair in setOf(RepairState.Keeping, RepairState.Rebinding) || repair is RepairState.Placing -> emptyList()
+        page.playerManagesFolder -> listOf(SaveFixAction.OpenEmulator)
         saveFixTarget(incident) != null -> listOf(SaveFixAction.ChooseFolder)
         else -> listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder)
     }
@@ -103,6 +105,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     if (incident.isEdenSessionChange) return SaveFixCard(
         if (page.hasRommDestination) "Check the user in Eden’s Profile Manager, then choose a save in Y › Saves."
         else "Check the user in Eden’s Profile Manager.", page.note)
+    if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)
     return SaveFixCard(steps, listOfNotNull(SaveProtectionCopy.thenChoose, page.note).joinToString(" "))
@@ -114,7 +117,7 @@ data class SaveFixStep(val title: String, val state: SaveFixStepState, val value
 enum class SaveFixStepState { Done, Now, Later }
 
 fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
-    if (incident.kind == IncidentKind.MaybeNewSave && !incident.isEdenSessionChange) return emptyList()
+    if (incident.kind == IncidentKind.MaybeNewSave && !incident.isEdenSessionChange && !incident.hostedCardMismatch) return emptyList()
     if (page.hasRommDestination && (incident.automaticDone || incident.repair in setOf(RepairState.Keeping, RepairState.Rebinding) ||
         incident.repair is RepairState.WaitingForRomm || incident.repair is RepairState.WaitingForClose ||
         incident.repair is RepairState.Choosing || incident.repair is RepairState.Placing)) {
@@ -147,6 +150,7 @@ fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
     }
     val choose = SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later)
         .takeIf { page.hasRommDestination }
+    if (page.playerManagesFolder) return listOfNotNull(keep, choose.takeIf { incident.hostedCardMismatch })
     if (incident.isEdenSessionChange) return listOfNotNull(
         keep,
         SaveFixStep("Check your Eden user", SaveFixStepState.Now),
@@ -182,7 +186,11 @@ fun saveCheckState(incident: SaveIncident): String = when (incident.kind) {
     IncidentKind.MaybeWrongFolder -> "May save elsewhere"
     IncidentKind.FolderEmptied -> "Folder empty"
     IncidentKind.LostAccess -> "No access"
-    IncidentKind.MaybeNewSave -> if (incident.isEdenSessionChange) "Check Eden" else "Two saves"
+    IncidentKind.MaybeNewSave -> when {
+        incident.isEdenSessionChange -> "Check Eden"
+        incident.hostedCardMismatch -> "Different card"
+        else -> "Two saves"
+    }
 }
 
 fun applySaveFix(model: PickerModel, page: SaveFixPage, meaning: Meaning, repeatCount: Int): Pair<PickerModel, Effect?> {

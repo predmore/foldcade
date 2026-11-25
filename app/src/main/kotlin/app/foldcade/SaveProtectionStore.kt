@@ -29,23 +29,37 @@ internal class SaveProtectionStore(private val directory: Path) {
     @Synchronized fun hadMarkers(key: String, root: FolderRef): Boolean =
         locations.optJSONObject(key)?.let { it.optString("identity") == root.identity && it.optBoolean("markersPresent") } == true
 
-    @Synchronized fun verified(key: String, root: FolderRef, evidence: Evidence, at: Long, packageName: String, installFirstMillis: Long?, markers: Boolean?) {
+    @Synchronized fun verified(key: String, root: FolderRef, evidence: Evidence, at: Long, packageName: String, installFirstMillis: Long?, markers: Boolean?, hostedGame: Game? = null) {
         val next = JSONObject(locations.toString())
-        next.put(key, JSONObject().put("identity", root.identity).put("label", root.label)
+        val row = JSONObject().put("identity", root.identity).put("label", root.label)
             .put("evidenceKind", evidence.kind.name).put("detail", evidence.detail).put("atMillis", at)
             .put("packageName", packageName).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
-            .put("markersPresent", markers == true || hadMarkers(key, root)))
+            .put("markersPresent", markers == true || hadMarkers(key, root))
+        val previous = location(key, root, packageName, installFirstMillis)
+        if (hostedGame == null || previous !is LocationFact.Verified || at > previous.atMillis) next.put(key, row)
+        if (hostedGame != null) next.put(hostedCardKey(key, hostedGame), row)
         writeDurably(locationsFile, next.toString().toByteArray())
         locations = next
     }
 
-    @Synchronized fun bound(key: String, root: FolderRef, packageName: String, installFirstMillis: Long?, at: Long) {
+    @Synchronized fun bound(key: String, root: FolderRef, packageName: String, installFirstMillis: Long?, at: Long, clearHostedCards: Boolean = false) {
         val next = JSONObject(locations.toString()).put(key, JSONObject().put("identity", root.identity).put("label", root.label)
             .put("packageName", packageName).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
             .put("evidenceKind", EvidenceKind.Config.name).put("detail", "Folder chosen").put("atMillis", at).put("bound", true))
+        if (clearHostedCards) next.keys().asSequence().filter { it.startsWith("hosted-card:$key:") }.toList().forEach { next.remove(it) }
         writeDurably(locationsFile, next.toString().toByteArray())
         locations = next
     }
+
+    @Synchronized fun hostedCardChecked(key: String, game: Game): Boolean {
+        val folder = locations.optJSONObject(key) ?: return false
+        val card = locations.optJSONObject(hostedCardKey(key, game)) ?: return false
+        return !folder.optBoolean("bound") && card.optString("identity") == folder.optString("identity") &&
+            card.optString("packageName") == folder.optString("packageName") &&
+            card.nullableLong("installFirstMillis") == folder.nullableLong("installFirstMillis")
+    }
+
+    private fun hostedCardKey(key: String, game: Game): String = "hosted-card:$key:${gameKey(game)}"
 
     @Synchronized fun incidents(): List<SaveIncident> = incidentRows.keys().asSequence().map { incidentFromJson(incidentRows.getJSONObject(it)) }
         .sortedByDescending { it.openedAtMillis }.toList()

@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Environment
 import app.foldcade.api.plugin.*
 import app.foldcade.language.*
+import app.foldcade.plugins.duckstation.DuckStationPlayer
+import app.foldcade.plugins.duckstation.readDuckStationCardSettings
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
@@ -21,6 +23,7 @@ internal class SaveProbes(
     private val copies: SaveIncidentCopies,
     private val sharedTarget: (String) -> LaunchTarget.SharedFile? = { null },
     private val rommMedia: () -> Path? = { null },
+    private val hostedCardOpens: HostedCardOpens = HostedCardOpens(),
     private val edenReadsAllowed: () -> Boolean = { true },
 ) {
     private val android by lazy { AndroidSaveFolderFinder(context) }
@@ -44,8 +47,12 @@ internal class SaveProbes(
         val resolved = if (resolvedPackage == null) installed.firstOrNull() else installed.firstOrNull { it.packageName == resolvedPackage }
         val key = player.saveFolderId()
         fun readRoot(uri: String): RootReading {
-            val ref = FolderRef(storageIdentity(uri, context.packageName), if (player is EdenPlayer) player.displayName
-                else runCatching { folderPathLabel(uri) }.getOrDefault(uri))
+            val label = when (player) {
+                is EdenPlayer -> player.displayName
+                is DuckStationPlayer -> player.hostedFolderTitle
+                else -> runCatching { folderPathLabel(uri) }.getOrDefault(uri)
+            }
+            val ref = FolderRef(storageIdentity(uri, context.packageName), label)
             val isBound = ref.identity == boundIdentity
             val access = saves.folderAccess(player, uri, allowWrite = false)
             val children = access.list("")
@@ -55,7 +62,7 @@ internal class SaveProbes(
             val logVersion = if (!isBound && installed.size > 1 && signals.isNotEmpty())
                 access.read(signals.first().source, 0, 32 * 1024)?.toString(Charsets.UTF_8)?.let(::azaharLogVersion) else null
             var readable = reachable
-            val hashes = if (!readSpots || game == null || target == null) emptyList() else try {
+            val hashes = if (!readSpots || game == null || target == null || player is DuckStationPlayer) emptyList() else try {
                 val spots = if (player is EdenPlayer) edenSpots.orEmpty() else saves.probeSpots(player, game, target, uri)
                 if (spots.isEmpty()) readable = false
                 spots.mapNotNull { spot -> saves.readSpot(spot, strict = true, limit = 256L * 1024 * 1024)?.first?.let { spot.slot + ":" + md5Hex(it) } }
@@ -72,6 +79,9 @@ internal class SaveProbes(
                 (player is HostedSaveFolder || android.holdsGrant(uri, grants)))
         }
         val bound = readRoot(boundUri)
+        if (player is DuckStationPlayer) {
+            return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: DuckStationPlayer.PACKAGE, listOf(bound))
+        }
         if (player is RetroArchPlayer) {
             val pkg = resolved?.packageName ?: return ProbeSnapshot(System.currentTimeMillis(), null, resolvedPackage.orEmpty(), listOf(bound))
             val launch = retroArchTarget(target)
@@ -147,7 +157,7 @@ internal class SaveProbes(
     }
 
     @Synchronized fun markBound(player: Player) {
-        if (player !is SaveFolderHolder) return
+        if (player !is SaveFolderHolder || player is DuckStationPlayer) return
         val uri = if (player is HostedSaveFolder) player.saveDeclarations(Game("", "", player.platformId, Availability.LocalOnly, "")).firstOrNull()?.locationUri else folder(player)
         uri ?: return
         val resolved = player.packageNames.firstNotNullOfOrNull { name ->
@@ -165,6 +175,7 @@ internal class SaveProbes(
     }
 
     fun check(player: Player, snapshot: ProbeSnapshot, game: Game? = null, eden: EdenSaveAccess? = null): RootVerdict {
+        if (player is DuckStationPlayer) return checkDuckStationConfig(player, snapshot, duckStationConfig(player, snapshot))
         val bound = snapshot.roots.singleOrNull { it.bound }
         if (bound != null) store.incidents().filter { it.playerKey == player.saveFolderId() && it.causeResolved(bound) }.forEach { store.close(it.id) }
         val verdict = if (player is EdenPlayer && bound?.reachable == true) {
@@ -186,7 +197,8 @@ internal class SaveProbes(
         when (verdict) {
             is RootVerdict.Uses -> {
                 if (store.incidents().any { it.playerKey == key && it.recoveryRequired && (if (game == null) it.gameIds.isEmpty() else it.appliesTo(game)) }) return
-                store.verified(key, verdict.root, verdict.evidence, verdict.atMillis, snapshot.packageName, snapshot.installFirstMillis, bound.markersPresent)
+                store.verified(key, verdict.root, verdict.evidence, verdict.atMillis, snapshot.packageName, snapshot.installFirstMillis, bound.markersPresent,
+                    hostedGame = game.takeIf { verdict.evidence.kind == EvidenceKind.HostedOpen })
                 store.incidents().filter { it.playerKey == key && it.gameIds.isEmpty() && it.kind != IncidentKind.MaybeNewSave }.forEach { store.close(it.id) }
             }
             is RootVerdict.UsesOther -> open(player, bound.root, verdict.live, IncidentKind.WrongFolder, verdict.evidence, verdict.atMillis,
@@ -206,7 +218,8 @@ internal class SaveProbes(
         val repair = old?.repair?.takeIf { sameLocation && it != RepairState.Done } ?: RepairState.NotStarted
         if (game != null) store.requireBackup(key, game)
         store.put(SaveIncident(id, kind, key, player.displayName, listOfNotNull(gameId), bound, live, evidence,
-            old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
+            if (player is DuckStationPlayer && evidence.kind == EvidenceKind.Config) at else old?.openedAtMillis ?: at,
+            old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
             subject = old?.subject?.takeIf { sameLocation },
             alternateSavePath = alternate ?: old?.retroArchAlternate(), capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty()))
     }
@@ -279,11 +292,21 @@ internal class SaveProbes(
     fun judgeReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, unprotected: Boolean = false,
         startedByFoldcade: Boolean = true, sessionStartedAtMillis: Long? = null, sessionEndedAtMillis: Long? = null,
         edenSpots: List<SaveSpot>? = null,
+        spots: List<SaveSpot> = emptyList(),
         beforeJudgement: (ProbeSnapshot) -> Unit = {},
     ): ProbeSnapshot? {
         val after = snapshot(player, game, target, resolvedPackage = before?.packageName, discoverAfterMillis = before?.atMillis,
             priorAlternate = configAlternate(before), edenSpots = edenSpots)
         after?.let(beforeJudgement)
+        if (player is DuckStationPlayer && after != null) {
+            val config = duckStationConfig(player, after)
+            val verdict = checkDuckStationConfig(player, after, config)
+            if (before != null && sessionStartedAtMillis != null && sessionEndedAtMillis != null &&
+                before.packageName == after.packageName && before.installFirstMillis == after.installFirstMillis) {
+                judgeDuckStationReturn(player, game, after, config?.second, verdict, spots, maxOf(before.atMillis, sessionStartedAtMillis), sessionEndedAtMillis)
+            }
+            return after
+        }
         if (before != null && after != null) noteSession(player, game, before, after,
             (sessionEndedAtMillis ?: after.atMillis) - (sessionStartedAtMillis ?: before.atMillis), startedByFoldcade, unprotected)
         return after
@@ -306,6 +329,8 @@ internal class SaveProbes(
             return
         }
         if (player is EdenPlayer) return // Eden stages only the account frozen for the session.
+        // DuckStation's alternate card is captured by its observed name, never by a predicted path.
+        if (player is DuckStationPlayer) return
         if (target != null) {
             for (incident in store.incidents().filter { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.appliesTo(game) }) {
                 val live = incident.live ?: continue
@@ -322,6 +347,105 @@ internal class SaveProbes(
 
     private fun configAlternate(snapshot: ProbeSnapshot?): String? = snapshot?.configSavePath
         ?.takeIf { it.proves && it.expected != null && !it.matches }?.effective
+
+    private fun duckStationConfig(player: DuckStationPlayer, reading: ProbeSnapshot): Pair<Long, DuckStationSaveEvidence>? {
+        val dataUri = folder(player) ?: return null
+        // A picked BIOS folder can also be a copy. Only the installed app's data root can prove its settings.
+        if (storageIdentity(dataUri, context.packageName) != storageIdentity(player.suggestedSaveFolder, context.packageName)) return null
+        val hasGrant = context.contentResolver.persistedUriPermissions.any { permission ->
+            permission.isReadPermission && folderGrantUri(permission.uri.toString()) == folderGrantUri(dataUri)
+        }
+        if (!hasGrant || !player.hostedFolderInUse()) return null
+        val access = saves.folderAccess(player, dataUri, allowWrite = false)
+        val at = access.modifiedAtMillis("settings.ini") ?: return null
+        if (at < (reading.installFirstMillis ?: return null) || at > reading.atMillis) return null
+        val effective = readDuckStationCardSettings(access) ?: return null
+        if (access.modifiedAtMillis("settings.ini") != at) return null
+        return at to DuckStationSaveEvidence(effective, dataUri, context.packageName)
+    }
+
+    private fun checkDuckStationConfig(player: DuckStationPlayer, reading: ProbeSnapshot, config: Pair<Long, DuckStationSaveEvidence>?): RootVerdict {
+        val bound = reading.roots.single().root
+        val stored = store.location(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis)
+        val (at, evidence) = config ?: return RootVerdict.NoNews
+        val live = evidence.directory() ?: return RootVerdict.NoNews
+        val incident = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.evidence.kind == EvidenceKind.Config }
+        if (live.identity == bound.identity) {
+            if (incident != null && at > incident.openedAtMillis) store.close(incident.id)
+            return RootVerdict.NoNews
+        }
+        if (!evidence.hasPersistentCard1) return RootVerdict.NoNews
+        if (stored is LocationFact.Bound && at < (stored.setAtMillis ?: 0L)) return RootVerdict.NoNews
+        if (stored is LocationFact.Verified && at <= stored.atMillis) return RootVerdict.NoNews
+        val verdict = RootVerdict.UsesOther(live, Evidence(EvidenceKind.Config, "DuckStation’s Memory Cards folder is ${live.label}."), at)
+        // Record the current config time so that an older config read cannot clear the stop.
+        if (incident == null || at > incident.openedAtMillis || at == incident.openedAtMillis && incident.live != live) {
+            apply(player, reading, verdict)
+            store.bound(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis, at, clearHostedCards = true)
+        }
+        return verdict
+    }
+
+    private fun judgeDuckStationReturn(
+        player: DuckStationPlayer,
+        game: Game,
+        reading: ProbeSnapshot,
+        config: DuckStationSaveEvidence?,
+        rootVerdict: RootVerdict,
+        spots: List<SaveSpot>,
+        start: Long,
+        end: Long,
+    ) {
+        val spot = spots.singleOrNull { it.slot == DuckStationPlayer.CARD_SLOT } ?: return
+        val bound = reading.roots.single().root
+        if (storageIdentity(spot.folderUri, context.packageName) != bound.identity) return
+        val caller = try {
+            HostedCardCaller(context.packageManager.getApplicationInfo(reading.packageName, 0).uid, reading.packageName)
+        } catch (_: PackageManager.NameNotFoundException) { return }
+        val rootId = folderDocumentId(spot.folderUri)
+        val gameId = homeGameId(game.backendId, game.remoteKey)
+        val id = "${IncidentKind.MaybeNewSave.name}:${player.saveFolderId()}:$gameId"
+        val prior = store.incidents().firstOrNull { it.id == id }
+        when (val verdict = judgeHostedCard(hostedCardOpens.during(start, end), caller, rootId, spot.fileName, start, end,
+            config?.sharedCard1(bound), config?.possibleSharedCards(bound) ?: setOf(DUCKSTATION_SHARED_CARD_1),
+            config?.possibleSlot2Cards(bound).orEmpty())) {
+            is HostedCardVerdict.Expected -> if (verdict.openedAtMillis > ((rootVerdict as? RootVerdict.UsesOther)?.atMillis ?: Long.MIN_VALUE)) {
+                val folderIncident = store.incidents().firstOrNull {
+                    it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.evidence.kind == EvidenceKind.Config
+                }
+                if (folderIncident != null && verdict.openedAtMillis <= folderIncident.openedAtMillis) return
+                val known = store.location(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis)
+                if (known is LocationFact.Bound && verdict.openedAtMillis <= (known.setAtMillis ?: Long.MIN_VALUE)) return
+                if (folderIncident != null) store.close(folderIncident.id)
+                if (prior != null && verdict.openedAtMillis > prior.openedAtMillis) store.close(prior.id)
+                apply(player, reading, RootVerdict.Uses(bound, Evidence(EvidenceKind.HostedOpen, spot.fileName), verdict.openedAtMillis), game)
+            }
+            is HostedCardVerdict.Different -> if (prior == null || verdict.openedAtMillis >= prior.openedAtMillis) {
+                fun card(name: String): FolderRef {
+                    val uri = folderDocumentUri(spot.folderUri, HostedFolders.childId(rootId, name))
+                    return FolderRef(storageIdentity(uri, context.packageName), name)
+                }
+                store.put(SaveIncident(id, IncidentKind.MaybeNewSave, player.saveFolderId(), player.displayName, listOf(gameId),
+                    card(spot.fileName), verdict.backupName?.let(::card),
+                    Evidence(EvidenceKind.HostedOpen, "DuckStation opened ${verdict.names.joinToString(", ")}."),
+                    verdict.openedAtMillis, prior?.kept.orEmpty(), prior?.staged.orEmpty()))
+            }
+            HostedCardVerdict.Unknown -> Unit
+        }
+    }
+
+    /** Durable staging runs before the ordinary handoff. An interrupted return can retry the same named card. */
+    fun stageDuckStationReturn(player: Player, game: Game, spots: List<SaveSpot>, start: Long?, end: Long) {
+        if (player !is DuckStationPlayer || start == null) return
+        val incident = store.incidents().firstOrNull {
+            it.playerKey == player.saveFolderId() && it.appliesTo(game) && it.hostedCardMismatch && it.openedAtMillis in start..end
+        } ?: return
+        val live = incident.live ?: return
+        val spot = spots.singleOrNull { it.slot == DuckStationPlayer.CARD_SLOT } ?: return
+        val expected = folderDocumentUri(spot.folderUri, HostedFolders.childId(folderDocumentId(spot.folderUri), spot.fileName))
+        if (storageIdentity(expected, context.packageName) != incident.bound?.identity) return
+        copies.stage(game, player, listOf(spot.copy(fileName = HostedSavesProvider.plainName(live.label))), incident, mark = false)
+    }
 }
 
 internal fun edenRootVerdict(bound: FolderRef, access: EdenSaveAccess, packageName: String, at: Long): RootVerdict = when (access) {
