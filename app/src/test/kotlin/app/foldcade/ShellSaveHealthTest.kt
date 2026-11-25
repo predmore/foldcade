@@ -17,6 +17,34 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun aRepairCloseDialogExpiresWithItsWaitingState() {
+        val store = SessionStore(MemoryPrefs()).apply { setRommOrigin("https://romm.example") }
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        val game = Game("romm", "12", "nintendo-ds", Availability.Cached, "Tetris")
+        val root = FolderRef("primary:saves", "saves")
+        val waiting = SaveIncident("WrongFolder:melonds", IncidentKind.WrongFolder, "melonds", "melonDS", emptyList(),
+            root, null, Evidence(EvidenceKind.SessionWrite, "Saved beside the ROM"), 100, repair = RepairState.WaitingForClose())
+        shell.setSaveProtection(emptyMap(), listOf(waiting))
+        val page = shell.openSaveFix(waiting, null, "melonds", owner = game)
+        assertNull(shell.touchSaveFix(0))
+        val confirmation = shell.model.dialog!!
+        assertEquals(waiting.id, confirmation.subject)
+        assertTrue(DialogButton.ContinueFix in confirmation.buttons)
+        shell.setSaveProtection(emptyMap(), listOf(waiting.copy(repair = RepairState.WaitingForClose(backupsKept = true))))
+        assertEquals(confirmation, shell.model.dialog)
+
+        val done = waiting.copy(repair = RepairState.Done, automaticDone = true)
+        shell.setSaveProtection(emptyMap(), listOf(done))
+        assertNull(shell.model.dialog)
+        assertEquals(Effect.FinishSaveFix(waiting.id), shell.touchSaveFix(0))
+
+        val manualClose = closeGameDialog(page.screen).copy(subject = waiting.id)
+        shell.showDialog(manualClose)
+        val shown = shell.model.dialog!!
+        shell.setSaveProtection(emptyMap(), listOf(done))
+        assertEquals(shown, shell.model.dialog)
+    }
+
     @Test fun aSecondMelonDsGamesHeroUsesTheOriginalBesideRomIncident() {
         val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
         plugins.register(LocalFolderEntry())

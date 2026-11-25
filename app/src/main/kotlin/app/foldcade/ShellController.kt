@@ -803,8 +803,12 @@ class ShellController(
             }
             if (current != null && current.staged != previous?.staged) next.copy(stagedDestinations = null) else next
         }
+        val dialog = model.dialog?.takeUnless { dialog ->
+            dialog.kind == DialogKind.CloseGame && DialogButton.ContinueFix in dialog.buttons &&
+                incidents.none { it.id == dialog.subject && it.repair is RepairState.WaitingForClose }
+        }
         saveIncidents = incidents
-        model = model.copy(saveIncidents = incidents, saveFix = fix)
+        model = model.copy(saveIncidents = incidents, saveFix = fix, dialog = dialog)
         saveSettingsCache = null
         refreshPlayerSaves()
         refreshSaveHealth()

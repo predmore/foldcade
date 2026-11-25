@@ -93,7 +93,7 @@ internal class SaveProbes(
                 }
                 if (spots.isEmpty()) readable = false
                 val limit = if (player is DuckStationPlayer) 128L * 1024 else 256L * 1024 * 1024
-                spots.mapNotNull { spot -> saves.readSpot(spot, strict = true, limit = limit)?.first?.let { spot.slot + ":" + md5Hex(it) } }
+                spots.mapNotNull { spot -> saves.probeSpotHash(player, spot, isBound, limit)?.let { "${spot.slot}:$it" } }
             } catch (_: Exception) { readable = false; emptyList() }
             return RootReading(ref, isBound, signals.map { signal -> SignalReading(signal.source,
                 signal.namesUri?.let { storageIdentity(it, context.packageName) }, signal.modifiedAtMillis,

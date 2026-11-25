@@ -30,6 +30,8 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.*
 import app.foldcade.plugins.duckstation.DuckStationCardSettings
 import app.foldcade.plugins.duckstation.DuckStationPlayer
+import app.foldcade.plugins.explus.ExPlusEntry
+import app.foldcade.plugins.melonds.MelonDsPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
 import app.foldcade.plugins.retroarch.RetroArchPlayer
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
@@ -241,6 +243,53 @@ class LaunchSavesTest {
                 assertFalse(store.pendingBackup(key, game.copy(remoteKey = "another")))
                 assertEquals(beside && player !is app.foldcade.plugins.melonds.MelonDsPlayer, probes.location(player, after) is LocationFact.Bound)
                 store.close(incident.id)
+            }
+        }
+    }
+
+    @Test fun aWatchedMelonDsStartupFileCannotVerifyTheFolderOrMaskABesideWrite() {
+        val player = MelonDsPlayer()
+        val spot = saves.probeSpots(player, owner, local, SAVES).single()
+        val path = "$SAVES/${spot.fileName}"
+        val watched = RootReading(FolderRef("primary:saves", "saves"), true, emptyList(), null, true, null, null)
+        val beside = RootReading(FolderRef("primary:roms", "roms"), false, emptyList(), null, true, null, null, besideGame = true)
+        val before = ProbeSnapshot(100, 1, player.packageNames.first(), listOf(watched, beside), configUnavailable = true)
+        docs.files[path] = ByteArray(0)
+        val startup = watched.copy(spotHash = saves.probeSpotHash(player, spot, bound = true, limit = SAVE_ZIP_LIMIT))
+        val returned = before.copy(atMillis = 200, roots = listOf(startup, beside))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, returned, 100))
+        assertEquals(SessionVerdict.WroteElsewhere(beside.root, besideGame = true), judgeSession(before,
+            returned.copy(roots = listOf(startup, beside.copy(spotHash = "beside progress"))), 100))
+
+        docs.files[path] = byteArrayOf(10, 20, 30)
+        val progress = startup.copy(spotHash = saves.probeSpotHash(player, spot, bound = true, limit = SAVE_ZIP_LIMIT))
+        assertEquals(SessionVerdict.Wrote(watched.root), judgeSession(returned, returned.copy(atMillis = 300, roots = listOf(progress, beside)), 100))
+    }
+
+    @Test fun exStartupBatteriesOnlyProveTheBesideLocationUntilTheWatchedBatteryHoldsProgress() {
+        for ((id, ext) in listOf("gba-emu.game-boy-advance" to "gba", "gbc-emu.game-boy-color" to "gbc")) {
+            val player = ExPlusEntry().players.single { it.id == id }
+            val game = owner.copy(platformId = player.platformId)
+            docs.names[local.uri] = "Counter.$ext"
+            val spot = saves.probeSpots(player, game, local, SAVES).single()
+            val watched = RootReading(FolderRef("primary:saves", "saves"), true, emptyList(), null, true, null, null)
+            val besideRoot = FolderRef("primary:roms", "roms")
+            val before = ProbeSnapshot(100, 1, player.packageNames.first(), listOf(watched,
+                BesideGameCandidate(besideRoot, spot, FileReading.Missing).reading()), configUnavailable = true)
+            for (fill in listOf(0.toByte(), (-1).toByte())) {
+                val battery = ByteArray(8192) { fill }
+                val entries = mutableMapOf("Counter.sav" to battery)
+                if (ext == "gbc") entries["Counter.rtc"] = byteArrayOf(4, 3, 2, 1)
+                for ((name, bytes) in entries) docs.files["$SAVES/$name"] = bytes
+                val startup = watched.copy(spotHash = saves.probeSpotHash(player, spot, bound = true, limit = SAVE_ZIP_LIMIT))
+                val returned = before.copy(atMillis = 200, roots = listOf(startup, before.roots.last()))
+                assertEquals(SessionVerdict.NoNews, judgeSession(before, returned, 100))
+                val blankBeside = BesideGameCandidate(besideRoot, spot, FileReading.Bytes(saveZip(entries)), blankBattery = true)
+                assertEquals(SessionVerdict.WroteElsewhere(besideRoot, besideGame = true),
+                    judgeSession(before, returned.copy(roots = listOf(startup, blankBeside.reading())), 100))
+                battery[12] = 1
+                val progress = watched.copy(spotHash = saves.probeSpotHash(player, spot, bound = true, limit = SAVE_ZIP_LIMIT))
+                assertEquals(SessionVerdict.Wrote(watched.root), judgeSession(returned, returned.copy(atMillis = 300, roots = listOf(progress)), 100))
             }
         }
     }

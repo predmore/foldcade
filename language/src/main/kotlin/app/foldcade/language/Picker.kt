@@ -3301,6 +3301,7 @@ private fun activateRow(
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ShowSaveCheck(row.playerId))
         is Row.SaveConfig -> model to null
         is Row.PlayerSave -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId && it.hostedTitle == null }?.incident
+            ?.takeUnless { it.besideGame }
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ChoosePlayerSave(row.playerId))
         is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to
             (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident?.let { Effect.OpenSaveFix(it.id) }

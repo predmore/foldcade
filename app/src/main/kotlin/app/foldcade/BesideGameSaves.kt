@@ -23,6 +23,12 @@ import kotlin.coroutines.cancellation.CancellationException
 
 internal val Player.probesContentSaves: Boolean get() = this is MelonDsPlayer || this is ExPlusPlayer
 
+internal val ExPlusPlayer.initializesBlankBattery: Boolean get() = saveFolderKey == "gba-emu" || saveFolderKey == "gbc-emu"
+
+internal fun ByteArray.isBlankBattery(): Boolean = firstOrNull()?.let { fill ->
+    (fill == 0.toByte() || fill == (-1).toByte()) && all { it == fill }
+} == true
+
 /** A melonDS beside-ROM write exposes its global save setting. The copy still belongs to the original game. */
 internal fun SaveIncident.affectsSaveUse(player: Player, game: Game? = null): Boolean =
     playerKey == player.saveFolderId() && (gameIds.isEmpty() || besideGame && player is MelonDsPlayer || game?.let(::appliesTo) == true)
@@ -92,11 +98,10 @@ internal class BesideGameSaves(
                         contents.forEach { add("$path/${it.name}", it) }
                     }
                 }
-                if (player.saveFolderKey in setOf("gba-emu", "gbc-emu")) {
+                if (player.initializesBlankBattery) {
                     // An initialized battery (plus the GBC clock) proves a write without carrying game progress.
-                    blankBattery = entries.all { (name, bytes) -> name == file || name == "$base.rtc" && bytes.size == 4 } && entries[file]?.let { battery ->
-                        battery.firstOrNull()?.let { fill -> (fill == 0.toByte() || fill == (-1).toByte()) && battery.all { it == fill } }
-                    } == true
+                    blankBattery = entries.all { (name, bytes) -> name == file || name == "$base.rtc" && bytes.size == 4 } &&
+                        entries[file]?.isBlankBattery() == true
                 }
                 if (entries.isEmpty()) FileReading.Missing else FileReading.Bytes(saveZip(entries))
             }

@@ -50,6 +50,21 @@ class SaveProtectionTest {
         assertTrue(rowText(Row.SaveCheck(id), model.copy(playerSaves = listOf(checked))).value.orEmpty().startsWith("Checked "))
     }
 
+    @Test fun settingsLetsBesideRepairsChangeTheWatchedFolderAndKeepsOtherRepairsGuided() {
+        fun select(row: Row, problem: SaveIncident): Effect? {
+            val setting = PlayerSaveSetting(problem.playerKey, problem.playerName, chosen = true, installed = true, incident = problem)
+            val model = PickerModel(1, 1, playerSaves = listOf(setting), boardEmulators = setOf(setting.playerId))
+            return reduce(model.onSetting(row), Meaning.Activate).second
+        }
+        for ((key, name) in listOf("melonds" to "melonDS", "nes-emu.nes" to "NES.emu")) {
+            val beside = incident.copy(id = "WrongFolder:$key:game", playerKey = key, playerName = name, besideGame = true)
+            assertEquals(Effect.ChoosePlayerSave(key), select(Row.PlayerSave(key), beside))
+            assertEquals(Effect.OpenSaveFix(beside.id), select(Row.SaveCheck(key), beside))
+            assertEquals(Effect.OpenSaveFix(beside.id), select(Row.PlayerSave(key), beside.copy(besideGame = false)))
+        }
+        assertEquals(Effect.OpenSaveFix(incident.id), select(Row.PlayerSave("azahar"), incident))
+    }
+
     private val root = FolderRef("primary:saves/Azahar", "saves/Azahar")
     private val live = FolderRef("primary:Azahar", "Azahar")
     private val evidence = Evidence(EvidenceKind.FreshLog, "Azahar’s log")
