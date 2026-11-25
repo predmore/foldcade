@@ -947,6 +947,7 @@ sealed interface Row {
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PickFolderAgain(val uri: String) : Row
     data class SaveCheck(val playerId: String) : Row
+    data class SaveConfig(val playerId: String) : Row
     data class PlayerSave(val playerId: String) : Row
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
@@ -1214,6 +1215,7 @@ data class PlayerSaveSetting(
     val thorSetup: ThorSetupSetting? = null,
     val location: LocationFact? = null,
     val incident: SaveIncident? = null,
+    val saveConfigReadable: Boolean? = null,
 )
 
 /**
@@ -1777,10 +1779,13 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             else -> SaveProtectionCopy.notChecked
         })
     }
+    is Row.SaveConfig -> RowText("Memory card settings",
+        if (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.saveConfigReadable == true)
+            SaveProtectionCopy.canReadConfig else SaveProtectionCopy.cantReadConfig)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
-            setting?.incident != null -> saveFolderState(setting.incident)
+            setting?.incident != null && setting.hostedTitle == null -> saveFolderState(setting.incident)
             // Checked or not, the row names the folder. Only the check beside it says it was proven.
             setting?.chosen == true -> setting.foundIn ?: boundFolderLabel(setting.location) ?: Copy.playerSavesSet
             setting?.installed != true || setting.hostedTitle != null -> Copy.choose
@@ -1793,6 +1798,7 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     is Row.HostedSaves -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val inUse = when {
+            setting?.incident?.hostedCardMismatch == true -> Copy.playerSavesSet
             setting?.incident != null -> saveFolderState(setting.incident)
             // Syncing is a claim only the check makes; until then the folder is set, said as the Save folder row says it.
             setting?.hostedInUse == true -> if (setting.location is LocationFact.Verified) Copy.hostedSavesSet else Copy.playerSavesSet
@@ -3278,9 +3284,12 @@ private fun activateRow(
         // Android's folder picker returns to the emulator's page it was opened from.
         is Row.SaveCheck -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ShowSaveCheck(row.playerId))
-        is Row.PlayerSave -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident
+        is Row.SaveConfig -> model to null
+        is Row.PlayerSave -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId && it.hostedTitle == null }?.incident
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ChoosePlayerSave(row.playerId))
-        is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to Effect.SetUpHostedSaves(row.playerId)
+        is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to
+            (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident?.let { Effect.OpenSaveFix(it.id) }
+                ?: Effect.SetUpHostedSaves(row.playerId))
         is Row.SaveSync -> {
             val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
             when {

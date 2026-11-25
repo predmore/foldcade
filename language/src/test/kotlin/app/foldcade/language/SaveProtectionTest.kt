@@ -45,7 +45,8 @@ class SaveProtectionTest {
         assertEquals(SaveStatus.NothingYet, deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.NothingYet)))
         assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts))
         assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts.copy(incidents = listOf(incident.copy(repair = RepairState.Done)))))
-        assertTrue(deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unknown)) is SaveStatus.Unconfirmed)
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.RommCopyUnconfirmed),
+            deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unknown)))
     }
 
     @Test fun noProtectedWithoutVerifiedAndOnRomm() {
@@ -86,6 +87,15 @@ class SaveProtectionTest {
         val afterSync = heroFactText(hero, problem, TileActivity.Synced(SyncMark.Synced, 10_000)).text
         assertTrue(afterSync.startsWith(SaveProtectionCopy.title(incident)))
         assertFalse(afterSync.contains(Copy.savesSynced))
+    }
+
+    @Test fun syncCompletionCannotMakeAnEmptyOrUncheckedSlotLookSaved() {
+        val hero = HeroSubject.Item(HeroItem("game", "Game", "PlayStation"))
+        val synced = TileActivity.Synced(SyncMark.Synced, 10_000)
+        assertTrue(heroFactText(hero, SaveStatus.NothingYet, synced).text.startsWith("No saves yet"))
+        val unchecked = SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
+        assertTrue(heroFactText(hero, unchecked, synced).text.startsWith("Save folder not checked yet"))
+        assertEquals(Copy.savesSynced, heroActivityLine(SaveStatus.Protected(now, now), synced))
     }
 
     @Test fun anUnknownLiveRootDescribesTheLastSessionWithoutClaimingAPermanentMove() {
@@ -178,6 +188,40 @@ class SaveProtectionTest {
             assertFalse(body.contains('\n'))
             assertFalse(body.contains("RomM")) // A folder-wide notice has no game receipt.
         }
+    }
+
+    @Test fun r1CardMismatchNamesTheCardAndKeepsTheActionVisible() {
+        val card = "SLUS-00067_1.mcd"
+        val mismatch = incident.copy(kind = IncidentKind.MaybeNewSave, live = FolderRef("card", card),
+            evidence = Evidence(EvidenceKind.HostedOpen, "DuckStation opened $card."))
+        assertEquals("Using SLUS-00067_1.mcd. Check before you play.", SaveProtectionCopy.noticeBody(mismatch))
+        val long = SaveProtectionCopy.noticeBody(mismatch.copy(live = FolderRef("card", "Castlevania - Symphony of the Night (USA)_1.mcd")))
+        assertTrue(long, long.length <= 50)
+        assertTrue(long, long.startsWith("Using Castlevania"))
+        assertTrue(long, long.endsWith("… Check before you play."))
+    }
+
+    @Test fun duckStationSilenceExplainsTheFolderAndCanBeDismissed() {
+        val silence = incident.copy(kind = IncidentKind.MaybeWrongFolder, playerName = "DuckStation", live = null,
+            evidence = Evidence(EvidenceKind.HostedOpen, SaveProtectionCopy.noHostedCard))
+        assertFalse(silence.blocksLaunch)
+        assertEquals("DuckStation may be saving somewhere else", SaveProtectionCopy.title(silence))
+        assertTrue(SaveProtectionCopy.body(silence).contains("didn’t open a memory card from Foldcade’s folder"))
+        assertTrue(SaveProtectionCopy.body(silence).contains("Folders › Memory Cards and choose Foldcade"))
+        val page = SaveFixPage(silence.id, HostScreen.Bottom, null, playerManagesFolder = true)
+        val model = PickerModel(1, 1, saveIncidents = listOf(silence))
+        assertEquals(Effect.ConfirmSaveLocation(silence.id), applySaveFix(model, page, Meaning.Options, 0).second)
+    }
+
+    @Test fun configAccessIsShownSeparatelyFromHostedProof() {
+        val setting = PlayerSaveSetting("duckstation", "DuckStation", false, hostedInUse = true, installed = true,
+            location = verified, saveConfigReadable = false)
+        val model = PickerModel(1, 1, playerSaves = listOf(setting))
+        val row = Row.SaveConfig("duckstation")
+        assertTrue(row in emulatorShelf(model).single().rows)
+        assertEquals("Can’t read config", rowText(row, model).value)
+        assertTrue(rowText(Row.SaveCheck("duckstation"), model).value.orEmpty().startsWith("Checked"))
+        assertEquals("Readable", rowText(row, model.copy(playerSaves = listOf(setting.copy(saveConfigReadable = true)))).value)
     }
 
     @Test fun checkDetailSaysTheEvidenceInWords() {
@@ -333,5 +377,27 @@ class SaveProtectionTest {
         ), saveFixSteps(eden, page))
         val reset = eden.copy(evidence = Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.mayBeNewGame))
         assertTrue(saveFixSteps(reset, page).isEmpty())
+    }
+
+    @Test fun hostedCardFixOnlyOffersRommStepsWithADestination() {
+        val mismatch = incident.copy(kind = IncidentKind.MaybeNewSave, playerKey = "duckstation", playerName = "DuckStation",
+            evidence = Evidence(EvidenceKind.HostedOpen, "SLUS-00067_1.mcd"))
+        val local = SaveFixPage(mismatch.id, HostScreen.Bottom, SaveProtectionCopy.hostedCardSteps, game = "Castlevania", playerManagesFolder = true)
+        val romm = local.copy(hasRommDestination = true, safe = SaveFixSafe("Castlevania", 100))
+        assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, local))
+        assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, romm))
+        assertEquals(SaveProtectionCopy.hostedCardSteps, saveFixCard(mismatch, romm).body)
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet)),
+            saveFixSteps(mismatch, local))
+        assertEquals(listOf(
+            SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet),
+            SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
+        ), saveFixSteps(mismatch, romm))
+        val quarantine = mismatch.copy(repair = RepairState.Guided, evidence = Evidence(EvidenceKind.SessionWrite, "May be a new game"),
+            subject = SaveIncidentGame("romm", "36", "playstation", "Castlevania", "duckstation", null, "https://romm.test", null, null))
+        assertFalse(SaveFixAction.OpenSaves in saveFixActions(quarantine, local.copy(playerManagesFolder = false)))
+        assertNotEquals(SaveProtectionCopy.chooseInSaves, saveFixCard(quarantine, local.copy(playerManagesFolder = false)).body)
+        assertEquals(listOf(SaveFixAction.OpenSaves), saveFixActions(quarantine, romm.copy(playerManagesFolder = false)))
+        assertEquals(SaveProtectionCopy.chooseInSaves, saveFixCard(quarantine, romm.copy(playerManagesFolder = false)).body)
     }
 }

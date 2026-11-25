@@ -129,7 +129,7 @@ sealed interface SaveStatus {
     data class Protected(val receiptMillis: Long?, val checkedMillis: Long) : SaveStatus
 }
 
-enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
+enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommCopyUnconfirmed, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
 
 fun deriveSaveStatus(facts: SaveFacts): SaveStatus
 ```
@@ -150,7 +150,8 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus
 | 10 | Emulator, and `offDevice is Unreachable` | `Unconfirmed(RommUnreachable, last)` | Quiet |
 | 11 | Emulator, `location is Verified`, `spot is Resolved`, `offDevice is NothingYet` | `NothingYet` | Quiet |
 | 12 | Emulator, `location is Verified`, `spot is Resolved`, `offDevice is OnRomm` | `Protected` | Clear |
-| 13 | Otherwise | `Unconfirmed(FolderNotChecked)` | Quiet |
+| 13 | Emulator, `location is Verified`, `spot is Resolved`, and no matching RomM receipt | `Unconfirmed(RommCopyUnconfirmed)` | Quiet |
+| 14 | Otherwise | `Unconfirmed(FolderNotChecked)` | Quiet |
 
 The rule is that `Protected` is the only status built from proof, and only rows 11 and 12 need `Verified`. Unknown on its own always falls to `Unconfirmed`, which has its own words and never draws a check. `SaveProtectionTest` covers the whole table, including a test that every `LocationFact` × `OffDeviceFact` pair without `Verified` and `OnRomm` gives something other than `Protected`.
 
@@ -420,7 +421,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 | **ARMSX2** | `ARMSX2`; private `Android/data` roots are not readable | `armsx2-settings.json` and `inis/PCSX2-Android.ini` in the bound root: `[Folders] MemoryCards` and slot-1 card name/enable → `Supports`, `Config`. A path outside the root gives `Supports` only, since the mirror can be stale (audit). | Session write on the game's card folders. Candidate diff for `/sdcard/ARMSX2` against another granted root. | Live private prefs need upstream. Honour `[Folders] MemoryCards` in `Ps2Card` when it is inside the root. |
 | **aPS3e** | none | none needed: bound root = own provider (`aenu.aps3e…` authority) → **OwnProvider** at bind, valid while the install stamp holds | OwnProvider plus session write on matched `savedata` | VFS remaps and title aliases (`SpotIssue.Unresolved`). Upstream provider call. |
 | **Dolphin** | `dolphin-emu` (legacy) | `Config/Dolphin.ini` and `GameSettings/<ID>.ini`: SlotA device and GCI path, already parsed at `DolphinEntry.kt:117`/`:141` → `Proves` when it names a custom folder (today that is a setup issue; it stays one) | OwnProvider when bound to the official provider. Otherwise `Bound`, then session write. A reachable legacy `dolphin-emu` copy is a candidate, so a GCI change there gives `WroteElsewhere`. | Slot B, raw cards, Wii |
-| **DuckStation** | n/a (hosted) | Host-side, not a plugin: `HostedSavesProvider.openDocument` records `(callingUid, documentId, mode, time)` into a small in-memory session log. `settings.ini`, when the data grant is held: `[MemoryCards] Directory`, `Card1Type` → `Proves` when Directory is not the hosted tree. | **HostedOpen**: DuckStation (by uid) opened the predicted `<name>_1.mcd` during the session. An open of a *different* `.mcd` in the hosted tree gives `MaybeNewSave`, with the opened name as `live`. No card opened in a session of 60 s or more gives `SilentStart` (DuckStation loads card 1 at boot when it is enabled). | Effective per-game card type and name are config-only. Upstream query (permission needed; licence). |
+| **DuckStation** | Hosted card 1. The optional data grant reaches the installed player's configuration when Android allows it. | The host records successful opens, caller UID and package, mode, descriptor detach or close, and temporary writes published by rename. The plugin reads `settings.ini` and `gamesettings/*.ini` for `[MemoryCards]` Directory, Card1Type and card paths. | **HostedOpen** checks the expected card after a read-only open or successful publication. A different read-only card gives a game-specific **MaybeNewSave**. **Config** can prove **WrongFolder**. Silence during a confirmed launch can give a dismissible **MaybeWrongFolder** (§4.2). | Android may block the optional data grant. Unobserved gameplay and ambiguous or shared cards limit what the host can infer. |
 | **Eden** | The selected SaveDir and NAND through existing writable storage grants | `config/config.ini` `[Data Storage]` (also `[Data%20Storage]`) and `[UI]` `Paths\…` keys. An empty `save_directory` uses `nand_directory`. A configured path without a grant opens Fix for that folder. `[System] current_user` and NAND `profiles.dat` identify the account (§4.1). | OwnProvider for the default NAND through Eden's provider, Config for resolved custom paths, and SessionWrite for the frozen account. | Prefer `user/save/account/<raw UUID>/<TITLEID>/0` when present. Otherwise use the legacy layout. A missing, corrupt, or conflicting config clears the check and leaves the destination unresolved. The first resolved context after updating fences existing bytes for Backup preservation. |
 | **EX ×5** | `EmuEx`, beside-game `<content>.sav/.srm/.brm/.rtc` via `saveBesideGame` | none readable: config is private and binary | Session write. Beside-game diff catches **Same As Content**. Candidate diff catches a custom folder Foldcade also holds. | App Folder (private) and Launch Mode stay a standing setup step. Upstream common bridge. |
 | **melonDS** | `saves/nds` and others in `saveFolderPlaces`; beside-game `<rom>.sav` | none readable | Session write. **Beside-game diff catches "Save next to ROM file"** for RomM downloads (Foldcade owns `Android/media/app.foldcade/romm`). | Private-fallback `saves` is unreadable. Upstream `save_uri` extra. |
@@ -550,7 +551,11 @@ The resume also showed a Loading overlay for at least 51 s and “Missing game d
 
 With all-files access, session return searches primary storage for the optional probe `signatureFile` only when the bound signature did not advance past baseline or did not prove that it names the bound folder. A fresh bound log naming that folder skips the walk. Only roots at depths 0–2 are considered, with an 8,192-entry budget and at most four discovered roots. The signature is read within the probe's bound (Azahar: first 32 KiB); its signal must prove and name that same root, with mtime newer than the session baseline. Only directories, checked without following links, reach canonical path validation; ordinary files are skipped. Links and Android app-data roots are excluded. A discovered live root names the incident and opens Fix's picker there. Without that access, the negative incident still opens with an unknown live root and the user chooses the folder Azahar uses.
 
-A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. Identical bytes already present in an unslotted copy reuse that verified id instead of creating another Backup. Slot versions can be pruned, so a slot match must still be archived outside slot retention. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept. Other per-start probes, including DuckStation's hosted-card rule, remain deferred until their own QA decision.
+A readable live game's copy is staged and kept through the independent Backup queue, never reconciled as a slot head. Identical bytes already present in an unslotted copy reuse that verified id instead of creating another Backup. Slot versions can be pruned, so a slot match must still be archived outside slot retention. The return publishes its incident before Backup uploads, so the hero cannot retain **Saved to RomM** while the copy is being kept.
+
+Thor QA observed four DuckStation 12303 boots with a read-only open of an existing card. A fresh Foldcade launch can raise **MaybeWrongFolder** when the expected card already existed at launch, the full hosted journal covers the session, and DuckStation had zero hosted opens. Foldcade requires the selected RomM ROM's open from the same caller and at least 20 seconds in DuckStation's emulation activity after that open, observed through Usage Access. The check skips resumes, missing game evidence, incomplete journals, and readable settings in which card 1 can be disabled or nonpersistent. A first boot may create a card in memory without a file open. [DuckStation card load](https://github.com/stenzek/duckstation/blob/0403d3c45a33c7a7e2b3d5c27db364e6c2e08da0/src/core/memory_card.cpp)
+
+The notice gives DuckStation's Memory Cards steps and **It’s fine** dismisses it with the folder still unchecked. Because a disabled card can look the same when the config is unreadable, this notice does not gate play.
 
 ### 4.3 Regression quarantine (PR 2)
 
@@ -611,6 +616,7 @@ The voice follows `SaveSetupCopy`: one or two words for a control, one short sen
 | DeviceOnly PlayerCantSync | `"$emulator saves only on this device"` | amber |
 | Unconfirmed FolderNotChecked | `"Save folder not checked yet"` | quiet |
 | Unconfirmed GameNotChecked | `"Save not checked yet"` | quiet |
+| Unconfirmed RommCopyUnconfirmed | `"Save checked · No RomM copy confirmed"` | quiet |
 | Unconfirmed RommUnreachable | `"Can’t reach RomM · last saved ${age}"`, or `"Can’t reach RomM"` | quiet |
 | Unconfirmed PartnerCloud | `"Saves in ${cloud ?: partner} · not confirmed"`, e.g. "Saves in Steam Cloud · not confirmed" | quiet |
 | Unconfirmed HostComputer | `"Saves on your computer"` | quiet |
@@ -760,6 +766,7 @@ New class `SaveIncidentNotices` in `SaveNotices.kt`. It shows one notice per inc
 | FolderEmptied | `"$emulator’s save folder is empty"` | `"${bound.label} is empty. Fix it before you play."` | Fix saves page |
 | LostAccess | `"Foldcade can’t see $emulator’s saves"` | `"Can’t see ${bound.label}. Fix it before you play."` | picker |
 | MaybeWrongFolder | `"$emulator may be saving somewhere else"` | `"May be saving elsewhere. Check before you play."` | Fix saves page |
+| DuckStation card mismatch | `"DuckStation used a different memory card"` | `"Using $cardName. Check before you play."` with a shortened name when needed | Memory card detail |
 | MaybeNewSave | `"Two saves for $game"` | `"Two saves. Choose which to play."` or `"Keeping both saves. Waiting for RomM."` | two-saves card or waiting step |
 | Repair Done | — | No incident notice | — |
 
@@ -879,15 +886,17 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 3: DuckStation hosted-open evidence.**
 
-- `HostedSavesProvider` records opens by uid during a session.
-- `settings.ini` and `gamesettings/*.ini` parsing when the data grant is held.
-- A card name mismatch gives `MaybeNewSave` with the real name.
-- Tests are pure on an open-log fixture, plus INI parsing in `plugins/duckstation`.
+- `HostedSavesProvider` keeps a bounded in-memory log. Judgement uses the selected package, UID, hosted root and the session's start and return times. Sending the same start to resume DuckStation begins a new card-open window because Android may boot the game again after it closes. Android reports native descriptor detach as a distinct listener status. The native file can still be in use. [Android descriptor lifecycle](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-16.0.0_r1/core/java/android/os/ParcelFileDescriptor.java#L1091)
+- A read-only open verifies the card path whatever the close status. A successful rename into the expected card can also verify the path. An open for writing alone cannot show completed bytes. Foldcade queues one clearly identified per-game card as an unslotted Backup. A resumed game can keep using that alternate card without reopening it, so Foldcade also preserves changed bytes from the open incident on resume. The incident records which hashes have been queued or kept. Changes to the expected card while the mismatch remains are also Backup-only. Mixed eligible opens leave the card association unresolved.
+- With the data grant to DuckStation's own data folder, parse global settings and layer each per-game file over them. A folder verdict needs agreement across the possible outcomes because Foldcade cannot reliably pick a serial or disc-set override from a ROM filename. An explicitly configured directory elsewhere, newer than the latest hosted proof, gives `WrongFolder` even if the hosted grant remains. Return to **Foldcade** in DuckStation's folder picker. Only newer matching configuration clears this stop. A later matching open checks the game again.
+- When Android blocks the data grant, Settings reports **Can’t read config** separately from the hosted check. See §4.2 for the non-gating silent-session rule.
+- Tests cover open-log attribution, detach, atomic publication, silent starts, INI precedence, R1 card-name copy and Backup-only preservation.
 - QA:
-  - A normal launch gives **HostedOpen**.
-  - Change Memory Cards to another folder: the next session gives `SilentStart`, and the next resume gives `Config` `UsesOther` if the data grant is held.
-  - Switch to FileTitle: the wrong name is caught.
-- Risk: low; a session with no card opened, where the card is disabled, is excluded.
+  - Make verified backups before changing the Thor's only RomM PS1 game's cards or settings. Prefer a disposable QA copy.
+  - Launch with a populated matching hosted card and check **HostedOpen**. Verify that a first save published by rename also checks the card. Check the Android build's boot open mode. A read-write open of a different file leaves the check inconclusive.
+  - With the data grant and hosted grant retained, point Memory Cards at a scratch folder. Confirm the **WrongFolder** stop, then return to the hosted folder and check again.
+  - Use a disposable title whose file and database titles differ to exercise **File Title** versus **Title**. Confirm the notice shows the real card, the Backup verifies after reconnect and RomM's slot head stays the same.
+  - Without the data grant, launch a disposable RomM game with an existing expected card after moving Memory Cards away. With Usage Access, check the dismissible warning after 20 seconds of gameplay. Repeat a quick return, Home → resume, a menu visit, and a slot-2-only open. Use two disposable games to check that game A's delayed write cannot create a Backup for game B.
 
 **PR 4: Eden.**
 

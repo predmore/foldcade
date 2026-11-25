@@ -361,6 +361,7 @@ fun emulatorShelf(model: PickerModel): List<EmulatorShelfEntry> {
                 // Nothing to check until a folder is bound.
                 if (setting.incident != null || boundFolderLabel(setting.location) != null || setting.chosen || setting.hostedInUse || setting.saveSyncing)
                     add(Row.SaveCheck(setting.playerId))
+                if (setting.saveConfigReadable != null) add(Row.SaveConfig(setting.playerId))
                 if (setting.saveSyncing || setting.saveSyncSteps != null) add(Row.SaveSync(setting.playerId))
                 if (setting.setupSteps != null) add(Row.PlayerSetup(setting.playerId))
                 if (setting.thorSetup != null) add(Row.ThorSetup(setting.playerId))

@@ -11,6 +11,7 @@ import app.foldcade.plugins.aps3e.Aps3eEntry
 import app.foldcade.plugins.azahar.AzaharEntry
 import app.foldcade.plugins.duckstation.DuckStationEntry
 import app.foldcade.plugins.melonds.MelonDsPlayer
+import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.*
 import org.junit.Test
@@ -172,6 +173,52 @@ class ShellSaveHealthTest {
         assertEquals(SaveStatus.Unconfirmed(app.foldcade.language.UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
         assertTrue(setupPlayers.isEmpty())
         assertFalse(shell.model.playerSaves.single().chosen)
+    }
+
+    @Test fun checkedHostedCardWithoutRomMReceiptShowsTheSameStatusInHeroAndSaves() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val duck = DuckStationEntry().also(plugins::register).player
+        val folder = treeUri("app.foldcade.saves", HostedFolders.rootId(duck.id))
+        duck.bindHostedFolder(folder, true)
+        val protection = SaveProtectionStore(Files.createTempDirectory("hosted-health"))
+        val key = duck.saveFolderId()
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.hostedCardChecked = { player, game -> protection.hostedCardChecked(player.saveFolderId(), game) }
+        shell.setInstalledApps(emptyList(), duck.packageNames.toSet(), duck.packageNames.toSet())
+        val game = Game("romm", "36", duck.platformId, Availability.Cached, "Castlevania")
+        val other = game.copy(remoteKey = "37", label = "Other game")
+        shell.ingestLibrary("romm", listOf(game, other).map {
+            GridEntry(it.remoteKey, it.label, "", it.platformId, null, true, it)
+        }, emptyList())
+        val id = homeGameId(game.backendId, game.remoteKey)
+        val target = SavePickerTarget(id, game.backendId, game.remoteKey, duck.id, 1)
+        val root = FolderRef(storageIdentity(folder), duck.hostedFolderTitle)
+        val evidence = Evidence(EvidenceKind.HostedOpen, "Castlevania_1.mcd")
+        shell.setSaveProtection(mapOf(key to LocationFact.Bound(root)), emptyList())
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked), shell.saveHealthOf(id))
+
+        protection.verified(key, root, evidence, 100, duck.packageNames.single(), 1, null, hostedGame = game)
+        shell.setSaveProtection(mapOf(key to LocationFact.Verified(root, evidence, 100)), emptyList())
+        shell.setSaveDestination(game, OffDeviceFact.Unknown)
+        val status = SaveStatus.Unconfirmed(UnconfirmedWhy.RommCopyUnconfirmed)
+        assertEquals(status, shell.saveHealthOf(id))
+        assertEquals(status, shell.savePickerHealth(target))
+        val hero = HeroSubject.Item(HeroItem(id, game.label, "PlayStation"))
+        val checked = "Save checked · No RomM copy confirmed"
+        assertTrue(heroFactText(hero, shell.saveHealthOf(id), TileActivity.Synced(SyncMark.Synced, 200)).text.startsWith(checked))
+        assertEquals(checked, SavePickerCopy.header(shell.savePickerHealth(target)))
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.GameNotChecked),
+            shell.saveHealthOf(homeGameId(other.backendId, other.remoteKey)))
+
+        shell.noteSaveReachable(game, duck.id, true)
+        assertEquals(status, shell.saveHealthOf(id))
+        shell.setSaveDestination(game, OffDeviceFact.NothingYet)
+        assertEquals(SaveStatus.NothingYet, shell.savePickerHealth(target))
+        shell.setSaveDestination(game, OffDeviceFact.OnRomm(200))
+        assertEquals(SaveStatus.Protected(200, 100), shell.saveHealthOf(id))
+        shell.noteSaveReachable(game, duck.id, false)
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoSlot, SpotIssue.NoTitleId), shell.saveHealthOf(id))
     }
 
     @Test fun aLargeCatalogChecksPlayerSetupOncePerPlatformAndSkipsUnchangedResumeRefreshes() {

@@ -77,8 +77,8 @@ private fun SaveFixTop(model: PickerModel, page: SaveFixPage, incident: SaveInci
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 steps.forEach { step -> FixStep(step) }
             }
-            if (!done && !incident.isEdenSessionChange) FolderRows(incident)
         }
+        if (!done && !incident.isEdenSessionChange && (steps.isNotEmpty() || page.playerManagesFolder)) FolderRows(incident)
         page.note?.let { BasicText(it, style = body.copy(color = design.colors.attention)) }
     }
 }
@@ -123,8 +123,12 @@ private fun FolderRows(incident: SaveIncident) {
         return
     }
     val rows = listOfNotNull(
-        incident.live?.let { (if (incident.isEdenGrant) "Allow this folder" else SaveProtectionCopy.nowSavesIn(incident.playerName)) to it.label },
-        incident.bound?.let { SaveProtectionCopy.wasWatching to it.label },
+        incident.live?.let { (when {
+            incident.hostedCardMismatch -> "Card opened"
+            incident.isEdenGrant -> "Allow this folder"
+            else -> SaveProtectionCopy.nowSavesIn(incident.playerName)
+        }) to it.label },
+        incident.bound?.let { (if (incident.hostedCardMismatch) "Card Foldcade expected" else SaveProtectionCopy.wasWatching) to it.label },
     )
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (rows.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {

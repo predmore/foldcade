@@ -102,7 +102,7 @@ sealed interface SaveStatus {
     data class Protected(val receiptMillis: Long?, val checkedMillis: Long) : SaveStatus
 }
 
-enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
+enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommCopyUnconfirmed, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
 
 
 
@@ -169,6 +169,12 @@ val SaveIncident.isEdenGrant: Boolean get() = playerKey == "eden" && kind == Inc
 val SaveIncident.isEdenSessionChange: Boolean get() = playerKey == "eden" && kind == IncidentKind.MaybeNewSave &&
     evidence.kind == EvidenceKind.Config
 
+val SaveIncident.hostedCardMismatch: Boolean get() =
+    kind == IncidentKind.MaybeNewSave && evidence.kind == EvidenceKind.HostedOpen
+
+val SaveIncident.hostedCardSilence: Boolean get() =
+    kind == IncidentKind.MaybeWrongFolder && evidence.kind == EvidenceKind.HostedOpen
+
 sealed interface RepairState {
     data object NotStarted : RepairState
     data object Keeping : RepairState
@@ -212,6 +218,7 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus = with(facts) {
         offDevice is OffDeviceFact.Unreachable -> SaveStatus.Unconfirmed(UnconfirmedWhy.RommUnreachable, offDevice.lastReceiptMillis)
         location is LocationFact.Verified && spot == SpotFact.Resolved && offDevice == OffDeviceFact.NothingYet -> SaveStatus.NothingYet
         location is LocationFact.Verified && spot == SpotFact.Resolved && offDevice is OffDeviceFact.OnRomm -> SaveStatus.Protected(offDevice.atMillis, location.atMillis)
+        location is LocationFact.Verified && spot == SpotFact.Resolved -> SaveStatus.Unconfirmed(UnconfirmedWhy.RommCopyUnconfirmed)
         else -> SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
     }
 }
@@ -237,6 +244,7 @@ fun saveStatusLine(status: SaveStatus, now: Long = System.currentTimeMillis()): 
     is SaveStatus.Unconfirmed -> when (status.why) {
         UnconfirmedWhy.FolderNotChecked -> "Save folder not checked yet"
         UnconfirmedWhy.GameNotChecked -> "Save not checked yet"
+        UnconfirmedWhy.RommCopyUnconfirmed -> "Save checked · No RomM copy confirmed"
         UnconfirmedWhy.RommUnreachable -> "Can’t reach RomM" + (status.lastReceiptMillis?.let { " · last saved ${saveAge(it, now)}" } ?: "")
         UnconfirmedWhy.PartnerCloud -> (status.keeper as? SaveKeeper.Partner).let { "Saves in ${it?.cloud ?: it?.name ?: "the player"} · not confirmed" }
         UnconfirmedWhy.HostComputer -> "Saves on your computer"
@@ -257,6 +265,8 @@ fun saveAge(at: Long, now: Long): String = when (val days = ((now - at).coerceAt
 fun saveHealthLine(health: SaveStatus): String = saveStatusLine(health)
 fun saveHealthLeads(health: SaveStatus, activity: TileActivity?): Boolean =
     health is SaveStatus.Problem || health is SaveStatus.NotSyncing ||
+        activity is TileActivity.Synced && activity.mark == SyncMark.Synced &&
+        (health == SaveStatus.NothingYet || health is SaveStatus.Unconfirmed) ||
         health is SaveStatus.Waiting && activity != TileActivity.Syncing && activity !is TileActivity.Synced ||
         activity == null || activity == TileActivity.Paused || activity is TileActivity.OnHost
 fun heroActivityLine(health: SaveStatus, activity: TileActivity): String? =
@@ -300,6 +310,10 @@ object SaveProtectionCopy {
     const val chooseFolder = "Choose folder"
     const val chooseSave = "Choose save"
     const val thenChoose = "Then choose the same folder here."
+    const val hostedCardSteps = "In DuckStation, check Memory Card 1 for this game. Keep a copy of your card before changing its type."
+    const val noHostedCard = "DuckStation didn’t open a memory card from Foldcade’s folder."
+    const val canReadConfig = "Readable"
+    const val cantReadConfig = "Can’t read config"
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."
@@ -364,7 +378,11 @@ object SaveProtectionCopy {
         IncidentKind.MaybeWrongFolder -> "$playerName may be saving somewhere else"
         IncidentKind.FolderEmptied -> "$playerName’s save folder is empty"
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) evidence.detail.trimEnd('.') else subject?.let { "Two saves for ${it.label}" } ?: "Two saves · choose one"
+        IncidentKind.MaybeNewSave -> when {
+            isEdenSessionChange -> evidence.detail.trimEnd('.')
+            hostedCardMismatch -> "$playerName used a different memory card"
+            else -> subject?.let { "Two saves for ${it.label}" } ?: "Two saves · choose one"
+        }
     } }
     fun safeOnRomm(receipt: Long?, hasVersions: Boolean, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String = when {
         receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt, now, style, inSentence = true)}."
@@ -382,9 +400,26 @@ object SaveProtectionCopy {
         IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
         IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
         IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
-        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "Check Eden’s user, then choose a save." else
-            if (repair is RepairState.WaitingForRomm) "Keeping both saves. Waiting for RomM." else "Two saves. Choose which to play."
+        IncidentKind.MaybeNewSave -> when {
+            isEdenSessionChange -> "Check Eden’s user, then choose a save."
+            hostedCardMismatch -> cardNotice(live?.label)
+            repair is RepairState.WaitingForRomm -> "Keeping both saves. Waiting for RomM."
+            else -> "Two saves. Choose which to play."
+        }
     } }
+
+    private fun cardNotice(name: String?): String {
+        val action = " Check before you play."
+        val prefix = "Using "
+        val card = name?.trim()?.replace(Regex("\\s+"), " ")?.takeIf { it.isNotEmpty() }
+            ?: return "Different memory card.$action"
+        val budget = 50 - prefix.length - action.length - 1
+        val short = if (card.length <= budget) "$card." else {
+            val end = if (card[budget - 1].isHighSurrogate()) budget - 1 else budget
+            card.take(end).trimEnd() + "…"
+        }
+        return "$prefix$short$action"
+    }
     /**
      * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it
      * says what playing now costs. The other detail surfaces end with "Fix it before you play."
@@ -408,9 +443,14 @@ object SaveProtectionCopy {
             }
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
-            IncidentKind.MaybeWrongFolder -> "Check where it saves."
-            IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "${evidence.detail} Check Eden’s user before choosing a save."
-                else "Choose which save to play."
+            IncidentKind.MaybeWrongFolder -> if (hostedCardSilence)
+                "$noHostedCard In DuckStation, open App Settings › Folders › Memory Cards and choose Foldcade."
+            else "Check where it saves."
+            IncidentKind.MaybeNewSave -> when {
+                isEdenSessionChange -> "${evidence.detail} Check Eden’s user before choosing a save."
+                hostedCardMismatch -> evidence.detail
+                else -> "Choose which save to play."
+            }
         }, safe, when (kind) {
             IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
             IncidentKind.FolderEmptied -> "Put it back before you play."

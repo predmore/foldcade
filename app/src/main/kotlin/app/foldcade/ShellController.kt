@@ -770,11 +770,14 @@ class ShellController(
             ?.takeIf { it.packageNames.any(installedPlayers::contains) }
 
     private var saveLocations: Map<String, LocationFact> = emptyMap()
+    private var duckStationConfigReadable = false
+    internal var hostedCardChecked: (Player, Game) -> Boolean = { _, _ -> false }
     private var saveIncidents: List<SaveIncident> = emptyList()
     private val saveServices = mutableMapOf<String, app.foldcade.api.plugin.SaveServiceState>()
     private val saveDestinations = mutableMapOf<String, OffDeviceFact>()
 
-    internal fun setSaveProtection(readings: Map<String, LocationFact>, incidents: List<SaveIncident>, replace: Boolean = true) {
+    internal fun setSaveProtection(readings: Map<String, LocationFact>, incidents: List<SaveIncident>, replace: Boolean = true, duckStationConfigReadable: Boolean = false) {
+        this.duckStationConfigReadable = duckStationConfigReadable
         val locations = if (replace) readings else saveLocations + readings
         val changed = (saveLocations.keys + locations.keys).filter { key ->
             val old = saveLocations[key]
@@ -807,6 +810,12 @@ class ShellController(
     }
 
     internal fun protectionRoutes(): List<GameRoute> = libraryGames.keys.mapNotNull { launchRoute(tileOf(it)) }.distinctBy { it.tileId }
+
+    private fun checkedSaveReachability(game: Game, player: Player, reachable: Boolean?): Boolean? = when {
+        player !is app.foldcade.plugins.duckstation.DuckStationPlayer || reachable == false -> reachable
+        saveLocations[player.saveFolderId()] is LocationFact.Verified && hostedCardChecked(player, game) -> true
+        else -> null
+    }
 
     internal fun setSaveService(libraryId: String, state: app.foldcade.api.plugin.SaveServiceState) {
         saveServices[libraryId] = state
@@ -854,14 +863,15 @@ class ShellController(
         return onMeaning(Meaning.Activate, page.screen)
     }
 
-    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, owner: Game? = null, offline: Boolean = false): SaveFixPage {
+    internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, owner: Game? = null, offline: Boolean = false,
+        playerManagesFolder: Boolean = false): SaveFixPage {
         val origin = store.rommOrigin()
         val subject = incident.subject
         // With no game in hand, an emulator-wide incident covers the RomM games it plays whenever RomM is set up.
         val hasRommDestination = origin != null && (subject == null || subject.origin == origin) &&
-            (owner == null || owner.backendId == RommCredentials.PLUGIN_ID)
+            (owner?.backendId == RommCredentials.PLUGIN_ID || owner == null && !incident.hostedCardMismatch)
         val page = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = owner?.label, offline = offline,
-            hasRommDestination = hasRommDestination)
+            hasRommDestination = hasRommDestination, playerManagesFolder = playerManagesFolder)
         publish(model.copy(panel = null, dialog = null, saveFix = page))
         return page
     }
@@ -898,7 +908,7 @@ class ShellController(
             waiting = waiting,
             sync = saveSync[player.id],
             setup = setupSteps[player.id],
-            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable,
+            reachable = checkedSaveReachability(route.saves, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable),
             saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()],
@@ -3541,7 +3551,7 @@ class ShellController(
         val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
         return gameSaveHealth(owner, player, true, waiting,
             saveSync[player.id], setupSteps[player.id],
-            reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves,
+            reachable = checkedSaveReachability(owner, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable), saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
             incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.appliesTo(owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
@@ -4418,6 +4428,7 @@ class ShellController(
                 thorSetup = thorSetups[player.id],
                 location = saveLocations[player.saveFolderId()],
                 incident = saveIncidents.firstOrNull { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done },
+                saveConfigReadable = duckStationConfigReadable.takeIf { player is app.foldcade.plugins.duckstation.DuckStationPlayer },
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,
