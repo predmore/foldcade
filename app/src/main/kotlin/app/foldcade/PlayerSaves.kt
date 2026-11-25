@@ -58,7 +58,7 @@ internal data class SaveSpot(
     val filter: SaveArchiveFilter? = null,
 )
 
-internal data class StagedSaveCopy(val game: Game, val playerKey: String, val playerId: String, val slot: ObservedSlot)
+internal data class StagedSaveCopy(val game: Game, val playerKey: String, val playerId: String, val slot: ObservedSlot, val origin: String?)
 
 /**
  * Held while the shell checks a save file and writes it, and while a player
@@ -330,7 +330,8 @@ internal class PlayerSaves(
                     val game = Game(json.getString("library"), json.getString("game"), json.getString("platform"), Availability.Cached, json.getString("label"))
                     val hash = json.optString("hash").takeIf { it.isNotBlank() } ?: md5Hex(Files.readAllBytes(file))
                     StagedSaveCopy(game, json.getString("playerKey"), json.getString("player"),
-                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), file.toUri().toString()))
+                        ObservedSlot(json.getString("slot"), hash, json.getString("player"), file.toUri().toString()),
+                        json.optString("origin").takeIf { it.isNotBlank() })
                 } catch (cancelled: CancellationException) { throw cancelled
                 } catch (_: Exception) { null } // An unreadable row cannot hide the rest of the queue.
             }.toList()
@@ -345,8 +346,9 @@ internal class PlayerSaves(
         Files.deleteIfExists(file.resolveSibling("${file.fileName}.json"))
     }
 
-    private fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray): String {
-        val name = "live-${md5Hex((game.backendId + ":" + game.remoteKey + ":" + player.saveFolderId() + ":" + spot.slot + ":" + storageIdentity(spot.folderUri)).toByteArray())}-${md5Hex(bytes)}.save"
+    internal fun stageCopy(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, origin: String? = null): String {
+        val identity = listOfNotNull(game.backendId, game.remoteKey, player.saveFolderId(), spot.slot, storageIdentity(spot.folderUri), origin)
+        val name = "live-${md5Hex(identity.joinToString(":").toByteArray())}-${md5Hex(bytes)}.save"
         val file = handover.resolve(name)
         app.foldcade.romm.writeDurably(file, bytes)
         // Keep enough identity to recover a queued copy even after the guided incident closes.
@@ -354,7 +356,7 @@ internal class PlayerSaves(
             .put("platform", game.platformId).put("label", game.label).put("player", player.id)
             .put("playerKey", player.saveFolderId()).put("slot", spot.slot).put("fileName", spot.fileName)
             .put("folderLabel", runCatching { folderPathLabel(spot.folderUri) }.getOrNull() ?: org.json.JSONObject.NULL)
-            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes))
+            .put("folder", spot.folderUri).put("identity", storageIdentity(spot.folderUri)).put("hash", md5Hex(bytes)).put("origin", origin)
         app.foldcade.romm.writeDurably(file.resolveSibling("$name.json"), metadata.toString().toByteArray())
         return file.toUri().toString()
     }
@@ -420,7 +422,9 @@ internal class PlayerSaves(
      * and is left out. Any other bytes are handed over, even after a failed
      * placement, because the player may have run on its own since.
      */
-    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false): ObservedSaves {
+    fun changedSince(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, strict: Boolean = false,
+        stageSnapshot: Boolean = false,
+        onChanged: ((SaveSpot, ObservedSlot, ByteArray) -> Unit)? = null): ObservedSaves {
         val changed = spots.mapNotNull { spot ->
             val (bytes, uri) = readSpot(spot, strict) ?: return@mapNotNull null
             val hash = md5Hex(bytes)
@@ -440,7 +444,8 @@ internal class PlayerSaves(
                     marks.setMark(tornKey(key), hash)
                     null
                 } else {
-                    ObservedSlot(spot.slot, hash, player.id, uri ?: stage(key, bytes))
+                    val capturedUri = if (stageSnapshot || uri == null) stage(key, bytes) else uri
+                    ObservedSlot(spot.slot, hash, player.id, capturedUri).also { onChanged?.invoke(spot, it, bytes) }
                 }
             }
         }
@@ -455,6 +460,15 @@ internal class PlayerSaves(
             settle(key, slot.contentHash)
             Files.deleteIfExists(handover.resolve("$key.zip"))
         }
+    }
+
+    /** The caller has verified a Backup of [previousHash]. Any other working bytes still refuse placement. */
+    fun placeAfterBackup(game: Game, player: Player, spot: SaveSpot, placed: PlacedSave, previousHash: String?): Boolean {
+        if (placed.slot != spot.slot) return false
+        if (previousHash != null) {
+            noteHandedOver(game.backendId, game, player, listOf(spot), ObservedSaves(listOf(ObservedSlot(spot.slot, previousHash, player.id, null))))
+        }
+        return place(game.backendId, game, player, listOf(spot), listOf(placed))
     }
 
     /**
@@ -953,7 +967,7 @@ internal class PlayerSaves(
         return if (entries.isEmpty()) Held.Missing else Held.Found(FolderSave(entries, uris))
     }
 
-    /** A zip the library reads from a file, as it has no document. */
+    /** A snapshot kept until the library has accepted its exact bytes. */
     private fun stage(key: String, bytes: ByteArray): String {
         Files.createDirectories(handover)
         val file = handover.resolve("$key.zip")
@@ -1126,7 +1140,7 @@ private fun validFolders(folders: List<SaveFolderPart>): Boolean =
 private fun partOf(name: String): String = name.substringBefore('/')
 
 /** The largest a save zip may unpack to, so a broken or hostile one cannot fill memory. */
-private const val SAVE_ZIP_LIMIT = 256L * 1024 * 1024
+internal const val SAVE_ZIP_LIMIT = 256L * 1024 * 1024
 
 /**
  * One fixed local date and time for every entry, so a zip's bytes depend only on
@@ -1225,7 +1239,7 @@ internal fun saveEntries(zip: ByteArray, parts: Set<String>): SortedMap<String, 
  * How many entries the zip's central directory lists, read from its end
  * record, or null when [zip] has none: it is cut short, or not a zip.
  */
-private fun zipEntryCount(zip: ByteArray): Int? {
+internal fun zipEntryCount(zip: ByteArray): Int? {
     val earliest = maxOf(0, zip.size - ZIP_END_RECORD - 0xffff)
     for (at in zip.size - ZIP_END_RECORD downTo earliest) {
         if (zip[at] == 0x50.toByte() && zip[at + 1] == 0x4b.toByte() && zip[at + 2] == 0x05.toByte() && zip[at + 3] == 0x06.toByte()) {

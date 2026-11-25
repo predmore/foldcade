@@ -87,6 +87,28 @@ fun rommCatalogLive(library: LibraryBackend?): Boolean = (library as? RommLibrar
 suspend fun cachedRommSaveTarget(library: LibraryBackend?, game: Game): LaunchTarget? =
     (library as? RommLibrary)?.cachedSaveTarget(game)
 
+data class RommRepairSave(val id: String, val slot: String?, val hash: String, val time: Long, val size: Long)
+
+class RommRepairHeadChanged : Exception()
+class RommRepairNeedsSync : Exception()
+class RommRepairWaitingForSync : Exception()
+
+fun supportsRommRepair(library: LibraryBackend?): Boolean = library is RommLibrary
+
+suspend fun keepRommRepairBackup(library: LibraryBackend?, game: Game, player: Player, observed: ObservedSaves, origin: String): List<String> =
+    (library as? RommLibrary ?: throw PluginException.Unavailable("No RomM saves")).keepBackups(game, player, observed, origin)
+
+suspend fun rommRepairSaves(library: LibraryBackend?, game: Game, origin: String): List<RommRepairSave> =
+    (library as? RommLibrary ?: throw PluginException.Unavailable("No RomM saves")).repairSaves(game, origin)
+
+suspend fun rommSyncedSave(library: LibraryBackend?, game: Game, slot: String, limit: Long): ByteArray? =
+    (library as? RommLibrary)?.syncedSave(game, slot, limit)
+
+suspend fun placeRommRepairSave(library: LibraryBackend?, game: Game, player: Player, id: String, origin: String,
+    expectedHead: String, beforeWrite: suspend () -> Unit, beforeCommit: () -> Unit): List<PlacedSave> =
+    (library as? RommLibrary ?: throw PluginException.Unavailable("No RomM saves"))
+        .placeRepairSave(game, player, id, origin, expectedHead, beforeWrite, beforeCommit)
+
 /** A device-owned snapshot, never evidence that a restored source has reported live. */
 data class RommCatalogSnapshot(val platforms: List<ListedPlatform>, val games: List<Game>)
 
@@ -841,6 +863,44 @@ internal class RommLibrary internal constructor(
         }
     }
 
+    suspend fun syncedSave(game: Game, slot: String, limit: Long): ByteArray? {
+        val wiring = gate.peek() ?: return null
+        val romId = game.romId()
+        return romLock(romId).withLock {
+            runInterruptible(Dispatchers.IO) {
+                val synced = wiring.data.ledger(romId).slot(slot)?.syncedHash ?: return@runInterruptible null
+                val file = wiring.data.slotFile(romId, slot)
+                if (!Files.isRegularFile(file) || Files.size(file) > limit || md5File(file) != synced) null else Files.readAllBytes(file)
+            }
+        }
+    }
+
+    suspend fun repairSaves(game: Game, origin: String): List<RommRepairSave> {
+        val romId = game.romId()
+        return romLock(romId).withLock {
+            gate.session { wiring, ops ->
+                if (RommClient.normalizeOrigin(wiring.origin) != RommClient.normalizeOrigin(origin)) throw RommRepairNeedsSync()
+                rememberDevice(wiring, ops)
+                ops.listSaves(romId, wiring.rememberedDevice!!.deviceId).filter { it.romId == romId }
+                    .sortedWith(compareByDescending<app.foldcade.romm.RommSave> { it.updatedAt }.thenByDescending { it.id })
+                    .map { RommRepairSave(it.id.toString(), it.slot, it.contentHash?.lowercase().orEmpty(), it.updatedAt.toEpochMilli(), it.sizeBytes) }
+            }
+        }
+    }
+
+    /** Repair keeps the submitted head unchanged when restoring it, including after an uncertain commit. */
+    suspend fun placeRepairSave(game: Game, player: Player, id: String, origin: String, expectedHead: String,
+        beforeWrite: suspend () -> Unit, beforeCommit: () -> Unit): List<PlacedSave> = serverSaveWork(game, announce = false) { wiring, ops, romId ->
+        if (RommClient.normalizeOrigin(wiring.origin) != RommClient.normalizeOrigin(origin)) throw RommRepairNeedsSync()
+        requireSavePlayer(game, player)
+        val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: throw RommRepairNeedsSync()
+        runInterruptible(Dispatchers.IO) {
+            if (SaveConflictLog(wiring.data.conflictsFile()).hasUnresolved(romId)) throw RommRepairNeedsSync()
+            if (unsyncedSlots(wiring, romId).isNotEmpty()) throw RommRepairWaitingForSync()
+        }
+        chooseSave(wiring, ops, romId, id, slot, player.id, player, beforeCommit, expectedHead, beforeWrite)
+    }
+
     override suspend fun saveServiceState(): app.foldcade.api.plugin.SaveServiceState = try {
         gate.call { _, ops ->
             val beat = ops.heartbeat()
@@ -893,10 +953,14 @@ internal class RommLibrary internal constructor(
     private fun unreachableSync(): SyncResult = SyncResult(SyncOutcome.Unchanged, SAVE_UNREACHABLE)
 
     /** Preservation only: no negotiation, slot write, selection recovery, or ledger change. */
-    override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> {
+    override suspend fun keepAsBackups(game: Game, player: Player, observed: ObservedSaves): List<String> =
+        keepBackups(game, player, observed, origin = null)
+
+    suspend fun keepBackups(game: Game, player: Player, observed: ObservedSaves, origin: String?): List<String> {
         val romId = game.romId()
         return romLock(romId).withLock {
             gate.session { wiring, ops ->
+                if (origin != null && RommClient.normalizeOrigin(wiring.origin) != RommClient.normalizeOrigin(origin)) throw RommRepairNeedsSync()
                 rememberDevice(wiring, ops)
                 val device = wiring.rememberedDevice!!.deviceId
                 observed.slots.map { slot ->
@@ -1015,9 +1079,9 @@ internal class RommLibrary internal constructor(
         }
 
     /** Strict sync, download and promotion all share the ROM lock, including concurrent return syncs. */
-    private suspend fun <T> serverSaveWork(game: Game, action: suspend (RommWiring, RommOps, Long) -> T): T {
+    private suspend fun <T> serverSaveWork(game: Game, announce: Boolean = true, action: suspend (RommWiring, RommOps, Long) -> T): T {
         val romId = game.romId()
-        report(romId, GameActivity.SyncingSaves)
+        if (announce) report(romId, GameActivity.SyncingSaves)
         var finished = false
         try {
             return romLock(romId).withLock {
@@ -1028,7 +1092,7 @@ internal class RommLibrary internal constructor(
                 }
             }.also { finished = true }
         } finally {
-            report(romId, if (finished) GameActivity.Synced(SyncResult(SyncOutcome.Uploaded)) else GameActivity.Idle)
+            if (announce) report(romId, if (finished) GameActivity.Synced(SyncResult(SyncOutcome.Uploaded)) else GameActivity.Idle)
         }
     }
 
@@ -1037,21 +1101,24 @@ internal class RommLibrary internal constructor(
             throw PluginException.Unavailable(SAVE_UNREACHABLE)
     }
 
-    private suspend fun strictSaveSync(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?): SaveSyncReport {
+    private suspend fun strictSaveSync(wiring: RommWiring, ops: RommOps, romId: Long, emulator: String?, forRepair: Boolean = false): SaveSyncReport {
         val report = syncOnce(wiring, ops, romId, emulator)
         rememberConflicts(wiring, report)
+        val refused = report.keptBoth.isNotEmpty() || report.failed.isNotEmpty()
+        if (forRepair && refused) throw RommRepairNeedsSync()
         if (report.queued.isNotEmpty() || !report.completedSession)
             throw PluginException.Unavailable("Save sync did not finish", app.foldcade.romm.RommUnavailable("Save sync is waiting for RomM"))
-        if (report.keptBoth.isNotEmpty() || report.failed.isNotEmpty() ||
-            runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
+        if (refused || runInterruptible(Dispatchers.IO) { unsyncedSlots(wiring, romId).isNotEmpty() }) {
+            if (forRepair) throw RommRepairWaitingForSync()
             throw PluginException.Unavailable("Save sync did not finish")
         }
         return report
     }
 
-    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, player: Player?, beforeCommit: () -> Unit): List<PlacedSave> {
+    private suspend fun chooseSave(wiring: RommWiring, ops: RommOps, romId: Long, id: String, slot: String, emulator: String?, player: Player?, beforeCommit: () -> Unit,
+        expectedHead: String? = null, beforeRepairWrite: suspend () -> Unit = {}): List<PlacedSave> {
         val localPlayer = player?.id
-        strictSaveSync(wiring, ops, romId, localPlayer)
+        strictSaveSync(wiring, ops, romId, localPlayer, forRepair = expectedHead != null)
         val device = wiring.rememberedDevice!!.deviceId
         val listed = ops.listSaves(romId, device).filter { it.romId == romId }
         val chosen = listed.singleOrNull { it.id.toString() == id } ?: throw PluginException.NotFound("Save is no longer available")
@@ -1061,6 +1128,8 @@ internal class RommLibrary internal constructor(
             throw PluginException.Unavailable("The destination slot changed; choose it again")
         val hash = chosen.contentHash?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{32}")) }
             ?: throw PluginException.Unavailable("This save has no verifiable content hash")
+        val alreadyHead = latest?.contentHash?.lowercase() == hash
+        if (expectedHead != null && !alreadyHead && latest?.contentHash?.lowercase() != expectedHead) throw RommRepairHeadChanged()
         val selection = SaveSelection(wiring.data.romSaves(romId))
         ops.downloadSave(chosen, device, selection.staged)
         val bytes = runInterruptible(Dispatchers.IO) {
@@ -1086,8 +1155,17 @@ internal class RommLibrary internal constructor(
                         throw PluginException.Unavailable("The current slot head did not verify")
                     held
                 }
-                ops.uploadArchive(latest, device, previousHash, previousBytes)
+                val backup = ops.uploadArchive(latest, device, previousHash, previousBytes)
+                if (expectedHead != null && ops.listSaves(romId, device).none {
+                        it.id == backup && it.romId == romId && it.slot == null && it.contentHash?.lowercase() == previousHash && it.sizeBytes == latest.sizeBytes
+                    }) throw PluginException.Unavailable("The previous head’s Backup did not verify")
             }
+        }
+        if (expectedHead != null) {
+            val refreshed = ops.listSaves(romId, device).filter { it.romId == romId && it.slot == slot }
+                .maxWithOrNull(compareBy<app.foldcade.romm.RommSave> { it.updatedAt }.thenBy { it.id })
+            if (refreshed?.contentHash?.lowercase() != latest?.contentHash?.lowercase()) throw RommRepairHeadChanged()
+            beforeRepairWrite()
         }
         if (localPlayer != null) runInterruptible(Dispatchers.IO) {
             val current = wiring.data.slotFile(romId, slot)
@@ -1106,7 +1184,8 @@ internal class RommLibrary internal constructor(
         }
         // Slot uploads get a unique versioned filename on RomM. Never send autocleanup.
         try {
-            ops.uploadSave(romId, if (localPlayer == null) latest!!.fileName else chosen.fileName, slot, emulator, device, hash, bytes)
+            if (expectedHead == null || !alreadyHead)
+                ops.uploadSave(romId, if (localPlayer == null) latest!!.fileName else chosen.fileName, slot, emulator, device, hash, bytes)
         } catch (refused: RommException) {
             val definitive = refused is app.foldcade.romm.RommSlotMoved || refused is app.foldcade.romm.RommUnauthenticated ||
                 (refused is RommHttpException && refused.status in 400..499)
@@ -1116,7 +1195,7 @@ internal class RommLibrary internal constructor(
         }
         if (localPlayer == null) return emptyList()
         runInterruptible(Dispatchers.IO) { selection.finish(wiring.data, romId) }
-        return snapshotSaves(wiring, romId)
+        return snapshotSaves(wiring, romId).let { saves -> if (expectedHead == null) saves else saves.filter { it.slot == slot } }
     }
 
     private suspend fun recoverSelection(wiring: RommWiring, ops: RommOps, romId: Long) {

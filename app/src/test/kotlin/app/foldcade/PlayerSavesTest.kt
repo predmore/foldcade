@@ -10,6 +10,9 @@ import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.StartDisplay
+import app.foldcade.language.FolderRef
+import app.foldcade.language.RegressionContext
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -17,10 +20,12 @@ import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.assertArrayEquals
+import kotlinx.coroutines.runBlocking
 
 class PlayerSavesTest {
     private lateinit var backups: Path
@@ -650,6 +655,101 @@ class PlayerSavesTest {
     }
 
     private fun placed(text: String) = PlacedSave("sav", "lib://sav", md5Hex(text.toByteArray()))
+
+    @Test fun repairCanReplaceAnExistingLiveSaveOnlyAfterAcceptingItsExactBackupHash() {
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        docs.put(FOLDER, spot.fileName, "live progress")
+        docs.library["lib://sav"] = "Romm head".toByteArray()
+        val choice = placed("Romm head")
+        assertFalse(saves.placeAfterBackup(GAME, PLAYER, spot, choice, null))
+        assertFalse(saves.placeAfterBackup(GAME, PLAYER, spot, choice, md5Hex("different progress".toByteArray())))
+        assertEquals("live progress", docs.text(FOLDER, spot.fileName))
+        val rawHash = saves.readSpot(spot)!!.first.let(::md5Hex)
+        assertTrue(saves.placeAfterBackup(GAME, PLAYER, spot, choice, rawHash))
+        assertEquals("Romm head", docs.text(FOLDER, spot.fileName))
+    }
+
+    @Test fun laterProgressPlayedFromTheRestoredHeadReconcilesDuringAnOpenQuarantine() = runBlocking {
+        val store = SaveProtectionStore(backups.resolve("protection"))
+        val root = FolderRef("primary:live", "live")
+        val origin = "https://romm.example"
+        val subject = incidentGame(GAME, PLAYER, ROM_URI, origin, null)
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        val head = ByteArray(4096) { 1 }
+        val reset = ByteArray(256) { 2 }
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> inspectSave(head, folder = false) })
+        docs.putBytes(FOLDER, spot.fileName, reset)
+        val first = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot)).second!!
+        assertTrue(regression.quarantine(subject, PLAYER, first, root, emptySet()))
+        val initial = store.incidents().single()
+        docs.library["lib://sav"] = head
+        assertTrue(saves.place(GAME.backendId, GAME, PLAYER, listOf(spot), listOf(PlacedSave("sav", "lib://sav", md5Hex(head)))))
+
+        val laterProgress = ByteArray(4600) { 3 }
+        docs.putBytes(FOLDER, spot.fileName, laterProgress)
+        val (observed, later) = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot))
+        assertFalse(regression.quarantine(subject, PLAYER, later!!, root, emptySet()))
+        assertEquals(md5Hex(laterProgress), observed.slots.single().contentHash)
+        assertEquals(md5Hex(head), marks.mark(PlayerSaves.key(GAME.backendId, GAME, PLAYER, spot)))
+        assertEquals(initial.quarantinedHash, store.incidents().single().quarantinedHash)
+        assertEquals(initial.quarantineSourceUri, store.incidents().single().quarantineSourceUri)
+        assertEquals(setOf(md5Hex(reset), md5Hex(laterProgress)), saves.queuedCopies().map { it.slot.contentHash }.toSet())
+    }
+
+    @Test fun inspectionFailureUsesTheOriginalCaptureAndOnlyQuarantinesWithContext() = runBlocking {
+        val store = SaveProtectionStore(backups.resolve("protection"))
+        val subject = incidentGame(GAME, PLAYER, ROM_URI, "https://romm.example", null)
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        val regression = SaveRegression(saves, store,
+            baseline = { _, _, _ -> inspectSave(ByteArray(4096), folder = false) },
+            inspect = { _, _ -> throw IOException("inspection failed") })
+        docs.put(FOLDER, spot.fileName, "captured before inspection")
+        val returned = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot)).second!!
+        docs.unreadable += "$FOLDER/${spot.fileName}"
+
+        assertFalse(regression.quarantine(subject, PLAYER, returned, null, emptySet()))
+        assertTrue(saves.queuedCopies().isEmpty())
+        assertTrue(regression.quarantine(subject, PLAYER, returned, null, setOf(RegressionContext.Reinstalled)))
+        val staged = saves.queuedCopies().single().slot
+        assertEquals(returned.slot.contentHash, staged.contentHash)
+        assertEquals("captured before inspection", Files.readString(java.nio.file.Paths.get(java.net.URI(staged.contentUri!!))))
+        assertNull(store.incidents().single().quarantinedHash)
+        assertEquals(staged.contentUri, store.incidents().single().quarantineSourceUri)
+    }
+
+    @Test fun knownBaselineWithNoShapeStillQuarantinesAChangedProfile() = runBlocking {
+        val store = SaveProtectionStore(backups.resolve("protection"))
+        val subject = incidentGame(GAME, PLAYER, ROM_URI, "https://romm.example", null)
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> SaveInspection("head", null) },
+            inspect = { _, _ -> SaveInspection("new-copy", null) })
+        docs.put(FOLDER, spot.fileName, "new profile")
+        val returned = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot)).second!!
+        assertFalse(regression.quarantine(subject, PLAYER, returned, null, emptySet()))
+        assertTrue(regression.quarantine(subject, PLAYER, returned, null, setOf(RegressionContext.NewProfile)))
+        assertEquals("new-copy", store.incidents().single().quarantinedHash)
+        assertEquals(returned.slot.contentHash, saves.queuedCopies().single().slot.contentHash)
+    }
+
+    @Test fun aSingleFileReturnHandsRommTheInspectedBytesEvenIfThePlayerWritesAgain() = runBlocking {
+        val store = SaveProtectionStore(backups.resolve("protection"))
+        val spot = SaveSpot("sav", FOLDER, "game.sav")
+        val regression = SaveRegression(saves, store, baseline = { _, _, _ -> inspectSave("previous progress".toByteArray(), folder = false) })
+        val subject = incidentGame(GAME, PLAYER, ROM_URI, "https://romm.example", null)
+        docs.put(FOLDER, spot.fileName, "captured progress")
+        val (observed, returned) = regression.capture(GAME.backendId, GAME, PLAYER, listOf(spot))
+        docs.put(FOLDER, spot.fileName, "newer progress")
+
+        assertFalse(regression.quarantine(subject, PLAYER, returned!!, null, emptySet()))
+        val slot = observed.slots.single()
+        val snapshot = java.nio.file.Paths.get(java.net.URI(slot.contentUri!!))
+        assertEquals(returned.slot, slot)
+        assertEquals("captured progress", Files.readString(snapshot))
+        assertEquals(slot.contentHash, md5Hex(Files.readAllBytes(snapshot)))
+        saves.noteHandedOver(GAME.backendId, GAME, PLAYER, listOf(spot), observed)
+        assertFalse(Files.exists(snapshot))
+        assertEquals(md5Hex("newer progress".toByteArray()), saves.changedSince(GAME.backendId, GAME, PLAYER, listOf(spot)).slots.single().contentHash)
+    }
 
     private class FakeDocuments : SaveDocuments {
         override var firmwareNewOnly = false

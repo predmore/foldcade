@@ -271,4 +271,16 @@ class SaveProtectionTest {
         assertEquals("Use the folder Azahar uses", saveFixSteps(incident)[1].title)
         assertEquals("Choose Azahar’s folder", saveFixSteps(incident.copy(live = null))[1].title)
     }
+
+    @Test fun theFixChecklistShowsEdenSessionGuidanceForAnAccountChange() {
+        val eden = SaveIncident("MaybeNewSave:eden", IncidentKind.MaybeNewSave, "eden", "Eden", listOf("game"),
+            null, null, Evidence(EvidenceKind.Config, SaveProtectionCopy.edenUserChanged), 20, kept = listOf("backup"))
+        assertEquals(listOf(
+            SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(1)),
+            SaveFixStep("Check your Eden user", SaveFixStepState.Now),
+            SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
+        ), saveFixSteps(eden))
+        val reset = eden.copy(evidence = Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.mayBeNewGame))
+        assertTrue(saveFixSteps(reset).isEmpty())
+    }
 }

@@ -483,6 +483,35 @@ class PlayerSaveSearchTest {
     }
 
     @Test
+    fun edenRepairResolvesTheConfiguredSaveDirForTheCapturedAccount() {
+        val player = eden(1)
+        val game = edenRoute(player).saves
+        val target = LaunchTarget.ContentUri(ROM)
+        val configured = "[Data Storage]\nsave_directory=/sdcard/Android/data/dev.eden.eden_emulator/files/custom"
+        val accountPath = "custom/user/save/account/${"01" + "00".repeat(15)}/$TITLE/0"
+        docs.file("config/config.ini", configured)
+        docs.file("${edenPath(1)}/systemdata", "legacy progress")
+        docs.file("$accountPath/systemdata", "active progress")
+
+        val access = saves.edenSaveAccess(player, game) as EdenSaveAccess.Ready
+        val key = access.session()!!.repairKey()!!
+        val repair = saves.edenRepairTarget(player, game, target, key)!!
+        assertEquals(accountPath, repair.spot.folders.single().path)
+        assertEquals(access.session(), repair.session)
+        assertNull(saves.edenRepairTarget(player, game, target, null))
+
+        docs.file("nand/system/save/8000000000000010/su/avators/profiles.dat", ByteArray(0x650).apply {
+            this[0x10] = 1
+            this[0x10 + 0xC8] = 2
+        })
+        docs.file("config/config.ini", "$configured\n[System]\ncurrent_user\\default=false\ncurrent_user=1")
+        assertNull(saves.edenRepairTarget(player, game, target, key))
+
+        docs.file("config/config.ini", "[Data Storage]\nsave_directory=/sdcard/NeedsGrant")
+        assertNull(saves.edenRepairTarget(player, game, target, key))
+    }
+
+    @Test
     fun unresolvedEdenReportsTheFolderAndProfileProblems() {
         val player = eden(1)
         val game = edenRoute(player).saves

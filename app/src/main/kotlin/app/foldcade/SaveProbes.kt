@@ -141,10 +141,12 @@ internal class SaveProbes(
         val id = "${kind.name}:$key"
         val old = store.incidents().firstOrNull { it.id == id }
         // A fresh positive finding reopens a completed fix, including one retaining offline copies.
-        val repair = old?.repair?.takeUnless { it == RepairState.Done } ?: RepairState.NotStarted
+        val sameLocation = old?.live?.identity == live?.identity && old?.bound?.identity == bound.identity
+        val repair = old?.repair?.takeIf { sameLocation && it != RepairState.Done } ?: RepairState.NotStarted
         // A root-level finding affects every game, even when first discovered on one launch.
         store.put(SaveIncident(id, kind, key, player.displayName, emptyList(), bound, live, evidence,
-            old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false))
+            old?.openedAtMillis ?: at, old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
+            subject = old?.subject?.takeIf { sameLocation }))
     }
 
     @Synchronized fun gate(player: Player, game: Game, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
@@ -178,8 +180,10 @@ internal class SaveProbes(
     fun judgeReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, unprotected: Boolean = false,
         startedByFoldcade: Boolean = true, sessionStartedAtMillis: Long? = null, sessionEndedAtMillis: Long? = null,
         edenSpots: List<SaveSpot>? = null,
+        beforeJudgement: (ProbeSnapshot) -> Unit = {},
     ): ProbeSnapshot? {
         val after = snapshot(player, game, target, resolvedPackage = before?.packageName, discoverAfterMillis = before?.atMillis, edenSpots = edenSpots)
+        after?.let(beforeJudgement)
         if (before != null && after != null) noteSession(player, game, before, after,
             (sessionEndedAtMillis ?: after.atMillis) - (sessionStartedAtMillis ?: before.atMillis), startedByFoldcade, unprotected)
         return after

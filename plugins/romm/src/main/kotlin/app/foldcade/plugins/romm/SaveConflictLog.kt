@@ -98,6 +98,8 @@ internal fun saveSource(device: String?, emulator: String?, fallback: String): S
 internal class SaveConflictLog(private val file: Path) {
     fun pending(): List<ConflictEntry> = locked { readUnlocked().filter { it.status == ConflictStatus.Open } }
 
+    fun hasUnresolved(romId: Long): Boolean = locked { readUnlocked().any { it.romId == romId && it.status != ConflictStatus.Closed } }
+
     fun find(id: String): ConflictEntry? = locked { readUnlocked().find { it.id == id } }
 
     /**

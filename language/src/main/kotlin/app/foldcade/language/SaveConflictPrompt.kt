@@ -27,6 +27,8 @@ data class SaveConflictSide(
     val source: String,
     val updatedAtMillis: Long,
     val sizeBytes: Long,
+    val where: String? = null,
+    val note: String? = null,
 )
 
 /**
@@ -41,7 +43,12 @@ data class SaveConflictPrompt(
     val remote: SaveConflictSide,
     val focus: SaveConflictFocus = SaveConflictFocus.KeepBoth,
     val preview: Boolean = false,
-)
+    val repair: RepairState.Choosing? = null,
+    val canKeepBoth: Boolean = true,
+) {
+    val title get() = if (repair is RepairState.Choosing) SaveProtectionCopy.chooseProgress else Copy.saveConflictTitle
+    val body get() = if (repair is RepairState.Choosing) SaveProtectionCopy.bothKept else Copy.saveConflictBody
+}
 
 /**
  * Left and right move between the two copies, and down returns to Leave as is.
@@ -74,16 +81,11 @@ fun applySaveConflict(
                 else -> focus
             },
         ) to null
-        Meaning.MoveDown -> prompt.copy(
-            focus = when (focus) {
-                SaveConflictFocus.KeepBoth -> SaveConflictFocus.KeepBoth
-                else -> SaveConflictFocus.KeepBoth
-            },
-        ) to null
+        Meaning.MoveDown -> (if (prompt.canKeepBoth) prompt.copy(focus = SaveConflictFocus.KeepBoth) else prompt) to null
         Meaning.Activate -> prompt to when (focus) {
             SaveConflictFocus.Local -> SaveConflictAction.KeepLocal
             SaveConflictFocus.Remote -> SaveConflictAction.KeepRemote
-            SaveConflictFocus.KeepBoth -> SaveConflictAction.KeepBoth
+            SaveConflictFocus.KeepBoth -> SaveConflictAction.KeepBoth.takeIf { prompt.canKeepBoth }
         }
         Meaning.Back -> prompt to SaveConflictAction.DecideLater
         else -> prompt to null

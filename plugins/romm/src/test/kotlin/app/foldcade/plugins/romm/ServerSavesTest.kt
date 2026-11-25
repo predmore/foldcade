@@ -126,6 +126,62 @@ class ServerSavesTest {
         assertEquals("RomM head", Files.readString(data.slotFile(ROM, "sav")))
     }
 
+    @Test fun restoringTheCurrentHeadVerifiesAndPlacesItWithoutCreatingAVersion() = runBlocking {
+        hold("RomM head")
+        val head = server.single()
+        val library = library()
+        val placed = library.placeRepairSave(GAME, player, head.id.toString(), ORIGIN, head.contentHash!!,
+            beforeWrite = { events += "checked" }, beforeCommit = { events += "fresh-load" })
+        assertEquals(head.contentHash, placed.single().contentHash)
+        assertEquals(listOf(head), server)
+        assertEquals(listOf("sync", "download:${head.id}", "checked", "fresh-load"), events)
+        assertArrayEquals("RomM head".toByteArray(), library.syncedSave(GAME, "sav", 1024))
+    }
+
+    @Test fun aRepairBackupStaysUnslottedAndAnUncertainExplicitChoiceIsNotPromotedTwice() = runBlocking {
+        hold("RomM head")
+        val head = server.single()
+        val library = library()
+        val file = root.resolve("live.save")
+        writeDurably(file, "live".toByteArray())
+        val observed = ObservedSaves(listOf(ObservedSlot("sav", md5File(file), player.id, file.toUri().toString())))
+        val backup = library.keepAsBackups(GAME, player, observed).single()
+        assertEquals(head, server.single { it.slot == "sav" })
+        assertNull(server.single { it.id.toString() == backup }.slot)
+        failAfterUpload = true
+        assertNotNull(runCatching {
+            library.placeRepairSave(GAME, player, backup, ORIGIN, head.contentHash!!, {}, {})
+        }.exceptionOrNull())
+        failAfterUpload = false
+        val restored = library().placeRepairSave(GAME, player, backup, ORIGIN, head.contentHash!!, {}, {})
+        assertEquals(md5File(file), restored.single().contentHash)
+        assertNull(server.single { it.id.toString() == backup }.slot)
+        assertEquals(1, events.count { it.startsWith("upload:") })
+        assertTrue(server.any { it.slot == null && it.contentHash == head.contentHash })
+    }
+
+    @Test fun aRepairRefusesIfTheKeepsakesOrHeadChangeBeforePromotion() = runBlocking {
+        hold("RomM head")
+        val head = server.single()
+        val backup = add("live".toByteArray(), null, player.id)
+        val library = library()
+        val download = ops.onDownloadSave
+        ops.onDownloadSave = { save, device, path ->
+            download(save, device, path)
+            if (save == backup) add("new remote progress".toByteArray(), "sav", player.id, at = 400)
+        }
+        assertTrue(runCatching {
+            library.placeRepairSave(GAME, player, backup.id.toString(), ORIGIN, head.contentHash!!, {}, {})
+        }.exceptionOrNull() is RommRepairHeadChanged)
+        assertFalse(events.any { it.startsWith("upload:") })
+        hold("local progress", synced = false)
+        events.clear()
+        assertTrue(runCatching {
+            library.placeRepairSave(GAME, player, backup.id.toString(), ORIGIN, head.contentHash!!, {}, {})
+        }.exceptionOrNull() is RommRepairWaitingForSync)
+        assertTrue(events.isEmpty())
+    }
+
     @Test fun preservationArchivesSlotMatchesAndOnlyReusesUnslottedMemberAwareCopies() = runBlocking {
         hold("RomM head")
         val head = server.single()
@@ -321,6 +377,19 @@ class ServerSavesTest {
         assertFalse(events.contains("commit-hook"))
         assertFalse(events.any { it.startsWith("upload:") })
         assertEquals("current", Files.readString(data.slotFile(ROM, "sav")))
+    }
+
+    @Test fun anUnresolvedStrictSyncConflictTellsRepairToUseGuidedRecovery() = runBlocking {
+        hold("current")
+        val head = server.single()
+        val source = add("choice".toByteArray(), null, player.id)
+        ops.onSync = { _, _, _, _ -> report().copy(keptBoth = listOf(KeptBoth(ROM, "sav", null, source.id, data.slotFile(ROM, "sav")))) }
+        val failure = runCatching {
+            library().placeRepairSave(GAME, player, source.id.toString(), ORIGIN, head.contentHash!!, {}, { error("Must not commit") })
+        }.exceptionOrNull()
+        assertTrue(failure is RommRepairNeedsSync)
+        assertEquals(listOf("current", "choice"), server.map { String(bytes.getValue(it.id)) })
+        assertFalse(events.any { it.startsWith("upload:") })
     }
 
     @Test fun ownUnslottedArchivesAreIdentifiedWithoutInventingASlot() = runBlocking {

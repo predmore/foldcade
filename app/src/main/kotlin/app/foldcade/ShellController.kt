@@ -790,8 +790,13 @@ class ShellController(
         saveLocations = locations
         val fix = model.saveFix?.let { page ->
             val previous = saveIncidents.firstOrNull { it.id == page.incidentId }
-            if (incidents.none { it.id == page.incidentId } && previous != null)
-                page.copy(index = 0, resolved = previous.copy(repair = app.foldcade.language.RepairState.Done)) else page
+            val current = incidents.firstOrNull { it.id == page.incidentId }
+            when {
+                current == null && previous != null -> page.copy(index = 0, resolved = previous.copy(repair = app.foldcade.language.RepairState.Done),
+                    offline = page.offline && !previous.automaticDone)
+                current != null && current.repair != previous?.repair -> page.copy(index = 0, note = null)
+                else -> page
+            }
         }
         saveIncidents = incidents
         model = model.copy(saveIncidents = incidents, saveFix = fix)
@@ -889,7 +894,7 @@ class ShellController(
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()],
             offDevice = saveDestination(route.saves),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done },
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.appliesTo(route.saves) && it.repair != app.foldcade.language.RepairState.Done },
             playedHere = lastPlayedMillis(playId(route.tileId)) != null,
         )
     }
@@ -3530,7 +3535,7 @@ class ShellController(
             reachable = reachability?.takeIf { it.locations == saves.declarations }?.reachable, saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
+            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.appliesTo(owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
     }
 
     private fun refreshSavePickerHealth() {

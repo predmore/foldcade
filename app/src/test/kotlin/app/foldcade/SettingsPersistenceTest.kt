@@ -483,6 +483,60 @@ class SettingsPersistenceTest {
         assertEquals("key", SessionStore(prefs).lastPlayerStart("com.retroarch.aarch64"))
     }
 
+    @Test fun repairOnlyHoldsSurviveRestartAndRequireExitAfterTheLatestOpen() {
+        val prefs = MemoryPrefs()
+        val name = "com.retroarch.aarch64"
+        SessionStore(prefs).noteRepairPlayerOpened(name, 125)
+        val restored = SessionStore(prefs)
+        assertTrue(restored.playersHoldingGames().isEmpty())
+        assertFalse(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(120)))
+        assertTrue(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(130)))
+        restored.noteRepairPlayerOpened(name, 135)
+        assertFalse(playerDiedAfterStart(restored.repairPlayerOpenedAt(name)!!, listOf(130)))
+        restored.noteRepairPlayerClosed(name)
+        assertNull(SessionStore(prefs).repairPlayerOpenedAt(name))
+    }
+
+    @Test fun rebootReleasesOlderRepairAndTaskHolds() {
+        val prefs = MemoryPrefs()
+        val store = SessionStore(prefs)
+        val packages = setOf("com.retroarch.aarch64", "azahar.app")
+        store.setPlayersHoldingGames(packages, emptySet(), atMillis = 120)
+        for (name in packages) store.noteRepairPlayerOpened(name, 120)
+        val restored = SessionStore(prefs)
+        assertEquals(packages, restored.restoreGameHolds(bootAtMillis = 100, nowMillis = 130).first)
+        assertTrue(restored.restoreGameHolds(bootAtMillis = 200, nowMillis = 210).first.isEmpty())
+        val holds = RepairPlayerHolds(restored, { 200 }) { error("Pre-boot holds need no exit lookup") }
+        assertTrue(packages.none { holds.mayHold(it, fallbackAtMillis = null) })
+        assertFalse(holds.mayHold("other.retroarch", fallbackAtMillis = 120))
+    }
+
+    @Test fun tryAgainConfirmsAnUnobservableCloseUntilTheNextOpen() {
+        val prefs = MemoryPrefs()
+        val name = "com.retroarch.aarch64"
+        val store = SessionStore(prefs)
+        fun holds(session: SessionStore) = RepairPlayerHolds(session, { 100 }) { throw SecurityException("another uid") }
+        assertTrue(holds(store).mayHold(name, fallbackAtMillis = 120))
+        holds(store).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 125)
+        val restored = SessionStore(prefs)
+        assertEquals(125L, restored.repairPlayerClosedAt(name))
+        assertFalse(holds(restored).mayHold(name, fallbackAtMillis = 120))
+        restored.noteRepairPlayerOpened(name, 135)
+        assertNull(restored.repairPlayerClosedAt(name))
+        holds(restored).confirmClosed(name, fallbackAtMillis = 120, confirmedAtMillis = 130)
+        assertTrue(holds(restored).mayHold(name, fallbackAtMillis = 120))
+    }
+
+    @Test fun tryAgainDoesNotOverrideReadableExitHistory() {
+        val store = SessionStore(MemoryPrefs())
+        val name = "azahar.app"
+        store.noteRepairPlayerOpened(name, 120)
+        val holds = RepairPlayerHolds(store, { 100 }) { listOf(110) }
+        holds.confirmClosed(name, fallbackAtMillis = null, confirmedAtMillis = 130)
+        assertNull(store.repairPlayerClosedAt(name))
+        assertTrue(holds.mayHold(name, fallbackAtMillis = null))
+    }
+
     private fun shell(prefs: MemoryPrefs, themes: List<String> = listOf("Built-in", "Afterglow")): ShellController =
         ShellController(
             SessionStore(prefs), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()),

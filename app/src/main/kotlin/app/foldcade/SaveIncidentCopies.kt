@@ -10,6 +10,7 @@ import app.foldcade.language.Evidence
 import app.foldcade.language.EvidenceKind
 import app.foldcade.language.IncidentKind
 import app.foldcade.language.blocksLaunch
+import app.foldcade.plugins.romm.keepRommRepairBackup
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -20,16 +21,20 @@ internal class SaveIncidentCopies(
     private val saves: PlayerSaves,
     private val plugins: PluginHost,
     private val store: SaveProtectionStore,
+    private val rommOrigin: () -> String? = { null },
 ) {
     fun stage(game: Game, player: Player, spots: List<SaveSpot>, incident: SaveIncident? = null, mark: Boolean): ObservedSaves {
         val observed = saves.stageCopies(game, player, spots)
-        val uris = observed.slots.mapNotNull { it.contentUri }
-        store.incidents().firstOrNull { it.id == incident?.id }?.let { current ->
-            store.put(current.copy(staged = (current.staged + uris).distinct()))
-        }
+        incident?.let { record(it.id, observed.slots.mapNotNull { slot -> slot.contentUri }) }
         // Sidecars are durable before marks advance. Their queue survives every incident close path.
         if (mark) saves.noteHandedOver(game.backendId, game, player, spots, observed)
         return observed
+    }
+
+    fun record(id: String, uris: List<String>) {
+        val current = store.incident(id) ?: return
+        val staged = (current.staged + uris).distinct()
+        if (current.staged != staged) store.put(current.copy(staged = staged))
     }
 
     /** Called only after a successful external start, before its return record is saved. */
@@ -82,37 +87,50 @@ internal class SaveIncidentCopies(
     /** First outside bytes after a rebind (or an unfinished bypass) never reach ordinary reconcile. */
     suspend fun preserveBeforeLaunch(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves): Boolean {
         val key = player.saveFolderId()
-        if (!store.needsBackup(key, game)) return false
+        val quarantine = store.incident(regressionIncidentId(game, player))
+        val blocked = store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch }
+        if (!store.needsBackup(key, game) && quarantine == null && blocked == null) return false
         if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false
-        val observed = stage(game, player, spots, mark = false)
+        val observed = stage(game, player, spots, blocked, mark = false)
         if (outside.slots.any { slot -> observed.slots.none { it.slot == slot.slot } }) throw SaveNotPlaced()
         saves.noteHandedOver(game.backendId, game, player, spots, observed)
-        store.handled(key, game)
+        if (blocked == null) store.handled(key, game)
         keep(game, player)
         return true
     }
 
     suspend fun keep(game: Game, player: Player) {
-        for (copy in saves.queuedCopies().filter { it.game.backendId == game.backendId && it.game.remoteKey == game.remoteKey && it.playerKey == player.saveFolderId() })
-            keepCopy(copy, player)
+        for (copy in queued(game, player)) keepCopy(copy, player)
+    }
+
+    fun hasQueued(game: Game, player: Player): Boolean = queued(game, player).isNotEmpty()
+
+    private fun queued(game: Game, player: Player) = saves.queuedCopies().filter {
+        it.game.backendId == game.backendId && it.game.remoteKey == game.remoteKey && it.playerKey == player.saveFolderId() && belongsToCurrentServer(it)
     }
 
     /** A successful connection retries every queued game, including incidents closed in an older process. */
     suspend fun keepAll(libraryId: String) {
-        for (copy in saves.queuedCopies().filter { it.game.backendId == libraryId }) {
+        for (copy in saves.queuedCopies().filter { it.game.backendId == libraryId && belongsToCurrentServer(it) }) {
             val player = plugins.player(copy.playerId) ?: plugins.playerIds().mapNotNull(plugins::player).firstOrNull { it.saveFolderId() == copy.playerKey }
             if (player != null) keepCopy(copy, player)
         }
     }
 
+    private fun belongsToCurrentServer(copy: StagedSaveCopy) = copy.origin == null || copy.origin == rommOrigin()
+
     private suspend fun keepCopy(copy: StagedSaveCopy, player: Player) {
         try {
-            val kept = plugins.library(copy.game.backendId)?.keepAsBackups(copy.game, player, ObservedSaves(listOf(copy.slot)))
-                ?: throw PluginException.Unavailable("No save backend")
+            val library = plugins.library(copy.game.backendId) ?: throw PluginException.Unavailable("No save backend")
+            val observed = ObservedSaves(listOf(copy.slot))
+            val kept = if (copy.origin != null) keepRommRepairBackup(library, copy.game, player, observed, copy.origin)
+                else library.keepAsBackups(copy.game, player, observed)
             if (kept.size != 1 || kept.single().isBlank()) throw PluginException.Unavailable("Backup did not verify")
             store.incidents().filter { it.playerKey == copy.playerKey && copy.slot.contentUri in it.staged }.forEach { current ->
-                store.put(current.copy(kept = (current.kept + kept).distinct(), staged = current.staged.filterNot { it == copy.slot.contentUri }))
+                val candidate = if (current.quarantineSourceUri == copy.slot.contentUri) kept.single() else current.quarantineBackupId
+                store.put(current.copy(kept = (current.kept + kept).distinct(),
+                    staged = current.staged.filterNot { it == copy.slot.contentUri }, quarantineBackupId = candidate))
             }
             saves.removeQueuedCopy(copy)
         } catch (cancelled: CancellationException) { throw cancelled

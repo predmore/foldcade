@@ -1,5 +1,6 @@
 package app.foldcade
 
+import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.language.SaveProtectionCopy
@@ -34,7 +35,22 @@ internal sealed interface EdenSaveAccess {
 /** A null UUID here means the profile database was absent at prepare. */
 internal data class EdenSaveSession(val saveRoot: String, val nandRoot: String, val user: String?)
 
-internal data class EdenReturnPlan(val spots: List<SaveSpot>, val backupOnly: Boolean = false, val change: String? = null)
+internal data class EdenReturnPlan(
+    val spots: List<SaveSpot>, val backupOnly: Boolean = false, val change: String? = null, val context: EdenSaveSession? = null,
+)
+
+internal data class EdenRepairTarget(val spot: SaveSpot, val session: EdenSaveSession)
+
+/** A repair is for this known account in these resolved directories. */
+internal fun EdenSaveSession.repairKey(): String? = user?.let { uuid -> listOf(saveRoot, nandRoot, uuid).joinToString("\u0000") }
+
+internal fun PlayerSaves.edenRepairTarget(player: EdenPlayer, game: Game, target: LaunchTarget, key: String?): EdenRepairTarget? {
+    if (key == null) return null
+    val access = edenSaveAccess(player, game) as? EdenSaveAccess.Ready ?: return null
+    val session = access.session()?.takeIf { it.repairKey() == key } ?: return null
+    val spot = spots(player, game, target, eden = access).singleOrNull() ?: return null
+    return EdenRepairTarget(spot, session)
+}
 
 internal fun planEdenReturn(saves: PlayerSaves, pending: LibraryReturn, player: EdenPlayer): EdenReturnPlan {
     val frozen = pending.edenSession ?: return EdenReturnPlan(pending.spots, backupOnly = true)
@@ -53,7 +69,7 @@ internal fun planEdenReturn(saves: PlayerSaves, pending: LibraryReturn, player: 
     if (placed != null && live != null && placed.folders != live.folders) {
         return EdenReturnPlan(listOf(placed, live), backupOnly = true, change = SaveProtectionCopy.edenLocationChanged)
     }
-    return EdenReturnPlan(fresh, backupOnly = pending.unprotectedSession || pending.preserveAsBackup)
+    return EdenReturnPlan(fresh, backupOnly = pending.unprotectedSession || pending.preserveAsBackup, context = current)
 }
 
 internal fun resolveEdenSaveAccess(

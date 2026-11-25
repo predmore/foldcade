@@ -1961,6 +1961,9 @@ sealed interface Effect {
     data object RequestHome : Effect
     data object OpenAllFilesAccess : Effect
     data class OpenSaveFix(val incidentId: String) : Effect
+    data class ChooseRepairSave(val incidentId: String) : Effect
+    data class RetrySaveRepair(val incidentId: String) : Effect
+    data class CloseRepairGame(val incidentId: String) : Effect
     data class PickFixFolder(val incidentId: String) : Effect
     data class FinishSaveFix(val incidentId: String, val openSaves: Boolean = true) : Effect
     data object CancelSaveFix : Effect
@@ -2095,6 +2098,7 @@ sealed interface Effect {
         val id: String,
         val action: SaveConflictAction,
         val preview: Boolean = false,
+        val repair: RepairState.Choosing? = null,
     ) : Effect
 }
 
@@ -2387,7 +2391,7 @@ fun reduce(
         if (meaning == Meaning.LeftPanel || meaning == Meaning.RightPanel) return coerced to null
         val (next, action) = applySaveConflict(conflict, meaning)
         val effect = action?.let {
-            Effect.ResolveSaveConflict(conflict.libraryId, conflict.id, it, conflict.preview)
+            Effect.ResolveSaveConflict(conflict.libraryId, conflict.id, it, conflict.preview, conflict.repair)
         }
         return coerced.copy(saveConflict = if (action != null) null else next) to effect
     }

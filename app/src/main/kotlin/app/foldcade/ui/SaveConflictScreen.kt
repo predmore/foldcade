@@ -68,7 +68,7 @@ internal fun SaveConflictTop(prompt: SaveConflictPrompt, controls: HostScreen) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         BasicLine(prompt.gameLabel, theme.onBackground, LocalFoldTheme.current.theme.style.type.conflictGame.value, theme, TextAlign.Center, display = true)
-        BasicLine(Copy.saveConflictTitle, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center, display = true)
+        BasicLine(prompt.title, theme.onBackground, LocalFoldTheme.current.theme.style.type.heroTitle.value, theme, TextAlign.Center, display = true)
         BasicLine(Copy.saveConflictTop(controls), theme.muted, LocalFoldTheme.current.theme.style.type.heroMeta.value, theme, TextAlign.Center)
     }
 }
@@ -129,9 +129,9 @@ internal fun SaveConflictBottom(
                     .padding(inset),
                 verticalArrangement = Arrangement.spacedBy(if (fit.compact) 2.dp else 6.dp),
             ) {
-                BasicLine(Copy.saveConflictTitle, theme.onBackground, type.dialogTitle.value, theme, TextAlign.Start, maxLines = 1, display = true, weight = type.strongWeight)
+                BasicLine(prompt.title, theme.onBackground, type.dialogTitle.value, theme, TextAlign.Start, display = true, weight = type.strongWeight)
                 BasicLine(prompt.gameLabel, theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
-                BasicLine(Copy.saveConflictBody, theme.muted, type.dialogBody.value, theme, TextAlign.Start)
+                BasicLine(prompt.body, theme.muted, type.dialogBody.value, theme, TextAlign.Start)
                 Row(
                     Modifier
                         .padding(top = gap)
@@ -140,7 +140,7 @@ internal fun SaveConflictBottom(
                     horizontalArrangement = Arrangement.spacedBy(gap),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    val newer = newerSide(prompt)
+                    val newer = if (prompt.repair == null) newerSide(prompt) else null
                     SaveCard(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, confirmKey, Modifier.weight(1f)) {
                         onFocus(SaveConflictFocus.Local)
                     }
@@ -153,13 +153,15 @@ internal fun SaveConflictBottom(
                     horizontalArrangement = Arrangement.spacedBy(gap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ConflictChip(
-                        label = Copy.keepBoth,
-                        focused = prompt.focus == SaveConflictFocus.KeepBoth,
-                        compact = fit.compact,
-                        modifier = Modifier,
-                        onClick = { onFocus(SaveConflictFocus.KeepBoth) },
-                    )
+                    if (prompt.canKeepBoth) {
+                        ConflictChip(
+                            label = Copy.keepBoth,
+                            focused = prompt.focus == SaveConflictFocus.KeepBoth,
+                            compact = fit.compact,
+                            modifier = Modifier,
+                            onClick = { onFocus(SaveConflictFocus.KeepBoth) },
+                        )
+                    }
                     LaterChip(compact = fit.compact, backKey = backKey, modifier = Modifier, onClick = onLater)
                 }
             }
@@ -199,6 +201,8 @@ private fun SaveCard(
     ) {
         BasicLine(side.source, theme.onBackground, type.menuRow.value, theme, TextAlign.Start, maxLines = 2)
         BasicLine(formatSaveWhen(side.updatedAtMillis, dateStyle), theme.onBackground, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2)
+        side.where?.let { BasicLine(it, theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2) }
+        side.note?.let { BasicLine(it, theme.style.colors.attention, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2) }
         // The newer copy says so in the focus colour, so the two times need no comparing.
         val size = formatSaveSize(side.sizeBytes)
         BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
