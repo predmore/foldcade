@@ -102,7 +102,7 @@ sealed interface SaveStatus {
     data class Protected(val receiptMillis: Long?, val checkedMillis: Long) : SaveStatus
 }
 
-enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
+enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommCopyUnconfirmed, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
 
 
 
@@ -218,6 +218,7 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus = with(facts) {
         offDevice is OffDeviceFact.Unreachable -> SaveStatus.Unconfirmed(UnconfirmedWhy.RommUnreachable, offDevice.lastReceiptMillis)
         location is LocationFact.Verified && spot == SpotFact.Resolved && offDevice == OffDeviceFact.NothingYet -> SaveStatus.NothingYet
         location is LocationFact.Verified && spot == SpotFact.Resolved && offDevice is OffDeviceFact.OnRomm -> SaveStatus.Protected(offDevice.atMillis, location.atMillis)
+        location is LocationFact.Verified && spot == SpotFact.Resolved -> SaveStatus.Unconfirmed(UnconfirmedWhy.RommCopyUnconfirmed)
         else -> SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
     }
 }
@@ -243,6 +244,7 @@ fun saveStatusLine(status: SaveStatus, now: Long = System.currentTimeMillis()): 
     is SaveStatus.Unconfirmed -> when (status.why) {
         UnconfirmedWhy.FolderNotChecked -> "Save folder not checked yet"
         UnconfirmedWhy.GameNotChecked -> "Save not checked yet"
+        UnconfirmedWhy.RommCopyUnconfirmed -> "Save checked · No RomM copy confirmed"
         UnconfirmedWhy.RommUnreachable -> "Can’t reach RomM" + (status.lastReceiptMillis?.let { " · last saved ${saveAge(it, now)}" } ?: "")
         UnconfirmedWhy.PartnerCloud -> (status.keeper as? SaveKeeper.Partner).let { "Saves in ${it?.cloud ?: it?.name ?: "the player"} · not confirmed" }
         UnconfirmedWhy.HostComputer -> "Saves on your computer"

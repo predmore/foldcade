@@ -466,6 +466,48 @@ class LaunchSavesTest {
         }
     }
 
+    @Test fun duckStationSameStartAfterClosingUsesTheSerialCardFromTheNewBoot() = runBlocking {
+        val title = "Castlevania - Symphony of the Night (USA)_1.mcd"
+        val serial = "SLUS-00067_1.mcd"
+        with(DuckStationReturnFixture(expected = title)) {
+            val serialBytes = ByteArray(128 * 1024) { 2 }
+            docs.files["$hostedUri/$title"] = ByteArray(128 * 1024) { 1 }
+            docs.files["$hostedUri/$serial"] = serialBytes
+            saves.noteHandedOver(server.id, game, duck, spots, saves.changedSince(server.id, game, duck, spots))
+            val first = LibraryReturn(game.backendId, game, duck, spots, baseline = reading.copy(atMillis = 90),
+                sessionStartedAtMillis = 100, sessionEndedAtMillis = 200)
+            opened(title, 110, "r", HostedCardClose.Detached)
+            judge(start = first.sessionStartedAtMillis!!, end = first.sessionEndedAtMillis!!, startedByFoldcade = true)
+            assertTrue(store.hostedCardChecked(duck.id, game))
+            assertTrue(store.incidents().isEmpty())
+            assertEquals(OffDeviceFact.Unknown, readSaveReceipt(saves, server, game, spots))
+
+            // DuckStation was closed and changed to Serial in its own settings. Foldcade
+            // still holds the run, so the same start boots it using the new card type.
+            val running = RunningGame(homeGameId(game.backendId, game.remoteKey), game.label, game.platformId,
+                duck.packageNames.single(), DuckStationPlayer.EMULATION_ACTIVITY, Panel.Bottom, false, 100, first)
+            val resumed = copies.resume(running, sessionStartedAtMillis = 300) { true }!!.saves!!
+            assertEquals(null, resumed.sessionEndedAtMillis)
+            assertFalse(resumed.startedByFoldcade)
+            opened(serial, 310, "r", HostedCardClose.Detached)
+            val start = resumed.sessionStartedAtMillis!!
+            val end = 400L
+            judge(start = maxOf(start, resumed.baseline!!.atMillis), end = end, startedByFoldcade = resumed.startedByFoldcade)
+            probes.stageDuckStationReturn(duck, game, spots, start, end)
+            assertTrue(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
+            copies.keep(game, duck)
+
+            val incident = store.incidents().single()
+            assertEquals(serial, incident.live?.label)
+            assertEquals("Using SLUS-00067_1.mcd. Check before you play.", SaveProtectionCopy.noticeBody(incident))
+            assertEquals(listOf(md5Hex(serialBytes)), server.backups)
+            assertEquals(1, incident.kept.size)
+            assertTrue(saves.queuedCopies().isEmpty())
+            assertTrue(server.observed.isEmpty())
+            assertTrue(server.calls.isEmpty())
+        }
+    }
+
     @Test fun duckStationFolderStopRequiresNewerMatchingConfigBeforeAnOpenCanVerify() {
         with(DuckStationReturnFixture()) {
             opened(expected, 110, "r")
@@ -549,7 +591,7 @@ class LaunchSavesTest {
         }
     }
 
-    private inner class DuckStationReturnFixture(recordingSince: Long = 0) {
+    private inner class DuckStationReturnFixture(recordingSince: Long = 0, val expected: String = "RomM name_1.mcd") {
         private val appPackage = "app.foldcade"
         val duck = DuckStationPlayer()
         val game = owner.copy(platformId = duck.platformId)
@@ -559,7 +601,6 @@ class LaunchSavesTest {
         val hostedPath = "/android_content/$appPackage.saves/tree@foldcade/${duck.id}"
         val bound = FolderRef(storageIdentity(hostedUri), duck.hostedFolderTitle)
         val reading = ProbeSnapshot(200, 10, caller.packageName, listOf(RootReading(bound, true, emptyList(), null, true, null, true)))
-        val expected = "RomM name_1.mcd"
         val alternate = "DuckStation title_1.mcd"
         val spots = listOf(SaveSpot(DuckStationPlayer.CARD_SLOT, hostedUri, expected))
         val store = SaveProtectionStore(Files.createTempDirectory("duckstation-return"))
@@ -570,8 +611,9 @@ class LaunchSavesTest {
         }
         val probes = SaveProbes(context, saves, store, { null }, copies, hostedCardOpens = opens)
 
-        fun opened(name: String, at: Long, mode: String) {
-            opens.opened(HostedCardOpen(caller, "$rootId/$name", mode, canRead = 'r' in mode, canWrite = 'w' in mode, openedAtMillis = at))
+        fun opened(name: String, at: Long, mode: String, closeStatus: HostedCardClose? = null) {
+            val id = opens.opened(HostedCardOpen(caller, "$rootId/$name", mode, canRead = 'r' in mode, canWrite = 'w' in mode, openedAtMillis = at))
+            if (closeStatus != null) opens.closed(id, at + 1, closeStatus)
         }
 
         fun published(from: String, to: String, at: Long) =

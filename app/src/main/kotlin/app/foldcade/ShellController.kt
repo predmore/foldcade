@@ -811,9 +811,11 @@ class ShellController(
 
     internal fun protectionRoutes(): List<GameRoute> = libraryGames.keys.mapNotNull { launchRoute(tileOf(it)) }.distinctBy { it.tileId }
 
-    private fun checkedSaveReachability(game: Game, player: Player, reachable: Boolean?): Boolean? =
-        if (reachable == true && player is app.foldcade.plugins.duckstation.DuckStationPlayer && !hostedCardChecked(player, game)) null
-        else reachable
+    private fun checkedSaveReachability(game: Game, player: Player, reachable: Boolean?): Boolean? = when {
+        player !is app.foldcade.plugins.duckstation.DuckStationPlayer || reachable == false -> reachable
+        saveLocations[player.saveFolderId()] is LocationFact.Verified && hostedCardChecked(player, game) -> true
+        else -> null
+    }
 
     internal fun setSaveService(libraryId: String, state: app.foldcade.api.plugin.SaveServiceState) {
         saveServices[libraryId] = state

@@ -45,7 +45,8 @@ class SaveProtectionTest {
         assertEquals(SaveStatus.NothingYet, deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.NothingYet)))
         assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts))
         assertEquals(SaveStatus.Protected(10, 20), deriveSaveStatus(facts.copy(incidents = listOf(incident.copy(repair = RepairState.Done)))))
-        assertTrue(deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unknown)) is SaveStatus.Unconfirmed)
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.RommCopyUnconfirmed),
+            deriveSaveStatus(facts.copy(offDevice = OffDeviceFact.Unknown)))
     }
 
     @Test fun noProtectedWithoutVerifiedAndOnRomm() {

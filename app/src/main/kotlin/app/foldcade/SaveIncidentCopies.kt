@@ -68,11 +68,13 @@ internal class SaveIncidentCopies(
     }
 
     /** Bring an existing run forward without save preparation, then latch any open incident. */
-    suspend fun resume(running: RunningGame, start: () -> Boolean): RunningGame? {
+    suspend fun resume(running: RunningGame, sessionStartedAtMillis: Long? = null, start: () -> Boolean): RunningGame? {
         if (!start()) return null
         val saves = running.saves?.let { pending ->
             pending.copy(preserveAsBackup = beginUnprotected(pending.game, pending.player) || pending.preserveAsBackup,
-                startedByFoldcade = false)
+                startedByFoldcade = false,
+                sessionStartedAtMillis = sessionStartedAtMillis ?: pending.sessionStartedAtMillis,
+                sessionEndedAtMillis = if (sessionStartedAtMillis == null) pending.sessionEndedAtMillis else null)
         }
         return running.copy(saves = saves)
     }

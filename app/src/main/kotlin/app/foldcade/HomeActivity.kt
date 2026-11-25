@@ -2193,15 +2193,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
 
     /** Caller holds saveFlow, so an older read-back cannot clear the resumed record. */
     private suspend fun rememberResume(running: RunningGame, continuing: Boolean, start: () -> Boolean): Boolean = withContext(NonCancellable) {
+        // A same-start intent can boot a closed game, so measure before sending it.
+        val startedAt = if (continuing) null else System.currentTimeMillis()
         val resumed = try {
-            foldcade.saveIncidentCopies.resume(running, start)
+            foldcade.saveIncidentCopies.resume(running, sessionStartedAtMillis = startedAt, start = start)
         } catch (_: ActivityNotFoundException) {
             foldcade.runningGames.forget(running.packageName)
             null
         } ?: return@withContext false
-        val pending = resumed.saves?.let {
-            if (continuing) it else it.copy(sessionStartedAtMillis = System.currentTimeMillis(), sessionEndedAtMillis = null)
-        }
+        val pending = resumed.saves
         if (pending != null) {
             if (continuing) {
                 val assignment = displays.assignment(foldcade.store.session.defaultDisplayIsTop)
@@ -2213,7 +2213,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             withContext(Dispatchers.IO) { foldcade.store.setPendingSaveReturn(pending.storeKey, pending.encode()) }
         }
-        foldcade.runningGames.note(resumed.copy(saves = pending, panel = landedPanel() ?: running.panel))
+        foldcade.runningGames.note(resumed.copy(panel = landedPanel() ?: running.panel))
         true
     }
 

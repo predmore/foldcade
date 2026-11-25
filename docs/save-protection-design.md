@@ -129,7 +129,7 @@ sealed interface SaveStatus {
     data class Protected(val receiptMillis: Long?, val checkedMillis: Long) : SaveStatus
 }
 
-enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
+enum class UnconfirmedWhy { FolderNotChecked, GameNotChecked, RommCopyUnconfirmed, RommUnreachable, PartnerCloud, HostComputer, AppKeepsSaves, NoPlayer }
 
 fun deriveSaveStatus(facts: SaveFacts): SaveStatus
 ```
@@ -150,7 +150,8 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus
 | 10 | Emulator, and `offDevice is Unreachable` | `Unconfirmed(RommUnreachable, last)` | Quiet |
 | 11 | Emulator, `location is Verified`, `spot is Resolved`, `offDevice is NothingYet` | `NothingYet` | Quiet |
 | 12 | Emulator, `location is Verified`, `spot is Resolved`, `offDevice is OnRomm` | `Protected` | Clear |
-| 13 | Otherwise | `Unconfirmed(FolderNotChecked)` | Quiet |
+| 13 | Emulator, `location is Verified`, `spot is Resolved`, and no matching RomM receipt | `Unconfirmed(RommCopyUnconfirmed)` | Quiet |
+| 14 | Otherwise | `Unconfirmed(FolderNotChecked)` | Quiet |
 
 The rule is that `Protected` is the only status built from proof, and only rows 11 and 12 need `Verified`. Unknown on its own always falls to `Unconfirmed`, which has its own words and never draws a check. `SaveProtectionTest` covers the whole table, including a test that every `LocationFact` × `OffDeviceFact` pair without `Verified` and `OnRomm` gives something other than `Protected`.
 
@@ -615,6 +616,7 @@ The voice follows `SaveSetupCopy`: one or two words for a control, one short sen
 | DeviceOnly PlayerCantSync | `"$emulator saves only on this device"` | amber |
 | Unconfirmed FolderNotChecked | `"Save folder not checked yet"` | quiet |
 | Unconfirmed GameNotChecked | `"Save not checked yet"` | quiet |
+| Unconfirmed RommCopyUnconfirmed | `"Save checked · No RomM copy confirmed"` | quiet |
 | Unconfirmed RommUnreachable | `"Can’t reach RomM · last saved ${age}"`, or `"Can’t reach RomM"` | quiet |
 | Unconfirmed PartnerCloud | `"Saves in ${cloud ?: partner} · not confirmed"`, e.g. "Saves in Steam Cloud · not confirmed" | quiet |
 | Unconfirmed HostComputer | `"Saves on your computer"` | quiet |
@@ -884,7 +886,7 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 3: DuckStation hosted-open evidence.**
 
-- `HostedSavesProvider` keeps a bounded in-memory log. Judgement uses the selected package, UID, hosted root and the session's start and return times. Android reports native descriptor detach as a distinct listener status. The native file can still be in use. [Android descriptor lifecycle](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-16.0.0_r1/core/java/android/os/ParcelFileDescriptor.java#L1091)
+- `HostedSavesProvider` keeps a bounded in-memory log. Judgement uses the selected package, UID, hosted root and the session's start and return times. Sending the same start to resume DuckStation begins a new card-open window because Android may boot the game again after it closes. Android reports native descriptor detach as a distinct listener status. The native file can still be in use. [Android descriptor lifecycle](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-16.0.0_r1/core/java/android/os/ParcelFileDescriptor.java#L1091)
 - A read-only open verifies the card path whatever the close status. A successful rename into the expected card can also verify the path. An open for writing alone cannot show completed bytes. Foldcade queues one clearly identified per-game card as an unslotted Backup. Changes to the expected card while the mismatch remains are also Backup-only. Mixed eligible opens leave the card association unresolved.
 - With the data grant to DuckStation's own data folder, parse global settings and layer each per-game file over them. A folder verdict needs agreement across the possible outcomes because Foldcade cannot reliably pick a serial or disc-set override from a ROM filename. An explicitly configured directory elsewhere, newer than the latest hosted proof, gives `WrongFolder` even if the hosted grant remains. Return to **Foldcade** in DuckStation's folder picker. Only newer matching configuration clears this stop. A later matching open checks the game again.
 - When Android blocks the data grant, Settings reports **Can’t read config** separately from the hosted check. See §4.2 for the non-gating silent-session rule.
