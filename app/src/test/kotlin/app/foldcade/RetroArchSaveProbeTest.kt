@@ -37,6 +37,14 @@ class RetroArchSaveProbeTest {
         assertEquals(RetroArchConfigFile.Unreadable, files.config(config))
     }
 
+    @Test fun aGrantToAnotherPackagesAppDataCannotProveRetroArchUsesIt() {
+        val dir = "$SHARED_STORAGE/Android/data/com.retroarch/files"
+        val uri = treeUri(SharedPaths.EXTERNAL_STORAGE_AUTHORITY, "primary:Android/data/com.retroarch/files")
+        val files = RetroArchSaveFiles(listOf(SaveFolderGrant(uri, true, true)), app, pkg, { fail("other app data"); emptyAccess }, null)
+        assertFalse(files.isDirectory(dir))
+        assertEquals(RetroArchConfigFile.Unreadable, files.config("$dir/mGBA.cfg"))
+    }
+
     @Test fun ownedRommCandidateDistinguishesAnAbsentSaveFromAnUnreadableOrUnownedOne() {
         val owned = Files.createTempDirectory("retroarch-owned").toRealPath()
         val game = Files.createDirectory(owned.resolve("game"))

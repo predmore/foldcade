@@ -4,6 +4,7 @@ import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.language.FolderRef
 import app.foldcade.plugins.retroarch.RetroArchConfigFile
 import app.foldcade.plugins.retroarch.RetroArchPlayer
+import app.foldcade.plugins.retroarch.INTERNAL_DATA
 import app.foldcade.plugins.retroarch.SHARED_STORAGE
 import app.foldcade.plugins.retroarch.absoluteRetroArchPath
 import java.net.URI
@@ -43,16 +44,26 @@ internal class RetroArchSaveFiles(
         }
     }.getOrNull()
 
-    fun config(path: String): RetroArchConfigFile = when (val read = read(path, CONFIG_LIMIT)) {
-        is FileReading.Bytes -> try {
-            RetroArchConfigFile.Read(Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(read.bytes)).toString())
-        } catch (_: java.nio.charset.CharacterCodingException) { RetroArchConfigFile.Unreadable }
-        FileReading.Missing -> RetroArchConfigFile.Missing
-        FileReading.Unreadable -> RetroArchConfigFile.Unreadable
+    fun config(path: String): RetroArchConfigFile {
+        if (foreignAppDirectory(path)) return RetroArchConfigFile.Unreadable
+        return when (val read = read(path, CONFIG_LIMIT)) {
+            is FileReading.Bytes -> try {
+                RetroArchConfigFile.Read(Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(read.bytes)).toString())
+            } catch (_: java.nio.charset.CharacterCodingException) { RetroArchConfigFile.Unreadable }
+            FileReading.Missing -> RetroArchConfigFile.Missing
+            FileReading.Unreadable -> RetroArchConfigFile.Unreadable
+        }
     }
 
-    fun isDirectory(path: String): Boolean = owned(path)?.let { Files.isDirectory(it, NOFOLLOW_LINKS) } == true ||
-        covering(path).any { (tree, relative) -> access(tree.uri).list(relative) != null }
+    fun isDirectory(path: String): Boolean = !foreignAppDirectory(path) &&
+        (owned(path)?.let { Files.isDirectory(it, NOFOLLOW_LINKS) } == true ||
+            covering(path).any { (tree, relative) -> access(tree.uri).list(relative) != null })
+
+    /** A grant to Foldcade cannot prove RetroArch can use another package's app data. */
+    private fun foreignAppDirectory(path: String): Boolean {
+        val root = listOf("$SHARED_STORAGE/Android/data/", "$INTERNAL_DATA/").firstOrNull(path::startsWith) ?: return false
+        return path.removePrefix(root).substringBefore('/') != playerPackage
+    }
 
     fun candidate(path: String): RetroArchCandidate {
         val directory = path.substringBeforeLast('/')
