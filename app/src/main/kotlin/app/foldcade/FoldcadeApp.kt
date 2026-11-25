@@ -200,7 +200,7 @@ class FoldcadeApp : Application() {
             store,
             filesDir.toPath().resolve("save-backups"),
             filesDir.toPath().resolve("save-handover"),
-            edenGrant = { id -> edenExternalGrant(id, folders.grants(emptyList()))?.takeIf(folders::isDirectory) },
+            edenGrant = { id -> edenExternalGrant(id, folders.grants(emptyList())) },
             edenReadsAllowed = ::edenSaveReadsAllowed,
         ) { uri -> ContentGameFile(contentResolver, uri) }
     }
@@ -1695,9 +1695,9 @@ class FoldcadeApp : Application() {
                 withContext(Dispatchers.Main.immediate) { shell.setSaveDestination(game, app.foldcade.language.OffDeviceFact.Unknown) }
                 continue
             }
-            withContext(Dispatchers.Main.immediate) {
-                shell.noteSaveReachable(game, player.id, spots.isNotEmpty() && player.saveDeclarations(game).all { declaration -> spots.any { it.slot == declaration.slot } })
-            }
+            val reachable = spots.isNotEmpty() && player.saveDeclarations(game).all { declaration -> spots.any { it.slot == declaration.slot } }
+            val issue = if (!reachable && player is EdenPlayer) playerSaves.unresolvedEdenSpot(player, game) else null
+            withContext(Dispatchers.Main.immediate) { shell.noteSaveReachable(game, player.id, reachable, issue) }
             refreshSaveReceipt(game, player, spots)
         }
     }

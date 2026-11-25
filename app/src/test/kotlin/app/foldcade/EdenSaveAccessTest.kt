@@ -24,10 +24,10 @@ class EdenSaveAccessTest {
         assertEquals(EdenProfile.User("01" + "00".repeat(15)), default.profile)
         assertEquals(EvidenceKind.OwnProvider, (verdict(default) as RootVerdict.Uses).evidence.kind)
 
-        data.config(save = "/storage/emulated/0/$DATA_PATH/custom")
-        data.directories.add("custom")
+        data.config(save = "/storage/emulated/0/$DATA_PATH/custom #1")
+        data.directories.add("custom #1")
         val custom = resolve() as EdenSaveAccess.Ready
-        assertEquals("custom", custom.save.prefix)
+        assertEquals("custom #1", custom.save.prefix)
         assertEquals("nand", custom.nand.prefix)
         assertEquals(default.profile, custom.profile)
         assertEquals(EvidenceKind.Config, (verdict(custom) as RootVerdict.Uses).evidence.kind)
@@ -73,6 +73,14 @@ class EdenSaveAccessTest {
         assertEquals(RootVerdict.NoNews, verdict(resolve()))
     }
 
+    @Test fun aGrantedButUnavailableSdCardLeavesTheDestinationUnknown() {
+        data.config(save = "/storage/ABCD-1234/Saves/Eden")
+        grants.add(grant("ABCD-1234:Saves/Eden"))
+        assertTrue(resolve() is EdenSaveAccess.Ready)
+        external.directories.remove("")
+        assertEquals(EdenSaveAccess.Unknown, resolve())
+    }
+
     private fun resolve() = resolveEdenSaveAccess(DATA_URI, { uri -> if (uri == DATA_URI) data else external }, { edenExternalGrant(it, grants) })
     private fun verdict(access: EdenSaveAccess) = edenRootVerdict(bound, access, PACKAGE, 10L)
     private fun grant(id: String, write: Boolean = true) = SaveFolderGrant(treeUri("com.android.externalstorage.documents", id), true, write)
@@ -81,8 +89,26 @@ class EdenSaveAccessTest {
         val files = mutableMapOf<String, ByteArray>()
         val directories = mutableSetOf("")
 
-        fun config(nand: String = "", save: String = "") {
-            files["config/config.ini"] = "[Data%20Storage]\nnand_directory=$nand\nsave_directory=$save\n[System]\ncurrent_user=0".toByteArray()
+        fun config(nand: String = "/storage/emulated/0/$DATA_PATH/nand", save: String = "") {
+            val saveValue = if ('#' in save) "\"$save\"" else save
+            files["config/config.ini"] = """
+                [Data%20Storage]
+                nand_directory\default=false
+                nand_directory=$nand
+                save_directory\default=${save.isEmpty()}
+                save_directory=$saveValue
+
+                [System]
+                current_user\default=true
+                current_user=0
+
+                [UI]
+                Paths\gamedirs\size=0
+                Paths\nand_directory\default=false
+                Paths\nand_directory=$nand
+                Paths\save_directory\default=${save.isEmpty()}
+                Paths\save_directory=$saveValue
+            """.trimIndent().toByteArray()
         }
 
         fun profile(prefix: String, firstByte: Int) {

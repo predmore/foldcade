@@ -448,6 +448,59 @@ class PlayerSaveSearchTest {
         assertEquals("session progress", library.backupEntries.single().getValue("$TITLE/systemdata")!!.decodeToString())
     }
 
+    @Test
+    fun firstEdenCheckKeepsNewLayoutBytesAsABackupWithAnExistingLegacyMark() = runBlocking {
+        val player = eden(1)
+        val route = edenRoute(player)
+        val game = route.saves
+        val target = LaunchTarget.ContentUri(ROM)
+        val legacyPath = "${edenPath(1)}/systemdata"
+        docs.file(legacyPath, "previously tracked progress")
+        val legacy = saves.spots(player, game, target)
+        saves.noteHandedOver(game.backendId, game, player, legacy, saves.changedSince(game.backendId, game, player, legacy))
+        docs.file("nand/user/save/account/${"01" + "00".repeat(15)}/$TITLE/0/systemdata", "Eden progress")
+
+        val library = SaveLibrary().apply {
+            placement = app.foldcade.api.plugin.Placement(target, emptyList())
+            backupsOnline = true
+        }
+        val host = plugins(library)
+        val state = SaveProtectionStore(backups.resolve("protection"))
+        val copies = SaveIncidentCopies(saves, host, state)
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, state, { error("Eden resolution supplied") }, copies)
+        val pkg = player.packageNames.first()
+        val root = app.foldcade.language.FolderRef("$pkg.user:root", "Eden")
+        val reading = app.foldcade.language.RootReading(root, true, emptyList(), null, true, true, null)
+        val snapshot = app.foldcade.language.ProbeSnapshot(100, 1, pkg, listOf(reading))
+        val launch = LaunchSaves(saves, host, protectionGate = { _, _, access -> probes.check(player, snapshot, eden = access) },
+            preserveOutside = copies::preserveBeforeLaunch) { error("no save was placed") }
+
+        repeat(2) { launch.prepare(route, player, target) }
+        assertTrue(library.captured.isEmpty())
+        assertEquals("Eden progress", library.backupEntries.single().getValue("$TITLE/systemdata")!!.decodeToString())
+        assertEquals("previously tracked progress", docs.text(legacyPath))
+        assertFalse(state.needsBackup(player.saveFolderId(), game))
+    }
+
+    @Test
+    fun unresolvedEdenReportsTheFolderAndProfileProblems() {
+        val player = eden(1)
+        val game = edenRoute(player).saves
+        val target = LaunchTarget.ContentUri(ROM)
+        val config = "config/config.ini"
+        val profiles = "nand/system/save/8000000000000010/su/avators/profiles.dat"
+        fun reason() = saves.unresolvedSpot(player, game, target).reason
+
+        docs.files.remove(profiles)
+        assertEquals(app.foldcade.language.SpotIssue.NoProfile, reason())
+        docs.file(profiles, byteArrayOf(1))
+        assertEquals(app.foldcade.language.SpotIssue.EdenProfile, reason())
+        docs.file(config, "[Data%20Storage]\nsave_directory=/sdcard/NeedsGrant")
+        assertEquals(app.foldcade.language.SpotIssue.EdenGrant, reason())
+        docs.file(config, "[corrupt")
+        assertEquals(app.foldcade.language.SpotIssue.EdenLocation, reason())
+    }
+
     private fun edenRoute(player: Player): GameRoute {
         val game = GAME.copy(backendId = "server", platformId = player.platformId)
         return GameRoute("eden", game, game)

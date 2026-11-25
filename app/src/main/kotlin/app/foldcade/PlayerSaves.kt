@@ -18,6 +18,8 @@ import app.foldcade.api.plugin.SaveFolderHolder
 import app.foldcade.api.plugin.SaveFolderPart
 import app.foldcade.api.plugin.SaveFolderSearch
 import app.foldcade.api.plugin.SaveArchiveFilter
+import app.foldcade.language.SpotFact
+import app.foldcade.language.SpotIssue
 import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.eden.EdenProfile
@@ -282,11 +284,10 @@ internal class PlayerSaves(
             val uri = when (target) { is LaunchTarget.ContentUri -> target.uri; is LaunchTarget.SharedFile -> target.uri; else -> null }
             val name = uri?.let(docs::displayName)
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
+            if (player is EdenPlayer) return unresolvedEdenSpot(player, game)
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
             val sync = folder?.let { saveSync(player, it) }
             if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
-            if (player is EdenPlayer && (edenSaveAccess(player, game) as? EdenSaveAccess.Ready)?.profile == EdenProfile.Missing)
-                return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoProfile)
             val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
             if (player is DolphinPlayer && extension !in setOf("iso", "gcm")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedImage,
                 app.foldcade.language.SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT).ifEmpty { "This file type" }, "ISO and GCM"))
@@ -825,6 +826,16 @@ internal class PlayerSaves(
 
     fun edenSaveAccess(player: EdenPlayer, game: Game): EdenSaveAccess =
         player.saveDeclarations(game).singleOrNull()?.locationUri?.let { edenSaveAccess(player, it) } ?: EdenSaveAccess.Unknown
+
+    fun unresolvedEdenSpot(player: EdenPlayer, game: Game): SpotFact.Unresolved = when (val access = edenSaveAccess(player, game)) {
+        EdenSaveAccess.Unknown -> SpotFact.Unresolved(SpotIssue.EdenLocation)
+        is EdenSaveAccess.NeedsGrant -> SpotFact.Unresolved(SpotIssue.EdenGrant)
+        is EdenSaveAccess.Ready -> when (access.profile) {
+            EdenProfile.Missing -> SpotFact.Unresolved(SpotIssue.NoProfile)
+            EdenProfile.Unreadable -> SpotFact.Unresolved(SpotIssue.EdenProfile)
+            is EdenProfile.User -> SpotFact.Unresolved(SpotIssue.NoTitleId, "Foldcade couldn’t find this Switch game’s save folder.")
+        }
+    }
 
     fun edenSaveAccess(player: EdenPlayer, folderUri: String): EdenSaveAccess = try {
         if (edenReadsAllowed()) resolveEdenSaveAccess(folderUri, { edenFolderAccess(player, it) }, edenGrant) else EdenSaveAccess.Unknown

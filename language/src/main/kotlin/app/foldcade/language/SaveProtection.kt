@@ -71,7 +71,7 @@ sealed interface SpotFact {
 }
 
 /** Why a game's save has no place. Each one has its own sentence (§6.3). */
-enum class SpotIssue { NoTitleId, UnsupportedImage, NoProfile, CardNotFolder, ArchiveName, Unreadable }
+enum class SpotIssue { NoTitleId, UnsupportedImage, NoProfile, CardNotFolder, ArchiveName, Unreadable, EdenLocation, EdenGrant, EdenProfile }
 
 sealed interface OffDeviceFact {
     /** RomM accepted the bytes the working copy holds now. [atMillis] null for ledgers older than this design. */
@@ -353,6 +353,9 @@ object SaveProtectionCopy {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."
         SpotIssue.UnsupportedImage -> "This file type doesn’t sync yet."
         SpotIssue.NoProfile -> Copy.edenSaveNeedsUser
+        SpotIssue.EdenLocation -> "Foldcade couldn’t check where Eden keeps this save."
+        SpotIssue.EdenGrant -> "Allow access to Eden’s folder in Foldcade."
+        SpotIssue.EdenProfile -> "Foldcade couldn’t read Eden’s selected user. Check Eden’s Profile Manager."
         SpotIssue.CardNotFolder -> "Choose a folder memory card in the emulator."
         SpotIssue.ArchiveName -> SavePickerCopy.incompatible
         SpotIssue.Unreadable -> "Foldcade couldn’t read the game file. Try again once it’s downloaded."

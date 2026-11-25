@@ -67,15 +67,15 @@ internal class SaveProtectionStore(private val directory: Path) {
         row.rebound(atMillis)
     }
 
-    /** Eden keeps the same provider binding when its configured paths or account change. */
+    /** The first Eden reading and later context changes can resolve different bytes under the same mark. */
     @Synchronized fun observeEdenContext(key: String, current: EdenSaveSession, atMillis: Long) {
         val previous = handovers.optJSONObject(key)?.optJSONObject("edenSession")?.let(::edenSessionFromJson)
         // A temporarily missing profile does not replace a previously established account.
         val observed = current.copy(user = current.user ?: previous?.user)
         if (observed == previous) return
         editHandover(key) { row ->
-            if (previous != null && (previous.saveRoot != observed.saveRoot || previous.nandRoot != observed.nandRoot ||
-                    previous.user != null && previous.user != observed.user)) row.rebound(atMillis)
+            if (previous == null || previous.saveRoot != observed.saveRoot || previous.nandRoot != observed.nandRoot ||
+                previous.user != null && previous.user != observed.user) row.rebound(atMillis)
             row.put("edenSession", observed.toJson())
         }
     }

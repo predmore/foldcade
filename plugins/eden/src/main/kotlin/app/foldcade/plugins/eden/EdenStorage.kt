@@ -8,6 +8,7 @@ import java.util.Locale
 private const val CONFIG = "config/config.ini"
 private const val PROFILES = "system/save/8000000000000010/su/avators/profiles.dat"
 private const val PROFILES_SIZE = 0x650
+private const val MAX_PROFILES = 8
 
 data class EdenStorageConfig(val nandDirectory: String?, val saveDirectory: String?, val currentUser: Int?)
 
@@ -19,6 +20,7 @@ fun readEdenStorageConfig(folder: SaveFolderAccess): EdenStorageConfig? {
     if ('\u0000' in text) return null
     var section: String? = null
     var recognizedSection = false
+    var hasUi = false
     val settings = mutableMapOf<String, String>()
     for (raw in text.removePrefix("\uFEFF").lineSequence()) {
         val line = raw.trim()
@@ -27,6 +29,7 @@ fun readEdenStorageConfig(folder: SaveFolderAccess): EdenStorageConfig? {
             if (!line.endsWith(']')) return null
             section = line.substring(1, line.lastIndex).replace("%20", " ").lowercase(Locale.ROOT)
             if (section == "data storage" || section == "system") recognizedSection = true
+            if (section == "ui") hasUi = true
             continue
         }
         val separator = line.indexOf('=')
@@ -35,19 +38,30 @@ fun readEdenStorageConfig(folder: SaveFolderAccess): EdenStorageConfig? {
         val setting = when (section) {
             "data storage" -> key.takeIf { it == "nand_directory" || it == "save_directory" }
             "system" -> key.takeIf { it == "current_user" || it == "current_user\\default" }
+            "ui" -> key.takeIf { it == "paths\\nand_directory" || it == "paths\\save_directory" }
             else -> null
         } ?: continue
         val value = line.substring(separator + 1).trim().replace("\"", "")
         if (settings.put(setting, value) != null) return null
     }
-    if (!recognizedSection) return null
+    if (!recognizedSection && settings.isEmpty()) return null
+    val dataNand = settings["nand_directory"].orEmpty()
+    val uiNand = settings["paths\\nand_directory"].orEmpty()
+    if (uiNand.isNotEmpty() && dataNand.isNotEmpty() && uiNand != dataNand) return null
+    val nand = uiNand.ifEmpty { dataNand }
+    val dataSave = settings["save_directory"]
+    val save = if (hasUi) {
+        // Android reads UI paths after Data Storage. A blank UI save path selects NAND.
+        val uiSave = settings["paths\\save_directory"].orEmpty()
+        if (dataSave != null && dataSave.ifEmpty { nand } != uiSave.ifEmpty { nand }) return null
+        uiSave
+    } else dataSave.orEmpty()
     val currentUser = when (settings["current_user\\default"]?.lowercase(Locale.ROOT)) {
         null, "true", "yes", "on", "1" -> 0
-        "false", "no", "off", "0" -> settings["current_user"]?.toIntOrNull()?.takeIf { it in 0..7 }
+        "false", "no", "off", "0" -> settings["current_user"]?.toIntOrNull()?.coerceIn(0, MAX_PROFILES - 1)
         else -> null
     }
-    return EdenStorageConfig(settings["nand_directory"]?.takeIf { it.isNotEmpty() },
-        settings["save_directory"]?.takeIf { it.isNotEmpty() }, currentUser)
+    return EdenStorageConfig(nand.takeIf { it.isNotEmpty() }, save.takeIf { it.isNotEmpty() }, currentUser)
 }
 
 sealed interface EdenProfile {
@@ -67,11 +81,11 @@ fun readEdenProfile(nand: SaveFolderAccess, prefix: String, index: Int?): EdenPr
     val profiles = nand.read(path, PROFILES_SIZE) ?: return EdenProfile.Unreadable
     if (profiles.size != PROFILES_SIZE) return EdenProfile.Unreadable
     // Eden loads valid records in their stored order and skips unused entries.
-    val users = (0..7).mapNotNull { entryIndex ->
+    val users = (0 until MAX_PROFILES).mapNotNull { entryIndex ->
         val start = 0x10 + entryIndex * 0xC8
         profiles.copyOfRange(start, start + 16).takeIf { uuid -> uuid.any { it != 0.toByte() } }?.toHexString()
-    }.distinct()
-    return users.getOrNull(index)?.let(EdenProfile::User) ?: EdenProfile.Unreadable
+    }
+    return (users.getOrNull(index) ?: users.firstOrNull())?.let(EdenProfile::User) ?: EdenProfile.Unreadable
 }
 
 /** Match SaveDataFactory::GetFullPath. Both layouts use the same title folder in RomM's ZIP. */

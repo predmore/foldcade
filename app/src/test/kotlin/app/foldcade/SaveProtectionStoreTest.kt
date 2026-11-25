@@ -77,8 +77,11 @@ class SaveProtectionStoreTest {
         val original = EdenSaveSession("primary:nand", "primary:nand", null)
         val store = SaveProtectionStore(dir)
         store.observeEdenContext("eden", original, 100)
+        assertTrue(store.needsBackup("eden", first))
+        assertTrue(store.needsBackup("eden", second))
+        store.handled("eden", first)
         store.observeEdenContext("eden", original.copy(user = "first"), 200)
-        assertFalse(store.needsBackup("eden", first)) // Eden created its first profile.
+        assertFalse(store.needsBackup("eden", first)) // Creating the first profile doesn't start another fence.
 
         val restarted = SaveProtectionStore(dir)
         restarted.observeEdenContext("eden", original.copy(user = "second"), 300)

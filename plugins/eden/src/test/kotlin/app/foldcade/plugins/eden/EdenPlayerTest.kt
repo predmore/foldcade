@@ -54,18 +54,54 @@ class EdenPlayerTest {
         val folder = Folder()
         folder.config("[Data Storage]\nsave_directory=\nnand_directory=\n[System]\ncurrent_user=0")
         assertEquals(EdenStorageConfig(null, null, 0), readEdenStorageConfig(folder))
+        // Representative Android config emitted by Eden, with test folder names.
         folder.config("""
-            ; Eden uses an encoded section name in the generated INI.
             [Data%20Storage]
-            nand_directory=/sdcard/Eden NAND
+            nand_directory\default=false
+            nand_directory=/storage/emulated/0/Android/data/dev.eden.eden_emulator/files/nand
+            save_directory\default=false
             save_directory="/storage/ABCD-1234/Eden #1"
+
             [System]
             current_user\default=false
             current_user=1
+
+            [UI]
+            Paths\gamedirs\size=0
+            Paths\nand_directory\default=false
+            Paths\nand_directory=/storage/emulated/0/Android/data/dev.eden.eden_emulator/files/nand
+            Paths\save_directory\default=false
+            Paths\save_directory="/storage/ABCD-1234/Eden #1"
         """.trimIndent())
-        assertEquals(EdenStorageConfig("/sdcard/Eden NAND", "/storage/ABCD-1234/Eden #1", 1), readEdenStorageConfig(folder))
+        assertEquals(EdenStorageConfig("/storage/emulated/0/Android/data/dev.eden.eden_emulator/files/nand", "/storage/ABCD-1234/Eden #1", 1), readEdenStorageConfig(folder))
         folder.config("[System]\ncurrent_user\\default=true\ncurrent_user=1")
         assertEquals(0, readEdenStorageConfig(folder)?.currentUser)
+    }
+
+    @Test fun uiPathsMustAgreeWithAnyDataStoragePaths() {
+        val folder = Folder()
+        val data = "[Data%20Storage]\nnand_directory=/sdcard/NAND\nsave_directory=/sdcard/NAND"
+        val ui = "[UI]\nPaths\\nand_directory=/sdcard/NAND\nPaths\\save_directory=\nPaths\\save_directory\\default=true"
+        folder.config("$data\n$ui")
+        assertEquals(EdenStorageConfig("/sdcard/NAND", null, 0), readEdenStorageConfig(folder))
+        folder.config(ui)
+        assertEquals(EdenStorageConfig("/sdcard/NAND", null, 0), readEdenStorageConfig(folder))
+        folder.config("$data\n${ui.replace("/sdcard/NAND", "/sdcard/OtherNand")}")
+        assertNull(readEdenStorageConfig(folder))
+        folder.config("${data.replace("save_directory=/sdcard/NAND", "save_directory=/sdcard/OldSave")}\n$ui")
+        assertNull(readEdenStorageConfig(folder))
+        folder.config("$data\n${ui.replace("Paths\\save_directory=", "Paths\\save_directory=/sdcard/OtherSave")}")
+        assertNull(readEdenStorageConfig(folder))
+    }
+
+    @Test fun staleNumericProfileIndexesAreClamped() {
+        val folder = Folder()
+        for ((configured, index) in listOf(-4 to 0, 22 to 7)) {
+            folder.config("[System]\ncurrent_user\\default=false\ncurrent_user=$configured")
+            assertEquals(index, readEdenStorageConfig(folder)?.currentUser)
+        }
+        folder.config("[System]\ncurrent_user\\default=false\ncurrent_user=broken")
+        assertNull(readEdenStorageConfig(folder)?.currentUser)
     }
 
     @Test fun missingAndCorruptConfigsCannotEstablishASaveLocation() {
@@ -91,8 +127,10 @@ class EdenPlayerTest {
         folder.files["nand/$PROFILES"] = profiles
         assertEquals(EdenProfile.User(first.toHexString()), readEdenProfile(folder, "nand", 0))
         assertEquals(EdenProfile.User(second.toHexString()), readEdenProfile(folder, "nand", 1))
-        assertEquals(EdenProfile.Unreadable, readEdenProfile(folder, "nand", 2))
+        assertEquals(EdenProfile.User(first.toHexString()), readEdenProfile(folder, "nand", 2))
         assertEquals(EdenProfile.Unreadable, readEdenProfile(folder, "nand", null))
+        first.copyInto(profiles, 0x10 + 0xC8)
+        assertEquals(EdenProfile.User(second.toHexString()), readEdenProfile(folder, "nand", 2))
         for (size in listOf(0, 16, 0xD8, 0x64F, 0x651, 0x650)) {
             folder.files["nand/$PROFILES"] = ByteArray(size)
             assertEquals(EdenProfile.Unreadable, readEdenProfile(folder, "nand", 0))

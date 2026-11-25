@@ -109,9 +109,12 @@ internal class SaveProbes(
         val bound = snapshot.roots.singleOrNull { it.bound }
         if (bound != null) store.incidents().filter { it.playerKey == player.saveFolderId() && it.causeResolved(bound) }.forEach { store.close(it.id) }
         val verdict = if (player is EdenPlayer && bound?.reachable == true) {
-            val uri = folder(player)
-            val access = eden ?: uri?.let { saves.edenSaveAccess(player, it) } ?: EdenSaveAccess.Unknown
-            (access as? EdenSaveAccess.Ready)?.session()?.let { store.observeEdenContext(player.saveFolderId(), it, snapshot.atMillis) }
+            val key = player.saveFolderId()
+            val access = eden ?: folder(player)?.let { saves.edenSaveAccess(player, it) } ?: EdenSaveAccess.Unknown
+            if (access == EdenSaveAccess.Unknown && store.location(key, bound.root, snapshot.packageName, snapshot.installFirstMillis) is LocationFact.Verified) {
+                store.bound(key, bound.root, snapshot.packageName, snapshot.installFirstMillis, snapshot.atMillis)
+            }
+            (access as? EdenSaveAccess.Ready)?.session()?.let { store.observeEdenContext(key, it, snapshot.atMillis) }
             edenRootVerdict(bound.root, access, snapshot.packageName, snapshot.atMillis)
         } else judgeRoots(snapshot, location(player, snapshot))
         apply(player, snapshot, verdict, game)
