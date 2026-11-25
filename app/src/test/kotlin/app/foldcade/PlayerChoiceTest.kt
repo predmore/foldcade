@@ -105,11 +105,13 @@ class PlayerChoiceTest {
         assertSame(ds.cores, player.cores)
         val plan = planPlayerLaunch(player, game, LaunchTarget.SharedFile("/roms/Tetris.nds", "content://roms/Tetris.nds"), setOf(PKG), false, false) as PlayerLaunch.Ready
         assertEquals("/data/user/0/$PKG/cores/melonds_libretro_android.so", plan.intent.extras.filterIsInstance<PlayerExtra.Text>().first { it.key == "LIBRETRO" }.value)
-        assertEquals("melonDS/Tetris.srm", player.saveFileName("srm", "Tetris.nds"))
+        assertEquals("content://saves", player.saveDeclarations(game).single().locationUri)
+        assertNull(player.saveFileName("srm", "Tetris.nds"))
         assertFalse(plan.occupiesBothDisplays)
         ds.cores.update(mapOf(PKG to setOf("melondsds_libretro_android.so")))
         assertTrue(player.coreChoice(PKG) is CoreChoice.Missing)
-        assertEquals("melonDS/Tetris.srm", player.saveFileName("srm", "Tetris.nds"))
+        assertEquals("content://saves", player.saveDeclarations(game).single().locationUri)
+        assertNull(player.saveFileName("srm", "Tetris.nds"))
     }
 
     @Test fun processDeathRestoresTheLaunchedCoreEvenAfterSettingsAndCoresChange() {
@@ -118,7 +120,8 @@ class PlayerChoiceTest {
         ds.cores.update(mapOf(PKG to setOf("melondsds_libretro_android.so")))
         val restored = decodeLibraryReturn(stored) { id -> players.firstOrNull { it.id == id } }!!
         assertEquals("melonds", (restored.player as RetroArchPlayer).pinnedCore)
-        assertEquals("melonDS/Tetris.srm", restored.player.saveFileName("srm", "Tetris.nds"))
+        assertEquals("melonDS DS/Tetris.srm", ds.saveFileName("srm", "Tetris.nds"))
+        assertNull(restored.player.saveFileName("srm", "Tetris.nds"))
         // Older records that predate core pins still decode.
         assertNotNull(decodeLibraryReturn(LibraryReturn("romm", game, melon).encode()) { melon })
     }

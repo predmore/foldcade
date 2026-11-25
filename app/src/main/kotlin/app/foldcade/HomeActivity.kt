@@ -4545,9 +4545,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             // Read the card again, and do not set one up: the player has just been holding it.
             val spots = eden?.spots ?: returnSpots(saves, pending)
             val reachable = spots.isNotEmpty() && pending.player.saveDeclarations(pending.game).all { declaration -> spots.any { it.slot == declaration.slot } }
-            val issue = if (reachable || pending.targetUri == null) null else saves.unresolvedSpot(pending.player, pending.game, LaunchTarget.ContentUri(pending.targetUri))
-            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, reachable, issue) }
             val probeTarget = pending.targetUri?.let { LaunchTarget.ContentUri(it) }
+            val issue = if (reachable) null else probeTarget?.let { saves.unresolvedSpot(pending.player, pending.game, it) }
+            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveReachable(pending.game, pending.player.id, reachable, issue) }
             val backupOnly = pending.preserveAsBackup || foldcade.saveProtection.pendingBackup(pending.player.saveFolderId(), pending.game)
             // Judge and publish before reconcile can report Synced for the stale bound copy.
             // Optional probe failures still cannot block handing that copy back to the library.
@@ -4578,7 +4578,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return false }
             val preserved = try {
                 // A different core can leave this session without a supported slot. Keep its fence for the next compatible launch.
-                if (backupOnly && issue?.reason == app.foldcade.language.SpotIssue.UnsupportedSaveFormat) true
+                val unsupported = issue?.reason == app.foldcade.language.SpotIssue.UnsupportedSaveFormat ||
+                    (pending.player as? RetroArchPlayer)?.unsupportedSaveFormat("") != null
+                if (backupOnly && spots.isEmpty() && unsupported) true
                 else foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
@@ -4791,10 +4793,12 @@ internal data class LibraryReturn(
  * A player whose spots at launch came from a search is looked up again.
  * The card is left as it is, and that look wins when it finds
  * any. The spots stored at launch remain when that look finds nothing, so a game
- * file that cannot be read just now does not drop the saves. Every other player
- * keeps the spots stored at launch.
+ * file that cannot be read just now does not drop the saves. Other players keep
+ * launch-time spots, except for known unsupported RetroArch formats in old records.
  */
 internal fun returnSpots(saves: PlayerSaves, pending: LibraryReturn): List<SaveSpot> {
+    val retroArch = pending.player as? RetroArchPlayer
+    if (retroArch != null && retroArch.unsupportedSaveFormat(pending.targetUri?.let(saves::romDisplayName).orEmpty()) != null) return emptyList()
     val uri = pending.targetUri ?: return pending.spots
     if (!pending.unprotectedSession && pending.spots.none { it.search != null }) return pending.spots
     val fresh = try {

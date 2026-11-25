@@ -194,6 +194,16 @@ class LaunchSavesTest {
         assertTrue(server.observed.isEmpty())
     }
 
+    @Test fun anOldRetroArchReturnCannotSyncAPreviouslyGuessedSaveFile() {
+        val ds = app.foldcade.plugins.retroarch.RetroArchEntry().players
+            .filterIsInstance<app.foldcade.plugins.retroarch.RetroArchPlayer>().single { it.platformId == "nintendo-ds" }
+        val oldSlot = SaveSpot("srm", SAVES, "melonDS/Tetris DS (USA).srm")
+        val oldReturn = LibraryReturn(owner.backendId, owner, ds.withCore("melonds"), listOf(oldSlot), local.uri)
+        val restored = decodeLibraryReturn(oldReturn.encode()) { ds }!!
+        assertTrue(returnSpots(saves, restored).isEmpty())
+        assertEquals(listOf(oldSlot), returnSpots(saves, restored.copy(player = ds.withCore("melondsds"))))
+    }
+
     @Test fun bypassReturnsKeepEveryCopyWithoutReconciliationOrClearingTheAlarm() = runBlocking {
         for (kind in listOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)) {
             val store = SaveProtectionStore(Files.createTempDirectory("incident"))

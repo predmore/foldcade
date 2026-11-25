@@ -109,7 +109,7 @@ internal class SaveProbes(
         val file = rom?.substringAfterLast('/')?.let { player.standardSaveName(it, pkg) }
         val config = if (game != null && target != null && rom != null && file != null) {
             val files = retroArchFiles(player, pkg, grants)
-            val relative = saves.romDisplayName(target)?.let { player.saveFileName(RetroArchPlayer.SAVE_SLOT, it) }
+            val relative = saves.romDisplayName(target.uri)?.let { player.saveFileName(RetroArchPlayer.SAVE_SLOT, it) }
             val expected = files.pathOf(boundUri)?.let { path -> relative?.let { absoluteRetroArchPath("$path/$it") } }
             val effective = retroArchSavePath(RetroArchPlayer.configPath(pkg), rom, player.saveCore(pkg).libraryName, files::config, files::isDirectory)
             val live = effective.path?.substringBeforeLast('/')?.let(::retroArchFolderRef)
