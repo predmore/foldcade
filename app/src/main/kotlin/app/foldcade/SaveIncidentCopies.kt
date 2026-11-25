@@ -71,6 +71,11 @@ internal class SaveIncidentCopies(
 
     fun stageBackup(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?) {
         val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
+        if (incident != null && incident.gameIds.isEmpty()) {
+            // Identical bytes in two games sharing an emulator still belong in separate RomM histories.
+            record(incident.id, listOf(saves.stageCopy(game, player, spot, bytes, origin)))
+            return
+        }
         stageAlternate(game, player, spot, bytes, incident, origin)
     }
 
@@ -86,10 +91,10 @@ internal class SaveIncidentCopies(
     /** Called only after a successful external start, before its return record is saved. */
     suspend fun beginUnprotected(game: Game, player: Player): Boolean = withContext(NonCancellable + Dispatchers.IO) {
         val key = player.saveFolderId()
-        val incidents = store.incidents().filter { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
+        val incidents = store.incidents().filter { it.gatesLaunch(player, game) }
         if (incidents.isEmpty() && !store.needsBackup(key, game)) return@withContext false
         store.requireBackup(key, game)
-        incidents.forEach { store.put(it.copy(recoveryRequired = true)) }
+        incidents.filter { it.appliesTo(game) }.forEach { store.put(it.copy(recoveryRequired = true)) }
         true
     }
 
@@ -155,8 +160,10 @@ internal class SaveIncidentCopies(
     suspend fun preserveBeforeLaunch(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves): Boolean {
         val key = player.saveFolderId()
         val quarantine = store.incident(regressionIncidentId(game, player))
-        val blocked = store.incidents().firstOrNull { it.playerKey == key && it.blocksLaunch && it.appliesTo(game) }
-        val incident = blocked ?: if (player is DuckStationPlayer) backupIncident(game, player) else null
+        val blocked = store.incidents().firstOrNull { it.gatesLaunch(player, game) }
+        // Another game's melonDS beside incident can gate this launch; copies are recorded on this game's own incident.
+        val incident = store.incidents().firstOrNull { it.gatesLaunch(player, game) && it.appliesTo(game) }
+            ?: if (player is DuckStationPlayer) backupIncident(game, player) else null
         if (!store.needsBackup(key, game) && quarantine == null && incident == null) return false
         if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false

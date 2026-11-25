@@ -30,7 +30,7 @@ class ExPlusPlayer(
     packageName: String,
     shortSystemName: String,
     override val platformId: String,
-) : Player, SaveFolderHolder {
+) : Player, SaveFolderHolder, SaveLocationProbe {
     override val id = "$emulatorId.$platformId"
     override val packageNames = listOf(packageName)
     override val needsLocalFile = true
@@ -46,18 +46,33 @@ class ExPlusPlayer(
     // imagine/src/base/android/ApplicationContext.cc; EmuSystem::fallbackSaveDirectory.
     override val saveFolderPlaces = listOf("saves/$displayName", "EmuEx/$shortSystemName/saves",
         "Android/data/$packageName/files/EmuEx/$shortSystemName/saves")
+    override val probePlaces = listOf("EmuEx")
     override val saveFolderPickedInPlayer = true
+    override val saveConfigPrivate = true
     override val suggestedSaveFolder = "content://com.android.externalstorage.documents/document/primary%3Asaves"
     override fun saveDeclarations(game: Game) = listOf(SaveDeclaration(SLOT, folder))
+
+    override fun saveBesideGame(slot: String, romFileName: String): String? =
+        if (slot == SLOT) saveNames(romFileName)?.firstOrNull() else null
 
     override fun findSaveFolderParts(slot: String, game: GameFileReader, folder: SaveFolderAccess): List<SaveFolderPart>? =
         if (slot == SLOT && saveNames(game.fileName) != null && folder.list("") != null)
             listOf(SaveFolderPart("", "")) else null
 
-    override fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? {
+    override fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? =
+        batteryFilter(slot, game.fileName, beside = false)
+
+    fun besideSaveArchiveFilter(slot: String, romFileName: String): SaveArchiveFilter? =
+        batteryFilter(slot, romFileName, beside = true)
+
+    private fun batteryFilter(slot: String, filename: String?, beside: Boolean): SaveArchiveFilter? {
         if (slot != SLOT) return null
-        val names = saveNames(game.fileName) ?: return null
-        val base = game.fileName!!.substringBeforeLast('.')
+        val names = saveNames(filename) ?: return null
+        val base = filename!!.substringBeforeLast('.')
+        val named = if (beside) {
+            // GBA/GBC use fixed files and the Snes9x clock stays in the root.
+            names.filterNot { emulatorId in setOf("gba-emu", "gbc-emu") || it.endsWith(".rtc") }
+        } else names
         return object : SaveArchiveFilter {
             override val headerSize = 0
             override fun accepts(path: String, header: ByteArray): Boolean {
@@ -68,7 +83,7 @@ class ExPlusPlayer(
                 val parts = path.split('/')
                 return parts.size == 4 && parts[0] == base && parts[1] == "saves" &&
                     parts[2].isNotEmpty() && parts[2] !in setOf(".", "..") &&
-                    names.any { parts[3] == "auto" + it.removePrefix(base) }
+                    named.any { parts[3] == "auto" + it.removePrefix(base) }
             }
         }
     }

@@ -105,14 +105,16 @@ internal class SaveRepair(
                 val all = (latest.kept + keptIds).distinct()
                 if (all != latest.kept) store.put(latest.copy(kept = all))
             }
-            val head = verified.firstOrNull { it.slot == work.slot }?.takeIf { it.hash.isNotEmpty() } ?: throw RommRepairNeedsSync()
+            val slotHead = verified.firstOrNull { it.slot == work.slot }
+            if (slotHead == null && incident.besideGame) return complete(id, automatic = false)
+            val head = slotHead?.takeIf { it.hash.isNotEmpty() } ?: throw RommRepairNeedsSync()
             val live = if (quarantine) {
                 val current = store.incident(id) ?: return null
                 verified.firstOrNull { it.slot == null && it.id == current.quarantineBackupId } ?: kept[current.quarantinedHash]
             } else kept[working.live]
             val liveIsHead = if (quarantine) (live?.hash ?: incident.quarantinedHash) == head.hash else working.live == head.hash
             val suspect = quarantine || working.suspect
-            val next = if (live != null && live.hash != head.hash && (quarantine || !suspect && !working.liveMatchesSynced)) {
+            val next = if (!incident.besideGame && live != null && live.hash != head.hash && (quarantine || !suspect && !working.liveMatchesSynced)) {
                 RepairState.Choosing(head.id, live.id, head.hash, suspect)
             } else null
 
@@ -141,7 +143,7 @@ internal class SaveRepair(
 
             settle()
             if (work.running() || !work.readCopies(emptySet(), stage = false).sameBytes(working)) throw RepairGameRunning()
-            if (!quarantine) {
+            if (!quarantine && !incident.besideGame) {
                 if (selection == null) update(RepairState.Rebinding)
                 work.bind()
             }
@@ -179,8 +181,8 @@ internal class SaveRepair(
         return null
     }
 
-    private suspend fun complete(id: String): SaveIncident? {
-        val done = store.incident(id)?.copy(repair = RepairState.Done, recoveryRequired = false, automaticDone = true) ?: return null
+    private suspend fun complete(id: String, automatic: Boolean = true): SaveIncident? {
+        val done = store.incident(id)?.copy(repair = RepairState.Done, recoveryRequired = false, automaticDone = automatic) ?: return null
         store.put(done)
         changed()
         store.close(id)

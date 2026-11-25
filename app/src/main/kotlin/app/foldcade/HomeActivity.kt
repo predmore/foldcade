@@ -181,6 +181,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private var folderGuide: app.foldcade.language.FolderGuide? = null
     /** The library folder Pick again stands in for: a different pick replaces it, so an empty source never lingers beside the new one. */
     private var folderReplacing: String? = null
+    private var besideFixPickerId: String? = null
     private var pendingLaunch: Int? = null
 
     /** A library game waiting on the save-folder ask, see [askSaveFolder]. Kept by the app, so a recreated Home still has it. */
@@ -226,6 +227,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         folderPurpose = FolderPurpose.Library
         val replacing = folderReplacing
         folderReplacing = null
+        val besideFixId = besideFixPickerId
+        besideFixPickerId = null
         if (uri == null) {
             when (purpose) {
                 FolderPurpose.Firmware -> settingsPlayerId = null
@@ -240,7 +243,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     foldcade.scope.launch(Dispatchers.IO) {
                         foldcade.awaitPlugins()
                         val player = playerId?.let(foldcade.plugins::player)
-                        foldcade.saveProtection.incidents().filter { it.playerKey == player?.saveFolderId() && it.repair == app.foldcade.language.RepairState.Binding }
+                        foldcade.saveProtection.incidents().filter {
+                            it.playerKey == player?.saveFolderId() && it.repair == RepairState.Binding &&
+                                if (besideFixId == null) !it.besideGame else it.id == besideFixId
+                        }
                             .forEach { foldcade.saveProtection.put(it.copy(repair = app.foldcade.language.RepairState.Guided)) }
                         foldcade.refreshSaveProtection(player)
                     }
@@ -324,8 +330,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 FolderPurpose.Settings -> {
                     val player = settingsPlayerId?.let { foldcade.plugins.player(it) }
                     settingsPlayerId = null
+                    if (besideFixId != null) {
+                        val incident = foldcade.saveProtection.incident(besideFixId)?.takeIf { it.besideGame && it.playerKey == player?.saveFolderId() }
+                        if (incident != null && player != null) {
+                            val folder = pickedSaveFolder(uri, player, ask = false) ?: return@launch
+                            confirmBesideSaveFolder(player, incident, folder)
+                        }
+                        return@launch
+                    }
                     val incident = foldcade.saveProtection.incidents().firstOrNull {
-                        it.playerKey == player?.saveFolderId() && it.repair == app.foldcade.language.RepairState.Binding
+                        it.playerKey == player?.saveFolderId() && it.repair == RepairState.Binding && !it.besideGame
                     }
                     if (player is EdenPlayer && incident?.isEdenGrant == true) {
                         allowEdenSaveFolder(player, incident, uri)
@@ -403,7 +417,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             foldcade.shell.updateSaveFix(incident.id) { it.copy(offline = !foldcade.hasValidatedNetwork()) }
                         } catch (cancelled: CancellationException) { throw cancelled
                         } catch (_: Exception) { foldcade.shell.noteSaveFix(Copy.saveNotPlacedBody) }
-                    } else pickedSaveFolder(uri, player, ask = false)?.let { rememberSaveFolder(it, player) }
+                    } else pickedSaveFolder(uri, player, ask = false)?.let { folder ->
+                        foldcade.saveFlow.withLock { rememberSaveFolder(folder, player) }
+                    }
                 }
             }
             foldcade.refreshFoundSaveFolders()
@@ -868,7 +884,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(
             STATE_FOLDER_PICKER,
-            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId, folderGuide, folderReplacing).encode(),
+            FolderPickerState(folderPurpose, pendingLaunch, settingsPlayerId, folderGuide, folderReplacing, besideFixPickerId).encode(),
         )
         foldcade.shell.model.saveSetup?.let { outState.putString(STATE_SAVE_SETUP, it.focus.orEmpty()) }
     }
@@ -881,6 +897,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             settingsPlayerId = restored.settingsPlayerId
             folderGuide = restored.guide
             folderReplacing = restored.replacing
+            besideFixPickerId = restored.besideFixId
         }
         foldcade.homeCreated(this)
         folderGuide?.let(foldcade.shell::showFolderGuide)
@@ -2313,6 +2330,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 playerName = player?.displayName,
                 opensThere = foldcade.saveFolderOpensThere(player),
                 needed = needsItsFolder(player),
+                inApp = SaveProtectionCopy.gbcPickInApp.takeIf { player?.saveFolderId() == "gbc-emu" },
             ),
         )
     }
@@ -3542,12 +3560,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             (incident.kind != app.foldcade.language.IncidentKind.MaybeNewSave || incident.hostedCardMismatch)
         val steps = when {
             incident.hostedCardMismatch -> app.foldcade.language.SaveProtectionCopy.hostedCardSteps
+            incident.besideGame -> SaveProtectionCopy.besideLocationSteps(incident)
             else -> (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
                 ?: (player as? app.foldcade.api.plugin.HostedSaveFolder)?.hostedFolderSteps
         }
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
         val owner = incident.subject?.game() ?: route?.saves?.takeIf(incident::appliesTo)
-            ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard }?.let(foldcade.shell::saveGame)
+            ?: incident.gameIds.singleOrNull()
+                ?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard || incident.besideGame }
+                ?.let(foldcade.shell::saveGame)
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
         foldcade.scope.launch { foldcade.refreshSaveFixDetails(incident) }
@@ -3666,12 +3687,47 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             val player = foldcade.plugins.playerIds().mapNotNull(foldcade.plugins::player).firstOrNull { it.saveFolderId() == incident.playerKey } ?: return@launch
             settingsPlayerId = player.id
             folderPurpose = FolderPurpose.Settings
-            val preferred = if (player is RetroArchPlayer && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) incident.bound
+            besideFixPickerId = incident.id.takeIf { incident.besideGame }
+            val preferred = if (incident.besideGame || incident.armsX2OutsideCard || player is RetroArchPlayer && incident.gameIds.isNotEmpty()) incident.bound
                 else app.foldcade.language.saveFixTarget(incident)
             val initial = preferred?.identity?.takeIf { incident.isEdenGrant || it.startsWith("primary:") }?.let(::storageFolderDocument)
                 ?: foldcade.saveFolderStart(player)
             launchFolderPicker(initial?.let(Uri::parse))
         }
+    }
+
+    private suspend fun confirmBesideSaveFolder(player: Player, incident: SaveIncident, folder: Uri) {
+        val bound = incident.bound ?: return
+        if (!repairFolderMatches(bound.identity, storageIdentity(folder.toString(), packageName))) {
+            foldcade.shell.noteSaveFix(SaveProtectionCopy.chooseThere(bound.label))
+            return
+        }
+        try {
+            val startRepair = foldcade.saveFlow.withLock {
+                val picked = storageIdentity(folder.toString(), packageName)
+                val watched = foldcade.playerSaveFolder(player)?.let { storageIdentity(it, packageName) }
+                confirmBesideSaveFolder(foldcade.saveProtection, incident.id, picked, watched,
+                    hasRomm = { subject ->
+                        subject.origin != null && subject.origin == foldcade.store.rommOrigin() &&
+                            app.foldcade.plugins.romm.supportsRommRepair(foldcade.plugins.library(subject.libraryId))
+                    },
+                    preserveLocal = { current, subject -> withContext(Dispatchers.IO) {
+                        val gamePlayer = foldcade.plugins.player(subject.playerId)?.takeIf { it.saveFolderId() == player.saveFolderId() }
+                            ?: throw SaveNotPlaced()
+                        val game = subject.game()
+                        val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) }
+                        val candidate = foldcade.saveProbes.besideCandidate(gamePlayer, game, target, bound)
+                        val bytes = besideBytesForRepair(candidate, current)
+                        if (candidate != null && bytes != null)
+                            foldcade.saveIncidentCopies.stageBackup(game, gamePlayer, candidate.spot, bytes, current)
+                        candidate?.source ?: BesideSaveSource.Missing
+                    } },
+                    remember = { rememberSaveFolder(folder, player) })
+            }
+            foldcade.refreshSaveProtection(player)
+            if (startRepair) retrySaveRepair(incident.id)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { foldcade.shell.noteSaveFix(Copy.saveNotPlacedBody) }
     }
 
     /** An external save or NAND grant supplements Eden's provider grant for keys and config. */
@@ -3728,7 +3784,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             it.id == id && (it.repair == app.foldcade.language.RepairState.Done || it.isEdenSessionChange)
         }
             ?: foldcade.shell.model.saveFix?.resolved?.takeIf { it.id == id } ?: return
-        val tileId = incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard }
+        val tileId = incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard || incident.besideGame }
             ?: foldcade.hostedAsk?.pending?.route?.tileId ?: foldcade.savePickerRequest?.route?.tileId
             ?: incident.subject?.let { homeGameId(it.libraryId, it.gameId) }
         foldcade.scope.launch {
@@ -3761,7 +3817,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 location.cardOutside -> copy.armsX2CardOutside
                 !location.configUnavailable -> copy.checkByPlaying
                 playerId == ArmsX2Player.ID -> copy.armsX2ConfigUnavailableDetail
-                else -> copy.retroArchConfigUnavailableDetail
+                else -> copy.configUnavailableDetail(setting.label)
             }
             else -> copy.checkByPlaying
         }
@@ -3809,6 +3865,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         try {
             folderPicker.launch(initialUri)
         } catch (failure: RuntimeException) {
+            besideFixPickerId = null
             folderGuide = null
             foldcade.shell.showFolderGuide(null)
             throw failure
@@ -4287,6 +4344,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (player is EdenPlayer) {
             return useEdenFolder(uri, continueLaunch = false)
         }
+        val identity = storageIdentity(uri.toString(), packageName)
+        val beside = if (player?.probesContentSaves == true)
+            foldcade.saveProtection.incidents().filter { it.playerKey == player.saveFolderId() && it.besideGame && it.blocksLaunch }
+        else emptyList()
+        beside.firstOrNull { it.live?.identity == identity }?.let { incident ->
+            val body = incident.bound?.let { SaveProtectionCopy.chooseThere(it.label) } ?: Copy.saveFolderBody
+            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, body, hostScreen()))
+            return false
+        }
         val read = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val write = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(Uri.parse(folderGrantUri(uri.toString())), flags) }) {
@@ -4296,13 +4362,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         if (player is SaveFolderHolder) {
             val key = player.saveFolderId()
             val previous = foldcade.store.playerSaveFolder(key)
+            val changed = beside.isNotEmpty() && previous?.let { storageIdentity(it, packageName) } != identity
+            if (changed) foldcade.saveProtection.rebound(key)
             // Every player that shares the folder gets it, as at startup.
             for (id in foldcade.plugins.playerIds()) {
                 val sharing = foldcade.plugins.player(id) ?: continue
                 if (sharing is SaveFolderHolder && sharing.saveFolderId() == key) sharing.bindSaveFolder(uri.toString())
             }
-            foldcade.store.setPlayerSaveFolder(key, uri.toString())
+            foldcade.store.setPlayerSaveFolder(key, uri.toString(), durable = changed)
             foldcade.saveProbes.markBound(player)
+            if (beside.isNotEmpty()) foldcade.saveProtection.retargetBesideRepairs(key, FolderRef(identity, folderPathLabel(uri.toString())))
             foldcade.dismissNotice("firmware-folder:$key")
             if (previous != null && previous != uri.toString() && foldcade.saveProtection.incidents().none { it.playerKey == key }) {
                 foldcade.releaseUnusedFolderGrant(previous, read or write)
@@ -4472,7 +4541,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun changeServerSave(target: app.foldcade.language.SavePickerTarget, saveId: String?, destination: app.foldcade.language.SaveDestination? = null) {
         val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
         if (foldcade.shell.model.savePicker?.target != target) return
-        val incident = request.player?.let { player -> foldcade.saveProtection.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(request.owner) } }
+        val incident = request.player?.let { player -> foldcade.saveProtection.incidents().firstOrNull { it.gatesLaunch(player, request.owner) } }
         if (saveId != null && incident != null) {
             foldcade.shell.updateSavePicker(target) { it.copy(busy = false, confirmation = null) }
             openSaveFix(incident.id)
@@ -4690,7 +4759,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 foldcade.associateSaveRepair(pending.player, subject)
                 foldcade.publishSaveGate(pending.player, reading)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
-            if (pending.player is RetroArchPlayer) try {
+            if (pending.player is RetroArchPlayer || pending.player.probesContentSaves) try {
                 foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after, backupOnly)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return false }
             foldcade.saveProbes.stageDuckStationReturn(pending.player, pending.game, spots, pending.sessionStartedAtMillis, endedAtMillis,
@@ -4745,7 +4814,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             // Optional evidence and live-copy capture cannot prevent the bound save reaching RomM.
             try {
-                if (pending.player !is RetroArchPlayer) foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after)
+                if (pending.player !is RetroArchPlayer && !pending.player.probesContentSaves)
+                    foldcade.saveProbes.captureReturn(pending.player, pending.game, probeTarget, pending.baseline, after)
                 foldcade.saveIncidentCopies.keep(pending.game, pending.player)
             } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { Unit }
             foldcade.refreshSaveProtection(pending.player, flowHeld = true)

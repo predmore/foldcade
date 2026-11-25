@@ -558,7 +558,8 @@ object SaveSetupCopy {
         }
         // The picker opening in the right place needs no saying: only what to tap there.
         is SetupStep.Fix -> "Check where the emulator saves, then choose the same folder here."
-        is SetupStep.Folder -> if (step.pick == FolderPick.Browse) browse(tile.label) else useThisFolder
+        is SetupStep.Folder -> if (tile.key.startsWith("gbc-emu.") && !step.done) SaveProtectionCopy.gbcPickInApp
+            else if (step.pick == FolderPick.Browse) browse(tile.label) else useThisFolder
         is SetupStep.EdenFolder, is SetupStep.Cores -> useThisFolder
         is SetupStep.InApp -> step.steps
         is SetupStep.AllFiles -> findOwnBody

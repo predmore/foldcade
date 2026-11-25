@@ -24,6 +24,8 @@ import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.eden.EdenProfile
 import app.foldcade.plugins.eden.edenAccountSave
+import app.foldcade.plugins.explus.ExPlusPlayer
+import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
@@ -318,12 +320,13 @@ internal class PlayerSaves(
     }
 
     /** Resolve against another readable root without rebinding the installed player or writing it. */
-    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
-        val candidate = object : Player by player {
+    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> =
+        spots(playerAtSaveRoot(player, root), game, target, forLaunch = false)
+
+    private fun playerAtSaveRoot(player: Player, root: String): Player =
+        object : Player by player {
             override fun saveDeclarations(game: Game) = player.saveDeclarations(game).map { it.copy(locationUri = root) }
         }
-        return spots(candidate, game, target, forLaunch = false)
-    }
 
     /** Stable, durable bytes for incident recovery. Never handed to ordinary slot reconciliation. */
     fun stageLiveCopy(game: Game, player: Player, spot: SaveSpot): String? {
@@ -383,8 +386,8 @@ internal class PlayerSaves(
     }
 
     /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
-    fun spotsForFileName(player: Player, game: Game, romName: String, eden: EdenSaveAccess? = null): List<SaveSpot> =
-        resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null, eden)
+    fun spotsForFileName(player: Player, game: Game, romName: String, eden: EdenSaveAccess? = null, root: String? = null): List<SaveSpot> =
+        resolveSpots(root?.let { playerAtSaveRoot(player, it) } ?: player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null, eden)
 
     private fun resolveSpots(
         player: Player, game: Game, romName: String, header: () -> ByteArray, reader: GameFileReader,
@@ -912,16 +915,27 @@ internal class PlayerSaves(
     internal fun folderAccess(player: Player, folderUri: String, allowWrite: Boolean) =
         DocumentSaveFolder(docs, folderUri, allowWrite, sharedStorageAuthority = sharedStorageAuthority) { name, bytes -> backup(player, name, bytes) }
 
+    internal fun probeSpotHash(player: Player, spot: SaveSpot, bound: Boolean, limit: Long): String? {
+        val batteryProgressOnly = bound && player is ExPlusPlayer && player.initializesBlankBattery
+        return readSpot(spot, strict = true, limit = limit, batteryProgressOnly = batteryProgressOnly)?.first
+            ?.takeUnless { player is MelonDsPlayer && it.isEmpty() }?.let(::md5Hex)
+    }
+
     /** The bytes [spot] holds and the document they are in, or null when it holds none or cannot be read. */
-    internal fun readSpot(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE): Pair<ByteArray, String?>? {
+    internal fun readSpot(spot: SaveSpot, strict: Boolean = false, limit: Long = Long.MAX_VALUE,
+        batteryProgressOnly: Boolean = false): Pair<ByteArray, String?>? {
         if (strict) readableChildren(spot.folderUri, "")
         if (spot.folders.isNotEmpty() || spot.search != null) {
             val folders = readFolders(spot, strict, limit)
             if (strict && folders == Held.Unreadable) throw SaveNotPlaced()
             val held = folders as? Held.Found ?: return null
+            val entries = if (batteryProgressOnly) held.save.entries.filter { (name, bytes) ->
+                // Clock files and initialized batteries carry no evidence of a progress write.
+                name.endsWith(".sav") && bytes != null && bytes.isNotEmpty() && !bytes.isBlankBattery()
+            } else held.save.entries
             // Folders with no file are no save, and a zip of them could never be placed.
-            if (held.save.entries.values.none { it != null }) return null
-            return saveZip(held.save.entries) to null
+            if (entries.values.none { it != null }) return null
+            return saveZip(entries) to null
         }
         if (strict) {
             val parent = spot.fileName.substringBeforeLast('/', "")

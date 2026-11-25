@@ -60,4 +60,28 @@ class ExPlusTest {
         assertTrue((player("gbc-emu") as SaveFolderHolder).saveFolderPlaces.any { it == "EmuEx/GB/saves" })
         assertTrue((player("nes-emu") as SaveFolderHolder).saveFolderPlaces.any { it == "EmuEx/FC-NES/saves" })
     }
+
+    @Test fun besideProbesResolveOnlyTheSupportedBatteryAndClockLayout() {
+        val cases = listOf(Triple("gba-emu", "Game.zip", "Game.sav"), Triple("gbc-emu", "Game.gbc", "Game.sav"),
+            Triple("nes-emu", "Game.fds", "Game.fds.sav"), Triple("snes9x-ex", "Game.sfc", "Game.srm"),
+            Triple("md-emu", "Game.sms", "Game.srm"))
+        for ((id, rom, save) in cases) {
+            val player = (if (rom.endsWith(".sms")) player(id, "master-system") else player(id)) as ExPlusPlayer
+            assertEquals(save, player.saveBesideGame("battery", rom))
+            assertNull(player.saveBesideGame("state", rom))
+            assertTrue(player.saveConfigPrivate)
+            assertEquals(listOf("EmuEx"), player.probePlaces)
+        }
+        val cd = player("md-emu", "sega-cd") as ExPlusPlayer
+        val nes = player("nes-emu") as ExPlusPlayer
+        assertEquals("Game.brm", cd.saveBesideGame("battery", "Game.chd"))
+        assertNull(cd.saveBesideGame("battery", "Game.zip"))
+        assertNull(nes.saveBesideGame("battery", "Game.7z"))
+        val gbc = player("gbc-emu") as ExPlusPlayer
+        val filter = gbc.besideSaveArchiveFilter("battery", "Game.gbc")!!
+        assertTrue(filter.accepts("Game.rtc", ByteArray(0)))
+        assertFalse(filter.accepts("Game/saves/old/auto.rtc", ByteArray(0)))
+        assertFalse(filter.accepts("Game/saves/old/auto.sav", ByteArray(0)))
+        assertTrue(nes.besideSaveArchiveFilter("battery", "Game.fds")!!.accepts("Game/saves/old/auto.fds.sav", ByteArray(0)))
+    }
 }

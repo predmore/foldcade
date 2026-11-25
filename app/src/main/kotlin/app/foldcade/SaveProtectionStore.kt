@@ -66,6 +66,17 @@ internal class SaveProtectionStore(private val directory: Path) {
 
     @Synchronized fun incident(id: String): SaveIncident? = incidentRows.optJSONObject(id)?.let(::incidentFromJson)
 
+    @Synchronized fun noteBesideSaveSource(id: String, source: BesideSaveSource) {
+        val current = incident(id) ?: return
+        if (current.besideGame && current.besideSource != source) put(current.copy(besideSource = source))
+    }
+
+    @Synchronized fun retargetBesideRepairs(key: String, folder: FolderRef) {
+        for (incident in incidents().filter { it.playerKey == key && it.besideGame && it.blocksLaunch && it.bound?.identity != folder.identity }) {
+            put(incident.copy(bound = folder, repair = RepairState.Guided, automaticDone = false))
+        }
+    }
+
     @Synchronized fun reinstalled(key: String, root: FolderRef, packageName: String, install: Long?): Boolean =
         install != null && locations.optJSONObject(key)?.let { row ->
             row.optString("identity") == root.identity && row.optString("packageName") == packageName &&
@@ -167,6 +178,8 @@ private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("
     .put("playerName", playerName).put("gameIds", JSONArray(gameIds)).put("bound", bound?.toJson() ?: JSONObject.NULL)
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
     .put("alternateSavePath", alternateSavePath ?: JSONObject.NULL).put("capturedAlternateHashes", JSONArray(capturedAlternateHashes))
+    .put("besideGame", besideGame)
+    .put("besideSource", besideSource?.name)
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
     .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
@@ -180,18 +193,19 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.optBoolean("recoveryRequired"), json.optJSONObject("subject")?.let(::subjectFromJson), json.stringOrNull("quarantinedHash"),
     json.optBoolean("automaticDone"),
     json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
-    json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(),
+    json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(), json.optBoolean("besideGame"),
+    json.stringOrNull("besideSource")?.let(BesideSaveSource::valueOf),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 
 private fun SaveIncidentGame.toJson(): JSONObject = JSONObject().put("library", libraryId).put("game", gameId).put("platform", platformId)
     .put("label", label).put("player", playerId).put("target", targetUri).put("origin", origin)
-    .put("package", packageName).put("install", installFirstMillis).put("edenContext", edenContext)
+    .put("package", packageName).put("install", installFirstMillis).put("edenContext", edenContext).put("romFileName", romFileName)
 
 private fun subjectFromJson(json: JSONObject): SaveIncidentGame = SaveIncidentGame(json.getString("library"), json.getString("game"),
     json.getString("platform"), json.getString("label"), json.getString("player"), json.stringOrNull("target"), json.stringOrNull("origin"),
-    json.stringOrNull("package"), json.nullableLong("install"), json.stringOrNull("edenContext"))
+    json.stringOrNull("package"), json.nullableLong("install"), json.stringOrNull("edenContext"), json.stringOrNull("romFileName"))
 
 private fun RepairState.toJson(): JSONObject = JSONObject().put("state", when (this) {
     RepairState.NotStarted -> "NotStarted"
@@ -239,6 +253,7 @@ internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", a
         .put("spotReadable", root.spotReadable).put("markersPresent", root.markersPresent ?: JSONObject.NULL)
         .put("emulatorHolds", root.emulatorHolds ?: JSONObject.NULL).put("hadMarkers", root.hadMarkers)
         .put("hasKnownSave", root.hasKnownSave).put("reachable", root.reachable).put("spotFile", root.spotFile ?: JSONObject.NULL)
+        .put("besideGame", root.besideGame)
         .put("signals", JSONArray(root.signals.map { signal -> JSONObject().put("source", signal.source)
             .put("names", signal.names ?: JSONObject.NULL).put("modifiedAtMillis", signal.modifiedAtMillis ?: JSONObject.NULL)
             .put("proves", signal.proves).put("perStart", signal.perStart) }))
@@ -253,7 +268,7 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
             if (root.isNull("markersPresent")) null else root.getBoolean("markersPresent"),
             if (root.isNull("emulatorHolds")) null else root.getBoolean("emulatorHolds"),
             root.optBoolean("hadMarkers"), root.optBoolean("hasKnownSave"), root.optBoolean("reachable", true),
-            root.optString("spotFile").takeUnless { root.isNull("spotFile") })
+            root.optString("spotFile").takeUnless { root.isNull("spotFile") }, root.optBoolean("besideGame"))
     } }, json.optJSONObject("configSavePath")?.let { path -> ConfigSavePath(
         path.optString("expected").takeUnless { path.isNull("expected") },
         path.optString("effective").takeUnless { path.isNull("effective") },

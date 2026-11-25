@@ -17,6 +17,60 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun aRepairCloseDialogExpiresWithItsWaitingState() {
+        val store = SessionStore(MemoryPrefs()).apply { setRommOrigin("https://romm.example") }
+        val shell = ShellController(store, PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
+        val game = Game("romm", "12", "nintendo-ds", Availability.Cached, "Tetris")
+        val root = FolderRef("primary:saves", "saves")
+        val waiting = SaveIncident("WrongFolder:melonds", IncidentKind.WrongFolder, "melonds", "melonDS", emptyList(),
+            root, null, Evidence(EvidenceKind.SessionWrite, "Saved beside the ROM"), 100, repair = RepairState.WaitingForClose())
+        shell.setSaveProtection(emptyMap(), listOf(waiting))
+        val page = shell.openSaveFix(waiting, null, "melonds", owner = game)
+        assertNull(shell.touchSaveFix(0))
+        val confirmation = shell.model.dialog!!
+        assertEquals(waiting.id, confirmation.subject)
+        assertTrue(DialogButton.ContinueFix in confirmation.buttons)
+        shell.setSaveProtection(emptyMap(), listOf(waiting.copy(repair = RepairState.WaitingForClose(backupsKept = true))))
+        assertEquals(confirmation, shell.model.dialog)
+
+        val done = waiting.copy(repair = RepairState.Done, automaticDone = true)
+        shell.setSaveProtection(emptyMap(), listOf(done))
+        assertNull(shell.model.dialog)
+        assertEquals(Effect.FinishSaveFix(waiting.id), shell.touchSaveFix(0))
+
+        val manualClose = closeGameDialog(page.screen).copy(subject = waiting.id)
+        shell.showDialog(manualClose)
+        val shown = shell.model.dialog!!
+        shell.setSaveProtection(emptyMap(), listOf(done))
+        assertEquals(shown, shell.model.dialog)
+    }
+
+    @Test fun aSecondMelonDsGamesHeroUsesTheOriginalBesideRomIncident() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val entry = MelonDsEntry()
+        plugins.register(entry)
+        val player = entry.player
+        player.bindSaveFolder("content://com.android.externalstorage.documents/tree/primary%3Asaves")
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.setInstalledApps(emptyList(), player.packageNames.toSet(), player.packageNames.toSet())
+        val gameA = Game("romm", "12", player.platformId, Availability.Cached, "Game A")
+        val gameB = gameA.copy(remoteKey = "13", label = "Game B")
+        shell.ingestLibrary("romm", listOf(gameA, gameB).map {
+            GridEntry(it.remoteKey, it.label, "", it.platformId, null, false, it)
+        }, emptyList())
+        val bound = FolderRef("primary:saves", "saves")
+        val live = FolderRef("primary:ROMs", "ROMs")
+        val evidence = Evidence(EvidenceKind.SessionWrite, "Game A saved beside the ROM")
+        val gameAId = homeGameId(gameA.backendId, gameA.remoteKey)
+        val incident = SaveIncident("WrongFolder:${player.saveFolderId()}:$gameAId", IncidentKind.WrongFolder, player.saveFolderId(),
+            player.displayName, listOf(gameAId), bound, live, evidence, 500, besideGame = true)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to LocationFact.Mismatch(bound, null, evidence, 500)), listOf(incident))
+        val health = shell.saveHealthOf(homeGameId(gameB.backendId, gameB.remoteKey))
+        assertEquals(SaveStatus.Problem(incident), health)
+        assertEquals("melonDS is saving somewhere else", saveStatusLine(health))
+    }
+
     @Test fun anAndroidAppKeepsItsOwnSavesWithoutAPlayerRoute() {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(LaunchableApp("example.game", "Android game", true)), emptySet())

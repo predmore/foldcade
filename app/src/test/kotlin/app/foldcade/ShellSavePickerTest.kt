@@ -185,7 +185,7 @@ class ShellSavePickerTest {
         assertEquals(SavePickerCopy.installFirst, shell.model.savePicker!!.message)
     }
 
-    @Test fun fixOpensOnlyAnOpenIncidentForThisGame() {
+    @Test fun fixOpensOnlyAnActiveIncidentThatAffectsThisGame() {
         shell.ingestLibrary("romm", listOf(entry(game)), emptyList())
         val player = plugins.player("melonds") as SaveFolderHolder
         player.bindSaveFolder("content://saves")
@@ -200,6 +200,8 @@ class ShellSavePickerTest {
             listOf(homeGameId("romm", "3")), root, null, evidence, 100, repair = RepairState.Done)
         shell.setSaveProtection(emptyMap(), listOf(other, done))
         assertEquals(Effect.ChoosePlayerSave("melonds"), shell.savePickerFix(target))
+        shell.setSaveProtection(emptyMap(), listOf(other.copy(besideGame = true), done))
+        assertEquals(Effect.OpenSaveFix(other.id), shell.savePickerFix(target))
         val mine = done.copy(id = "WrongFolder:melonds", gameIds = emptyList(), repair = RepairState.NotStarted)
         shell.setSaveProtection(emptyMap(), listOf(other, done, mine))
         assertEquals(Effect.OpenSaveFix(mine.id), shell.savePickerFix(target))

@@ -27,6 +27,12 @@ interface SaveLocationProbe {
      */
     fun saveBesideGame(slot: String, romFileName: String): String? = null
 
+    /**
+     * The stock player keeps its save settings private. A save write can still prove a location.
+     * Added in API minor 28.
+     */
+    val saveConfigPrivate: Boolean get() = false
+
     /** What [root] says about the folder the player last used. Called before launch, after return, and on Home resume. */
     fun liveSignals(root: SaveFolderAccess): List<LiveSignal> = emptyList()
 

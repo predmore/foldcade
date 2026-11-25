@@ -4,6 +4,42 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SaveProtectionTest {
+    @Test fun contentSaveChecksAndTheGuidedFixDescribeOnlyTheObservedWrite() {
+        for ((key, player, menu) in listOf(Triple("melonds", "melonDS", "Save next to ROM file: Off"),
+            Triple("gbc-emu", "GBC.emu", "Options › File Paths › Saves › Select Folder"))) {
+            val bound = FolderRef("primary:saves/QA", "saves/QA")
+            val live = FolderRef("primary:ROMs/QA", "ROMs/QA")
+            val incident = SaveIncident("WrongFolder:$key:game", IncidentKind.WrongFolder, key, player,
+                listOf("game"), bound, live, Evidence(EvidenceKind.SessionWrite, "Game saved beside the ROM."), 100,
+                besideGame = true)
+            val page = SaveFixPage(incident.id, HostScreen.Bottom, SaveProtectionCopy.besideLocationSteps(incident), game = "Game", hasRommDestination = true)
+            assertEquals(SaveProtectionCopy.savedBesideRom, saveCheckState(incident))
+            assertTrue(saveProtectionDialog(incident, HostScreen.Bottom).body.contains("$player saved beside a ROM."))
+            assertNull(saveFixTarget(incident))
+            assertEquals(listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder), saveFixActions(incident, page))
+            assertTrue(saveFixCard(incident, page).body.contains(menu))
+            assertTrue(saveFixCard(incident, page).body.contains(bound.label))
+            assertEquals("Choose saves/QA, then tap Use this folder › Allow.", saveFixCard(incident, page).detail)
+            val done = incident.copy(repair = RepairState.Done, automaticDone = true, besideSource = BesideSaveSource.Progress)
+            assertEquals(listOf(SaveFixAction.ChooseSave), saveFixActions(done, page))
+            assertEquals("Your RomM save is back in saves/QA. The save from beside the ROM is in Y › Saves under Backups.", saveFixCard(done, page).body)
+            assertEquals(saveFixCard(done, page).body, saveFixRestoredCopy(done, bound.label))
+            assertEquals("Your RomM save is back in saves/QA.", saveFixCard(done.copy(besideSource = BesideSaveSource.Blank), page).body)
+            val noHead = done.copy(automaticDone = false, kept = listOf("1"))
+            assertEquals("Folder set. The save from beside the ROM is in Y › Saves under Backups.", saveFixCard(noHead, page).body)
+            val localDone = done.copy(automaticDone = false, staged = listOf("file:///save"), besideSource = BesideSaveSource.Progress)
+            val localPage = page.copy(hasRommDestination = false,
+                stagedDestinations = mapOf(localDone.staged.single() to SaveFixCopyDestination.Device))
+            assertEquals("Folder set. Your save beside the ROM is still there. Move it into saves/QA to keep playing it.", saveFixCard(localDone, localPage).body)
+            assertEquals(SaveProtectionCopy.guidedDoneLocal, saveFixCard(localDone.copy(besideSource = BesideSaveSource.Missing), localPage).body)
+            val setting = PlayerSaveSetting(key, player, chosen = true, location = LocationFact.Bound(bound, configUnavailable = true))
+            val model = PickerModel(count = 0, rowsPerPage = 1, playerSaves = listOf(setting))
+            assertEquals("Can’t read config", rowText(Row.SaveCheck(key), model).value)
+        }
+        val ask = saveFolderDialog(HostScreen.Bottom, syncs = true, playerName = "GBC.emu", inApp = SaveProtectionCopy.gbcPickInApp)
+        assertEquals(SaveProtectionCopy.gbcPickInApp, ask.body)
+    }
+
     @Test fun retroArchSettingsExplainsAnInaccessibleConfigUntilASaveWriteVerifiesTheFolder() {
         val id = "retroarch.game-boy-advance"
         val root = FolderRef("primary:RetroArch/saves", "RetroArch/saves")
@@ -12,6 +48,21 @@ class SaveProtectionTest {
         assertEquals("Can’t read config", rowText(Row.SaveCheck(id), model).value)
         val checked = setting.copy(location = LocationFact.Verified(root, Evidence(EvidenceKind.SessionWrite, "Game saved there"), System.currentTimeMillis()))
         assertTrue(rowText(Row.SaveCheck(id), model.copy(playerSaves = listOf(checked))).value.orEmpty().startsWith("Checked "))
+    }
+
+    @Test fun settingsLetsBesideRepairsChangeTheWatchedFolderAndKeepsOtherRepairsGuided() {
+        fun select(row: Row, problem: SaveIncident): Effect? {
+            val setting = PlayerSaveSetting(problem.playerKey, problem.playerName, chosen = true, installed = true, incident = problem)
+            val model = PickerModel(1, 1, playerSaves = listOf(setting), boardEmulators = setOf(setting.playerId))
+            return reduce(model.onSetting(row), Meaning.Activate).second
+        }
+        for ((key, name) in listOf("melonds" to "melonDS", "nes-emu.nes" to "NES.emu")) {
+            val beside = incident.copy(id = "WrongFolder:$key:game", playerKey = key, playerName = name, besideGame = true)
+            assertEquals(Effect.ChoosePlayerSave(key), select(Row.PlayerSave(key), beside))
+            assertEquals(Effect.OpenSaveFix(beside.id), select(Row.SaveCheck(key), beside))
+            assertEquals(Effect.OpenSaveFix(beside.id), select(Row.PlayerSave(key), beside.copy(besideGame = false)))
+        }
+        assertEquals(Effect.OpenSaveFix(incident.id), select(Row.PlayerSave("azahar"), incident))
     }
 
     private val root = FolderRef("primary:saves/Azahar", "saves/Azahar")

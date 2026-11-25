@@ -40,7 +40,7 @@ fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == Incide
  * access was lost, the folder it already watched. Null when only the emulator can say.
  */
 fun saveFixTarget(incident: SaveIncident): FolderRef? =
-    if (incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) null
+    if (incident.besideGame || incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) null
     else incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
 
 /**
@@ -49,7 +49,8 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
  */
 fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> {
     val repair = saveFixRepair(incident, page)
-    val finish = if (page.hasRommDestination && page.game != null && !page.offline) SaveFixAction.ChooseSave else SaveFixAction.Close
+    val finish = if (page.hasRommDestination && page.game != null && !page.offline)
+        SaveFixAction.ChooseSave else SaveFixAction.Close
     return when {
         repair == RepairState.Done -> listOf(finish)
         incident.isEdenSessionChange -> listOf(SaveFixAction.OpenEmulator, finish)
@@ -84,6 +85,12 @@ fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (
 /** The bottom card's words: the one thing to do now. [SaveFixCard.detail] follows any steps. */
 data class SaveFixCard(val body: String, val detail: String?)
 
+private val SaveIncident.hasBesideBackup: Boolean
+    get() = besideGame && (besideSource == BesideSaveSource.Progress || capturedAlternateHashes.isNotEmpty())
+
+fun saveFixRestoredCopy(incident: SaveIncident, folder: String): String =
+    if (incident.hasBesideBackup) SaveProtectionCopy.besideRepairDone(folder) else SaveProtectionCopy.repairDone(folder)
+
 fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     val repair = saveFixRepair(incident, page)
     val automatic = when (repair) {
@@ -94,7 +101,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         RepairState.Rebinding -> SaveProtectionCopy.usingFolder(saveFixTarget(incident)?.label.orEmpty())
         is RepairState.Choosing -> SaveProtectionCopy.bothKept
         is RepairState.Placing -> SaveProtectionCopy.placingSave
-        RepairState.Done -> saveFixTarget(incident)?.let { SaveProtectionCopy.repairDone(it.label) }
+        RepairState.Done -> (if (incident.besideGame) incident.bound else saveFixTarget(incident))?.let { saveFixRestoredCopy(incident, it.label) }
             .takeIf { incident.automaticDone && page.hasRommDestination }
         else -> null
     }
@@ -104,6 +111,8 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     if (repair == RepairState.Done) {
         val destinations = page.stagedDestinations
         return SaveFixCard(when {
+            !page.hasRommDestination && incident.besideSource == BesideSaveSource.Progress && incident.bound != null ->
+                SaveProtectionCopy.besideDoneLocal(incident.bound.label)
             destinations == null && (!page.hasRommDestination || page.game == null) -> "${SaveProtectionCopy.folderSet}."
             (!page.hasRommDestination || page.game == null) &&
                 incident.staged.any { destinations?.get(it) == SaveFixCopyDestination.Device } -> SaveProtectionCopy.guidedDoneLocal
@@ -111,6 +120,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
             !page.hasRommDestination && incident.staged.isNotEmpty() -> SaveProtectionCopy.guidedDoneCopiesUnchecked
             !page.hasRommDestination && incident.kept.isNotEmpty() -> SaveProtectionCopy.guidedDoneKeptOnRomm
             !page.hasRommDestination -> SaveProtectionCopy.guidedDoneWithoutLocalCopy
+            incident.hasBesideBackup && incident.kept.isNotEmpty() -> SaveProtectionCopy.besideNoHead
             page.offline -> SaveProtectionCopy.guidedDoneOffline
             else -> SaveProtectionCopy.guidedDone
         }, page.note)
@@ -120,6 +130,9 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         else "Check the user in Eden’s Profile Manager.", page.note)
     if (incident.armsX2OutsideCard) return SaveFixCard(SaveProtectionCopy.armsX2OutsideCardSteps, page.note)
     if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
+    if (incident.besideGame && incident.bound != null)
+        return SaveFixCard(SaveProtectionCopy.besideLocationSteps(incident).orEmpty(),
+            listOfNotNull(SaveProtectionCopy.chooseThere(incident.bound.label), page.note).joinToString(" "))
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)
     return SaveFixCard(steps, listOfNotNull(SaveProtectionCopy.thenChoose, page.note).joinToString(" "))
@@ -132,6 +145,8 @@ enum class SaveFixStepState { Done, Now, Later }
 
 fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
     if (incident.kind == IncidentKind.MaybeNewSave && !incident.isEdenSessionChange && !incident.hostedCardMismatch) return emptyList()
+    val folderStep = if (incident.besideGame) "Set the save folder in ${incident.playerName}"
+        else SaveProtectionCopy.stepFolder(incident.playerName, saveFixTarget(incident) != null)
     val destinations = page.stagedDestinations
     val deviceCopies = incident.staged.count { destinations?.get(it) == SaveFixCopyDestination.Device }
     val rommCopies = incident.staged.count { destinations?.get(it) == SaveFixCopyDestination.Romm }
@@ -152,7 +167,8 @@ fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
             is RepairState.Choosing, is RepairState.Placing -> 2
             else -> 3
         }
-        val steps = listOf(rommTitle, SaveProtectionCopy.stepFolder(incident.playerName, true), SaveProtectionCopy.stepRestore)
+        val bindStep = if (incident.besideGame) folderStep else SaveProtectionCopy.stepFolder(incident.playerName, true)
+        val steps = listOf(rommTitle, bindStep, SaveProtectionCopy.stepRestore)
             .mapIndexed { i, label -> SaveFixStep(label, when {
                 i == 0 && rommCopies > 0 -> SaveFixStepState.Now
                 i == 0 && closing?.backupsKept == false -> SaveFixStepState.Later
@@ -178,7 +194,8 @@ fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
         else -> SaveFixStep(rommTitle, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet)
     }
     val copySteps = listOfNotNull(keep) + otherCopies
-    val choose = SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later)
+    val choose = SaveFixStep(if (incident.besideGame && !bound) SaveProtectionCopy.stepRestore else SaveProtectionCopy.stepChoose,
+        if (bound) SaveFixStepState.Now else SaveFixStepState.Later)
         .takeIf { page.hasRommDestination }
     if (page.playerManagesFolder) return copySteps + listOfNotNull(choose.takeIf { incident.hostedCardMismatch })
     if (incident.isEdenSessionChange) return copySteps + listOfNotNull(
@@ -186,7 +203,7 @@ fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
         choose,
     )
     return copySteps + listOfNotNull(
-        SaveFixStep(SaveProtectionCopy.stepFolder(incident.playerName, saveFixTarget(incident) != null), if (bound) SaveFixStepState.Done else SaveFixStepState.Now),
+        SaveFixStep(folderStep, if (bound) SaveFixStepState.Done else SaveFixStepState.Now),
         choose,
     )
 }
@@ -209,7 +226,8 @@ fun saveFolderState(incident: SaveIncident): String = incident.bound?.label ?: w
 
 /** Settings › Emulators' Check row during an incident: what the evidence says, once. */
 fun saveCheckState(incident: SaveIncident): String = when (incident.kind) {
-    IncidentKind.WrongFolder -> if (incident.saveLayoutChanged) "Save layout changed"
+    IncidentKind.WrongFolder -> if (incident.besideGame) SaveProtectionCopy.savedBesideRom
+        else if (incident.saveLayoutChanged) "Save layout changed"
         else incident.live?.let { if (incident.isEdenGrant) "Allow ${it.label}" else "Saving in ${it.label}" } ?: "Not saving here"
     IncidentKind.MaybeWrongFolder -> "May save elsewhere"
     IncidentKind.FolderEmptied -> "Folder empty"
