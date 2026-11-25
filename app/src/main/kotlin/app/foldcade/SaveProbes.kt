@@ -75,22 +75,24 @@ internal class SaveProbes(
             val access = saves.folderAccess(player, uri, allowWrite = false)
             val children = access.list("")
             val held = android.holdsGrant(uri, grants)
-            val reachable = children != null && (!isBound || !providerBacked || held)
-            val cardConfig = if (reachable && player is ArmsX2Player) arms?.config(access) else null
+            // A held grant and a failed provider query are inconclusive. Revocation is observable.
+            val reachable = if (isBound && providerBacked) held else children != null
+            val canRead = reachable && children != null
+            val cardConfig = if (canRead && player is ArmsX2Player) arms?.config(access) else null
             if (isBound) {
                 armsConfig = cardConfig
-                if (player is DolphinPlayer && reachable) dolphinCard = readDolphinCard(access, dolphinDisc)
-                if (player is Aps3ePlayer && reachable) aps3eConfigReadable = providerSaveRootPackage(player, uri) != null && usesDefaultAps3eSavePath(access)
+                if (player is DolphinPlayer && canRead) dolphinCard = readDolphinCard(access, dolphinDisc)
+                if (player is Aps3ePlayer && canRead) aps3eConfigReadable = providerSaveRootPackage(player, uri) != null && usesDefaultAps3eSavePath(access)
             }
-            val signals = if (!reachable) emptyList() else try {
+            val signals = if (!canRead) emptyList() else try {
                 cardConfig?.signals ?: probe?.liveSignals(access).orEmpty()
             } catch (_: Exception) { emptyList() }
             // A candidate from another installed flavour must name the launched APK version.
             val logVersion = if (!isBound && installed.size > 1 && signals.firstOrNull()?.strength == SignalStrength.Proves)
                 access.read(signals.first().source, 0, 32 * 1024)?.toString(Charsets.UTF_8)?.let(::azaharLogVersion) else null
-            var readable = reachable
+            var readable = canRead
             var spotFile: String? = null
-            val hashes = if (!reachable || !readSpots || game == null || target == null) emptyList() else try {
+            val hashes = if (!canRead || !readSpots || game == null || target == null) emptyList() else try {
                 val spots = when {
                     arms != null -> {
                         // Compare the configured card, or the previous default location when the INI points outside.

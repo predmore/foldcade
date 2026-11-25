@@ -78,6 +78,9 @@ class ProviderSaveProtectionTest {
         val lost = snapshot(bound.copy(reachable = false))
         assertEquals(RootVerdict.NoNews, providerSaveRootVerdict(dolphin, lost, pkg, pkg, false))
         assertEquals(IncidentKind.LostAccess, (judgeRoots(lost, LocationFact.Bound(root)) as RootVerdict.Lost).kind)
+        val queryFailed = snapshot(bound.copy(markersPresent = null, spotReadable = false))
+        assertEquals(RootVerdict.NoNews, providerSaveRootVerdict(dolphin, queryFailed, pkg, pkg, false))
+        assertEquals(RootVerdict.NoNews, judgeRoots(queryFailed, LocationFact.Bound(root)))
         val ps3 = Aps3ePlayer()
         val wrongFlavor = snapshot().copy(packageName = ps3.packageNames.first())
         assertEquals(IncidentKind.LostAccess, (providerSaveRootVerdict(ps3, wrongFlavor, ps3.packageNames.last(),

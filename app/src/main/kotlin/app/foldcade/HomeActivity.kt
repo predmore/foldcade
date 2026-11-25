@@ -4845,11 +4845,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             foldcade.saveProbes.stageDuckStationReturn(pending.player, pending.game, spots, pending.sessionStartedAtMillis, endedAtMillis,
                 startedByFoldcade = pending.startedByFoldcade)
             val preserved = try {
-                val lostProvider = (pending.player is Aps3ePlayer || pending.player is DolphinPlayer) &&
+                val providerPlayer = pending.player is Aps3ePlayer || pending.player is DolphinPlayer
+                val lostProvider = providerPlayer &&
                     foldcade.saveProtection.incidents().any { it.playerKey == key && it.kind == IncidentKind.LostAccess && it.blocksLaunch }
                 // A legacy Backup does not complete the fence for a compatible working slot.
                 if (legacyBackup) true
-                else if ((lostProvider || pending.player is DolphinPlayer) && spots.isEmpty()) true
+                else if (providerPlayer && spots.isEmpty()) {
+                    // Leave an unreadable launch-time spot in place and fence it before any later placement.
+                    if (pending.spots.isNotEmpty()) foldcade.saveProtection.requireBackup(key, pending.game)
+                    true
+                }
                 else foldcade.saveProbes.preserveArmsX2Return(pending, probeTarget, spots, after) ||
                     foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider)
             } catch (cancelled: CancellationException) { throw cancelled

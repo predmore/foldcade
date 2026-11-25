@@ -35,7 +35,7 @@ internal fun providerSaveRootVerdict(player: Player, snapshot: ProbeSnapshot, ow
         owner == null -> RootVerdict.NoNews
         installChanged || snapshot.installFirstMillis != null && snapshot.packageName != owner ->
             RootVerdict.Lost(IncidentKind.LostAccess, evidence.copy(detail = "Allow ${player.displayName}’s folder for this installation."))
-        snapshot.installFirstMillis != null && verifiedProviderPackage == owner && bound.reachable ->
+        snapshot.installFirstMillis != null && verifiedProviderPackage == owner && bound.reachable && bound.markersPresent != null ->
             RootVerdict.Uses(bound.root, evidence, snapshot.atMillis)
         else -> RootVerdict.NoNews
     }
