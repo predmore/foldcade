@@ -239,9 +239,45 @@ class LaunchSavesTest {
                 assertEquals(!beside, incident.appliesTo(game.copy(backendId = "other-library")))
                 assertEquals(beside, store.pendingBackup(key, game))
                 assertFalse(store.pendingBackup(key, game.copy(remoteKey = "another")))
-                assertEquals(beside, probes.location(player, after) is LocationFact.Bound)
+                assertEquals(beside && player !is app.foldcade.plugins.melonds.MelonDsPlayer, probes.location(player, after) is LocationFact.Bound)
                 store.close(incident.id)
             }
+        }
+    }
+
+    @Test fun melonDsBesideRomWriteGatesOtherGamesWhileExKeepsItsGatePerGame() = runBlocking {
+        val ds = app.foldcade.plugins.melonds.MelonDsPlayer()
+        val ex = app.foldcade.plugins.explus.ExPlusEntry().players.single { it.id == "gbc-emu.game-boy-color" }
+        for ((player, global) in listOf(ds to true, ex to false)) {
+            val gameA = owner.copy(platformId = player.platformId)
+            val gameB = gameA.copy(remoteKey = "another")
+            val store = SaveProtectionStore(Files.createTempDirectory("beside-launch-gate"))
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            // No Android folder provider is needed to honor an incident already observed on return.
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { null }, copies)
+            val bound = FolderRef("primary:saves", "saves")
+            val live = FolderRef("primary:ROMs", "ROMs")
+            val watched = RootReading(bound, true, emptyList(), "placed", true, null, null)
+            val beside = RootReading(live, false, emptyList(), null, true, null, null, besideGame = true)
+            val before = ProbeSnapshot(100, 1, player.packageNames.first(), listOf(watched, beside))
+            val after = before.copy(atMillis = 500, roots = listOf(watched, beside.copy(spotHash = "session bytes")))
+            probes.noteSession(player, gameA, before, after)
+            val incident = store.incidents().single()
+            assertFalse(incident.appliesTo(gameB))
+            assertEquals(incident, (runCatching { probes.gate(player, gameA, local) }.exceptionOrNull() as SaveProtectionStop).incident)
+            val gameBStop = runCatching { probes.gate(player, gameB, local) }.exceptionOrNull()
+            if (global) {
+                assertEquals(incident, (gameBStop as SaveProtectionStop).incident)
+                assertEquals(LocationFact.Mismatch(bound, null, incident.evidence, 500), probes.location(player, after))
+            } else {
+                assertEquals(null, gameBStop)
+                assertTrue(probes.location(player, after) is LocationFact.Bound)
+            }
+            assertEquals(global, copies.beginUnprotected(gameB, player))
+            assertEquals(global, store.pendingBackup(player.saveFolderId(), gameB))
+            assertEquals(incident, store.incidents().single())
+            store.put(incident.copy(repair = RepairState.Done))
+            probes.gate(player, gameB, local)
         }
     }
 

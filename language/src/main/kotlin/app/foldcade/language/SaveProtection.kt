@@ -321,6 +321,7 @@ object SaveProtectionCopy {
     fun configUnavailableDetail(name: String) = "Foldcade can’t read $name’s save settings. It can still check for save writes during play."
     const val gbcPickInApp = "In GBC.emu, open Options › File Paths › Saves › Select Folder. Pick your save folder there, then choose the same folder in Foldcade."
     const val savedBesideRom = "Saved beside the ROM"
+    const val besideRomFolder = "ROM folder"
     const val besideNoHead = "Folder set. The save from beside the ROM is in Y › Saves under Backups."
     fun besideDoneLocal(folder: String) = "Folder set. Your save beside the ROM is still there. Move it into $folder to keep playing it."
     /** The Fix page once the folder is set and a save can be chosen now. */
@@ -473,7 +474,7 @@ object SaveProtectionCopy {
             IncidentKind.WrongFolder -> when {
                 isEdenGrant -> "Allow ${live?.label} so Foldcade can sync Eden’s saves."
                 saveLayoutChanged -> "$playerName uses a different save location inside ${live?.label ?: "the chosen folder"}."
-                besideGame -> "$playerName saved this game beside the ROM."
+                besideGame -> "$playerName saved beside a ROM."
                 live != null -> "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
                 else -> "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
             }

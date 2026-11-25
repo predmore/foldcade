@@ -17,6 +17,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShellSaveHealthTest {
+    @Test fun aSecondMelonDsGamesHeroUsesTheOriginalBesideRomIncident() {
+        val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore())
+        plugins.register(LocalFolderEntry())
+        val entry = MelonDsEntry()
+        plugins.register(entry)
+        val player = entry.player
+        player.bindSaveFolder("content://com.android.externalstorage.documents/tree/primary%3Asaves")
+        val shell = ShellController(SessionStore(MemoryPrefs()), plugins)
+        shell.setInstalledApps(emptyList(), player.packageNames.toSet(), player.packageNames.toSet())
+        val gameA = Game("romm", "12", player.platformId, Availability.Cached, "Game A")
+        val gameB = gameA.copy(remoteKey = "13", label = "Game B")
+        shell.ingestLibrary("romm", listOf(gameA, gameB).map {
+            GridEntry(it.remoteKey, it.label, "", it.platformId, null, false, it)
+        }, emptyList())
+        val bound = FolderRef("primary:saves", "saves")
+        val live = FolderRef("primary:ROMs", "ROMs")
+        val evidence = Evidence(EvidenceKind.SessionWrite, "Game A saved beside the ROM")
+        val gameAId = homeGameId(gameA.backendId, gameA.remoteKey)
+        val incident = SaveIncident("WrongFolder:${player.saveFolderId()}:$gameAId", IncidentKind.WrongFolder, player.saveFolderId(),
+            player.displayName, listOf(gameAId), bound, live, evidence, 500, besideGame = true)
+        shell.setSaveProtection(mapOf(player.saveFolderId() to LocationFact.Mismatch(bound, null, evidence, 500)), listOf(incident))
+        val health = shell.saveHealthOf(homeGameId(gameB.backendId, gameB.remoteKey))
+        assertEquals(SaveStatus.Problem(incident), health)
+        assertEquals("melonDS is saving somewhere else", saveStatusLine(health))
+    }
+
     @Test fun anAndroidAppKeepsItsOwnSavesWithoutAPlayerRoute() {
         val shell = ShellController(SessionStore(MemoryPrefs()), PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()))
         shell.setInstalledApps(listOf(LaunchableApp("example.game", "Android game", true)), emptySet())

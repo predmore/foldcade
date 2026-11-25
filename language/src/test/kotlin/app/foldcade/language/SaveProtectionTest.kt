@@ -14,7 +14,7 @@ class SaveProtectionTest {
                 besideGame = true)
             val page = SaveFixPage(incident.id, HostScreen.Bottom, SaveProtectionCopy.besideLocationSteps(incident), game = "Game", hasRommDestination = true)
             assertEquals(SaveProtectionCopy.savedBesideRom, saveCheckState(incident))
-            assertTrue(saveProtectionDialog(incident, HostScreen.Bottom).body.contains("$player saved this game beside the ROM."))
+            assertTrue(saveProtectionDialog(incident, HostScreen.Bottom).body.contains("$player saved beside a ROM."))
             assertNull(saveFixTarget(incident))
             assertEquals(listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder), saveFixActions(incident, page))
             assertTrue(saveFixCard(incident, page).body.contains(menu))

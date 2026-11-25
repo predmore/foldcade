@@ -10,6 +10,7 @@ import app.foldcade.language.RootReading
 import app.foldcade.language.SaveIncident
 import app.foldcade.language.SaveIncidentGame
 import app.foldcade.language.RepairState
+import app.foldcade.language.blocksLaunch
 import app.foldcade.plugins.explus.ExPlusPlayer
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.net.URI
@@ -21,6 +22,12 @@ import java.nio.file.attribute.BasicFileAttributes
 import kotlin.coroutines.cancellation.CancellationException
 
 internal val Player.probesContentSaves: Boolean get() = this is MelonDsPlayer || this is ExPlusPlayer
+
+/** A melonDS beside-ROM write exposes its global save setting. The copy still belongs to the original game. */
+internal fun SaveIncident.affectsSaveUse(player: Player, game: Game? = null): Boolean =
+    playerKey == player.saveFolderId() && (gameIds.isEmpty() || besideGame && player is MelonDsPlayer || game?.let(::appliesTo) == true)
+
+internal fun SaveIncident.gatesLaunch(player: Player, game: Game): Boolean = blocksLaunch && affectsSaveUse(player, game)
 
 /** Probe the ROM's actual parent through a held storage tree or our own RomM media. */
 internal class BesideGameSaves(
@@ -150,6 +157,8 @@ internal data class BesideGameCandidate(val root: FolderRef, val spot: SaveSpot,
 internal fun besideBytesForRepair(candidate: BesideGameCandidate?, incident: SaveIncident): ByteArray? = when (val reading = candidate?.read) {
     is FileReading.Bytes -> reading.bytes.takeUnless { candidate.blankBattery }
     null, FileReading.Missing -> {
+        // An earlier capture or blank battery permits restoring the watched folder. Any newer
+        // bytes beside the ROM stay on disk, and this read gives no evidence that they were kept.
         if (incident.capturedAlternateHashes.isEmpty() && incident.kept.isEmpty() && incident.besideSource != BesideSaveSource.Blank)
             throw RepairFoldersUnavailable()
         null

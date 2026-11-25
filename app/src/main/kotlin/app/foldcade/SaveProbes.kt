@@ -214,9 +214,11 @@ internal class SaveProbes(
     fun location(player: Player, snapshot: ProbeSnapshot): LocationFact {
         val bound = snapshot.roots.single { it.bound }.root
         val last = store.location(player.saveFolderId(), bound, snapshot.packageName, snapshot.installFirstMillis)
-        val mismatch = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.gameIds.isEmpty() && it.kind == IncidentKind.WrongFolder && it.repair != RepairState.Done && it.bound?.identity == bound.identity }
+        val mismatch = store.incidents().firstOrNull {
+            it.kind == IncidentKind.WrongFolder && it.blocksLaunch && it.affectsSaveUse(player) && it.bound?.identity == bound.identity
+        }
         return when {
-            mismatch != null -> LocationFact.Mismatch(bound, mismatch.live, mismatch.evidence,
+            mismatch != null -> LocationFact.Mismatch(bound, mismatch.live.takeUnless { mismatch.besideGame }, mismatch.evidence,
                 maxOf(mismatch.openedAtMillis, (last as? LocationFact.Verified)?.atMillis ?: 0))
             player is ArmsX2Player && (snapshot.configUnavailable || snapshot.configSavePath != null) ->
                 LocationFact.Bound(bound, (last as? LocationFact.Bound)?.setAtMillis, configUnavailable = snapshot.configUnavailable,
@@ -320,7 +322,7 @@ internal class SaveProbes(
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { Unit
         } finally { onReading(reading) }
-        store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(game) }?.let { throw SaveProtectionStop(it) }
+        store.incidents().firstOrNull { it.gatesLaunch(player, game) }?.let { throw SaveProtectionStop(it) }
     }
 
     internal fun checkRetroArchLaunch(player: RetroArchPlayer, game: Game, now: ProbeSnapshot, files: RetroArchSaveFiles) {

@@ -126,6 +126,7 @@ private fun FolderRows(incident: SaveIncident) {
         incident.live?.let { (when {
             incident.hostedCardMismatch -> "Card opened"
             incident.isEdenGrant -> "Allow this folder"
+            incident.besideGame -> SaveProtectionCopy.besideRomFolder
             else -> SaveProtectionCopy.nowSavesIn(incident.playerName)
         }) to it.label },
         incident.bound?.let { (if (incident.hostedCardMismatch) "Card Foldcade expected" else SaveProtectionCopy.wasWatching) to it.label },

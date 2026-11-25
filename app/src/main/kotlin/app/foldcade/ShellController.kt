@@ -914,7 +914,7 @@ class ShellController(
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()],
             offDevice = saveDestination(route.saves),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.appliesTo(route.saves) && it.repair != app.foldcade.language.RepairState.Done },
+            incidents = saveIncidents.filter { it.affectsSaveUse(player, route.saves) && it.repair != app.foldcade.language.RepairState.Done },
             playedHere = lastPlayedMillis(playId(route.tileId)) != null,
         )
     }
@@ -3555,7 +3555,7 @@ class ShellController(
             reachable = checkedSaveReachability(owner, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable), saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
-            incidents = saveIncidents.filter { it.playerKey == player.saveFolderId() && it.appliesTo(owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
+            incidents = saveIncidents.filter { it.affectsSaveUse(player, owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
     }
 
     private fun refreshSavePickerHealth() {
@@ -3689,8 +3689,7 @@ class ShellController(
         val route = savesMenuRoute(target.gameId)
         val owner = route?.servers?.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route?.saves
         val incident = saveIncidents.firstOrNull {
-            it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done &&
-                (owner?.let(it::appliesTo) ?: it.gameIds.isEmpty())
+            it.affectsSaveUse(player, owner) && it.repair != app.foldcade.language.RepairState.Done
         }
         return when {
             incident != null -> Effect.OpenSaveFix(incident.id)

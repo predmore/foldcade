@@ -3566,7 +3566,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
         val owner = incident.subject?.game() ?: route?.saves?.takeIf(incident::appliesTo)
-            ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard }?.let(foldcade.shell::saveGame)
+            ?: incident.gameIds.singleOrNull()
+                ?.takeIf { incident.hostedCardMismatch || incident.armsX2OutsideCard || incident.besideGame }
+                ?.let(foldcade.shell::saveGame)
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
         foldcade.scope.launch { foldcade.refreshSaveFixDetails(incident) }
@@ -4539,7 +4541,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     private fun changeServerSave(target: app.foldcade.language.SavePickerTarget, saveId: String?, destination: app.foldcade.language.SaveDestination? = null) {
         val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
         if (foldcade.shell.model.savePicker?.target != target) return
-        val incident = request.player?.let { player -> foldcade.saveProtection.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.blocksLaunch && it.appliesTo(request.owner) } }
+        val incident = request.player?.let { player -> foldcade.saveProtection.incidents().firstOrNull { it.gatesLaunch(player, request.owner) } }
         if (saveId != null && incident != null) {
             foldcade.shell.updateSavePicker(target) { it.copy(busy = false, confirmation = null) }
             openSaveFix(incident.id)
