@@ -303,7 +303,8 @@ internal class SaveProbes(
             subject = old?.subject?.takeIf { sameLocation },
             alternateSavePath = alternate ?: if (player is ArmsX2Player) old?.alternateSavePath.takeIf { sameLocation } else old?.retroArchAlternate(),
             capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty(),
-            besideGame = besideGame || old?.besideGame == true))
+            besideGame = besideGame || old?.besideGame == true && sameLocation,
+            besideSource = old?.besideSource?.takeIf { sameLocation }))
     }
 
     @Synchronized fun gate(player: Player, game: Game, target: LaunchTarget, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
@@ -367,14 +368,14 @@ internal class SaveProbes(
                 val bound = after.roots.single { it.bound }.root
                 val live = verdict.live
                 val detail = when {
-                    verdict.besideGame -> "${game.label} saved beside the ROM."
+                    verdict.besideGame -> "${game.label} saved beside the ROM"
                     live != null -> "${game.label} saved in ${live.label}"
                     else -> "${game.label} saved in another folder"
                 }
-                val evidence = Evidence(EvidenceKind.SessionWrite, detail)
-                if (player is ArmsX2Player) apply(player, after, RootVerdict.UsesOther(live, evidence, after.atMillis), game)
-                else open(player, bound, live, IncidentKind.WrongFolder, evidence,
-                    after.atMillis, game.takeIf { player is RetroArchPlayer || player.probesContentSaves }, besideGame = verdict.besideGame)
+                val verdictWithEvidence = RootVerdict.UsesOther(live, Evidence(EvidenceKind.SessionWrite, detail), after.atMillis)
+                if (verdict.besideGame) {
+                    open(player, bound, live, IncidentKind.WrongFolder, verdictWithEvidence.evidence, after.atMillis, game, besideGame = true)
+                } else apply(player, after, verdictWithEvidence, game)
             }
             is SessionVerdict.Signalled -> if (!unprotected || verdict.verdict !is RootVerdict.Uses) apply(player, after, verdict.verdict, game)
             is SessionVerdict.SilentStart -> {
@@ -436,7 +437,14 @@ internal class SaveProbes(
             return
         }
         if (player.probesContentSaves) {
-            captureContentReturn(player, game, target, before, after, backupOnly)
+            target ?: return
+            val finder by lazy {
+                val grants = android.grants(emptyList()).filter { it.allFiles || URI(it.uri).authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY }
+                android.finder(player, grants)
+            }
+            captureContentReturn(player, game, target, before, after, backupOnly,
+                readBeside = { bound -> besideCandidate(player, game, target, bound) },
+                reachable = { finder.readable(it) })
             return
         }
         if (player is EdenPlayer) return // Eden stages only the account frozen for the session.
@@ -465,32 +473,33 @@ internal class SaveProbes(
         return probe.preserveReturn(pending, spots, after, incident, store, copies, context.packageName) { armsReadable(finder, it) }
     }
 
-    private fun captureContentReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, after: ProbeSnapshot?, backupOnly: Boolean) {
-        val incident = scopedWrongFolders(player, game).firstOrNull { it.blocksLaunch }
+    internal fun captureContentReturn(player: Player, game: Game, target: LaunchTarget, before: ProbeSnapshot?, after: ProbeSnapshot?, backupOnly: Boolean,
+        readBeside: (FolderRef) -> BesideGameCandidate?, reachable: (String) -> String?) {
+        val shared = store.incident("WrongFolder:${player.saveFolderId()}")?.takeIf { it.blocksLaunch }
+        val incident = scopedWrongFolders(player, game).firstOrNull { it.blocksLaunch } ?: shared
         if (incident == null && !backupOnly) return
-        target ?: return
         val bound = incident?.bound ?: before?.roots?.singleOrNull { it.bound }?.root ?: return
         val changed = if (before != null && after != null && before.packageName == after.packageName &&
             before.installFirstMillis == after.installFirstMillis) after.roots.filter { !it.bound && spotChanged(before, it) } else emptyList()
         if (incident?.besideGame == true || changed.any { it.besideGame }) {
-            val beside = besideCandidate(player, game, target, bound)
+            val beside = readBeside(bound)
             val bytes = (beside?.read as? FileReading.Bytes)?.bytes
-            if (beside != null && bytes != null) copies.stageCandidate(game, player, beside.spot, bytes, incident)
-            else if (changed.any { it.besideGame }) throw SaveNotPlaced()
+            if (beside != null && bytes != null) {
+                if (!beside.blankBattery) copies.stageCandidate(game, player, beside.spot, bytes, incident)
+                beside.source?.let { source -> incident?.let { store.noteBesideSaveSource(it.id, source) } }
+            } else if (changed.any { it.besideGame }) throw SaveNotPlaced()
         }
-        val grants = android.grants(emptyList()).filter { it.allFiles || URI(it.uri).authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY }
-        val finder = android.finder(player, grants)
-        val known = incident?.takeUnless { it.besideGame }?.live
+        val known = (shared ?: incident?.takeUnless { it.besideGame })?.live
         val written = changed.filterNot { it.besideGame }.map { it.root.identity }.toSet()
         for (identity in written + listOfNotNull(known?.identity)) {
             try {
-                val folder = finder.readable(identity) ?: throw SaveNotPlaced()
+                val folder = reachable(identity) ?: throw SaveNotPlaced()
                 val spots = saves.probeSpots(player, game, target, folder)
                 val captured = spots.mapNotNull { spot ->
                     saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first?.let { spot to it }
                 }
                 if (captured.isEmpty() && identity in written) throw SaveNotPlaced()
-                for ((spot, bytes) in captured) copies.stageCandidate(game, player, spot, bytes, incident)
+                for ((spot, bytes) in captured) copies.stageCandidate(game, player, spot, bytes, shared ?: incident?.takeUnless { it.besideGame })
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Exception) {
                 if (identity in written) throw failure

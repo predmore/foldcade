@@ -4,8 +4,12 @@ import app.foldcade.api.plugin.Game
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.SaveLocationProbe
+import app.foldcade.language.BesideSaveSource
 import app.foldcade.language.FolderRef
 import app.foldcade.language.RootReading
+import app.foldcade.language.SaveIncident
+import app.foldcade.language.SaveIncidentGame
+import app.foldcade.language.RepairState
 import app.foldcade.plugins.explus.ExPlusPlayer
 import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.net.URI
@@ -43,6 +47,7 @@ internal class BesideGameSaves(
         val base = romName.substringBeforeLast('.')
         val filter = (player as? ExPlusPlayer)?.besideSaveArchiveFilter(slot, romName)
         val spot = SaveSpot(slot, folderUri, if (filter == null) file else "$base.zip")
+        var blankBattery = false
         val read = try {
             val owned = direct != null && directory.toRealPath() == direct.toRealPath().resolve(direct.relativize(directory))
             val children: (String) -> List<SaveChild>? = if (owned) { relative -> diskChildren(directory, relative) }
@@ -80,11 +85,17 @@ internal class BesideGameSaves(
                         contents.forEach { add("$path/${it.name}", it) }
                     }
                 }
+                if (player.saveFolderKey in setOf("gba-emu", "gbc-emu")) {
+                    // An initialized battery (plus the GBC clock) proves a write without carrying game progress.
+                    blankBattery = entries.all { (name, bytes) -> name == file || name == "$base.rtc" && bytes.size == 4 } && entries[file]?.let { battery ->
+                        battery.firstOrNull()?.let { fill -> (fill == 0.toByte() || fill == (-1).toByte()) && battery.all { it == fill } }
+                    } == true
+                }
                 if (entries.isEmpty()) FileReading.Missing else FileReading.Bytes(saveZip(entries))
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { FileReading.Unreadable }
-        return BesideGameCandidate(root, spot, read)
+        return BesideGameCandidate(root, spot, read, blankBattery)
     }
 
     private fun grantedDirectory(directory: Path): String? = grants.asSequence().filter { it.read }.mapNotNull { grant ->
@@ -124,7 +135,48 @@ internal class BesideGameSaves(
     }
 }
 
-internal data class BesideGameCandidate(val root: FolderRef, val spot: SaveSpot, val read: FileReading) {
+internal data class BesideGameCandidate(val root: FolderRef, val spot: SaveSpot, val read: FileReading, val blankBattery: Boolean = false) {
+    val source: BesideSaveSource? get() = when (read) {
+        is FileReading.Bytes -> if (blankBattery) BesideSaveSource.Blank else BesideSaveSource.Progress
+        FileReading.Missing -> BesideSaveSource.Missing
+        FileReading.Unreadable -> null
+    }
+
     fun reading() = RootReading(root, false, emptyList(), (read as? FileReading.Bytes)?.bytes?.let(::md5Hex),
         read != FileReading.Unreadable, null, null, spotFile = spot.fileName, besideGame = true)
+}
+
+/** A vanished source can be skipped after capture. An unreadable source may still contain new progress. */
+internal fun besideBytesForRepair(candidate: BesideGameCandidate?, incident: SaveIncident): ByteArray? = when (val reading = candidate?.read) {
+    is FileReading.Bytes -> reading.bytes.takeUnless { candidate.blankBattery }
+    null, FileReading.Missing -> {
+        if (incident.capturedAlternateHashes.isEmpty() && incident.kept.isEmpty() && incident.besideSource != BesideSaveSource.Blank)
+            throw RepairFoldersUnavailable()
+        null
+    }
+    FileReading.Unreadable -> throw RepairFoldersUnavailable()
+}
+
+/** The caller holds saveFlow across the folder grant, local capture and durable repair transition. */
+internal suspend fun confirmBesideSaveFolder(
+    store: SaveProtectionStore,
+    incidentId: String,
+    picked: String,
+    watched: String?,
+    hasRomm: (SaveIncidentGame) -> Boolean,
+    preserveLocal: suspend (SaveIncident, SaveIncidentGame) -> BesideSaveSource,
+    remember: () -> Boolean,
+): Boolean {
+    val current = store.incident(incidentId)?.takeIf {
+        it.besideGame && it.repair == RepairState.Binding && it.bound?.identity == picked &&
+            (watched == null || watched == picked) && it.live?.identity != picked
+    } ?: return false
+    val subject = current.subject ?: throw SaveNotPlaced()
+    val restoreHead = hasRomm(subject)
+    val source = if (restoreHead) null else preserveLocal(current, subject)
+    if (!remember()) return false
+    val latest = store.incident(incidentId) ?: return false
+    store.put(latest.copy(repair = if (restoreHead) RepairState.Keeping else RepairState.Done,
+        recoveryRequired = restoreHead, besideSource = source ?: latest.besideSource))
+    return restoreHead
 }

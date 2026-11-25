@@ -49,7 +49,7 @@ fun saveFixTarget(incident: SaveIncident): FolderRef? =
  */
 fun saveFixActions(incident: SaveIncident, page: SaveFixPage): List<SaveFixAction> {
     val repair = saveFixRepair(incident, page)
-    val finish = if (page.hasRommDestination && page.game != null && !page.offline && !(incident.besideGame && incident.automaticDone))
+    val finish = if (page.hasRommDestination && page.game != null && !page.offline)
         SaveFixAction.ChooseSave else SaveFixAction.Close
     return when {
         repair == RepairState.Done -> listOf(finish)
@@ -85,6 +85,12 @@ fun saveFixLabel(action: SaveFixAction, incident: SaveIncident): String = when (
 /** The bottom card's words: the one thing to do now. [SaveFixCard.detail] follows any steps. */
 data class SaveFixCard(val body: String, val detail: String?)
 
+private val SaveIncident.hasBesideBackup: Boolean
+    get() = besideGame && (besideSource == BesideSaveSource.Progress || capturedAlternateHashes.isNotEmpty())
+
+fun saveFixRestoredCopy(incident: SaveIncident, folder: String): String =
+    if (incident.hasBesideBackup) SaveProtectionCopy.besideRepairDone(folder) else SaveProtectionCopy.repairDone(folder)
+
 fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     val repair = saveFixRepair(incident, page)
     val automatic = when (repair) {
@@ -95,7 +101,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         RepairState.Rebinding -> SaveProtectionCopy.usingFolder(saveFixTarget(incident)?.label.orEmpty())
         is RepairState.Choosing -> SaveProtectionCopy.bothKept
         is RepairState.Placing -> SaveProtectionCopy.placingSave
-        RepairState.Done -> (if (incident.besideGame) incident.bound else saveFixTarget(incident))?.let { SaveProtectionCopy.repairDone(it.label) }
+        RepairState.Done -> (if (incident.besideGame) incident.bound else saveFixTarget(incident))?.let { saveFixRestoredCopy(incident, it.label) }
             .takeIf { incident.automaticDone && page.hasRommDestination }
         else -> null
     }
@@ -105,6 +111,8 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
     if (repair == RepairState.Done) {
         val destinations = page.stagedDestinations
         return SaveFixCard(when {
+            !page.hasRommDestination && incident.besideSource == BesideSaveSource.Progress && incident.bound != null ->
+                SaveProtectionCopy.besideDoneLocal(incident.bound.label)
             destinations == null && (!page.hasRommDestination || page.game == null) -> "${SaveProtectionCopy.folderSet}."
             (!page.hasRommDestination || page.game == null) &&
                 incident.staged.any { destinations?.get(it) == SaveFixCopyDestination.Device } -> SaveProtectionCopy.guidedDoneLocal
@@ -112,7 +120,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
             !page.hasRommDestination && incident.staged.isNotEmpty() -> SaveProtectionCopy.guidedDoneCopiesUnchecked
             !page.hasRommDestination && incident.kept.isNotEmpty() -> SaveProtectionCopy.guidedDoneKeptOnRomm
             !page.hasRommDestination -> SaveProtectionCopy.guidedDoneWithoutLocalCopy
-            incident.besideGame && incident.kept.isNotEmpty() -> SaveProtectionCopy.besideNoHead
+            incident.hasBesideBackup && incident.kept.isNotEmpty() -> SaveProtectionCopy.besideNoHead
             page.offline -> SaveProtectionCopy.guidedDoneOffline
             else -> SaveProtectionCopy.guidedDone
         }, page.note)
@@ -122,8 +130,9 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         else "Check the user in Eden’s Profile Manager.", page.note)
     if (incident.armsX2OutsideCard) return SaveFixCard(SaveProtectionCopy.armsX2OutsideCardSteps, page.note)
     if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
-    if (incident.besideGame && page.steps != null && incident.bound != null)
-        return SaveFixCard(page.steps, listOfNotNull(SaveProtectionCopy.chooseThere(incident.bound.label), page.note).joinToString(" "))
+    if (incident.besideGame && incident.bound != null)
+        return SaveFixCard(SaveProtectionCopy.besideLocationSteps(incident).orEmpty(),
+            listOfNotNull(SaveProtectionCopy.chooseThere(incident.bound.label), page.note).joinToString(" "))
     saveFixTarget(incident)?.let { return SaveFixCard(SaveProtectionCopy.chooseThere(it.label), page.note) }
     val steps = page.steps ?: return SaveFixCard(SaveProtectionCopy.findFolder(incident.playerName), page.note)
     return SaveFixCard(steps, listOfNotNull(SaveProtectionCopy.thenChoose, page.note).joinToString(" "))

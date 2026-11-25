@@ -66,6 +66,17 @@ internal class SaveProtectionStore(private val directory: Path) {
 
     @Synchronized fun incident(id: String): SaveIncident? = incidentRows.optJSONObject(id)?.let(::incidentFromJson)
 
+    @Synchronized fun noteBesideSaveSource(id: String, source: BesideSaveSource) {
+        val current = incident(id) ?: return
+        if (current.besideGame && current.besideSource != source) put(current.copy(besideSource = source))
+    }
+
+    @Synchronized fun retargetBesideRepairs(key: String, folder: FolderRef) {
+        for (incident in incidents().filter { it.playerKey == key && it.besideGame && it.blocksLaunch && it.bound?.identity != folder.identity }) {
+            put(incident.copy(bound = folder, repair = RepairState.Guided, automaticDone = false))
+        }
+    }
+
     @Synchronized fun reinstalled(key: String, root: FolderRef, packageName: String, install: Long?): Boolean =
         install != null && locations.optJSONObject(key)?.let { row ->
             row.optString("identity") == root.identity && row.optString("packageName") == packageName &&
@@ -168,6 +179,7 @@ private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
     .put("alternateSavePath", alternateSavePath ?: JSONObject.NULL).put("capturedAlternateHashes", JSONArray(capturedAlternateHashes))
     .put("besideGame", besideGame)
+    .put("besideSource", besideSource?.name)
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
     .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
@@ -182,17 +194,18 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.optBoolean("automaticDone"),
     json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
     json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(), json.optBoolean("besideGame"),
+    json.stringOrNull("besideSource")?.let(BesideSaveSource::valueOf),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
 
 private fun SaveIncidentGame.toJson(): JSONObject = JSONObject().put("library", libraryId).put("game", gameId).put("platform", platformId)
     .put("label", label).put("player", playerId).put("target", targetUri).put("origin", origin)
-    .put("package", packageName).put("install", installFirstMillis).put("edenContext", edenContext)
+    .put("package", packageName).put("install", installFirstMillis).put("edenContext", edenContext).put("romFileName", romFileName)
 
 private fun subjectFromJson(json: JSONObject): SaveIncidentGame = SaveIncidentGame(json.getString("library"), json.getString("game"),
     json.getString("platform"), json.getString("label"), json.getString("player"), json.stringOrNull("target"), json.stringOrNull("origin"),
-    json.stringOrNull("package"), json.nullableLong("install"), json.stringOrNull("edenContext"))
+    json.stringOrNull("package"), json.nullableLong("install"), json.stringOrNull("edenContext"), json.stringOrNull("romFileName"))
 
 private fun RepairState.toJson(): JSONObject = JSONObject().put("state", when (this) {
     RepairState.NotStarted -> "NotStarted"

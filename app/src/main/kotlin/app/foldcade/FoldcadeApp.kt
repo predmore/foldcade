@@ -1768,16 +1768,19 @@ class FoldcadeApp : Application() {
     }
 
     internal fun associateSaveRepair(player: Player, subject: app.foldcade.language.SaveIncidentGame) {
-        if (player.probesContentSaves && subject.targetUri != null) {
+        val target = subject.targetUri
+        if (player.probesContentSaves && target != null) {
             val key = player.saveFolderId()
             val id = homeGameId(subject.libraryId, subject.gameId)
-            val incident = saveProtection.incident("WrongFolder:$key:$id") ?: return
-            val game = subject.game()
-            if (incident.subject == null) {
-                val origin = subject.origin.takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
-                saveProtection.put(incident.copy(subject = subject.copy(origin = origin)))
+            val incident = saveProtection.incident("WrongFolder:$key:$id")
+            if (incident?.besideGame == true) {
+                val previous = incident.subject
+                if (previous == null || previous.romFileName == null && previous.targetUri == target) {
+                    val origin = subject.origin.takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId)) }
+                    val romName = playerSaves.romDisplayName(target)
+                    saveProtection.put(incident.copy(subject = subject.copy(origin = origin, romFileName = romName)))
+                }
             }
-            return
         }
         if (player is HostedSaveFolder || subject.targetUri == null || !app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId))) return
         val incident = saveProtection.incident("WrongFolder:${player.saveFolderId()}") ?: return
@@ -1851,7 +1854,7 @@ class FoldcadeApp : Application() {
         val subject = incident.subject ?: return@withContext
         val live = if (incident.besideGame) incident.bound.takeIf { incident.automaticDone } else incident.live
         if (live != null) postNotice(app.foldcade.language.FoldNotice("foldcade:fixed:${incident.id}",
-            app.foldcade.language.SaveProtectionCopy.fixed(subject.label), app.foldcade.language.SaveProtectionCopy.repairDone(live.label),
+            app.foldcade.language.SaveProtectionCopy.fixed(subject.label), app.foldcade.language.saveFixRestoredCopy(incident, live.label),
             postedMillis = System.currentTimeMillis()))
         if (shell.model.saveFix?.incidentId != incident.id) return@withContext
         val home = homes.values.mapNotNull { it.get() }.firstOrNull { it.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }

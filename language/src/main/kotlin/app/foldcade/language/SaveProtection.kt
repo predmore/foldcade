@@ -133,7 +133,10 @@ data class SaveIncident(
     val alternateSavePath: String? = null,
     val capturedAlternateHashes: List<String> = emptyList(),
     val besideGame: Boolean = false,
+    val besideSource: BesideSaveSource? = null,
 )
+
+enum class BesideSaveSource { Progress, Blank, Missing }
 
 /** The locally resolved game and player behind an incident, retained for repair after restart. */
 data class SaveIncidentGame(
@@ -147,6 +150,7 @@ data class SaveIncidentGame(
     val packageName: String?,
     val installFirstMillis: Long?,
     val edenContext: String? = null,
+    val romFileName: String? = null,
 )
 
 val SaveIncident.saveLayoutChanged: Boolean get() =
@@ -300,6 +304,7 @@ object SaveProtectionCopy {
         "Only continue if you’ve quit ${game ?: "the game"} in $player. Foldcade can’t tell if it’s still open."
     fun usingFolder(folder: String) = "Switching Foldcade to $folder."
     fun repairDone(folder: String) = "Your RomM save is back in $folder."
+    fun besideRepairDone(folder: String) = "${repairDone(folder)} The save from beside the ROM is in Y › Saves under Backups."
     fun fixed(game: String) = "Fixed: $game"
     fun fromFolder(folder: String) = "From the folder $folder"
     const val fix = "Fix it"
@@ -316,7 +321,8 @@ object SaveProtectionCopy {
     fun configUnavailableDetail(name: String) = "Foldcade can’t read $name’s save settings. It can still check for save writes during play."
     const val gbcPickInApp = "In GBC.emu, open Options › File Paths › Saves › Select Folder. Pick your save folder there, then choose the same folder in Foldcade."
     const val savedBesideRom = "Saved beside the ROM"
-    const val besideNoHead = "Folder set. The copy from beside the ROM is in Backups."
+    const val besideNoHead = "Folder set. The save from beside the ROM is in Y › Saves under Backups."
+    fun besideDoneLocal(folder: String) = "Folder set. Your save beside the ROM is still there. Move it into $folder to keep playing it."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */
@@ -395,7 +401,7 @@ object SaveProtectionCopy {
         val folder = incident.bound?.label ?: return locationSteps(incident.playerKey)
         return if (incident.playerKey == "melonds")
             "1. Settings › Save Files › Save next to ROM file: Off.\n2. Save file directory › choose $folder."
-        else "1. Options › File Paths › Saves › Select Folder. Choose $folder to switch away from Same As Content. Check this game’s own save folder too.\n2. Options › System › Launch Mode › Main Slot (No State)."
+        else "1. Options › File Paths › Saves › Select Folder. Choose $folder to switch away from Same As Content. If this game has its own save folder, change that too.\n2. Options › System › Launch Mode › Main Slot (No State)."
     }
     fun title(incident: SaveIncident): String = with(incident) { when (kind) {
         IncidentKind.WrongFolder -> when {

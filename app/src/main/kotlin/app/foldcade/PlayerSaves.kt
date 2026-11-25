@@ -318,12 +318,13 @@ internal class PlayerSaves(
     }
 
     /** Resolve against another readable root without rebinding the installed player or writing it. */
-    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> {
-        val candidate = object : Player by player {
+    fun probeSpots(player: Player, game: Game, target: LaunchTarget, root: String): List<SaveSpot> =
+        spots(playerAtSaveRoot(player, root), game, target, forLaunch = false)
+
+    private fun playerAtSaveRoot(player: Player, root: String): Player =
+        object : Player by player {
             override fun saveDeclarations(game: Game) = player.saveDeclarations(game).map { it.copy(locationUri = root) }
         }
-        return spots(candidate, game, target, forLaunch = false)
-    }
 
     /** Stable, durable bytes for incident recovery. Never handed to ordinary slot reconciliation. */
     fun stageLiveCopy(game: Game, player: Player, spot: SaveSpot): String? {
@@ -383,8 +384,8 @@ internal class PlayerSaves(
     }
 
     /** Resolve only what a filename proves. Header- or disc-based saves stay unresolved. */
-    fun spotsForFileName(player: Player, game: Game, romName: String, eden: EdenSaveAccess? = null): List<SaveSpot> =
-        resolveSpots(player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null, eden)
+    fun spotsForFileName(player: Player, game: Game, romName: String, eden: EdenSaveAccess? = null, root: String? = null): List<SaveSpot> =
+        resolveSpots(root?.let { playerAtSaveRoot(player, it) } ?: player, game, romName, { ByteArray(0) }, UnreadableGameFile, false, null, eden)
 
     private fun resolveSpots(
         player: Player, game: Game, romName: String, header: () -> ByteArray, reader: GameFileReader,

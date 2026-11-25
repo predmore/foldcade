@@ -74,6 +74,11 @@ internal class SaveIncidentCopies(
 
     fun stageBackup(game: Game, player: Player, spot: SaveSpot, bytes: ByteArray, incident: SaveIncident?) {
         val origin = rommOrigin().takeIf { app.foldcade.plugins.romm.supportsRommRepair(plugins.library(game.backendId)) }
+        if (incident != null && incident.gameIds.isEmpty()) {
+            // Identical bytes in two games sharing an emulator still belong in separate RomM histories.
+            record(incident.id, listOf(saves.stageCopy(game, player, spot, bytes, origin)))
+            return
+        }
         stageAlternate(game, player, spot, bytes, incident, origin)
     }
 

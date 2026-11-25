@@ -94,4 +94,28 @@ class BesideGameSavesTest {
         val read = BesideGameSaves(docs, emptyList(), "app.foldcade", media).read(ds, game, target, bound)!!
         assertEquals(FileReading.Unreadable, read.read)
     }
+
+    @Test fun initializedGbaAndGbcBatteriesStillHaveEvidenceIncludingAClockButNoProgressToKeep() {
+        for ((id, rom) in listOf("gba-emu.game-boy-advance" to "Counter.gba", "gbc-emu.game-boy-color" to "Counter.gbc")) {
+            val media = Files.createTempDirectory("blank-battery")
+            val player = ExPlusEntry().players.single { it.id == id }
+            docs.name = rom
+            val target = LaunchTarget.SharedFile(media.resolve(rom).toString(), "content://romm/game")
+            val files = BesideGameSaves(docs, emptyList(), "app.foldcade", media)
+            fun read() = files.read(player, game.copy(platformId = player.platformId), target, bound)!!
+            if (rom.endsWith(".gbc")) Files.write(media.resolve("Counter.rtc"), byteArrayOf(4, 3, 2, 1))
+            for (fill in listOf(0.toByte(), (-1).toByte())) {
+                val bytes = ByteArray(8192) { fill }
+                Files.write(media.resolve("Counter.sav"), bytes)
+                val initialized = read()
+                assertTrue(initialized.blankBattery)
+                assertNotNull(initialized.reading().spotHash)
+                bytes[11] = 1
+                Files.write(media.resolve("Counter.sav"), bytes)
+                val progress = read()
+                assertFalse(progress.blankBattery)
+                assertNotEquals(initialized.reading().spotHash, progress.reading().spotHash)
+            }
+        }
+    }
 }

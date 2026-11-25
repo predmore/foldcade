@@ -153,6 +153,67 @@ class SaveRepairTest {
         assertEquals(listOf("backup-first-save"), done.kept)
     }
 
+    @Test fun confirmBesideSaveFolderRejectsTheRomFolderAndAnOldPickAfterSettingsChanges() = runBlocking {
+        val dir = temp.newFolder().toPath()
+        val store = SaveProtectionStore(dir)
+        val expected = incident.copy(besideGame = true, repair = RepairState.Binding, staged = listOf("file:///prior.save"),
+            subject = incident.subject?.copy(romFileName = "Game.nds"))
+        store.put(expected)
+        var remembers = 0
+        suspend fun confirm(picked: FolderRef, watched: FolderRef) = confirmBesideSaveFolder(store, expected.id, picked.identity, watched.identity,
+            hasRomm = { true }, preserveLocal = { _, _ -> error("RomM repair stages later") }, remember = { remembers++; true })
+        assertFalse(confirm(live, bound))
+        assertFalse(confirm(bound, live))
+        assertEquals(0, remembers)
+
+        val newFolder = FolderRef("primary:saves/new", "saves/new")
+        store.retargetBesideRepairs(expected.playerKey, newFolder)
+        val retargeted = SaveProtectionStore(dir).incident(expected.id)!!
+        assertEquals(newFolder, retargeted.bound)
+        assertEquals(RepairState.Guided, retargeted.repair)
+        assertEquals(expected.staged, retargeted.staged)
+        assertEquals("Game.nds", retargeted.subject?.romFileName)
+        store.put(retargeted.copy(repair = RepairState.Binding))
+        assertFalse(confirm(bound, newFolder))
+        assertTrue(confirm(newFolder, newFolder))
+        assertEquals(1, remembers)
+        assertEquals(RepairState.Keeping, store.incident(expected.id)?.repair)
+    }
+
+    @Test fun confirmBesideSaveFolderKeepsTheLocalCopyBeforeFinishing() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val pending = incident.copy(besideGame = true, repair = RepairState.Binding)
+        store.put(pending)
+        val events = mutableListOf<String>()
+        val restore = confirmBesideSaveFolder(store, pending.id, bound.identity, bound.identity, hasRomm = { false },
+            preserveLocal = { current, _ ->
+                events += "preserve"
+                store.put(current.copy(staged = listOf("file:///progress.save")))
+                BesideSaveSource.Progress
+            },
+            remember = { events += "choose"; true })
+        assertFalse(restore)
+        assertEquals(listOf("preserve", "choose"), events)
+        val done = store.incident(pending.id)!!
+        assertEquals(RepairState.Done, done.repair)
+        assertEquals(listOf("file:///progress.save"), done.staged)
+        assertEquals(BesideSaveSource.Progress, done.besideSource)
+    }
+
+    @Test fun repairCanLoseTheRomLocationAfterItsBesideCopyHasAlreadyBeenCaptured() {
+        val initial = incident.copy(besideGame = true)
+        val spot = SaveSpot("sav", primaryFolderDocument("ROMs"), "Game.sav")
+        assertThrows(RepairFoldersUnavailable::class.java) { besideBytesForRepair(null, initial) }
+        val captured = initial.copy(capturedAlternateHashes = listOf("prior-progress"))
+        assertNull(besideBytesForRepair(null, captured))
+        assertNull(besideBytesForRepair(null, initial.copy(kept = listOf("123"))))
+        assertNull(besideBytesForRepair(null, initial.copy(besideSource = BesideSaveSource.Blank)))
+        assertNull(besideBytesForRepair(BesideGameCandidate(live, spot, FileReading.Missing), captured))
+        assertThrows(RepairFoldersUnavailable::class.java) {
+            besideBytesForRepair(BesideGameCandidate(live, spot, FileReading.Unreadable), captured)
+        }
+    }
+
     @Test fun aPreviouslySyncedLiveCopyIsKeptWhileTheNewerHeadIsRestored() = runBlocking {
         val store = SaveProtectionStore(temp.newFolder().toPath())
         val work = Work(RepairCopies(null, "old-head", null, liveMatchesSynced = true))
