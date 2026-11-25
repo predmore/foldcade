@@ -378,4 +378,26 @@ class SaveProtectionTest {
         val reset = eden.copy(evidence = Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.mayBeNewGame))
         assertTrue(saveFixSteps(reset, page).isEmpty())
     }
+
+    @Test fun hostedCardFixOnlyOffersRommStepsWithADestination() {
+        val mismatch = incident.copy(kind = IncidentKind.MaybeNewSave, playerKey = "duckstation", playerName = "DuckStation",
+            evidence = Evidence(EvidenceKind.HostedOpen, "SLUS-00067_1.mcd"))
+        val local = SaveFixPage(mismatch.id, HostScreen.Bottom, SaveProtectionCopy.hostedCardSteps, game = "Castlevania", playerManagesFolder = true)
+        val romm = local.copy(hasRommDestination = true, safe = SaveFixSafe("Castlevania", 100))
+        assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, local))
+        assertEquals(listOf(SaveFixAction.OpenEmulator), saveFixActions(mismatch, romm))
+        assertEquals(SaveProtectionCopy.hostedCardSteps, saveFixCard(mismatch, romm).body)
+        assertEquals(listOf(SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet)),
+            saveFixSteps(mismatch, local))
+        assertEquals(listOf(
+            SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet),
+            SaveFixStep(SaveProtectionCopy.stepChoose, SaveFixStepState.Later),
+        ), saveFixSteps(mismatch, romm))
+        val quarantine = mismatch.copy(repair = RepairState.Guided, evidence = Evidence(EvidenceKind.SessionWrite, "May be a new game"),
+            subject = SaveIncidentGame("romm", "36", "playstation", "Castlevania", "duckstation", null, "https://romm.test", null, null))
+        assertFalse(SaveFixAction.OpenSaves in saveFixActions(quarantine, local.copy(playerManagesFolder = false)))
+        assertNotEquals(SaveProtectionCopy.chooseInSaves, saveFixCard(quarantine, local.copy(playerManagesFolder = false)).body)
+        assertEquals(listOf(SaveFixAction.OpenSaves), saveFixActions(quarantine, romm.copy(playerManagesFolder = false)))
+        assertEquals(SaveProtectionCopy.chooseInSaves, saveFixCard(quarantine, romm.copy(playerManagesFolder = false)).body)
+    }
 }

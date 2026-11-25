@@ -263,7 +263,19 @@ class SaveRepairTest {
         assertTrue(context(before, null).isEmpty())
         assertTrue(context(before, snap(live, true)).isEmpty())
         assertEquals(setOf(RegressionContext.FreshRoot), context(before, snap(bound, true)))
-        assertEquals(setOf(RegressionContext.NewProfile, RegressionContext.Reinstalled, RegressionContext.OpenIncident),
+        assertEquals(setOf(RegressionContext.NewProfile, RegressionContext.OpenIncident),
             returnRegressionContext(before, before, true, "old", "new", reinstalled = true, openIncident = true))
+        assertEquals(setOf(RegressionContext.Reinstalled),
+            returnRegressionContext(before, before, false, null, null, reinstalled = true, openIncident = false))
+    }
+
+    @Test fun hostedCardIncidentWithSubjectStillAppliesOnlyToItsGame() {
+        val subject = incident.subject!!.copy(platformId = "playstation", playerId = "duckstation")
+        val game = subject.game()
+        val mismatch = incident.copy(kind = IncidentKind.MaybeNewSave, playerKey = subject.playerId, subject = subject,
+            gameIds = listOf(homeGameId(game.backendId, game.remoteKey)), evidence = Evidence(EvidenceKind.HostedOpen, "SLUS-00067_1.mcd"))
+        assertTrue(mismatch.appliesTo(game))
+        assertFalse(mismatch.appliesTo(game.copy(remoteKey = "another game")))
+        assertFalse(mismatch.appliesTo(game.copy(backendId = "local-folder")))
     }
 }

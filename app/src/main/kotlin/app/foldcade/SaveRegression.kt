@@ -69,7 +69,7 @@ internal fun returnRegressionContext(
     if (!hosted && first?.markersPresent == false && last?.markersPresent == true && first.root.identity == last.root.identity)
         add(RegressionContext.FreshRoot)
     if (previousProfile != null && currentProfile != null && previousProfile != currentProfile) add(RegressionContext.NewProfile)
-    if (reinstalled) add(RegressionContext.Reinstalled)
+    if (!hosted && reinstalled) add(RegressionContext.Reinstalled)
     if (openIncident) add(RegressionContext.OpenIncident)
 }
 

@@ -3658,9 +3658,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             it.id == id && (it.repair == app.foldcade.language.RepairState.Done || it.isEdenSessionChange)
         }
             ?: foldcade.shell.model.saveFix?.resolved?.takeIf { it.id == id } ?: return
-        val tileId = foldcade.hostedAsk?.pending?.route?.tileId ?: foldcade.savePickerRequest?.route?.tileId
+        val tileId = incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch }
+            ?: foldcade.hostedAsk?.pending?.route?.tileId ?: foldcade.savePickerRequest?.route?.tileId
             ?: incident.subject?.let { homeGameId(it.libraryId, it.gameId) }
-            ?: incident.gameIds.singleOrNull()?.takeIf { incident.hostedCardMismatch }
         foldcade.scope.launch {
             withContext(Dispatchers.IO) {
                 // Keep offline-copy references and alternate paths for the next launch's recheck.
