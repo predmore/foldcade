@@ -50,7 +50,7 @@ Shared formats need a [system folder](local-games.md#folder-names-and-formats).
 
 ## Resume and Move on the Thor
 
-Press **A** on a game Foldcade left open to return to its existing session. **Y › Restart** explicitly starts over. Choosing a save to load also requires a fresh launch. Usage access is optional. For Azahar, Foldcade recognizes when Android removes the game activity, including when **Close Game** leaves Azahar's menu open. The next **A** starts through the save check. A confirmed open game resumes with one press, even without usage access. If you land in Azahar's menu, return to Foldcade and use **Y › Restart**.
+Press **A** on a game Foldcade left open to return to its existing session. **Y › Restart** explicitly starts over. Choosing a save to load also requires a fresh launch. For Azahar, ARMSX2, Eden and melonDS, Foldcade can recognize when Android removes the game activity. The next **A** starts through the save check. A confirmed open game resumes with one press, even without usage access. If a resume opens the emulator's menu, return to Foldcade and use **Y › Restart**. When Foldcade has already confirmed the game closed, its tile offers **Play** through the save check.
 
 **Move** is offered only for a tested one-screen emulator that preserves its running game on the other panel. DuckStation keeps its existing support. Both-screen games keep their emulator's own layout; changing a task's display does not by itself prove that its second screen survives.
 
@@ -144,6 +144,8 @@ Older DuckStation builds, from before the rewrite, read the game differently and
 ## ARMSX2: PlayStation 2
 
 [ARMSX2](https://github.com/ARMSX2/ARMSX2) is the PlayStation 2 emulator to use on the Thor. Foldcade launches the GitHub build, then the Play Store build, then the nightly build, when more than one is installed. NetherSX2, AetherSX2, and EmuCoreX still launch when ARMSX2 is not.
+
+Leave ARMSX2’s **Exit to launcher on close** setting on (the default) so Foldcade can detect when a game closes.
 
 To install the GitHub build with Obtainium and get its updates, open [this link](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.armsx2%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2FARMSX2%2FARMSX2%22%2C%22author%22%3A%22ARMSX2%22%2C%22name%22%3A%22ARMSX2%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22a13-armv8%5C%5C%5C%5C.2-sdk33%5C%5C%5C%5C.apk%24%5C%22%7D%22%7D) on your Thor. It tracks [ARMSX2/ARMSX2](https://github.com/ARMSX2/ARMSX2) and takes the `a13-armv8.2-sdk33` APK. Open ARMSX2 once and finish its first-run setup before you launch a game from Foldcade.
 

@@ -70,7 +70,7 @@ class EdenPlayer : Player, SaveFolderHolder, SaveLocationProbe {
         if (uri == null || !uri.startsWith("content:")) throw PluginException.NotFound("Eden needs a content URI.")
         return PlayerIntent(
             packageName = request.resolvedPackage,
-            componentClass = "org.yuzu.yuzu_emu.activities.EmulationActivity",
+            componentClass = EMULATION_ACTIVITY,
             action = "android.nfc.action.TECH_DISCOVERED",
             dataUri = uri,
             grantReadUri = true,
@@ -79,6 +79,7 @@ class EdenPlayer : Player, SaveFolderHolder, SaveLocationProbe {
     }
 
     companion object {
+        const val EMULATION_ACTIVITY: String = "org.yuzu.yuzu_emu.activities.EmulationActivity"
         const val SLOT: String = "savedata"
     }
 }

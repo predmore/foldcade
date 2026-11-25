@@ -182,8 +182,8 @@ internal fun resumable(frontDoor: String?, started: String?, flags: Set<LaunchFl
  * What a resume brought to the front, from the player's activities that resumed
  * since it was sent, oldest first. A task still there comes back without the
  * player's [frontDoor] (its launcher activity), so the front door coming forward
- * says the game was gone, as after a swipe from Recents or a crash: the resume
- * opened the player itself. That holds when the front door hands on to the
+ * suggests that the player opened its menu. A live game may still be in another
+ * task. The observation only informs the warning. It also covers a handoff to the
  * player's own menu at once, as aPS3e's QuickStartActivity opens its
  * MainActivity, unless the activity the game started in ([started]) came last:
  * the player opened the game again itself. Any other activity is the game,
