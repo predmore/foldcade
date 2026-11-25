@@ -41,7 +41,7 @@ internal data class CardDirectory(val relative: String?, val outsideDocumentId: 
 
 /** Native PCSX2 combines a relative MemoryCards path with DataRoot. Only a contained path can be written. */
 internal fun cardDirectory(ini: String, rootId: String?): CardDirectory {
-    val value = iniValues(ini, "Folders").lastOrNull { it.first == "MemoryCards" }?.second ?: Ps2Card.MEMCARDS
+    val value = iniValues(ini, "Folders").firstOrNull { it.first == "MemoryCards" }?.second ?: Ps2Card.MEMCARDS
     if (value.any { it == '\\' || it.code < 32 } || "://" in value) return CardDirectory(null, valid = false)
     val path = Paths.get(value)
     if (!path.isAbsolute) {

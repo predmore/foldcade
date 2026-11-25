@@ -61,7 +61,7 @@ internal class ArmsX2SaveProbe(
         val placed = pending.spots.singleOrNull()
         val selected = after?.roots?.singleOrNull { it.bound }
         val cardChanged = placed != null && (spots.singleOrNull()?.let(::spotId) != spotId(placed) ||
-            selected != null && selected.spotFile != placed.search?.parent)
+            after?.configUnavailable == false && selected != null && selected.spotFile != placed.search?.parent)
         if (selections.isEmpty() && incident == null && !cardChanged) return false
 
         val working = (pending.spots + spots).distinctBy(::spotId)
@@ -108,7 +108,7 @@ internal fun String.toDocumentId(): String = if (startsWith("primary:")) this
 
 /** Config names the candidate folder and card. The session judge still needs a stable before/after read. */
 internal fun ArmsX2CardConfig.outsideCard(): ConfigSavePath? {
-    if (directory != null) return null
-    val ref = outsideDirectoryId?.let { FolderRef(it, it.removePrefix("primary:")) }
+    val id = outsideDirectoryId ?: return null
+    val ref = FolderRef(id, id.removePrefix("primary:"))
     return ConfigSavePath(expected = null, effective = cardName, live = ref, proves = false)
 }

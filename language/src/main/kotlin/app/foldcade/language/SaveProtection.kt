@@ -36,7 +36,8 @@ sealed interface LocationFact {
     /** Setup missing: today's SaveIssue values, plus a grant that is gone. */
     data class Missing(val issue: SaveIssue) : LocationFact
     /** A folder is bound and reachable. No live evidence for it yet. Unknown, not fine. */
-    data class Bound(val root: FolderRef, val setAtMillis: Long? = null, val configUnavailable: Boolean = false) : LocationFact
+    data class Bound(val root: FolderRef, val setAtMillis: Long? = null, val configUnavailable: Boolean = false,
+        val cardOutside: Boolean = false) : LocationFact
     /** Live evidence that the emulator uses [root], taken at [atMillis]. */
     data class Verified(val root: FolderRef, val evidence: Evidence, val atMillis: Long) : LocationFact
     /** Positive evidence that the emulator uses another folder, [live] when known. */
@@ -306,8 +307,12 @@ object SaveProtectionCopy {
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
     const val retroArchConfigUnavailableDetail = "Foldcade can’t read RetroArch’s settings file. It can still check for save writes during play."
-    const val armsX2ConfigUnavailableDetail = "Foldcade can’t read PCSX2-Android.ini. Choose the shared data folder ARMSX2 uses and allow access to it."
-    const val armsX2CardOutside = "ARMSX2’s MemoryCards folder is outside the chosen data folder. Keep the existing card and set MemoryCards to a folder inside the data folder."
+    const val armsX2ConfigUnavailableDetail = "Foldcade can't read PCSX2-Android.ini in this folder. Open ARMSX2 once, or choose the shared data folder ARMSX2 uses and allow access."
+    const val armsX2CardOutside = "ARMSX2's MemoryCards folder is outside its data folder, so Foldcade can't sync this card. " +
+        "With ARMSX2 closed, open PCSX2-Android.ini and, under [Folders], set MemoryCards = memcards."
+    const val armsX2OutsideCardSteps = "1. Close ARMSX2.\n" +
+        "2. In PCSX2-Android.ini in the ARMSX2 data folder, under [Folders], set MemoryCards = memcards. Don't delete the outside card. Other games' saves may be on it.\n" +
+        "3. Choose the ARMSX2 data folder again."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */

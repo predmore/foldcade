@@ -333,6 +333,12 @@ class Ps2CardTest {
     }
 
     @Test
+    fun theFirstMemoryCardsKeyWinsWhenItIsDuplicated() {
+        val ini = "[Folders]\nMemoryCards = cards/first\nMemoryCards = cards/second"
+        assertEquals(CardDirectory("cards/first"), cardDirectory(ini, "primary:ARMSX2"))
+    }
+
+    @Test
     fun aNestedIniIsIgnoredAndAnUnreadableNativeIniPreventsPlacement() {
         val folder = object : Mem("primary:ARMSX2") {
             override fun read(path: String, limit: Int): ByteArray? =

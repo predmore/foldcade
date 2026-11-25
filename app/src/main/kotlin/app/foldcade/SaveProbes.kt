@@ -199,7 +199,8 @@ internal class SaveProbes(
             mismatch != null -> LocationFact.Mismatch(bound, mismatch.live, mismatch.evidence,
                 maxOf(mismatch.openedAtMillis, (last as? LocationFact.Verified)?.atMillis ?: 0))
             player is ArmsX2Player && (snapshot.configUnavailable || snapshot.configSavePath != null) ->
-                LocationFact.Bound(bound, (last as? LocationFact.Bound)?.setAtMillis, configUnavailable = snapshot.configUnavailable)
+                LocationFact.Bound(bound, (last as? LocationFact.Bound)?.setAtMillis, configUnavailable = snapshot.configUnavailable,
+                    cardOutside = snapshot.configSavePath != null)
             last is LocationFact.Bound && snapshot.configUnavailable -> last.copy(configUnavailable = true)
             else -> last
         }
@@ -259,7 +260,7 @@ internal class SaveProbes(
                 val alternate = config?.effective.takeIf { verdict.evidence.kind == EvidenceKind.Config ||
                     player is ArmsX2Player && verdict.live != null && verdict.live == config?.live }
                 open(player, bound.root, verdict.live, IncidentKind.WrongFolder, verdict.evidence, verdict.atMillis,
-                    game.takeIf { player is RetroArchPlayer || player is ArmsX2Player }, alternate)
+                    game.takeIf { player is RetroArchPlayer || player is ArmsX2Player && alternate != null }, alternate)
             }
             is RootVerdict.Lost -> open(player, bound.root, null, verdict.kind, verdict.evidence, snapshot.atMillis, null)
             RootVerdict.NoNews -> Unit

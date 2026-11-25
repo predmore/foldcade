@@ -925,7 +925,7 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 **PR 7: ARMSX2 config.**
 
 - Read the top-level `PCSX2-Android.ini` and `armsx2-settings.json` through Foldcade’s existing shared-storage access. The INI selects the memory-card directory. The mirror supplies the per-game slot 1 override and its modification time. Both are `Supports`. If the INI is unreadable, Settings shows **Can’t read config**.
-- Use an in-tree `MemoryCards` path for placement. Treat an outside path as a read-only candidate. A game write there with a readable, unchanged watched copy opens a game-scoped `WrongFolder` incident. An unchanged mirror and a session without a write leave the folder unconfirmed. A known save with no matching spot still uses the existing launch gate.
+- Use an in-tree `MemoryCards` path for placement. Treat an outside path as a read-only candidate. A game write there with a readable, unchanged watched copy opens a game-scoped `WrongFolder` incident. A confirmed move to another ARMSX2 data root applies to every game. An unchanged mirror and a session without a write leave the folder unconfirmed. A known save with no matching spot still uses the existing launch gate.
 - Keep suspect folder-card bytes as verified, unslotted RomM Backups, or durably on the device for a local-only game. Guide the user back to a card folder inside the data root. Raw cards are left with the emulator.
 - API minor 27 adds a default `SaveFolderAccess.storageDocumentId` so the plugin can compare an absolute path with a held shared-storage tree. Older plugins retain the same defaults.
 - Thor QA uses `com.armsx2`, a disposable slot 1 folder card and a serial-bearing test disc. Check default, in-tree and outside paths, the per-game override, a run without saving, and the same outside path without a readable grant. The `xyz.aethersx2.android` and `xyz.aethersx2.tturnip` routes are NetherSX2 launch-only players.
@@ -972,7 +972,7 @@ These are drafted, not sent; the user approves before anything goes out.
 2. **melonDS Android:** a `save_uri` launch extra resolved through `SramProvider`, plus a provider query for the effective save directory and `use_rom_dir`.
 3. **EX framework (Rakashazi):** one bridge for all five apps: the effective save dir, batteries and clock paths, launch mode, and a session extra for save URI plus no-state boot. Snes9x EX+ would use the author's official build, since the bridge goes upstream.
 4. **Eden:** a provider query for the effective SaveDir, current profile and layout.
-5. **ARMSX2:** a provider query for `currentInitDataRoot()` and `resolveForGame(serial)` card paths.
+5. **ARMSX2:** a provider query for `currentInitDataRoot()` and the effective slot 1 path at boot, including the serial-named card selected by the private [`memcard.perGame` preference](https://github.com/ARMSX2/ARMSX2/blob/25e7084fdefcf1e9069481a583c38c103b03e8f1/platforms/android/app/src/main/java/com/armsx2/runtime/MainActivityRuntime.kt#L934-L950).
 6. **DuckStation:** an *ask*, not a patch, given CC BY-NC-ND. Request an effective-card-path query.
 
 ---

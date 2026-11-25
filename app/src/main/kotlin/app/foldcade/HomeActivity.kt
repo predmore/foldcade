@@ -351,7 +351,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                                     if (player is ArmsX2Player && incident.armsX2OutsideCard) {
                                         val config = player.cardConfig(foldcade.playerSaves.folderAccess(player, folder.toString(), allowWrite = false))
                                         if (!config.nativeReadable || config.directory == null) {
-                                            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveFix(app.foldcade.language.SaveProtectionCopy.armsX2CardOutside) }
+                                            val copy = app.foldcade.language.SaveProtectionCopy
+                                            val detail = if (config.nativeReadable) copy.armsX2CardOutside else copy.armsX2ConfigUnavailableDetail
+                                            withContext(Dispatchers.Main.immediate) { foldcade.shell.noteSaveFix(detail) }
                                             return@withContext null
                                         }
                                     }
@@ -3481,7 +3483,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             (incident.kind != app.foldcade.language.IncidentKind.MaybeNewSave || incident.hostedCardMismatch)
         val steps = when {
             incident.hostedCardMismatch -> app.foldcade.language.SaveProtectionCopy.hostedCardSteps
-            incident.armsX2OutsideCard -> app.foldcade.language.SaveProtectionCopy.armsX2CardOutside
             else -> (player as? app.foldcade.api.plugin.SaveLocationProbe)?.locationSteps
                 ?: (player as? app.foldcade.api.plugin.HostedSaveFolder)?.hostedFolderSteps
         }
@@ -3698,6 +3699,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val detail = when (val location = setting.location) {
             is app.foldcade.language.LocationFact.Verified -> copy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
             is app.foldcade.language.LocationFact.Bound -> when {
+                location.cardOutside -> copy.armsX2CardOutside
                 !location.configUnavailable -> copy.checkByPlaying
                 playerId == ArmsX2Player.ID -> copy.armsX2ConfigUnavailableDetail
                 else -> copy.retroArchConfigUnavailableDetail

@@ -1,5 +1,6 @@
 package app.foldcade
 
+import android.content.ContextWrapper
 import app.foldcade.api.plugin.*
 import app.foldcade.host.PluginHost
 import app.foldcade.language.*
@@ -70,21 +71,56 @@ class ArmsX2SaveProbeTest {
         assertEquals(SessionVerdict.NoNews, judgeSession(before, snapshot(boundRead, probe.outsideReading(config, outsideUri)), 100L))
     }
 
+    @Test fun aConfirmedWrongDataRootGatesEveryArmsX2Game() {
+        val store = SaveProtectionStore(temporary.newFolder().toPath())
+        val probes = saveProbes(shelf(CardDocuments()), store)
+        val live = FolderRef("primary:Games/ARMSX2", "Games/ARMSX2")
+        val now = snapshot(boundRead, boundRead.copy(root = live, bound = false, spotHash = "other root"))
+        probes.apply(player, now, RootVerdict.UsesOther(live, Evidence(EvidenceKind.SessionWrite, "Game saved there"), now.atMillis), game)
+        val incident = store.incidents().single()
+        assertEquals("WrongFolder:armsx2", incident.id)
+        assertEquals(live, saveFixTarget(incident))
+        assertNull(incident.alternateSavePath)
+        assertTrue(incident.blocksLaunch && incident.appliesTo(game))
+        assertTrue(incident.appliesTo(game.copy(remoteKey = "second")))
+        assertTrue(incident.appliesTo(game.copy(backendId = LocalFolderBackend.ID)))
+    }
+
+    @Test fun noteSessionDoesNotVerifyAWatchedWriteWhileTheConfiguredCardIsOutside() {
+        val store = SaveProtectionStore(temporary.newFolder().toPath())
+        val probes = saveProbes(shelf(CardDocuments()), store)
+        val beforeOutside = snapshot(boundRead, null)
+        val afterOutside = snapshot(boundRead.copy(spotHash = "written"), null).copy(atMillis = 300)
+        val beforeInside = beforeOutside.copy(configSavePath = null)
+        val afterInside = afterOutside.copy(configSavePath = null)
+        for ((before, after) in listOf(beforeInside to afterOutside, beforeOutside to afterInside)) {
+            assertEquals(SessionVerdict.Wrote(bound), judgeSession(before, after, 100))
+            probes.noteSession(player, game, before, after)
+            assertTrue(store.location(player.id, bound, after.packageName, after.installFirstMillis) is LocationFact.Bound)
+        }
+        probes.noteSession(player, game, beforeInside, afterInside)
+        assertTrue(probes.location(player, afterInside) is LocationFact.Verified)
+        assertTrue((probes.location(player, afterOutside) as LocationFact.Bound).cardOutside)
+    }
+
     @Test fun aConfirmedOutsideCardGatesOnlyItsGameAndUploadsOnlyAnArchive() = runBlocking {
         val docs = CardDocuments()
         val saves = shelf(docs)
         val probe = ArmsX2SaveProbe(player, saves, disc())
         val store = SaveProtectionStore(temporary.newFolder().toPath())
-        val incident = incident(game)
-        store.put(incident)
-        assertTrue(incident.blocksLaunch && incident.appliesTo(game))
-        assertFalse(incident.appliesTo(game.copy(remoteKey = "second")))
-        assertFalse(incident.appliesTo(game.copy(backendId = LocalFolderBackend.ID)))
-        assertNull(saveFixTarget(incident))
         val before = snapshot(boundRead, probe.outsideReading(config, outsideUri))
         docs.progress = byteArrayOf(17)
         docs.otherGame = true
         val after = snapshot(boundRead, probe.outsideReading(config, outsideUri))
+        saveProbes(saves, store).apply(player, after,
+            RootVerdict.UsesOther(outside, Evidence(EvidenceKind.SessionWrite, "Game saved there"), after.atMillis), game)
+        val incident = store.incidents().single()
+        assertEquals("WrongFolder:armsx2:${homeGameId(game.backendId, game.remoteKey)}", incident.id)
+        assertEquals(config.effective, incident.alternateSavePath)
+        assertTrue(incident.blocksLaunch && incident.appliesTo(game))
+        assertFalse(incident.appliesTo(game.copy(remoteKey = "second")))
+        assertFalse(incident.appliesTo(game.copy(backendId = LocalFolderBackend.ID)))
+        assertNull(saveFixTarget(incident))
         var archives = 0
         val server = object : LibraryBackend by LocalFolderBackend() {
             override val id = game.backendId
@@ -145,12 +181,33 @@ class ArmsX2SaveProbeTest {
         assertTrue(store.incidents().isEmpty())
     }
 
+    @Test fun anUnreadableIniOnReturnDoesNotArchiveTheUnchangedCardSelection() {
+        val docs = CardDocuments().apply {
+            progress = byteArrayOf(5)
+            iniUnreadable = true
+        }
+        val saves = shelf(docs)
+        val probe = ArmsX2SaveProbe(player, saves, disc())
+        val store = SaveProtectionStore(temporary.newFolder().toPath())
+        val copies = SaveIncidentCopies(saves, host(LocalFolderBackend()), store)
+        val spot = probe.outsideSpot(outsideUri, config.effective)!!
+        val unreadable = probe.config(saves.folderAccess(player, outsideUri, allowWrite = false))
+        assertFalse(unreadable.nativeReadable)
+        assertNull(unreadable.outsideCard())
+        val before = snapshot(boundRead, null).copy(configSavePath = null)
+        val after = snapshot(boundRead.copy(spotFile = null, spotReadable = false), null)
+            .copy(configSavePath = unreadable.outsideCard(), configUnavailable = true)
+        val pending = LibraryReturn(game.backendId, game, player, spots = listOf(spot), baseline = before)
+        assertFalse(probe.preserveReturn(pending, listOf(spot), after, null, store, copies, "app.foldcade") { null })
+        assertFalse(store.pendingBackup(player.id, game))
+        assertTrue(saves.queuedCopies().isEmpty())
+    }
+
     private fun snapshot(boundRead: RootReading, outsideRead: RootReading?) =
         ProbeSnapshot(200, 1, "com.armsx2", listOfNotNull(boundRead, outsideRead), config)
 
-    private fun incident(game: Game) = SaveIncident("incident", IncidentKind.WrongFolder, player.id, player.displayName,
-        listOf(homeGameId(game.backendId, game.remoteKey)), bound, outside, Evidence(EvidenceKind.SessionWrite, "Game saved there"),
-        200L, alternateSavePath = config.effective)
+    private fun saveProbes(saves: PlayerSaves, store: SaveProtectionStore) = SaveProbes(ContextWrapper(null), saves, store,
+        { error("Tests supply root readings") }, SaveIncidentCopies(saves, host(LocalFolderBackend()), store))
 
     private fun probe(docs: SaveDocuments) = ArmsX2SaveProbe(player, shelf(docs), disc())
 
@@ -175,8 +232,10 @@ class ArmsX2SaveProbeTest {
         var progress: ByteArray? = null
         var otherGame = false
         var raw = false
+        var iniUnreadable = false
         override fun children(folderUri: String, path: String): List<SaveChild>? = when (path) {
-            "" -> listOf(SaveChild("Disposable.ps2", "card", !raw, 0L))
+            "" -> listOfNotNull(SaveChild("Disposable.ps2", "card", !raw, 0L),
+                SaveChild("PCSX2-Android.ini", "ini", false, 10L).takeIf { iniUnreadable })
             "Disposable.ps2" -> listOfNotNull(
                 progress?.let { SaveChild("BASLUS-12345", "first", true, 0L) },
                 SaveChild("BASLUS-98765", "second", true, 0L).takeIf { otherGame },
