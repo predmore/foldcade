@@ -144,6 +144,17 @@ internal class RunningGames {
 }
 
 /**
+ * When Foldcade is Android Home, an unprompted return on the launch display means
+ * the player closed. Outside the Home role, reopening Foldcade can cover a live
+ * game without a Home recall, so keep tracking it for resume.
+ */
+internal fun forgetsRunOnReturn(
+    returned: Boolean,
+    homeRecalledOnThisDisplay: Boolean,
+    holdsHomeRole: Boolean,
+): Boolean = returned && !homeRecalledOnThisDisplay && holdsHomeRole
+
+/**
  * True when the player's front door ([frontDoor], its launcher activity) can bring
  * back a game started in [started]. When they are the same activity, the launcher
  * intent is that activity again with another intent, which Android stacks as a

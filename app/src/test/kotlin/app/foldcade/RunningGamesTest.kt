@@ -72,6 +72,24 @@ class RunningGamesTest {
     }
 
     @Test
+    fun onlyAnUnpromptedReturnToDefaultHomeForgetsTheGame() {
+        assertTrue("Close Game returns to default Home",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true))
+        assertFalse("Android Home covers the running game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = true))
+        assertFalse("Reopening non-default Foldcade can cover a running game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = false))
+        assertFalse("An explicit Home recall keeps the game",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = false))
+
+        for (homeRecalled in listOf(false, true)) {
+            for (holdsHomeRole in listOf(false, true)) {
+                assertFalse(forgetsRunOnReturn(returned = false, homeRecalledOnThisDisplay = homeRecalled, holdsHomeRole = holdsHomeRole))
+            }
+        }
+    }
+
+    @Test
     fun aResumeFoundTheGameUnlessThePlayersMenuCameForward() {
         val game = "org.citra.citra_emu.activities.EmulationActivity"
         val menu = "org.citra.citra_emu.ui.main.MainActivity"
@@ -96,10 +114,27 @@ class RunningGamesTest {
     @Test
     fun aResumeBringsThePlayersTaskBackAndHandsItNothing() {
         // No second task, nothing cleared, and no single-top delivery of a game to load.
-        assertEquals(0, RESUME_FLAGS and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
+        val flags = displayStartFlags(RESUME_FLAGS, multipleTask = false)
+        assertEquals(RESUME_FLAGS, flags)
+        assertEquals(0, flags and (Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK or
             Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED != 0)
-        assertTrue(RESUME_FLAGS and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+        assertTrue(flags and Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED != 0)
+        assertTrue(flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test
+    fun clearingATaskReusesItsSlotEvenWithoutARecordedRun() {
+        val start = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val flags = displayStartFlags(start, multipleTask = true)
+        assertEquals(start or Intent.FLAG_ACTIVITY_NEW_TASK, flags)
+        assertEquals(flags, displayStartFlags(start or Intent.FLAG_ACTIVITY_MULTIPLE_TASK, multipleTask = true))
+    }
+
+    @Test
+    fun anIndependentStartCanStillOpenItsOwnTask() {
+        val start = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        assertEquals(start or Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK,
+            displayStartFlags(start, multipleTask = true))
     }
 
     @Test

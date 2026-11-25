@@ -937,23 +937,26 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.refreshEdenSetting()
         foldcade.shell.refreshPlayerSaves()
         val displayId = display?.displayId
-        val ending = displayId != null &&
-            foldcade.externalPlay.sessionId != null &&
-            foldcade.externalPlay.displayId == displayId
         val pending = libraryReturn
-        val leftPlayer = foldcade.externalPlay.packageName.takeIf { ending }
-        if (displayId != null) foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
-        val returned = ending && foldcade.externalPlay.sessionId == null
+        val leftPlayer = foldcade.externalPlay.packageName
+        val returned = displayId != null && foldcade.externalPlay.endIfDisplayHome(foldcade.plays, displayId)
         // A companion resume (lid, Move) can have consumed the pause while the game was still open.
         foldcade.refreshSavesOnReturn(returnedFromGame = returned)
-        // Back here without the Home button: the player closed the game itself, so it is not paused.
-        if (returned && leftPlayer != null && foldcade.homeRecalledOn != displayId) foldcade.runningGames.forget(leftPlayer)
-        if (foldcade.homeRecalledOn != displayId) {
+        val homeRecalled = foldcade.homeRecalledOn == displayId
+        if (leftPlayer != null && forgetsRunOnReturn(
+                returned = returned,
+                homeRecalledOnThisDisplay = homeRecalled,
+                holdsHomeRole = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME),
+            )
+        ) {
+            foldcade.runningGames.forget(leftPlayer)
+        }
+        if (!homeRecalled) {
             val leftApp = displays.panelFor(this, foldcade.store.session.defaultDisplayIsTop)
                 ?.let { foldcade.store.session.externalOn(it)?.id }
             if (leftApp?.startsWith("android:") == true) foldcade.runningGames.forgetCompanion(leftApp.removePrefix("android:"))
         }
-        if (foldcade.homeRecalledOn == displayId) foldcade.homeRecalledOn = null
+        if (homeRecalled) foldcade.homeRecalledOn = null
         if (returned) foldcade.suppressSaveConflict = false
         if (returned && pending != null) {
             libraryReturn = null

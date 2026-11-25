@@ -74,11 +74,12 @@ class ExternalPlay {
         startedAtMillis = nowMillis
     }
 
-    /** Ends the open session when [displayId] is the one the player launched on. */
-    fun endIfDisplayHome(plays: PlaySessions, displayId: Int) {
-        if (this.displayId != displayId) return
-        val id = takeSession() ?: return
+    /** True when Home on the launch display ends play time. The player's task can still be open. */
+    fun endIfDisplayHome(plays: PlaySessions, displayId: Int): Boolean {
+        if (this.displayId != displayId) return false
+        val id = takeSession() ?: return false
         plays.signal(id, PlaySignal.End)
+        return true
     }
 
     /** The player process exited and Home did not resume on the launch display. */

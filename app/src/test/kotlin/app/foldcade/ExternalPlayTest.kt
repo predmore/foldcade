@@ -47,12 +47,12 @@ class ExternalPlayTest {
         val external = ExternalPlay()
         external.open(plays, "nintendo-ds.melonds", "Game", 2) {}
         assertEquals(listOf(PlayKind.Started), plays.events().map { it.kind })
-        external.endIfDisplayHome(plays, 1)
+        assertFalse(external.endIfDisplayHome(plays, 1))
         assertEquals(1, plays.events().size)
-        external.endIfDisplayHome(plays, 2)
+        assertTrue(external.endIfDisplayHome(plays, 2))
         assertEquals(listOf(PlayKind.Started, PlayKind.Ended), plays.events().map { it.kind })
         assertEquals("nintendo-ds.melonds", plays.events().last().gameId)
-        external.endIfDisplayHome(plays, 2)
+        assertFalse(external.endIfDisplayHome(plays, 2))
         assertEquals(2, plays.events().size)
     }
 
