@@ -20,11 +20,35 @@ class RunningGamesTest {
     }
 
     @Test
-    fun confirmedClosureAlwaysUsesTheGate() {
+    fun marksOnlyTheVerifiedGameComponentsAcrossSupportedDistributions() {
+        val arms = app.foldcade.plugins.armsx2.ArmsX2Player.Companion
+        for (pkg in arms.PACKAGES) {
+            assertTrue(supportsGameActivityGrant(pkg, arms.MAIN_ACTIVITY))
+            assertFalse(supportsGameActivityGrant(pkg, "com.armsx2.BootSplashActivity"))
+            assertFalse(supportsGameActivityGrant(pkg, "com.armsx2.Main"))
+        }
+        for (pkg in app.foldcade.plugins.eden.EDEN_PACKAGES) {
+            assertTrue(supportsGameActivityGrant(pkg, app.foldcade.plugins.eden.EdenPlayer.EMULATION_ACTIVITY))
+            assertFalse(supportsGameActivityGrant(pkg, "org.yuzu.yuzu_emu.activities.MainActivity"))
+        }
+        for (pkg in app.foldcade.plugins.melonds.MelonDsPlayer.PACKAGES) {
+            assertTrue(supportsGameActivityGrant(pkg, app.foldcade.plugins.melonds.EMULATOR_ACTIVITY))
+            assertFalse(supportsGameActivityGrant(pkg, "me.magnum.melonds.ui.launcher.LauncherActivity"))
+        }
+    }
+
+    @Test
+    fun aGameActivityNameAloneDoesNotOptAPlayerIn() {
+        assertFalse(supportsGameActivityGrant("xyz.aethersx2.android", "xyz.aethersx2.android.EmulationActivity"))
+        assertFalse(supportsGameActivityGrant("com.fastemulator.gba", "com.fastemulator.gba.EmulatorActivity"))
+        assertFalse(supportsGameActivityGrant("org.ppsspp.ppsspp", "org.ppsspp.ppsspp.PpssppActivity"))
+    }
+
+    @Test
+    fun confirmedClosureBeforeResumeAlwaysUsesTheGate() {
         for (warned in listOf(false, true)) {
             assertEquals(GameActivityResume.Launch, gameActivityResume(exited = false, hasActivityGrant = true, held = false, warned = warned))
         }
-        assertEquals(GameActivityResume.Launch, gameActivityResumed(false, emptyList(), "Game"))
     }
 
     @Test
@@ -36,11 +60,29 @@ class RunningGamesTest {
 
     @Test
     fun onlyAnObservedDifferentActivityWarnsAfterResume() {
-        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, listOf("Menu", "Game"), "Game"))
-        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Game", "Menu"), "Game"))
-        assertEquals(GameActivityResume.Warn, gameActivityResumed(true, listOf("Settings"), "Game"))
-        assertEquals(GameActivityResume.Resume, gameActivityResumed(true, emptyList(), "Game"))
-        assertEquals(GameActivityResume.Resume, gameActivityResumed(null, emptyList(), "Game"))
+        assertEquals(LauncherResumeResult.KeepRun, launcherResumeResult(true, true, listOf("Menu", "Game"), "Menu", "Game"))
+        assertEquals(LauncherResumeResult.Warn, launcherResumeResult(true, true, listOf("Game", "Menu"), "Menu", "Game"))
+        assertEquals(LauncherResumeResult.Warn, launcherResumeResult(true, true, listOf("Settings"), "Menu", "Game"))
+        assertEquals(LauncherResumeResult.KeepRun, launcherResumeResult(true, true, emptyList(), "Menu", "Game"))
+        assertEquals(LauncherResumeResult.KeepRun, launcherResumeResult(true, null, emptyList(), "Menu", "Game"))
+    }
+
+    @Test
+    fun anUnmarkedLauncherMenuWarnsAndKeepsThePossibleLiveRun() {
+        assertEquals(LauncherResumeResult.Warn,
+            launcherResumeResult(false, null, listOf("Splash", "Library"), "Splash", "Game"))
+        assertEquals(LauncherResumeResult.KeepRun,
+            launcherResumeResult(false, null, listOf("Splash", "Game"), "Splash", "Game"))
+        assertEquals(LauncherResumeResult.KeepRun,
+            launcherResumeResult(false, null, emptyList(), "Splash", "Game"))
+    }
+
+    @Test
+    fun aGrantRevokedAfterDispatchClearsTheRunForTheNextPress() {
+        assertEquals(LauncherResumeResult.ForgetRun,
+            launcherResumeResult(true, false, listOf("Splash", "Library"), "Splash", "Game"))
+        assertEquals(LauncherResumeResult.KeepRun,
+            launcherResumeResult(true, true, listOf("Game"), "Splash", "Game"))
     }
 
     @Test

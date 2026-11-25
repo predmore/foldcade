@@ -5,7 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.azahar.activityClass
+import app.foldcade.plugins.eden.EDEN_PACKAGES
+import app.foldcade.plugins.eden.EdenPlayer
+import app.foldcade.plugins.melonds.EMULATOR_ACTIVITY as MELONDS_GAME_ACTIVITY
+import app.foldcade.plugins.melonds.MelonDsPlayer
 import java.util.UUID
 
 /** Android owns this temporary grant on the activity record that received the game intent. */
@@ -17,8 +22,13 @@ internal data class GameActivityGrant(val uri: Uri, val uid: Int) {
     }
 }
 
-internal fun supportsGameActivityGrant(packageName: String, activity: String?): Boolean =
-    activity != null && activity == activityClass(packageName)
+/** These launches name the activity record the emulator removes on native game close. */
+internal fun supportsGameActivityGrant(packageName: String, activity: String?): Boolean = when (activity) {
+    ArmsX2Player.MAIN_ACTIVITY -> packageName in ArmsX2Player.PACKAGES
+    EdenPlayer.EMULATION_ACTIVITY -> packageName in EDEN_PACKAGES
+    MELONDS_GAME_ACTIVITY -> packageName in MelonDsPlayer.PACKAGES
+    else -> activity != null && activity == activityClass(packageName)
+}
 
 internal fun Context.markGameActivity(start: Intent): GameActivityGrant? {
     val component = start.component ?: return null
@@ -46,9 +56,18 @@ internal fun gameActivityResume(exited: Boolean, hasActivityGrant: Boolean, held
     else -> GameActivityResume.Warn
 }
 
-/** A different activity, or missing usage history, never proves that a game has ended. */
-internal fun gameActivityResumed(held: Boolean?, resumed: List<String>, activity: String?): GameActivityResume = when {
-    held == false -> GameActivityResume.Launch
-    resumed.lastOrNull()?.let { it != activity } == true -> GameActivityResume.Warn
-    else -> GameActivityResume.Resume
+internal enum class LauncherResumeResult { KeepRun, Warn, ForgetRun }
+
+/** After dispatch, only a revoked grant clears the run. Activity observations can warn without starting a launch. */
+internal fun launcherResumeResult(
+    hasActivityGrant: Boolean,
+    held: Boolean?,
+    resumed: List<String>,
+    frontDoor: String?,
+    activity: String?,
+): LauncherResumeResult {
+    if (hasActivityGrant && held == false) return LauncherResumeResult.ForgetRun
+    val unexpected = if (hasActivityGrant) resumed.lastOrNull()?.let { it != activity } == true
+        else resumeFound(resumed, frontDoor, activity) == false
+    return if (unexpected) LauncherResumeResult.Warn else LauncherResumeResult.KeepRun
 }

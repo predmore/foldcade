@@ -39,7 +39,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.withResumed
 import app.foldcade.host.play.PlaySignal
 import app.foldcade.api.isAndroidHomeRecall
 import app.foldcade.api.plugin.Availability
@@ -113,7 +112,6 @@ import app.foldcade.language.resumeGameDialog
 import app.foldcade.language.PanelKeyActivity
 import app.foldcade.language.PromptKey
 import app.foldcade.language.interpretThorStyle
-import app.foldcade.plugins.azahar.AzaharPlayer
 import app.foldcade.plugins.eden.EDEN_PACKAGES
 import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.eden.EdenPlayer
@@ -2132,9 +2130,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     }
 
     private fun forgetClosedGameActivities(returned: RunningGame?) {
-        for (packageName in AzaharPlayer.PACKAGES) {
-            val game = foldcade.runningGames.forPackage(packageName) ?: continue
-            val grant = game.activityGrant ?: continue
+        for (packageName in foldcade.runningGames.packages()) {
+            val grant = foldcade.runningGames.forPackage(packageName)?.activityGrant ?: continue
             if (grant.heldByPlayer(this) == false) foldcade.runningGames.forget(packageName)
             else if (returned?.activityGrant == grant) lifecycleScope.launch {
                 // Home can resume before Android removes the finishing activity and its grant.
@@ -2190,7 +2187,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         }
                         if (current.packageName in foldcade.closingPlayers) return@withContext
                         if (resume == GameActivityResume.Warn) {
-                            if (foldcade.shell.present(resumeGameDialog(hostScreen()))) {
+                            if (foldcade.shell.present(resumeGameDialog(hostScreen(), current.player?.displayName))) {
                                 pendingGameResume = {
                                     val run = foldcade.runningOn(tileId)
                                     if (run == null) startAnew()
@@ -2202,10 +2199,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             return@withContext
                         }
                         if (resume == GameActivityResume.Resume) {
-                            val sentAt = System.currentTimeMillis()
-                            if (sendResume(current, tileId, title, platformId, front)) {
-                                checkGameActivityResume(current, sentAt, generation, startAnew)
-                            } else startAnew()
+                            if (!sendResume(current, tileId, title, platformId, front)) startAnew()
                             return@withContext
                         }
                         // A press from the other screen brings the same visible game forward.
@@ -2239,8 +2233,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val started = rememberResume(running, continuing = false) {
             startExternal(tileId, title, platformId ?: running.platformId, running.occupiesBoth, front, resume = true)
         }
-        if (started && running.resumeStart == null && running.activityGrant == null) {
-            checkResume(running, sentAt, front.component?.className)
+        if (started && running.resumeStart == null) {
+            checkLauncherResume(running, sentAt, front.component?.className)
         }
         return started
     }
@@ -2271,55 +2265,25 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         true
     }
 
-    /**
-     * A moment after a resume, looks at what came to the front. If the player's own
-     * menu ([frontDoor]) did, its task was gone, so the game starts afresh in its
-     * place, as A on a game not open would have. Anything else leaves it be.
-     */
-    private fun checkResume(running: RunningGame, sentAt: Long, frontDoor: String?) {
-        foldcade.scope.launch {
-            delay(RESUME_CHECK_MS)
-            val resumed = withContext(Dispatchers.IO) {
-                UsageAccess(this@FoldcadeHomeActivity).resumedSince(running.packageName, sentAt, System.currentTimeMillis())
-            }
-            if (resumeFound(resumed, frontDoor, running.activity) != false) return@launch
-            withContext(Dispatchers.Main.immediate) {
-                // Only the same start of the same game, with its player still in front from this resume.
-                val now = foldcade.runningOn(running.tileId) ?: return@withContext
-                if (now.packageName != running.packageName || now.startedAtMillis != running.startedAtMillis) return@withContext
-                if (foldcade.externalPlay.sessionId == null || foldcade.externalPlay.packageName != running.packageName) return@withContext
-                if (isDestroyed || isFinishing) return@withContext
-                val route = foldcade.shell.launchRoute(running.tileId) ?: return@withContext
-                launchScreen = now.panel
-                launchSubject = null
-                launchBackendGame(title = running.title, platformId = running.platformId, route = route, fresh = true)
-            }
-        }
-    }
-
-    private fun checkGameActivityResume(running: RunningGame, sentAt: Long, generation: Int, startAnew: () -> Unit) {
+    /** The press already opened the player's task. Report the result without starting another launch. */
+    private fun checkLauncherResume(running: RunningGame, sentAt: Long, frontDoor: String?) {
         val session = foldcade.externalPlay.sessionId ?: return
-        val displayId = foldcade.externalPlay.displayId ?: return
         foldcade.scope.launch {
             delay(RESUME_CHECK_MS)
             val resumed = UsageAccess(this@FoldcadeHomeActivity)
                 .resumedSince(running.packageName, sentAt, System.currentTimeMillis())
             withContext(Dispatchers.Main.immediate) {
-                if (isDestroyed || isFinishing || !launchCurrent(generation) || foldcade.externalPlay.sessionId != session) return@withContext
-                val held = running.activityGrant?.heldByPlayer(this@FoldcadeHomeActivity)
-                when (gameActivityResumed(held, resumed, running.activity)) {
-                    GameActivityResume.Resume -> Unit
-                    GameActivityResume.Warn -> Toast.makeText(applicationContext, Copy.azaharResumeWarning, Toast.LENGTH_LONG).show()
-                    GameActivityResume.Launch -> {
+                if (isDestroyed || isFinishing || foldcade.externalPlay.sessionId != session) return@withContext
+                val current = foldcade.runningGames.forPackage(running.packageName) ?: return@withContext
+                if (current.startedAtMillis != running.startedAtMillis) return@withContext
+                val grant = current.activityGrant
+                val held = grant?.heldByPlayer(this@FoldcadeHomeActivity)
+                when (launcherResumeResult(grant != null, held, resumed, frontDoor, current.activity)) {
+                    LauncherResumeResult.KeepRun -> Unit
+                    LauncherResumeResult.Warn -> Toast.makeText(applicationContext, Copy.resumeGameWarning(current.player?.displayName), Toast.LENGTH_LONG).show()
+                    LauncherResumeResult.ForgetRun -> {
                         foldcade.runningGames.forget(running.packageName)
-                        val home = foldcade.homeOnDisplay(displayId) ?: return@withContext
-                        val recall = Intent(home, home.javaClass).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        home.startOnDisplay(recall, displayId, multipleTask = false)
-                        home.lifecycleScope.launch {
-                            home.lifecycle.withResumed {
-                                if (launchCurrent(generation)) startAnew()
-                            }
-                        }
+                        Toast.makeText(applicationContext, Copy.resumeGameClosed, Toast.LENGTH_LONG).show()
                     }
                 }
             }
