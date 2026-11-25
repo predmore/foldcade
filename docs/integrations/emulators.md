@@ -18,6 +18,8 @@ Saves stay with each emulator. Switching does not move a save from one emulator 
 
 [RetroArch](retroarch.md) with a core for a system goes ahead of these emulators, except on the Nintendo DS and the PlayStation. It also runs systems this table doesn't list, such as the Sega CD, PC Engine, and Atari consoles.
 
+RetroArch sync uses the standard core-sorted `.srm` file. If settings or an override redirect that file, Foldcade can stop the affected game's synced launch and guide you back to the watched folder. Core-specific save formats and companions have their own limits. See [RetroArch saves](retroarch.md#saves).
+
 | System | Example folder | Recognized game formats | Emulators, in priority order |
 | --- | --- | --- | --- |
 | Game Boy | `gb` | `.gb` | My OldBoy!, Pizza Boy GBC, GBC.emu |
@@ -252,7 +254,7 @@ The [candidate audit](../save-sync-candidates.md) lists the next emulators and v
 
 **Flycast stays launch-only.** The official Android app’s live home is `Android/data/com.flycast.emulator/files`; Home Folder Import/Export only makes shared copies. It cannot be redirected to a live shared folder through that UI. All-files access cannot open the private home. On Thor, Android’s picker granted read/write access to the exact live home, but creating a throwaway VMU through that grant failed with **Permission denied**. No root-free writable route was verified, so Foldcade does not claim that a shared export or a nominal grant is syncing.
 
-The format audit confirms `<sanitized IP.BIN product number>_vmu_save_A1.bin`; upstream isolates only A1, and every other port remains shared. Flycast also buffers VMU writes until game unload, so safe replacement needs an unload handoff as well as writable access. Shared VMUs must never be assigned to one game. The verified paths, formats and source links are kept in the [candidate audit](../save-sync-candidates.md#flycast) for a follow-up. Use RetroArch for supported Dreamcast save sync.
+The format audit confirms `<sanitized IP.BIN product number>_vmu_save_A1.bin`; upstream isolates only A1, and every other port remains shared. Flycast also buffers VMU writes until game unload, so safe replacement needs an unload handoff as well as writable access. Shared VMUs must never be assigned to one game. The verified paths, formats and source links are kept in the [candidate audit](../save-sync-candidates.md#flycast) for a follow-up. Dreamcast VMUs also stay local when playing through the RetroArch core.
 
 ## EX family: Nintendo and Sega
 

@@ -425,7 +425,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 | **EX ×5** | `EmuEx`, beside-game `<content>.sav/.srm/.brm/.rtc` via `saveBesideGame` | none readable: config is private and binary | Session write. Beside-game diff catches **Same As Content**. Candidate diff catches a custom folder Foldcade also holds. | App Folder (private) and Launch Mode stay a standing setup step. Upstream common bridge. |
 | **melonDS** | `saves/nds` and others in `saveFolderPlaces`; beside-game `<rom>.sav` | none readable | Session write. **Beside-game diff catches "Save next to ROM file"** for RomM downloads (Foldcade owns `Android/media/app.foldcade/romm`). | Private-fallback `saves` is unreadable. Upstream `save_uri` extra. |
 | **PPSSPP** | `PSP`, `saves/PSP`, `Android/media/org.ppsspp.ppsspp/PSP`(*) | `SYSTEM/ppsspp.ini`: `Supports` only (audit: a copy doesn't certify the root) | Session write, plus candidate diff | Later: **PinnedLaunch** via `org.ppsspp.ppsspp.Args` + `--memstick`, version-gated (PR 9) |
-| **RetroArch** | beside-game `<rom>.srm` | the launched `CONFIGFILE` when a held grant reaches it: `savefile_directory`, `sort_savefiles_enable`, `sort_savefiles_by_content_enable`, `savefiles_in_content_dir` → `Proves` when they place saves elsewhere | Session write, plus beside-game diff, plus config when readable | Overrides per core, content and game (PR 5). Core companions. |
+| **RetroArch** | Exact `.srm` beside the ROM, under the default core-sorted root, or at the confirmed alternate path. Readable granted local folders and Foldcade's RomM media qualify. | The launched `CONFIGFILE` and applicable core, content-directory, and game overrides determine `savefile_directory`, `sort_savefiles_enable`, `sort_savefiles_by_content_enable`, and `savefiles_in_content_dir`. A proven different path gives `Config` / `UsesOther` for the affected game. | Session write, beside-ROM diff, and a complete config mismatch. A config match alone does not verify game bytes. | Private config, unsupported syntax, archive-member names, and unresolved directory fallbacks leave path checks inconclusive. Unsupported core-specific formats leave the spot unresolved. Save states and companions stay outside the `.srm` slot. |
 
 (*) Each `probePlaces` entry is checked only when Foldcade can already read it, so a guessed place costs nothing when it doesn't exist.
 
@@ -898,10 +898,10 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 5: RetroArch config.**
 
-- Read the launched `CONFIGFILE` when reachable, and override files per core, content and game.
-- Beside-content diff.
-- Tests on config precedence fixtures. QA: turn on content-directory saves, then a game override.
-- Risk: medium. Precedence is incomplete, so when unsure, report `Supports`.
+- Read the selected package's launched `CONFIGFILE` and the override directory from the base config. Apply the global, core, content-directory, and game layers in that order. Apply the beside-content flag before the content-directory and core sort flags. Use held grants for config reads, without asking for new access.
+- Judge a proven alternate file path at launch. Inaccessible overrides, unsupported syntax, and unresolved directory fallbacks produce `Supports` only. Compare files even when the base folder is the same.
+- Use the persisted after-placement baseline to detect a changed file beside the ROM. Scope the incident to the affected game. Keep readable alternate bytes through the existing verified, unslotted Backups queue. Guided Fix restores the expected layout. Unsupported formats have an unresolved spot with a reason.
+- Tests cover config precedence and flags, unreachable config, and readable beside-content baselines. Thor QA starts by backing up the existing RomM GBA game, then checks the normal layout, content-directory saves, a game override, and preservation without moving the RomM head.
 
 **PR 6: melonDS + EX beside-game and candidate places.**
 

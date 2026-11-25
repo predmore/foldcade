@@ -86,7 +86,11 @@ Current upstream core behavior supplements stale required flags: gpSP and Beetle
 
 RetroArch keeps its own saves, so they work without any setup in Foldcade. For [RomM save sync](romm.md#save-sync), choose RetroArch's save folder once under **Settings › Emulators › RetroArch**. The picker opens at `RetroArch`; choose **Use this folder**. Foldcade resolves `saves` beneath it, leaving the same grant available for BIOS in `system`. One folder covers every system. Before a server launch, **Play without syncing** skips this setup for that launch. Foldcade asks again next time.
 
-Foldcade syncs battery saves, the `.srm` files RetroArch writes to `saves/<core name>/<game name>.srm`. That is RetroArch's default layout. Keep **Settings › Saving › Sort Saves into Folders by Core Name** on, and **Write Saves to Content Directory** off. Save states stay on the device.
+Foldcade syncs the standard `.srm` battery file at `<save folder>/<core name>/<game name>.srm`. In RetroArch, set **Settings › Directory › Save Files** to the folder Foldcade watches. Under **Settings › Saving**, turn **Sort Saves into Folders by Core Name** on and turn **Sort Saves into Folders by Content Directory** and **Write Saves to Content Directory** off. **Quick Menu › Overrides** can change these choices for the core, content directory, or game. Save the configuration and quit RetroArch through its menu so it reads the changes next time.
+
+When Foldcade can read the config used for launch and its applicable overrides with access it already holds, a confirmed mismatch opens a save warning for the affected game before Foldcade places a save. Unreadable settings leave that check inconclusive. Foldcade also checks for a new or changed `.srm` next to the ROM after play when it can read that folder. If you get a warning, **Fix saves** guides you back to the watched layout. Foldcade keeps readable progress from another location as a **Backup** in **Y › Saves**. The existing **Playing** save stays in place until you choose a different save.
+
+The Flycast core's VMUs, the PPSSPP core's save folders, the older melonDS core's `.sav` files, DSi save files, RetroArch PlayStation and Saturn cards or backup memory, and Genesis Plus GX's Sega CD backup RAM stay on the device. The config and beside-ROM checks are inconclusive for compressed ROMs, since RetroArch can name a save after an archive member. Save states, separate clock files, and other core companions stay local. Keep using the same core for an existing `.srm` save.
 
 ## Playing
 
