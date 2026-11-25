@@ -55,8 +55,12 @@ class ShellSaveHealthTest {
         // Opened with no game to choose a save for, the finished page only closes.
         assertEquals(Effect.FinishSaveFix(incident.id, openSaves = false), reduce(shell.model, Meaning.Activate).second)
         assertFalse(shell.openSaveFix(incident, "Choose the folder", player.id, owner = game).hasRommDestination)
+        assertFalse(shell.openSaveFix(incident, "Choose the folder", player.id).hasRommDestination)
         store.setRommOrigin("https://romm.example")
         assertFalse(shell.openSaveFix(incident, "Choose the folder", player.id, owner = game.copy(backendId = "local-folder")).hasRommDestination)
+        assertTrue(shell.openSaveFix(incident, "Choose the folder", player.id, owner = game).hasRommDestination)
+        // Opened from Settings or R1 with no game, an emulator-wide incident still belongs to RomM once it is set up.
+        assertTrue(shell.openSaveFix(incident, "Choose the folder", player.id).hasRommDestination)
         assertTrue(shell.openSaveFix(incident, "Choose the folder", player.id, owner = game).hasRommDestination)
         shell.setSaveProtection(mapOf(player.saveFolderId() to checked), listOf(incident.copy(repair = RepairState.Done)))
         assertEquals(Effect.FinishSaveFix(incident.id), reduce(shell.model, Meaning.Activate).second)

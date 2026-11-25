@@ -857,7 +857,9 @@ class ShellController(
     internal fun openSaveFix(incident: SaveIncident, steps: String?, playerId: String?, owner: Game? = null, offline: Boolean = false): SaveFixPage {
         val origin = store.rommOrigin()
         val subject = incident.subject
-        val hasRommDestination = owner?.backendId == RommCredentials.PLUGIN_ID && origin != null && (subject == null || subject.origin == origin)
+        // With no game in hand, an emulator-wide incident covers the RomM games it plays whenever RomM is set up.
+        val hasRommDestination = origin != null && (subject == null || subject.origin == origin) &&
+            (owner == null || owner.backendId == RommCredentials.PLUGIN_ID)
         val page = SaveFixPage(incident.id, model.layout.gridScreen, steps, playerId = playerId, game = owner?.label, offline = offline,
             hasRommDestination = hasRommDestination)
         publish(model.copy(panel = null, dialog = null, saveFix = page))
