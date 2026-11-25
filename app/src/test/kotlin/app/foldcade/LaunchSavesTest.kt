@@ -28,6 +28,7 @@ import app.foldcade.api.plugin.SyncOutcome
 import app.foldcade.api.plugin.SyncResult
 import app.foldcade.host.PluginHost
 import app.foldcade.language.*
+import app.foldcade.plugins.duckstation.DuckStationCardSettings
 import app.foldcade.plugins.duckstation.DuckStationPlayer
 import app.foldcade.plugins.retroarch.RetroArchEntry
 import app.foldcade.plugins.retroarch.RetroArchPlayer
@@ -417,35 +418,123 @@ class LaunchSavesTest {
     }
 
     @Test fun duckStationCardMismatchKeepsChangedCopiesOutOfTheSlotAndIsScopedToTheGame() = runBlocking {
+        with(DuckStationReturnFixture()) {
+            val other = game.copy(remoteKey = "another game")
+            val head = "existing head".toByteArray()
+            docs.files["$hostedUri/$expected"] = head
+            val placed = saves.changedSince(server.id, game, duck, spots)
+            saves.noteHandedOver(server.id, game, duck, spots, placed)
+            opened(alternate, 110, "r")
+            judge()
+            val incident = store.incidents().single()
+            assertEquals(IncidentKind.MaybeNewSave, incident.kind)
+            assertEquals(alternate, incident.live?.label)
+            assertFalse(incident.blocksLaunch)
+            assertTrue(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
+            assertTrue(server.backups.isEmpty())
+            assertFalse(copies.preserveReturn(other, duck, spots, preserveAsBackup = false))
+
+            val live = "live card progress".toByteArray()
+            docs.files["$hostedUri/$alternate"] = live
+            probes.stageDuckStationReturn(duck, other, spots, 100, 200)
+            probes.stageDuckStationReturn(duck, game, spots, 111, 200)
+            assertTrue(saves.queuedCopies().isEmpty())
+            probes.stageDuckStationReturn(duck, game, spots, 100, 200)
+            assertEquals(md5Hex(live), saves.queuedCopies().single().slot.contentHash)
+
+            val changed = "uncertain card progress".toByteArray()
+            docs.files["$hostedUri/$expected"] = changed
+            assertTrue(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
+            assertEquals(setOf(md5Hex(live), md5Hex(changed)), server.backups.toSet())
+            assertTrue(saves.changedSince(server.id, game, duck, spots).slots.isEmpty())
+            assertTrue(server.observed.isEmpty())
+            assertTrue(server.calls.isEmpty())
+        }
+    }
+
+    @Test fun duckStationFlushFromPreviousGameCreatesNeitherIncidentNorBackup() = runBlocking {
+        with(DuckStationReturnFixture()) {
+            docs.files["$hostedUri/$alternate"] = "previous game's progress".toByteArray()
+            opened(alternate, 120, "w")
+            judge()
+            probes.stageDuckStationReturn(duck, game, spots, 100, 200)
+            assertFalse(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
+            assertTrue(store.incidents().isEmpty())
+            assertTrue(saves.queuedCopies().isEmpty())
+            assertTrue(server.backups.isEmpty())
+            assertEquals(LocationFact.Bound(bound), probes.location(duck, reading))
+        }
+    }
+
+    @Test fun duckStationFolderStopRequiresNewerMatchingConfigBeforeAnOpenCanVerify() {
+        with(DuckStationReturnFixture()) {
+            opened(expected, 110, "r")
+            judge(end = 115)
+            assertTrue(store.hostedCardChecked(duck.id, game))
+            assertEquals(RootVerdict.NoNews, check(100, "/sdcard/Old Cards"))
+
+            val moved = check(130, "/sdcard/Scratch Cards")
+            assertEquals(FolderRef("primary:Scratch Cards", "Scratch Cards"), (moved as RootVerdict.UsesOther).live)
+            opened(expected, 140, "w")
+            judge(moved)
+            assertTrue(probes.location(duck, reading) is LocationFact.Mismatch)
+            assertFalse(store.hostedCardChecked(duck.id, game))
+
+            assertEquals(RootVerdict.NoNews, check(130, hostedPath))
+            judge() // A missing config reading must also leave the stored stop in place.
+            assertEquals(130L, store.incidents().single().openedAtMillis)
+            assertTrue(store.incidents().single().blocksLaunch)
+            assertFalse(store.hostedCardChecked(duck.id, game))
+            assertEquals(RootVerdict.NoNews, check(129, hostedPath))
+            assertTrue(store.incidents().single().blocksLaunch)
+
+            assertEquals(RootVerdict.NoNews, check(150, hostedPath))
+            assertTrue(store.incidents().isEmpty())
+            judge() // An open before the confirmed repair cannot verify the rebound folder.
+            assertEquals(LocationFact.Bound(bound, 150), probes.location(duck, reading))
+            assertEquals(RootVerdict.NoNews, check(145, "/sdcard/Scratch Cards"))
+            assertEquals(RootVerdict.NoNews, check(150, "/sdcard/Scratch Cards"))
+            assertTrue(store.incidents().isEmpty())
+
+            opened(expected, 160, "r")
+            judge(start = 151)
+            assertEquals(LocationFact.Verified(bound, Evidence(EvidenceKind.HostedOpen, expected), 160), probes.location(duck, reading))
+            assertTrue(store.hostedCardChecked(duck.id, game))
+        }
+    }
+
+    private inner class DuckStationReturnFixture {
+        private val appPackage = "app.foldcade"
         val duck = DuckStationPlayer()
         val game = owner.copy(platformId = duck.platformId)
-        val other = game.copy(remoteKey = "another game")
-        val spot = SaveSpot(DuckStationPlayer.CARD_SLOT, SAVES, "RomM name_1.mcd")
-        val alternate = spot.copy(fileName = "DuckStation title_1.mcd")
-        val store = SaveProtectionStore(Files.createTempDirectory("duckstation-mismatch"))
-        val incident = SaveIncident("different-card", IncidentKind.MaybeNewSave, duck.id, duck.displayName,
-            listOf(homeGameId(game.backendId, game.remoteKey)), null, null, Evidence(EvidenceKind.HostedOpen, alternate.fileName), 1)
-        store.put(incident)
+        private val caller = HostedCardCaller(1443, DuckStationPlayer.PACKAGE)
+        private val rootId = HostedFolders.rootId(duck.id)
+        val hostedUri = treeUri("$appPackage.saves", rootId)
+        val hostedPath = "/android_content/$appPackage.saves/tree@foldcade/${duck.id}"
+        val bound = FolderRef(storageIdentity(hostedUri), duck.hostedFolderTitle)
+        val reading = ProbeSnapshot(200, 10, caller.packageName, listOf(RootReading(bound, true, emptyList(), null, true, null, true)))
+        val expected = "RomM name_1.mcd"
+        val alternate = "DuckStation title_1.mcd"
+        val spots = listOf(SaveSpot(DuckStationPlayer.CARD_SLOT, hostedUri, expected))
+        val store = SaveProtectionStore(Files.createTempDirectory("duckstation-return"))
+        private val opens = HostedCardOpens()
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val head = "existing head".toByteArray()
-        docs.files["$SAVES/${spot.fileName}"] = head
-        val placed = saves.changedSince(server.id, game, duck, listOf(spot))
-        saves.noteHandedOver(server.id, game, duck, listOf(spot), placed)
-        assertFalse(incident.blocksLaunch)
-        assertTrue(copies.preserveReturn(game, duck, listOf(spot), preserveAsBackup = false))
-        assertTrue(server.backups.isEmpty())
-        assertFalse(copies.preserveReturn(other, duck, listOf(spot), preserveAsBackup = false))
+        private val context = object : android.content.ContextWrapper(null) {
+            override fun getPackageName() = appPackage
+        }
+        val probes = SaveProbes(context, saves, store, { null }, copies, opens)
 
-        val live = "live card progress".toByteArray()
-        docs.files["$SAVES/${alternate.fileName}"] = live
-        copies.stage(game, duck, listOf(alternate), incident, mark = false)
-        val changed = "uncertain card progress".toByteArray()
-        docs.files["$SAVES/${spot.fileName}"] = changed
-        assertTrue(copies.preserveReturn(game, duck, listOf(spot), preserveAsBackup = false))
-        assertEquals(setOf(md5Hex(live), md5Hex(changed)), server.backups.toSet())
-        assertTrue(saves.changedSince(server.id, game, duck, listOf(spot)).slots.isEmpty())
-        assertTrue(server.observed.isEmpty())
-        assertTrue(server.calls.isEmpty())
+        fun opened(name: String, at: Long, mode: String) {
+            opens.opened(HostedCardOpen(caller, "$rootId/$name", mode, canRead = 'r' in mode, canWrite = 'w' in mode, openedAtMillis = at))
+        }
+
+        fun check(at: Long, directory: String): RootVerdict {
+            val config = DuckStationSaveEvidence(listOf(DuckStationCardSettings(directory, "PerGameTitle", null, null)), duck.suggestedSaveFolder, appPackage)
+            return probes.checkDuckStationConfig(duck, reading, at to config)
+        }
+
+        fun judge(verdict: RootVerdict = RootVerdict.NoNews, start: Long = 100, end: Long = 200) =
+            probes.judgeDuckStationReturn(duck, game, reading, null, verdict, caller, spots, start, end)
     }
 
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {

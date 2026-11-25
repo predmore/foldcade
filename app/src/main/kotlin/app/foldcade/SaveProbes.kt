@@ -303,7 +303,11 @@ internal class SaveProbes(
             val verdict = checkDuckStationConfig(player, after, config)
             if (before != null && sessionStartedAtMillis != null && sessionEndedAtMillis != null &&
                 before.packageName == after.packageName && before.installFirstMillis == after.installFirstMillis) {
-                judgeDuckStationReturn(player, game, after, config?.second, verdict, spots, maxOf(before.atMillis, sessionStartedAtMillis), sessionEndedAtMillis)
+                val uid = try { context.packageManager.getApplicationInfo(after.packageName, 0).uid }
+                    catch (_: PackageManager.NameNotFoundException) { return after }
+                val caller = HostedCardCaller(uid, after.packageName)
+                judgeDuckStationReturn(player, game, after, config?.second, verdict, caller, spots,
+                    maxOf(before.atMillis, sessionStartedAtMillis), sessionEndedAtMillis)
             }
             return after
         }
@@ -364,18 +368,22 @@ internal class SaveProbes(
         return at to DuckStationSaveEvidence(effective, dataUri, context.packageName)
     }
 
-    private fun checkDuckStationConfig(player: DuckStationPlayer, reading: ProbeSnapshot, config: Pair<Long, DuckStationSaveEvidence>?): RootVerdict {
+    fun checkDuckStationConfig(player: DuckStationPlayer, reading: ProbeSnapshot, config: Pair<Long, DuckStationSaveEvidence>?): RootVerdict {
         val bound = reading.roots.single().root
         val stored = store.location(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis)
         val (at, evidence) = config ?: return RootVerdict.NoNews
         val live = evidence.directory() ?: return RootVerdict.NoNews
-        val incident = store.incidents().firstOrNull { it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.evidence.kind == EvidenceKind.Config }
+        val incident = duckStationFolderIncident(player)
+        val boundAt = (stored as? LocationFact.Bound)?.setAtMillis
         if (live.identity == bound.identity) {
-            if (incident != null && at > incident.openedAtMillis) store.close(incident.id)
+            if (incident != null && at > incident.openedAtMillis && (boundAt == null || at >= boundAt)) {
+                store.bound(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis, at, clearHostedCards = true)
+                store.close(incident.id)
+            }
             return RootVerdict.NoNews
         }
         if (!evidence.hasPersistentCard1) return RootVerdict.NoNews
-        if (stored is LocationFact.Bound && at < (stored.setAtMillis ?: 0L)) return RootVerdict.NoNews
+        if (boundAt != null && (at < boundAt || at == boundAt && incident == null)) return RootVerdict.NoNews
         if (stored is LocationFact.Verified && at <= stored.atMillis) return RootVerdict.NoNews
         val verdict = RootVerdict.UsesOther(live, Evidence(EvidenceKind.Config, "DuckStation’s Memory Cards folder is ${live.label}."), at)
         // Record the current config time so that an older config read cannot clear the stop.
@@ -386,12 +394,18 @@ internal class SaveProbes(
         return verdict
     }
 
-    private fun judgeDuckStationReturn(
+    private fun duckStationFolderIncident(player: DuckStationPlayer): SaveIncident? =
+        store.incidents().firstOrNull {
+            it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.evidence.kind == EvidenceKind.Config
+        }
+
+    fun judgeDuckStationReturn(
         player: DuckStationPlayer,
         game: Game,
         reading: ProbeSnapshot,
         config: DuckStationSaveEvidence?,
         rootVerdict: RootVerdict,
+        caller: HostedCardCaller,
         spots: List<SaveSpot>,
         start: Long,
         end: Long,
@@ -399,9 +413,6 @@ internal class SaveProbes(
         val spot = spots.singleOrNull { it.slot == DuckStationPlayer.CARD_SLOT } ?: return
         val bound = reading.roots.single().root
         if (storageIdentity(spot.folderUri, context.packageName) != bound.identity) return
-        val caller = try {
-            HostedCardCaller(context.packageManager.getApplicationInfo(reading.packageName, 0).uid, reading.packageName)
-        } catch (_: PackageManager.NameNotFoundException) { return }
         val rootId = folderDocumentId(spot.folderUri)
         val gameId = homeGameId(game.backendId, game.remoteKey)
         val id = "${IncidentKind.MaybeNewSave.name}:${player.saveFolderId()}:$gameId"
@@ -409,14 +420,9 @@ internal class SaveProbes(
         when (val verdict = judgeHostedCard(hostedCardOpens.during(start, end), caller, rootId, spot.fileName, start, end,
             config?.sharedCard1(bound), config?.possibleSharedCards(bound) ?: setOf(DUCKSTATION_SHARED_CARD_1),
             config?.possibleSlot2Cards(bound).orEmpty())) {
-            is HostedCardVerdict.Expected -> if (verdict.openedAtMillis > ((rootVerdict as? RootVerdict.UsesOther)?.atMillis ?: Long.MIN_VALUE)) {
-                val folderIncident = store.incidents().firstOrNull {
-                    it.playerKey == player.saveFolderId() && it.kind == IncidentKind.WrongFolder && it.evidence.kind == EvidenceKind.Config
-                }
-                if (folderIncident != null && verdict.openedAtMillis <= folderIncident.openedAtMillis) return
+            is HostedCardVerdict.Expected -> if (rootVerdict !is RootVerdict.UsesOther && duckStationFolderIncident(player)?.blocksLaunch != true) {
                 val known = store.location(player.saveFolderId(), bound, reading.packageName, reading.installFirstMillis)
                 if (known is LocationFact.Bound && verdict.openedAtMillis <= (known.setAtMillis ?: Long.MIN_VALUE)) return
-                if (folderIncident != null) store.close(folderIncident.id)
                 if (prior != null && verdict.openedAtMillis > prior.openedAtMillis) store.close(prior.id)
                 apply(player, reading, RootVerdict.Uses(bound, Evidence(EvidenceKind.HostedOpen, spot.fileName), verdict.openedAtMillis), game)
             }

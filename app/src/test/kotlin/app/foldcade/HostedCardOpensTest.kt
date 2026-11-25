@@ -50,14 +50,26 @@ class HostedCardOpensTest {
         assertEquals(HostedCardVerdict.Different(listOf(actual), null, 11), judge(log))
     }
 
-    @Test fun publicationUsesTheFinalNameAndRequiresAnObservedWriteFromSameCaller() {
+    @Test fun publicationCanVerifyTheExpectedCardAndRequiresAnObservedWriteFromSameCaller() {
         val log = HostedCardOpens()
         log.opened(open("tmp", 11, "w"))
-        log.published(duck.copy(uid = 123), "$root/tmp", "$root/$actual", 12)
+        log.published(duck.copy(uid = 123), "$root/tmp", "$root/$expected", 12)
         assertEquals(HostedCardVerdict.Unknown, judge(log))
-        log.published(duck, "$root/tmp", "$root/$actual", 13)
-        assertEquals(HostedCardVerdict.Different(listOf(actual), actual, 13), judge(log))
+        log.published(duck, "$root/tmp", "$root/$expected", 13)
+        assertEquals(HostedCardVerdict.Expected(13), judge(log))
         assertEquals(HostedCardVerdict.Unknown, judge(log, end = 12))
+    }
+
+    @Test fun previousGameWritesCannotNameThisGamesCard() {
+        val log = HostedCardOpens()
+        log.opened(open(actual, 11, "w"))
+        log.opened(open("tmp", 12, "w"))
+        log.published(duck, "$root/tmp", "$root/$actual", 13)
+        assertEquals(HostedCardVerdict.Unknown, judge(log))
+        log.opened(open(actual, 14, "rw"))
+        assertEquals(HostedCardVerdict.Unknown, judge(log))
+        log.opened(open(expected, 15))
+        assertEquals(HostedCardVerdict.Expected(15), judge(log))
     }
 
     @Test fun incompleteLogCannotMakeATruncatedSessionLookLikeOneExactMatch() {

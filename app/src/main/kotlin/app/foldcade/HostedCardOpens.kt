@@ -74,6 +74,8 @@ internal fun judgeHostedCard(
         val documentId = if (published != null) open.publishedAs ?: continue else open.documentId
         if (!open.canRead && !open.canWrite || HostedFolders.parentId(documentId) != rootId) continue
         val name = documentId.substringAfterLast('/')
+        // Starting a new DuckStation activity can flush the previous game's card.
+        if (name != expected && (open.canWrite || published != null)) continue
         if (name in possibleSlot2Cards) continue
         if (name in possibleSharedCards && name != sharedCard1) continue
         if (name != expected && name != sharedCard1 && !name.endsWith("_1.mcd", ignoreCase = true)) continue
