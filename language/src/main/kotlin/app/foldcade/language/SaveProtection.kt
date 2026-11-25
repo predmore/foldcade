@@ -71,7 +71,7 @@ sealed interface SpotFact {
 }
 
 /** Why a game's save has no place. Each one has its own sentence (§6.3). */
-enum class SpotIssue { NoTitleId, UnsupportedImage, NoProfile, CardNotFolder, ArchiveName, Unreadable }
+enum class SpotIssue { NoTitleId, UnsupportedImage, NoProfile, CardNotFolder, ArchiveName, Unreadable, EdenLocation, EdenGrant, EdenProfile }
 
 sealed interface OffDeviceFact {
     /** RomM accepted the bytes the working copy holds now. [atMillis] null for ledgers older than this design. */
@@ -137,6 +137,12 @@ enum class IncidentKind {
     /** A returned save looks like a fresh or reset game (§4.3). Kept as a Backup and not promoted. Asks. */
     MaybeNewSave,
 }
+
+val SaveIncident.isEdenGrant: Boolean get() = playerKey == "eden" && kind == IncidentKind.WrongFolder &&
+    evidence.kind == EvidenceKind.Config && live != null
+
+val SaveIncident.isEdenSessionChange: Boolean get() = playerKey == "eden" && kind == IncidentKind.MaybeNewSave &&
+    evidence.kind == EvidenceKind.Config
 
 sealed interface RepairState {
     data object NotStarted : RepairState
@@ -265,6 +271,8 @@ object SaveProtectionCopy {
     const val stepChoose = "Choose which save to play"
 
     fun unchangedLog(name: String) = "$name didn’t use this folder last time you played."
+    const val edenUserChanged = "Eden’s user changed during play."
+    const val edenLocationChanged = "Eden’s save location changed during play."
     fun incidentDetail(incident: SaveIncident): String = with(incident) {
         if (kind == IncidentKind.WrongFolder && live == null && bound != null && evidence.kind == EvidenceKind.FreshLog)
             unchangedLog(playerName) else evidence.detail
@@ -290,11 +298,11 @@ object SaveProtectionCopy {
         else -> null
     }
     fun title(incident: SaveIncident): String = with(incident) { when (kind) {
-        IncidentKind.WrongFolder -> "$playerName is saving somewhere else"
+        IncidentKind.WrongFolder -> if (isEdenGrant) "Eden needs folder access" else "$playerName is saving somewhere else"
         IncidentKind.MaybeWrongFolder -> "$playerName may be saving somewhere else"
         IncidentKind.FolderEmptied -> "$playerName’s save folder is empty"
         IncidentKind.LostAccess -> "Foldcade can’t see $playerName’s saves"
-        IncidentKind.MaybeNewSave -> "Two saves · choose one"
+        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) evidence.detail.trimEnd('.') else "Two saves · choose one"
     } }
     fun safeOnRomm(receipt: Long?, hasVersions: Boolean, now: Long = System.currentTimeMillis(), style: DateStyle = DateStyle()): String = when {
         receipt != null -> "Your save on RomM is safe, from ${saveWhen(receipt, now, style, inSentence = true)}."
@@ -303,12 +311,13 @@ object SaveProtectionCopy {
     }
     /** R1 has one line: lead with the problem and keep the action visible. */
     fun noticeBody(incident: SaveIncident): String = with(incident) { when (kind) {
-        IncidentKind.WrongFolder -> if (live != null) "Saving in ${live.label}. Fix it before you play."
+        IncidentKind.WrongFolder -> if (isEdenGrant) "Allow ${live?.label} to sync Eden saves."
+            else if (live != null) "Saving in ${live.label}. Fix it before you play."
             else "Not saving in ${bound?.label ?: "this folder"}. Fix it before you play."
         IncidentKind.FolderEmptied -> "${bound?.label ?: "The save folder"} is empty. Fix it before you play."
         IncidentKind.LostAccess -> "Can’t see ${bound?.label ?: "the save folder"}. Fix it before you play."
         IncidentKind.MaybeWrongFolder -> "May be saving elsewhere. Check before you play."
-        IncidentKind.MaybeNewSave -> "Two saves. Choose which to play."
+        IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "Check Eden’s user, then choose a save." else "Two saves. Choose which to play."
     } }
     /**
      * What happened, then what RomM holds, then what to do. [stop] is the launch gate's: only it
@@ -325,12 +334,14 @@ object SaveProtectionCopy {
         val safe = safeOnRomm(receipt, hasVersions, now, style)
         listOf(when (kind) {
             // The folder and the emulator often share a name ("Azahar"), so the folder is called one.
-            IncidentKind.WrongFolder -> if (live != null) "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
+            IncidentKind.WrongFolder -> if (isEdenGrant) "Allow ${live?.label} so Foldcade can sync Eden’s saves."
+                else if (live != null) "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
                 else "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
             IncidentKind.FolderEmptied -> "Its saves in ${bound?.label} are gone."
             IncidentKind.LostAccess -> "Allow ${bound?.label ?: "its folder"} again so saves reach RomM."
             IncidentKind.MaybeWrongFolder -> "Check where it saves."
-            IncidentKind.MaybeNewSave -> "Choose which save to play."
+            IncidentKind.MaybeNewSave -> if (isEdenSessionChange) "${evidence.detail} Check Eden’s user before choosing a save."
+                else "Choose which save to play."
         }, safe, when (kind) {
             IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
             IncidentKind.FolderEmptied -> "Put it back before you play."
@@ -342,6 +353,9 @@ object SaveProtectionCopy {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."
         SpotIssue.UnsupportedImage -> "This file type doesn’t sync yet."
         SpotIssue.NoProfile -> Copy.edenSaveNeedsUser
+        SpotIssue.EdenLocation -> "Foldcade couldn’t check where Eden keeps this save."
+        SpotIssue.EdenGrant -> "Allow access to Eden’s folder in Foldcade."
+        SpotIssue.EdenProfile -> "Foldcade couldn’t read Eden’s selected user. Check Eden’s Profile Manager."
         SpotIssue.CardNotFolder -> "Choose a folder memory card in the emulator."
         SpotIssue.ArchiveName -> SavePickerCopy.incompatible
         SpotIssue.Unreadable -> "Foldcade couldn’t read the game file. Try again once it’s downloaded."

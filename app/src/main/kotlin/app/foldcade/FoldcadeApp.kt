@@ -194,11 +194,14 @@ class FoldcadeApp : Application() {
     /** Moves library saves in and out; replaced files are kept in `save-backups`. */
     internal val playerSaves: PlayerSaves by lazy {
         val documents = AndroidSaveDocuments(contentResolver)
+        val folders = AndroidSaveFolderFinder(this)
         PlayerSaves(
             documents,
             store,
             filesDir.toPath().resolve("save-backups"),
             filesDir.toPath().resolve("save-handover"),
+            edenGrant = { id -> edenExternalGrant(id, folders.grants(emptyList())) },
+            edenReadsAllowed = ::edenSaveReadsAllowed,
         ) { uri -> ContentGameFile(contentResolver, uri) }
     }
 
@@ -1692,16 +1695,16 @@ class FoldcadeApp : Application() {
                 withContext(Dispatchers.Main.immediate) { shell.setSaveDestination(game, app.foldcade.language.OffDeviceFact.Unknown) }
                 continue
             }
-            withContext(Dispatchers.Main.immediate) {
-                shell.noteSaveReachable(game, player.id, spots.isNotEmpty() && player.saveDeclarations(game).all { declaration -> spots.any { it.slot == declaration.slot } })
-            }
+            val reachable = spots.isNotEmpty() && player.saveDeclarations(game).all { declaration -> spots.any { it.slot == declaration.slot } }
+            val issue = if (!reachable && player is EdenPlayer) playerSaves.unresolvedEdenSpot(player, game) else null
+            withContext(Dispatchers.Main.immediate) { shell.noteSaveReachable(game, player.id, reachable, issue) }
             refreshSaveReceipt(game, player, spots)
         }
     }
 
     internal val saveProtection by lazy { SaveProtectionStore(filesDir.toPath().resolve("save-protection")) }
     internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection) }
-    internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies) }
+    internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies, ::edenSaveReadsAllowed) }
 
     internal fun cachedSaveSpots(player: Player): Map<Game, List<SaveSpot>> = receiptSpots
         .filterValues { it.first.saveFolderId() == player.saveFolderId() }.mapValues { it.value.second }
@@ -1982,7 +1985,11 @@ class FoldcadeApp : Application() {
         // provider can start Eden, so a folder that has shown a user is not read again.
         val eden = plugins.player("eden") as? EdenPlayer
         eden?.let(::playerSaveFolder)?.takeIf { it != edenUserFolder }?.let { folder ->
-            if (playerSaves.edenHasUser(eden, folder)) edenUserFolder = folder else setup.putIfAbsent(eden.id, Copy.edenUserSteps)
+            when ((playerSaves.edenSaveAccess(eden, folder) as? EdenSaveAccess.Ready)?.profile) {
+                is app.foldcade.plugins.eden.EdenProfile.User -> edenUserFolder = folder
+                app.foldcade.plugins.eden.EdenProfile.Missing -> setup.putIfAbsent(eden.id, Copy.edenUserSteps)
+                else -> Unit
+            }
         }
         val thor = listOfNotNull(plugins.player("azahar")).associate { player ->
             player.id to thorPresets.read(player.id, playerSaveFolder(player))!!
@@ -2166,6 +2173,12 @@ class FoldcadeApp : Application() {
     } else if (player is SaveFolderHolder) {
         store.playerSaveFolder(player.saveFolderId())
     } else null
+
+    private fun edenSaveReadsAllowed(): Boolean {
+        val pending = edenRestartPending() ?: return true
+        // Querying Eden's provider can start it and clear Android's stopped flag before the launch checks it.
+        return EDEN_PACKAGES.firstOrNull(::packageInstalled) != pending.packageName
+    }
 
     /** Settings › Emulators › Eden keys and firmware. Null while Eden is not installed. */
     internal fun refreshEdenSetting() {

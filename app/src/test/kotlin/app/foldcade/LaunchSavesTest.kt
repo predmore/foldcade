@@ -427,6 +427,28 @@ class LaunchSavesTest {
         probes.gate(player, owner)
     }
 
+    @Test fun anUnknownEdenConfigClearsTheCheckedLocationAcrossRestart() {
+        val directory = Files.createTempDirectory("eden-check")
+        val store = SaveProtectionStore(directory)
+        val player = app.foldcade.plugins.eden.EdenPlayer()
+        val pkg = player.packageNames.first()
+        val root = FolderRef("$pkg.user:root", "Eden")
+        val snapshot = ProbeSnapshot(100, 1, pkg, listOf(RootReading(root, true, emptyList(), null, true, true, null)))
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { error("Eden resolution supplied") }, SaveIncidentCopies(saves, plugins, store))
+        store.verified(player.id, root, Evidence(EvidenceKind.Config, "Eden's save folder"), 50, pkg, 1, true)
+        assertTrue(probes.location(player, snapshot) is LocationFact.Verified)
+
+        assertEquals(RootVerdict.NoNews, probes.check(player, snapshot, eden = EdenSaveAccess.Unknown))
+        assertEquals(LocationFact.Bound(root, 100), probes.location(player, snapshot))
+        assertEquals(LocationFact.Bound(root, 100), SaveProtectionStore(directory).location(player.id, root, pkg, 1))
+        assertTrue(store.incidents().isEmpty())
+
+        val nand = EdenSaveDirectory("primary:nand", "content://$pkg.user/tree/root", "nand")
+        val recovered = EdenSaveAccess.Ready(nand.uri, nand, nand, app.foldcade.plugins.eden.EdenProfile.Missing, configured = false)
+        probes.check(player, snapshot.copy(atMillis = 200), eden = recovered)
+        assertEquals(LocationFact.Verified(root, Evidence(EvidenceKind.OwnProvider, "Eden’s own folder"), 200), probes.location(player, snapshot))
+    }
+
     @Test fun rootRecoveryClosesItsCauseAndUsesClosesBindingAndDoneButBypassesNeverVerify() {
         val store = SaveProtectionStore(Files.createTempDirectory("incident"))
         val copies = SaveIncidentCopies(saves, plugins, store)
@@ -510,7 +532,7 @@ class LaunchSavesTest {
     @Test fun baselineIsTakenAfterFoldcadesOwnPlacement() = runBlocking {
         server.toPlace = "placed"
         var snapshotted = false
-        LaunchSaves(saves, plugins, baseline = { _, _, _ ->
+        LaunchSaves(saves, plugins, baseline = { _, _, _, _ ->
             assertEquals("placed", docs.files["$SAVES/Tetris DS (USA).sav"]?.toString(Charsets.UTF_8))
             snapshotted = true
             null

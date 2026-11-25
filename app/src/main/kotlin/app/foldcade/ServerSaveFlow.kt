@@ -23,7 +23,7 @@ internal class ServerSaveFlow(
     private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
     private val awaitLoad: (String, Boolean) -> Unit,
 ) {
-    suspend fun perform(request: SavePickerRequest, saveId: String?, destination: SaveDestination? = null) {
+    suspend fun perform(request: SavePickerRequest, saveId: String?, destination: SaveDestination? = null, eden: EdenSaveAccess? = null) {
         val player = request.player
         val owner = request.owner
         val library = owner.backendId
@@ -34,13 +34,13 @@ internal class ServerSaveFlow(
         val spots = if (remote) {
             if (wantsPlacement && player != null) {
                 val name = plugins.fileName(request.route.play.backendId, request.route.play) ?: throw SaveNeedsDownload()
-                saves.spotsForFileName(player, owner, name).also {
+                saves.spotsForFileName(player, owner, name, eden).also {
                     if (it.size != declarations.size || it.isEmpty()) throw SaveNeedsDownload()
                 }
             } else emptyList()
         } else {
             val local = player?.takeIf { it.supportsSaveSync(owner) }?.let { plugins.ensureLocal(request.route.play.backendId, request.route.play) }
-            if (local != null) saves.spots(player, owner, local) else emptyList()
+            if (local != null) saves.spots(player, owner, local, eden = eden) else emptyList()
         }
         if (wantsPlacement && (player == null || !player.supportsSaveSync(owner) || declarations.isEmpty() || spots.size != declarations.size)) throw SaveNotPlaced()
         // A server-only ROM has no new emulator progress to capture. Reading its file is unnecessary.

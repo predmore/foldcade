@@ -421,7 +421,7 @@ These are plain JVM tests in `language`: `SaveEvidenceTest` covers each rule, th
 | **aPS3e** | none | none needed: bound root = own provider (`aenu.aps3e…` authority) → **OwnProvider** at bind, valid while the install stamp holds | OwnProvider plus session write on matched `savedata` | VFS remaps and title aliases (`SpotIssue.Unresolved`). Upstream provider call. |
 | **Dolphin** | `dolphin-emu` (legacy) | `Config/Dolphin.ini` and `GameSettings/<ID>.ini`: SlotA device and GCI path, already parsed at `DolphinEntry.kt:117`/`:141` → `Proves` when it names a custom folder (today that is a setup issue; it stays one) | OwnProvider when bound to the official provider. Otherwise `Bound`, then session write. A reachable legacy `dolphin-emu` copy is a candidate, so a GCI change there gives `WroteElsewhere`. | Slot B, raw cards, Wii |
 | **DuckStation** | n/a (hosted) | Host-side, not a plugin: `HostedSavesProvider.openDocument` records `(callingUid, documentId, mode, time)` into a small in-memory session log. `settings.ini`, when the data grant is held: `[MemoryCards] Directory`, `Card1Type` → `Proves` when Directory is not the hosted tree. | **HostedOpen**: DuckStation (by uid) opened the predicted `<name>_1.mcd` during the session. An open of a *different* `.mcd` in the hosted tree gives `MaybeNewSave`, with the opened name as `live`. No card opened in a session of 60 s or more gives `SilentStart` (DuckStation loads card 1 at boot when it is enabled). | Effective per-game card type and name are config-only. Upstream query (permission needed; licence). |
-| **Eden** | none | `config/config.ini [Data Storage] save_directory, nand_directory` → `Proves` when set outside the bound tree. `[System] current_user` plus `profiles.dat`, frozen per session (§4.1). | OwnProvider, plus session write, plus config | The alternate layout `user/save/account/<UUID>/<TITLEID>/0` (audit, ED `savedata_factory.cpp:115`) must be read when present |
+| **Eden** | The selected SaveDir and NAND through existing writable storage grants | `config/config.ini` `[Data Storage]` (also `[Data%20Storage]`) and `[UI]` `Paths\…` keys. An empty `save_directory` uses `nand_directory`. A configured path without a grant opens Fix for that folder. `[System] current_user` and NAND `profiles.dat` identify the account (§4.1). | OwnProvider for the default NAND through Eden's provider, Config for resolved custom paths, and SessionWrite for the frozen account. | Prefer `user/save/account/<raw UUID>/<TITLEID>/0` when present. Otherwise use the legacy layout. A missing, corrupt, or conflicting config clears the check and leaves the destination unresolved. The first resolved context after updating fences existing bytes for Backup preservation. |
 | **EX ×5** | `EmuEx`, beside-game `<content>.sav/.srm/.brm/.rtc` via `saveBesideGame` | none readable: config is private and binary | Session write. Beside-game diff catches **Same As Content**. Candidate diff catches a custom folder Foldcade also holds. | App Folder (private) and Launch Mode stay a standing setup step. Upstream common bridge. |
 | **melonDS** | `saves/nds` and others in `saveFolderPlaces`; beside-game `<rom>.sav` | none readable | Session write. **Beside-game diff catches "Save next to ROM file"** for RomM downloads (Foldcade owns `Android/media/app.foldcade/romm`). | Private-fallback `saves` is unreadable. Upstream `save_uri` extra. |
 | **PPSSPP** | `PSP`, `saves/PSP`, `Android/media/org.ppsspp.ppsspp/PSP`(*) | `SYSTEM/ppsspp.ini`: `Supports` only (audit: a copy doesn't certify the root) | Session write, plus candidate diff | Later: **PinnedLaunch** via `org.ppsspp.ppsspp.Args` + `--memstick`, version-gated (PR 9) |
@@ -526,8 +526,8 @@ Helpers:
    - Call `keepAsBackups`, then record the ids in `incident.kept`. If RomM is unreachable, they go in `incident.staged`.
    - The bound root's bytes go through the normal `reconcile`, unchanged from today.
 4. `SilentStart` opens `WrongFolder`, only for approved signals marked `perStart` on an actual Foldcade launch (§4.2).
-5. **The profile is frozen (Eden).** The profile resolved at launch is stored in the pending return. If the read-back resolves a different profile UUID, it doesn't read from it. It opens `MaybeNewSave("Eden’s user changed during play")`. This fixes the audit's "place into one account, read another".
-6. **Unprotected sessions.** With an open `WrongFolder` and a readable live root, the live copy is captured and kept as a Backup on every return. That way playing anyway is still preserved off-device, even though it isn't synced.
+5. **The profile is frozen (Eden).** The pending return stores the profile UUID and effective save and NAND paths selected at prepare. A different UUID opens `MaybeNewSave` and the return stages only the original account's save as an unslotted Backup. A detected account or location change fences the newly selected folder before later save operations. A verified first run with an absent profile database can discover Eden's first account on return when the paths match.
+6. **Unprotected sessions.** With an open `WrongFolder` and a readable live root, the live copy is captured and kept as a Backup on return. Eden uses its frozen account for return capture. When Eden's configured folder becomes accessible later, the next save operation keeps its local bytes as a Backup before placing a head.
 
 ### 4.2 Negative evidence (`perStart`)
 
@@ -913,10 +913,10 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 4: Eden.**
 
-- Read `save_directory`/`nand_directory`; support the `account/<UUID>/<TITLEID>/0` layout; freeze the profile per session.
-- `EdenEntry.kt`, `SwitchTitle` untouched.
-- Tests on config/profile fixtures. QA with a custom Save Data Directory, and with a profile switched mid-session.
-- Risk: low.
+- Resolve SaveDir and NAND from Eden's config. Keep the data grant for keys, firmware and configuration, and supplement it with a storage grant when a custom folder needs one.
+- Resolve both account layouts in upstream order. Keep `<TITLEID>/…` as the archive layout and use `SwitchTitle` for the game ID.
+- Persist the selected profile and paths in pending returns. Keep suspect bytes in the verified RomM Backup queue and fence newly selected account folders before placement.
+- Test default and custom directories, both layouts, unreadable settings, and a switched profile across restart. Back up the Thor's three Switch titles and their RomM versions before device QA.
 
 **PR 5: RetroArch config.**
 

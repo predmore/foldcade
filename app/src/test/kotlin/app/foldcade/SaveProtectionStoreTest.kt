@@ -70,6 +70,30 @@ class SaveProtectionStoreTest {
         assertEquals(2L, Files.list(dir).use { files -> files.filter { ".unreadable-" in it.fileName.toString() }.count() })
     }
 
+    @Test fun anEdenContextChangeFencesAllGamesEvenWithTheSameProviderGrant() {
+        val dir = Files.createTempDirectory("eden-handovers")
+        val first = app.foldcade.api.plugin.Game("romm", "1", "nintendo-switch", app.foldcade.api.plugin.Availability.Cached, "Game")
+        val second = first.copy(remoteKey = "2")
+        val original = EdenSaveSession("primary:nand", "primary:nand", null)
+        val store = SaveProtectionStore(dir)
+        store.observeEdenContext("eden", original, 100)
+        assertTrue(store.needsBackup("eden", first))
+        assertTrue(store.needsBackup("eden", second))
+        store.handled("eden", first)
+        store.observeEdenContext("eden", original.copy(user = "first"), 200)
+        assertFalse(store.needsBackup("eden", first)) // Creating the first profile doesn't start another fence.
+
+        val restarted = SaveProtectionStore(dir)
+        restarted.observeEdenContext("eden", original.copy(user = "second"), 300)
+        assertTrue(restarted.needsBackup("eden", first))
+        assertTrue(restarted.needsBackup("eden", second))
+        restarted.handled("eden", first)
+        restarted.observeEdenContext("eden", original.copy(user = "second"), 400)
+        assertFalse(restarted.needsBackup("eden", first))
+        restarted.observeEdenContext("eden", original.copy(saveRoot = "primary:custom", user = "second"), 500)
+        assertTrue(SaveProtectionStore(dir).needsBackup("eden", first))
+    }
+
     @Test fun sessionBaselineSurvivesJsonAndAllFilesAliasMatchesSaf() {
         val snapshot = ProbeSnapshot(100, 10, "azahar.app", listOf(RootReading(root, true,
             listOf(SignalReading("log/azahar_log.txt", root.identity, 90, true, false)), "hash", true, true, false, true, true)))

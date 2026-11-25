@@ -1,7 +1,6 @@
 package app.foldcade.plugins.eden
 
 import app.foldcade.api.plugin.Game
-import app.foldcade.api.plugin.GameFileReader
 import app.foldcade.api.plugin.LaunchFlag
 import app.foldcade.api.plugin.LaunchRequest
 import app.foldcade.api.plugin.LaunchTarget
@@ -12,9 +11,8 @@ import app.foldcade.api.plugin.PlayerIntent
 import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
-import app.foldcade.api.plugin.SaveFolderAccess
 import app.foldcade.api.plugin.SaveFolderHolder
-import app.foldcade.api.plugin.SaveFolderSearch
+import app.foldcade.api.plugin.SaveLocationProbe
 import app.foldcade.api.plugin.StartDisplay
 
 /** Nintendo Switch player. This bundled entry is licensed under MIT. */
@@ -34,7 +32,7 @@ val EDEN_PACKAGES: List<String> = listOf("dev.eden.eden_emulator", "dev.legacy.e
  * so another device places it under its own profile. Device saves and BCAT stay.
  * A fresh Eden can start before it has made a profile.
  */
-class EdenPlayer : Player, SaveFolderHolder {
+class EdenPlayer : Player, SaveFolderHolder, SaveLocationProbe {
     override val id: String = "eden"
     override val displayName: String = "Eden"
     override val platformId: String = "nintendo-switch"
@@ -63,15 +61,8 @@ class EdenPlayer : Player, SaveFolderHolder {
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         saveFolder?.let { listOf(SaveDeclaration(SLOT, it)) }.orEmpty()
 
-    /** Whether the current account's save directory can be identified. */
-    fun hasUser(folder: SaveFolderAccess): Boolean = edenUser(folder) != null
-
-    override fun findSaveFolders(slot: String, game: GameFileReader, folder: SaveFolderAccess, forLaunch: Boolean): SaveFolderSearch? {
-        if (slot != SLOT) return null
-        val title = switchTitleId(game, folder) ?: return null
-        val user = edenUser(folder) ?: return null
-        return SaveFolderSearch("$SAVES/$user", title)
-    }
+    override val locationSteps: String = "1. Settings › Advanced settings › Custom Paths › Save Data Directory.\n" +
+        "2. Settings › Profile Manager: check the user you play as."
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         if (request.resolvedPackage !in EDEN_PACKAGES) throw PluginException.NotFound("Eden is not installed.")
@@ -89,35 +80,5 @@ class EdenPlayer : Player, SaveFolderHolder {
 
     companion object {
         const val SLOT: String = "savedata"
-        const val SAVES: String = "nand/user/save/0000000000000000"
-        const val PROFILES: String = "nand/system/save/8000000000000010/su/avators/profiles.dat"
     }
-}
-
-/** Read only. An unreadable profile may use one unambiguous existing user folder. */
-internal fun edenUser(folder: SaveFolderAccess): String? = try {
-    (try { profileUser(folder) } catch (_: Exception) { null }) ?: folder.list(EdenPlayer.SAVES)?.filter {
-        it.isFolder && it.name.matches(Regex("[0-9a-fA-F]{32}")) && it.name.any { char -> char != '0' }
-    }?.singleOrNull()?.name
-} catch (_: Exception) {
-    null
-}
-
-private fun profileUser(folder: SaveFolderAccess): String? {
-    val config = folder.read("config/config.ini", 1024 * 1024)?.toString(Charsets.UTF_8).orEmpty()
-    var system = false
-    var index = 0
-    for (raw in config.lineSequence()) {
-        val line = raw.substringBefore(';').substringBefore('#').trim()
-        if (line.startsWith('[')) system = line == "[System]"
-        if (system && line.substringBefore('=').trim() == "current_user") {
-            index = line.substringAfter('=', "").trim().toIntOrNull() ?: return null
-        }
-    }
-    if (index !in 0..7) return null
-    val profiles = folder.read(EdenPlayer.PROFILES, 0x650) ?: return null
-    if (profiles.size != 0x650) return null
-    val uuid = profiles.copyOfRange(0x10 + index * 0xC8, 0x20 + index * 0xC8)
-    if (uuid.all { it == 0.toByte() }) return null
-    return uuid.reversedArray().joinToString("") { "%02X".format(it.toInt() and 0xFF) }
 }
