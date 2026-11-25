@@ -161,7 +161,9 @@ internal class SaveIncidentCopies(
         val key = player.saveFolderId()
         val quarantine = store.incident(regressionIncidentId(game, player))
         val blocked = store.incidents().firstOrNull { it.gatesLaunch(player, game) }
-        val incident = blocked?.takeIf { it.appliesTo(game) } ?: if (player is DuckStationPlayer) backupIncident(game, player) else null
+        // Another game's melonDS beside incident can gate this launch; copies are recorded on this game's own incident.
+        val incident = store.incidents().firstOrNull { it.gatesLaunch(player, game) && it.appliesTo(game) }
+            ?: if (player is DuckStationPlayer) backupIncident(game, player) else null
         if (!store.needsBackup(key, game) && quarantine == null && incident == null) return false
         if (spots.isEmpty()) return false // No bytes can be reconciled or overwritten; retain the latch.
         if (outside.slots.isEmpty() && !store.pendingBackup(key, game)) return false
