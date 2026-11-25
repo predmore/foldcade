@@ -1,7 +1,9 @@
 package app.foldcade
 
 import app.foldcade.language.FolderRef
+import app.foldcade.language.SAVE_START_CHECK_MIN_MILLIS
 import app.foldcade.plugins.duckstation.DuckStationCardSettings
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import java.net.URI
 import java.nio.file.Paths
 
@@ -13,6 +15,7 @@ internal class DuckStationSaveEvidence(
     private val packageName: String,
 ) {
     val hasPersistentCard1: Boolean get() = settings.any { it.card1Type != "None" && it.card1Type != "NonPersistent" }
+    val mayHaveDisabledCard1: Boolean get() = settings.any { it.card1Type == "None" || it.card1Type == "NonPersistent" }
 
     /** All possible game settings must name the same root before it can stop a launch. */
     fun directory(): FolderRef? {
@@ -61,6 +64,38 @@ internal class DuckStationSaveEvidence(
         if (URI(uri).authority.isNullOrBlank() || id.isEmpty() || id.split('/').any { it == ".." || it == "." }) return null
         FolderRef(storageIdentity(uri, packageName), id.substringAfterLast('/').substringAfter(':').ifEmpty { "Storage" })
     }.getOrNull()
+}
+
+/** Foldcade can observe this only for ROMs it serves. A file manager's open cannot prove a boot. */
+internal class DuckStationRomOpens {
+    private data class Open(val caller: HostedCardCaller, val documentId: String, val atMillis: Long)
+    private val reads = ArrayDeque<Open>()
+
+    @Synchronized fun opened(caller: HostedCardCaller, documentId: String, atMillis: Long) {
+        if (reads.size == 64) reads.removeFirst()
+        reads.addLast(Open(caller, documentId, atMillis))
+    }
+
+    @Synchronized fun firstOpen(caller: HostedCardCaller, documentId: String, start: Long, end: Long): Long? =
+        reads.firstOrNull { it.caller == caller && it.documentId == documentId && it.atMillis in start..end }?.atMillis
+}
+
+/** Require sustained foreground time in the gameplay activity after DuckStation opened the ROM. */
+internal fun duckStationGameReached(moves: List<FrontMove>, romOpenedAt: Long, start: Long, end: Long): Boolean {
+    var showingSince: Long? = null
+    for (move in moves) {
+        if (move.packageName != DuckStationPlayer.PACKAGE || move.className != DuckStationPlayer.EMULATION_ACTIVITY ||
+            move.atMillis !in start..end) continue
+        if (move.shown) {
+            if (showingSince == null) showingSince = move.atMillis
+        } else {
+            val since = showingSince
+            if (since != null && move.atMillis - maxOf(since, romOpenedAt) >= SAVE_START_CHECK_MIN_MILLIS) return true
+            showingSince = null
+        }
+    }
+    val since = showingSince ?: return false
+    return end - maxOf(since, romOpenedAt) >= SAVE_START_CHECK_MIN_MILLIS
 }
 
 /** Invert the SAF path form that DuckStation stores, including a document below a granted tree. */

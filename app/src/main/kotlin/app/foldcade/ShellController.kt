@@ -770,12 +770,14 @@ class ShellController(
             ?.takeIf { it.packageNames.any(installedPlayers::contains) }
 
     private var saveLocations: Map<String, LocationFact> = emptyMap()
+    private var duckStationConfigReadable = false
     internal var hostedCardChecked: (Player, Game) -> Boolean = { _, _ -> false }
     private var saveIncidents: List<SaveIncident> = emptyList()
     private val saveServices = mutableMapOf<String, app.foldcade.api.plugin.SaveServiceState>()
     private val saveDestinations = mutableMapOf<String, OffDeviceFact>()
 
-    internal fun setSaveProtection(readings: Map<String, LocationFact>, incidents: List<SaveIncident>, replace: Boolean = true) {
+    internal fun setSaveProtection(readings: Map<String, LocationFact>, incidents: List<SaveIncident>, replace: Boolean = true, duckStationConfigReadable: Boolean = false) {
+        this.duckStationConfigReadable = duckStationConfigReadable
         val locations = if (replace) readings else saveLocations + readings
         val changed = (saveLocations.keys + locations.keys).filter { key ->
             val old = saveLocations[key]
@@ -4424,6 +4426,7 @@ class ShellController(
                 thorSetup = thorSetups[player.id],
                 location = saveLocations[player.saveFolderId()],
                 incident = saveIncidents.firstOrNull { it.playerKey == player.saveFolderId() && it.repair != app.foldcade.language.RepairState.Done },
+                saveConfigReadable = duckStationConfigReadable.takeIf { player is app.foldcade.plugins.duckstation.DuckStationPlayer },
                 hostedTitle = (player as? HostedSaveFolder)?.hostedFolderTitle,
                 hostedInUse = (player as? HostedSaveFolder)?.hostedFolderInUse() == true,
                 saveSyncing = sync is SaveSyncState.Syncing,

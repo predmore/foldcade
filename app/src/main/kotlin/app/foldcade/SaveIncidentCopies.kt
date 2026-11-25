@@ -147,7 +147,7 @@ internal class SaveIncidentCopies(
 
     private fun backupIncident(game: Game, player: Player): SaveIncident? =
         store.incidents().firstOrNull {
-            it.playerKey == player.saveFolderId() && it.affectsGame(game) && (it.blocksLaunch || it.hostedCardMismatch)
+            it.playerKey == player.saveFolderId() && it.appliesTo(game) && (it.blocksLaunch || it.hostedCardMismatch)
         }
 
     suspend fun keep(game: Game, player: Player) {

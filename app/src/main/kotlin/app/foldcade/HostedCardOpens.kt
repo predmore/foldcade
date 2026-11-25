@@ -2,6 +2,8 @@ package app.foldcade
 
 internal data class HostedCardCaller(val uid: Int, val packageName: String)
 
+internal enum class HostedCardClose { Closed, Detached, Failed }
+
 internal data class HostedCardOpen(
     val caller: HostedCardCaller,
     val documentId: String,
@@ -10,13 +12,16 @@ internal data class HostedCardOpen(
     val canWrite: Boolean,
     val openedAtMillis: Long,
     val closedAtMillis: Long? = null,
-    val closeFailed: Boolean = false,
+    val closeStatus: HostedCardClose? = null,
     val publishedAs: String? = null,
     val publishedAtMillis: Long? = null,
 )
 
 /** The descriptors stay regular files. Their modes show access and a close is only descriptor lifecycle. */
-internal class HostedCardOpens(private val capacity: Int = 256) {
+internal class HostedCardOpens(
+    private val capacity: Int = 256,
+    private val recordingSinceMillis: Long = System.currentTimeMillis(),
+) {
     private val opens = linkedMapOf<Long, HostedCardOpen>()
     private var sequence = 0L
     private var lastEvictedAtMillis = Long.MIN_VALUE
@@ -30,9 +35,9 @@ internal class HostedCardOpens(private val capacity: Int = 256) {
         return (++sequence).also { opens[it] = open }
     }
 
-    @Synchronized fun closed(id: Long, atMillis: Long, failed: Boolean) {
+    @Synchronized fun closed(id: Long, atMillis: Long, status: HostedCardClose) {
         val open = opens[id] ?: return
-        opens[id] = open.copy(closedAtMillis = atMillis, closeFailed = failed)
+        opens[id] = open.copy(closedAtMillis = atMillis, closeStatus = status)
     }
 
     /** DuckStation may write a temporary file then rename it onto the actual card. */
@@ -44,8 +49,9 @@ internal class HostedCardOpens(private val capacity: Int = 256) {
         entry.setValue(entry.value.copy(publishedAs = to, publishedAtMillis = atMillis))
     }
 
-    @Synchronized fun during(start: Long, end: Long): List<HostedCardOpen> =
-        if (start > end || start <= lastEvictedAtMillis) emptyList()
+    /** Null when the provider cannot account for the whole window. */
+    @Synchronized fun during(start: Long, end: Long): List<HostedCardOpen>? =
+        if (start > end || start < recordingSinceMillis || start <= lastEvictedAtMillis) null
         else opens.values.filter { it.openedAtMillis in start..end }
 }
 
@@ -72,10 +78,14 @@ internal fun judgeHostedCard(
         if (open.caller != caller || open.openedAtMillis !in start..end) continue
         val published = open.publishedAtMillis?.takeIf { it in start..end }
         val documentId = if (published != null) open.publishedAs ?: continue else open.documentId
-        if (!open.canRead && !open.canWrite || HostedFolders.parentId(documentId) != rootId) continue
+        // A native client can detach the descriptor and keep writing. A bare write-capable
+        // open cannot show a complete card, even when Android reports a clean close.
+        if (published == null && (!open.canRead || open.canWrite)) continue
+        if (published != null && open.closeStatus == HostedCardClose.Failed) continue
+        if (HostedFolders.parentId(documentId) != rootId) continue
         val name = documentId.substringAfterLast('/')
         // Starting a new DuckStation activity can flush the previous game's card.
-        if (name != expected && (open.canWrite || published != null)) continue
+        if (name != expected && published != null) continue
         if (name in possibleSlot2Cards) continue
         if (name in possibleSharedCards && name != sharedCard1) continue
         if (name != expected && name != sharedCard1 && !name.endsWith("_1.mcd", ignoreCase = true)) continue

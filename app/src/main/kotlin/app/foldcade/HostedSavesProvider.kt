@@ -94,7 +94,12 @@ class HostedSavesProvider : DocumentsProvider() {
             if (caller == null || log == null) return ParcelFileDescriptor.open(file, flags)
             val id = AtomicLong()
             val descriptor = ParcelFileDescriptor.open(file, flags, closeHandler) { error ->
-                log.closed(id.get(), System.currentTimeMillis(), failed = error != null)
+                val status = when (error) {
+                    null -> HostedCardClose.Closed
+                    is ParcelFileDescriptor.FileDescriptorDetachedException -> HostedCardClose.Detached
+                    else -> HostedCardClose.Failed
+                }
+                log.closed(id.get(), System.currentTimeMillis(), status)
             }
             id.set(log.opened(HostedCardOpen(caller, documentId, mode,
                 canRead = flags and ParcelFileDescriptor.MODE_READ_ONLY != 0, canWrite = canWrite,

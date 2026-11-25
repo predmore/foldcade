@@ -1719,7 +1719,8 @@ class FoldcadeApp : Application() {
     internal val saveIncidentCopies by lazy { SaveIncidentCopies(playerSaves, plugins, saveProtection, store::rommOrigin) }
     internal val saveProbes by lazy { SaveProbes(this, playerSaves, saveProtection, ::playerSaveFolder, saveIncidentCopies,
         sharedTarget = sharedPaths::target, rommMedia = ::rommSharedRoot,
-        hostedCardOpens = hostedCardOpens, edenReadsAllowed = ::edenSaveReadsAllowed) }
+        hostedCardOpens = hostedCardOpens, duckStationRomOpens = duckStationRomOpens,
+        edenReadsAllowed = ::edenSaveReadsAllowed) }
     internal val saveRegression by lazy {
         SaveRegression(playerSaves, saveProtection, baseline = { game, slot, folder ->
             val library = plugins.library(game.backendId)
@@ -1847,7 +1848,7 @@ class FoldcadeApp : Application() {
 
     private suspend fun publishSaveProtection(locations: Map<String, app.foldcade.language.LocationFact>, replace: Boolean) = withContext(Dispatchers.Main.immediate) {
         val incidents = saveProtection.incidents()
-        shell.setSaveProtection(locations, incidents, replace)
+        shell.setSaveProtection(locations, incidents, replace, saveProbes.duckStationConfigReadable)
         shell.model.saveFix?.let { page ->
             val canClose = incidents.firstOrNull { it.id == page.incidentId }?.let { repairClosePackage(it) } != null
             if (page.canCloseGame != canClose) shell.updateSaveFix(page.incidentId) { it.copy(canCloseGame = canClose) }
@@ -1993,6 +1994,7 @@ class FoldcadeApp : Application() {
     val hostedAuthority: String get() = "$packageName${HostedSavesProvider.AUTHORITY_SUFFIX}"
 
     internal val hostedCardOpens = HostedCardOpens()
+    internal val duckStationRomOpens = DuckStationRomOpens()
 
     /** The save folders [HostedSavesProvider] serves: one for each player that keeps its saves there. */
     internal val hostedFolders: HostedFolders by lazy {

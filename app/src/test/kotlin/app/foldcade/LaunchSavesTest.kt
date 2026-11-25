@@ -234,7 +234,7 @@ class LaunchSavesTest {
         fun checkLaunch() {
             val reading = files.savePath(player, target, bound)
             assertEquals("$SHARED_STORAGE/RetroArch/saves/mGBA/Game.v1.srm", reading.expected)
-            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { bound }, copies, { null }, { null })
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { bound }, copies)
             probes.checkRetroArchLaunch(player, game, ProbeSnapshot(100, 1, pkg, listOf(root), reading), files)
             store.incidents().firstOrNull { it.blocksLaunch }?.let { throw SaveProtectionStop(it) }
         }
@@ -347,7 +347,7 @@ class LaunchSavesTest {
             val warning = incident(kind)
             store.put(warning)
             val copies = SaveIncidentCopies(saves, plugins, store)
-            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
             var gateReads = 0
             val fresh = LaunchSaves(saves, plugins, protectionGate = { route, player, eden ->
                 gateReads++
@@ -475,7 +475,8 @@ class LaunchSavesTest {
 
             val moved = check(130, "/sdcard/Scratch Cards")
             assertEquals(FolderRef("primary:Scratch Cards", "Scratch Cards"), (moved as RootVerdict.UsesOther).live)
-            opened(expected, 140, "w")
+            opened("tmp", 140, "w")
+            published("tmp", expected, 141)
             judge(moved)
             assertTrue(probes.location(duck, reading) is LocationFact.Mismatch)
             assertFalse(store.hostedCardChecked(duck.id, game))
@@ -503,7 +504,52 @@ class LaunchSavesTest {
         }
     }
 
-    private inner class DuckStationReturnFixture {
+    @Test fun duckStationSilenceAfterAConfirmedLaunchIsDismissibleAndLaterProofClearsIt() = runBlocking {
+        with(DuckStationReturnFixture()) {
+            opened(expected, 110, "r")
+            judge()
+            assertTrue(store.hostedCardChecked(duck.id, game))
+
+            judge(start = 1_000, end = 21_000, startedByFoldcade = true, gameReached = true)
+            val incident = store.incidents().single()
+            assertEquals(IncidentKind.MaybeWrongFolder, incident.kind)
+            assertTrue(canConfirmSaveLocation(incident))
+            assertFalse(incident.blocksLaunch)
+            assertFalse(copies.preserveReturn(game, duck, spots, preserveAsBackup = false))
+            assertFalse(store.hostedCardChecked(duck.id, game))
+            assertEquals(LocationFact.Bound(bound, 110), probes.location(duck, reading))
+
+            judge() // A retried read from the older game cannot clear a later warning.
+            assertEquals(incident, store.incidents().single())
+            opened(expected, 22_000, "r")
+            judge(start = 22_000, end = 23_000)
+            assertTrue(store.incidents().isEmpty())
+            assertTrue(store.hostedCardChecked(duck.id, game))
+        }
+    }
+
+    @Test fun duckStationSilenceSkipsShortResumedUnconfirmedAndDisabledSessions() {
+        with(DuckStationReturnFixture()) {
+            val start = 1_000L
+            val end = 21_000L
+            judge(start = start, end = end - 1, startedByFoldcade = true, gameReached = true)
+            judge(start = start, end = end, gameReached = true)
+            judge(start = start, end = end, startedByFoldcade = true)
+            judge(start = start, end = end, startedByFoldcade = true, gameReached = true, hadExpectedCard = false)
+            judge(start = start, end = end, startedByFoldcade = true, gameReached = true, config = config(hostedPath, "None"))
+            assertTrue(store.incidents().isEmpty())
+            // Card 2 counts as activity even though it cannot verify card 1.
+            opened("Other slot_2.mcd", 2_000, "r")
+            judge(start = start, end = end, startedByFoldcade = true, gameReached = true)
+            assertTrue(store.incidents().isEmpty())
+        }
+        with(DuckStationReturnFixture(recordingSince = 2_000)) {
+            judge(start = 1_000, end = 21_000, startedByFoldcade = true, gameReached = true)
+            assertTrue(store.incidents().isEmpty())
+        }
+    }
+
+    private inner class DuckStationReturnFixture(recordingSince: Long = 0) {
         private val appPackage = "app.foldcade"
         val duck = DuckStationPlayer()
         val game = owner.copy(platformId = duck.platformId)
@@ -517,24 +563,30 @@ class LaunchSavesTest {
         val alternate = "DuckStation title_1.mcd"
         val spots = listOf(SaveSpot(DuckStationPlayer.CARD_SLOT, hostedUri, expected))
         val store = SaveProtectionStore(Files.createTempDirectory("duckstation-return"))
-        private val opens = HostedCardOpens()
+        private val opens = HostedCardOpens(recordingSinceMillis = recordingSince)
         val copies = SaveIncidentCopies(saves, plugins, store)
         private val context = object : android.content.ContextWrapper(null) {
             override fun getPackageName() = appPackage
         }
-        val probes = SaveProbes(context, saves, store, { null }, copies, opens)
+        val probes = SaveProbes(context, saves, store, { null }, copies, hostedCardOpens = opens)
 
         fun opened(name: String, at: Long, mode: String) {
             opens.opened(HostedCardOpen(caller, "$rootId/$name", mode, canRead = 'r' in mode, canWrite = 'w' in mode, openedAtMillis = at))
         }
 
-        fun check(at: Long, directory: String): RootVerdict {
-            val config = DuckStationSaveEvidence(listOf(DuckStationCardSettings(directory, "PerGameTitle", null, null)), duck.suggestedSaveFolder, appPackage)
-            return probes.checkDuckStationConfig(duck, reading, at to config)
-        }
+        fun published(from: String, to: String, at: Long) =
+            opens.published(caller, "$rootId/$from", "$rootId/$to", at)
 
-        fun judge(verdict: RootVerdict = RootVerdict.NoNews, start: Long = 100, end: Long = 200) =
-            probes.judgeDuckStationReturn(duck, game, reading, null, verdict, caller, spots, start, end)
+        fun config(directory: String, type: String = "PerGameTitle") =
+            DuckStationSaveEvidence(listOf(DuckStationCardSettings(directory, type, null, null)), duck.suggestedSaveFolder, appPackage)
+
+        fun check(at: Long, directory: String) = probes.checkDuckStationConfig(duck, reading, at to config(directory))
+
+        fun judge(verdict: RootVerdict = RootVerdict.NoNews, start: Long = 100, end: Long = 200,
+            startedByFoldcade: Boolean = false, gameReached: Boolean = false, config: DuckStationSaveEvidence? = null,
+            hadExpectedCard: Boolean = true) =
+            probes.judgeDuckStationReturn(duck, game, reading.copy(atMillis = end), config, verdict, caller, spots,
+                start, end, startedByFoldcade, hadExpectedCard) { gameReached }
     }
 
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {
@@ -561,7 +613,7 @@ class LaunchSavesTest {
         plugins.reconcile(owner.backendId, owner, Melon, observed)
         saves.noteHandedOver(owner.backendId, owner, Melon, spots, observed)
         copies.keep(owner, Melon) // still offline
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
         val reading = RootReading(incident.bound!!, true, emptyList(), "normal", true, true, true)
         probes.apply(Melon, ProbeSnapshot(200, 1, "emulator", listOf(reading)), RootVerdict.Uses(reading.root, incident.evidence, 200))
         assertTrue(store.incidents().isEmpty())
@@ -734,7 +786,7 @@ class LaunchSavesTest {
             override fun bindSaveFolder(contentUri: String) = Unit
             override fun hasSaveFolder() = true
         }
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { throw java.io.IOException("probe failed") }, copies)
         var publications = 0
         probes.gate(player, owner, local) { publications++; assertEquals(null, it) }
         assertEquals(1, publications)
@@ -749,7 +801,7 @@ class LaunchSavesTest {
         val copies = SaveIncidentCopies(saves, plugins, store)
         val player = app.foldcade.plugins.retroarch.RetroArchEntry().players.single { it.platformId == "game-boy-advance" }
         val gba = owner.copy(platformId = player.platformId)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
         val bound = FolderRef("primary:RetroArch/saves", "RetroArch/saves")
         val live = FolderRef("primary:ROMs/GBA", "ROMs/GBA")
         val config = ConfigSavePath("/saves/mGBA/Game.srm", "/ROMs/GBA/Game.srm", live, true)
@@ -789,7 +841,7 @@ class LaunchSavesTest {
     @Test fun rootRecoveryClosesItsCauseAndUsesClosesBindingAndDoneButBypassesNeverVerify() {
         val store = SaveProtectionStore(Files.createTempDirectory("incident"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
         val incident = incident(IncidentKind.WrongFolder)
         val reading = RootReading(incident.bound!!, true, emptyList(), null, true, true, true)
         val snapshot = ProbeSnapshot(100, 1, "emulator", listOf(reading))
@@ -820,7 +872,7 @@ class LaunchSavesTest {
     @Test fun anUnmovedLaunchLogOpensAWrongFolderIncidentImmediatelyButAResumeDoesNot() {
         val store = SaveProtectionStore(Files.createTempDirectory("silent-start"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
         val root = FolderRef("primary:Azahar", "Azahar")
         val signal = SignalReading("log/azahar_log.txt", root.identity, 50, true, true)
         val reading = RootReading(root, true, listOf(signal), "unchanged", true, true, true)
@@ -847,7 +899,7 @@ class LaunchSavesTest {
     @Test fun aNewlyDiscoveredLiveRootIsKeptAsABackupWithoutChangingTheHead() = runBlocking {
         val store = SaveProtectionStore(Files.createTempDirectory("discovered-copy"))
         val copies = SaveIncidentCopies(saves, plugins, store)
-        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+        val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
         val bound = FolderRef("primary:Azahar", "Azahar")
         val live = FolderRef("primary:AzaharQA", "AzaharQA")
         val root = RootReading(bound, true, listOf(SignalReading("log", bound.identity, 50, true, true)), "old", true, true, true)

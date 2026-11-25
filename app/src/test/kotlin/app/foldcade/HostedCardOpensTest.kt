@@ -15,20 +15,33 @@ class HostedCardOpensTest {
     private val expected = "RomM filename_1.mcd"
     private val actual = "Title in DuckStation_1.mcd"
 
-    @Test fun matchingReadIsPositiveEvenWhenCloseIsUnobservable() {
-        val log = HostedCardOpens()
+    @Test fun matchingReadIsPositiveAcrossDetachAndCloseErrors() {
+        val log = log()
+        val id = log.opened(open(expected, 11))
+        assertEquals(HostedCardVerdict.Expected(11), judge(log))
+        for (status in listOf(HostedCardClose.Detached, HostedCardClose.Failed)) {
+            log.closed(id, 13, status)
+            val closed = log.during(10, 20)!!.single()
+            assertEquals(13L, closed.closedAtMillis)
+            assertEquals("r", closed.mode)
+            assertEquals(status, closed.closeStatus)
+            assertEquals(HostedCardVerdict.Expected(11), judge(log))
+        }
+    }
+
+    @Test fun aBareWriteGivesNoCardProofAndFailedCloseInvalidatesPublication() {
+        val log = log()
         val id = log.opened(open(expected, 11, mode = "rw"))
-        assertEquals(HostedCardVerdict.Expected(11), judge(log))
-        log.closed(id, 13, failed = true)
-        val closed = log.during(10, 20).single()
-        assertEquals(13L, closed.closedAtMillis)
-        assertEquals("rw", closed.mode)
-        assertTrue(closed.canRead && closed.canWrite && closed.closeFailed)
-        assertEquals(HostedCardVerdict.Expected(11), judge(log))
+        log.closed(id, 12, HostedCardClose.Detached)
+        assertEquals(HostedCardVerdict.Unknown, judge(log))
+        val temp = log.opened(open("tmp", 13, "w"))
+        log.closed(temp, 14, HostedCardClose.Failed)
+        log.published(duck, "$root/tmp", "$root/$expected", 15)
+        assertEquals(HostedCardVerdict.Unknown, judge(log))
     }
 
     @Test fun otherPackagesUidsFoldersSlotsAndTimesGiveNoVerdict() {
-        val log = HostedCardOpens()
+        val log = log()
         log.opened(open(expected, 9))
         log.opened(open(expected, 21))
         log.opened(open(expected, 11).copy(caller = duck.copy(uid = 13)))
@@ -38,11 +51,11 @@ class HostedCardOpensTest {
         log.opened(open("shared_card_1.mcd", 12))
         log.opened(open("untitled.tmp", 12, "w"))
         assertEquals(HostedCardVerdict.Unknown, judge(log))
-        assertEquals(HostedCardVerdict.Unknown, judge(HostedCardOpens()))
+        assertEquals(HostedCardVerdict.Unknown, judge(log()))
     }
 
     @Test fun titleMismatchNamesTheObservedCardAndNeverVerifiesThePlacedCard() {
-        val log = HostedCardOpens()
+        val log = log()
         log.opened(open(actual, 11))
         assertEquals(HostedCardVerdict.Different(listOf(actual), actual, 11), judge(log))
         log.opened(open(expected, 12))
@@ -51,8 +64,9 @@ class HostedCardOpensTest {
     }
 
     @Test fun publicationCanVerifyTheExpectedCardAndRequiresAnObservedWriteFromSameCaller() {
-        val log = HostedCardOpens()
-        log.opened(open("tmp", 11, "w"))
+        val log = log()
+        val temp = log.opened(open("tmp", 11, "w"))
+        log.closed(temp, 12, HostedCardClose.Detached)
         log.published(duck.copy(uid = 123), "$root/tmp", "$root/$expected", 12)
         assertEquals(HostedCardVerdict.Unknown, judge(log))
         log.published(duck, "$root/tmp", "$root/$expected", 13)
@@ -61,7 +75,7 @@ class HostedCardOpensTest {
     }
 
     @Test fun previousGameWritesCannotNameThisGamesCard() {
-        val log = HostedCardOpens()
+        val log = log()
         log.opened(open(actual, 11, "w"))
         log.opened(open("tmp", 12, "w"))
         log.published(duck, "$root/tmp", "$root/$actual", 13)
@@ -73,12 +87,31 @@ class HostedCardOpensTest {
     }
 
     @Test fun incompleteLogCannotMakeATruncatedSessionLookLikeOneExactMatch() {
-        val log = HostedCardOpens(capacity = 2)
+        val log = HostedCardOpens(capacity = 2, recordingSinceMillis = 0)
         log.opened(open(actual, 11))
         log.opened(open(expected, 12))
         log.opened(open(expected, 13))
         assertEquals(HostedCardVerdict.Unknown, judge(log))
         assertEquals(HostedCardVerdict.Expected(13), judge(log, start = 12))
+        assertNull(log.during(10, 20))
+        assertNull(HostedCardOpens(recordingSinceMillis = 11).during(10, 20))
+        assertEquals(emptyList<HostedCardOpen>(), log().during(10, 20))
+    }
+
+    @Test fun selectedRomOpenAndSustainedGameplayActivityAreBothRequired() {
+        val roms = DuckStationRomOpens()
+        roms.opened(duck.copy(uid = 7), "selected.chd", 11)
+        roms.opened(duck, "other.chd", 12)
+        assertNull(roms.firstOpen(duck, "selected.chd", 10, 30_000))
+        roms.opened(duck, "selected.chd", 100)
+        val read = roms.firstOpen(duck, "selected.chd", 10, 30_000)!!
+        val front = FrontMove(duck.packageName, DuckStationPlayer.EMULATION_ACTIVITY, true, 50)
+        val paused = front.copy(shown = false, atMillis = 117)
+        assertFalse(duckStationGameReached(emptyList(), read, 10, 30_000))
+        assertFalse(duckStationGameReached(listOf(front.copy(className = "Menu")), read, 10, 30_000))
+        assertFalse(duckStationGameReached(listOf(front, paused), read, 10, 30_000))
+        assertFalse(duckStationGameReached(listOf(front), read, 10, 20_099))
+        assertTrue(duckStationGameReached(listOf(front), read, 10, 20_100))
     }
 
     @Test fun configCanNameSharedSlotOneButSharedAndSlotTwoBytesStayOutOfGameBackups() {
@@ -110,6 +143,8 @@ class HostedCardOpensTest {
         duck, "$root/$name", mode, canRead = 'r' in mode, canWrite = 'w' in mode, openedAtMillis = at,
     )
 
+    private fun log() = HostedCardOpens(recordingSinceMillis = 0)
+
     private fun judge(log: HostedCardOpens, start: Long = 10, end: Long = 20) =
-        judgeHostedCard(log.during(start, end), duck, root, expected, start, end)
+        judgeHostedCard(log.during(start, end).orEmpty(), duck, root, expected, start, end)
 }

@@ -2,11 +2,13 @@ package app.foldcade
 
 import android.database.Cursor
 import android.database.MatrixCursor
+import android.os.Binder
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
+import app.foldcade.plugins.duckstation.DuckStationPlayer
 import app.foldcade.plugins.romm.RomFolderDocuments
 import java.io.File
 import java.io.FileNotFoundException
@@ -61,7 +63,13 @@ class RommFolderProvider : DocumentsProvider() {
         if (mode != "r") throw UnsupportedOperationException("RomM downloads open only for reading")
         val file = documents().pathFor(documentId)?.toFile()
         if (file == null || !isServed(file)) throw FileNotFoundException(documentId)
-        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
+        return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).also {
+            val caller = try { callingPackage } catch (_: SecurityException) { null }
+            if (caller == DuckStationPlayer.PACKAGE) {
+                (context?.applicationContext as? FoldcadeApp)?.duckStationRomOpens?.opened(
+                    HostedCardCaller(Binder.getCallingUid(), caller), documentId, System.currentTimeMillis())
+            }
+        }
     }
 
     override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =

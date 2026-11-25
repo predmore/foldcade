@@ -131,7 +131,9 @@ Foldcade syncs memory card 1, DuckStation's card per game. With its default type
 
 Pick **Foldcade** in DuckStation to grant access to the hosted folder. If Foldcade can read the data folder and sees DuckStation configured to use a different Memory Cards folder, it stops the next ordinary launch and shows how to restore the hosted folder.
 
-If DuckStation opens a different card, Foldcade names it in the game's notice. When it can identify one per-game card, Foldcade keeps a readable copy as a RomM **Backup** while preserving the existing slot head. Save a copy of your card before changing its naming type, including any setting DuckStation applies to that game. A session with no card open gives no new check.
+If DuckStation opens a different card, Foldcade names it in the game's notice. When it can identify one per-game card, Foldcade keeps a readable copy as a RomM **Backup** while preserving the existing slot head. Save a copy of your card before changing its naming type, including any setting DuckStation applies to that game.
+
+On devices where Android blocks DuckStation's data folder, **Memory card settings** says **Can’t read config**. Foldcade can still check cards DuckStation opens. With Usage Access, a fresh RomM launch that plays for at least 20 seconds without opening its existing hosted card can show **DuckStation may be saving somewhere else**. Check the Memory Cards folder or dismiss the notice with **It’s fine**.
 
 DuckStation pauses in the background and writes a changed card when it resumes or quits. A save made just before you switch to Foldcade syncs on the next return or launch.
 

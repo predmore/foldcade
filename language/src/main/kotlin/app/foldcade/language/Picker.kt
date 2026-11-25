@@ -947,6 +947,7 @@ sealed interface Row {
     data class ForgetFolder(val uri: String, val label: String) : Row
     data class PickFolderAgain(val uri: String) : Row
     data class SaveCheck(val playerId: String) : Row
+    data class SaveConfig(val playerId: String) : Row
     data class PlayerSave(val playerId: String) : Row
     /** The folder Foldcade hosts for a player's saves, and whether the player has it. */
     data class HostedSaves(val playerId: String) : Row
@@ -1214,6 +1215,7 @@ data class PlayerSaveSetting(
     val thorSetup: ThorSetupSetting? = null,
     val location: LocationFact? = null,
     val incident: SaveIncident? = null,
+    val saveConfigReadable: Boolean? = null,
 )
 
 /**
@@ -1777,6 +1779,9 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
             else -> SaveProtectionCopy.notChecked
         })
     }
+    is Row.SaveConfig -> RowText("Memory card settings",
+        if (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.saveConfigReadable == true)
+            SaveProtectionCopy.canReadConfig else SaveProtectionCopy.cantReadConfig)
     is Row.PlayerSave -> {
         val setting = model.playerSaves.firstOrNull { it.playerId == row.playerId }
         val chosen = when {
@@ -3279,6 +3284,7 @@ private fun activateRow(
         // Android's folder picker returns to the emulator's page it was opened from.
         is Row.SaveCheck -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId }?.incident
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ShowSaveCheck(row.playerId))
+        is Row.SaveConfig -> model to null
         is Row.PlayerSave -> model.copy(panel = panel) to (model.playerSaves.firstOrNull { it.playerId == row.playerId && it.hostedTitle == null }?.incident
             ?.let { Effect.OpenSaveFix(it.id) } ?: Effect.ChoosePlayerSave(row.playerId))
         is Row.HostedSaves -> model.copy(panel = null, focus = panel.grid) to
