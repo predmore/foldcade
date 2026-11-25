@@ -167,6 +167,7 @@ private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("
     .put("playerName", playerName).put("gameIds", JSONArray(gameIds)).put("bound", bound?.toJson() ?: JSONObject.NULL)
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
     .put("alternateSavePath", alternateSavePath ?: JSONObject.NULL).put("capturedAlternateHashes", JSONArray(capturedAlternateHashes))
+    .put("besideGame", besideGame)
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
     .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
@@ -180,7 +181,7 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.optBoolean("recoveryRequired"), json.optJSONObject("subject")?.let(::subjectFromJson), json.stringOrNull("quarantinedHash"),
     json.optBoolean("automaticDone"),
     json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
-    json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(),
+    json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(), json.optBoolean("besideGame"),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)
@@ -239,6 +240,7 @@ internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", a
         .put("spotReadable", root.spotReadable).put("markersPresent", root.markersPresent ?: JSONObject.NULL)
         .put("emulatorHolds", root.emulatorHolds ?: JSONObject.NULL).put("hadMarkers", root.hadMarkers)
         .put("hasKnownSave", root.hasKnownSave).put("reachable", root.reachable).put("spotFile", root.spotFile ?: JSONObject.NULL)
+        .put("besideGame", root.besideGame)
         .put("signals", JSONArray(root.signals.map { signal -> JSONObject().put("source", signal.source)
             .put("names", signal.names ?: JSONObject.NULL).put("modifiedAtMillis", signal.modifiedAtMillis ?: JSONObject.NULL)
             .put("proves", signal.proves).put("perStart", signal.perStart) }))
@@ -253,7 +255,7 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
             if (root.isNull("markersPresent")) null else root.getBoolean("markersPresent"),
             if (root.isNull("emulatorHolds")) null else root.getBoolean("emulatorHolds"),
             root.optBoolean("hadMarkers"), root.optBoolean("hasKnownSave"), root.optBoolean("reachable", true),
-            root.optString("spotFile").takeUnless { root.isNull("spotFile") })
+            root.optString("spotFile").takeUnless { root.isNull("spotFile") }, root.optBoolean("besideGame"))
     } }, json.optJSONObject("configSavePath")?.let { path -> ConfigSavePath(
         path.optString("expected").takeUnless { path.isNull("expected") },
         path.optString("effective").takeUnless { path.isNull("effective") },

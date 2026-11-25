@@ -44,8 +44,9 @@ internal class SaveProbes(
             else folder(player)
         boundUri ?: return null
         val probe = player as? SaveLocationProbe
-        val grants = android.grants(if (player is RetroArchPlayer || player is ArmsX2Player) emptyList() else listOf(holder))
-        val finder = android.finder(player, grants)
+        val grants = android.grants(if (player is RetroArchPlayer || player is ArmsX2Player || player.probesContentSaves) emptyList() else listOf(holder))
+        val finder = android.finder(player, grants.filter { !player.probesContentSaves ||
+            it.allFiles || URI(it.uri).authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY })
         val boundIdentity = storageIdentity(boundUri, context.packageName)
         val installed = player.packageNames.mapNotNull { name ->
             try { context.packageManager.getPackageInfo(name, 0) } catch (_: PackageManager.NameNotFoundException) { null }
@@ -123,18 +124,27 @@ internal class SaveProbes(
                 finder.reachable(id)?.let { probe.liveSignals(saves.folderAccess(player, it, allowWrite = false)) }.orEmpty()
             }
         } else emptyList()
-        val knownLive = store.incidents().filter { it.playerKey == key && it.blocksLaunch &&
-            (arms == null || !it.armsX2OutsideCard && (game == null || it.appliesTo(game))) }.mapNotNull { it.live?.identity }
+        val beside = if (readSpots && game != null && player.probesContentSaves) besideCandidate(player, game, target, bound.root, grants) else null
+        val knownLive = store.incidents().filter {
+            it.playerKey == key && it.blocksLaunch && !it.besideGame && !it.armsX2OutsideCard &&
+                (it.gameIds.isEmpty() || game != null && it.appliesTo(game))
+        }.mapNotNull { it.live?.identity }
         val candidates = if (player is EdenPlayer) emptyList() else
             discovered + knownLive + (holder.saveFolderPlaces + probe?.probePlaces.orEmpty()).map { "primary:$it" }
         val outside = armsConfig?.outsideCard()
         val outsideReading = outside?.live?.takeIf { resolved?.packageName == ArmsX2Player.PACKAGES.first() && installed.size == 1 && readSpots }
             ?.let { armsReadable(finder, it) }?.let { uri -> arms?.outsideReading(outside, uri) }
-        val roots = listOfNotNull(bound, outsideReading) + candidates.distinct().mapNotNull(finder::reachable)
+        val adjacent = listOfNotNull(beside?.reading(), outsideReading)
+        val roots = candidates.distinct()
+            .filterNot { player.probesContentSaves && it.startsWith("primary:Android/data/", ignoreCase = true) }
+            .mapNotNull { if (player.probesContentSaves) finder.readable(it) else finder.reachable(it) }
+            .distinctBy { storageIdentity(it, context.packageName) }
             .filter { arms == null || installed.size == 1 && storageIdentity(it, context.packageName) != outside?.live?.identity }
-            .filter { storageIdentity(it, context.packageName) != boundIdentity }.distinctBy { storageIdentity(it, context.packageName) }.take(4).map(::readRoot)
+            .filter { storageIdentity(it, context.packageName) !in setOf(boundIdentity, beside?.root?.identity) }
+            .take(if (beside == null) 4 else 3).map(::readRoot)
         return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(),
-            roots, outside, configUnavailable = arms != null && armsConfig?.nativeReadable != true)
+            listOf(bound) + adjacent + roots, outside,
+            configUnavailable = probe?.saveConfigPrivate == true || arms != null && armsConfig?.nativeReadable != true)
     }
 
     private fun armsGameFile(target: LaunchTarget): GameFileReader? = when (target) {
@@ -149,6 +159,16 @@ internal class SaveProbes(
         return finder.readable(ref.identity.toDocumentId())?.takeIf {
             storageIdentity(it, context.packageName) == ref.identity && android.isDirectory(it)
         }
+    }
+
+    fun besideCandidate(player: Player, game: Game, target: LaunchTarget?, bound: FolderRef,
+        grants: List<SaveFolderGrant> = android.grants(emptyList())): BesideGameCandidate? {
+        val shared = when (target) {
+            is LaunchTarget.SharedFile -> target
+            is LaunchTarget.ContentUri -> sharedTarget(target.uri)
+            else -> null
+        } ?: return null
+        return BesideGameSaves(saves.docs, grants, context.packageName, rommMedia()).read(player, game, shared, bound)
     }
 
     private fun retroArchTarget(target: LaunchTarget?): LaunchTarget.SharedFile? = when (target) {
@@ -267,7 +287,8 @@ internal class SaveProbes(
         }
     }
 
-    private fun open(player: Player, bound: FolderRef, live: FolderRef?, kind: IncidentKind, evidence: Evidence, at: Long, game: Game?, alternate: String? = null) {
+    private fun open(player: Player, bound: FolderRef, live: FolderRef?, kind: IncidentKind, evidence: Evidence, at: Long, game: Game?,
+        alternate: String? = null, besideGame: Boolean = false) {
         val key = player.saveFolderId()
         val gameId = game?.let { homeGameId(it.backendId, it.remoteKey) }
         val id = if (gameId == null) "${kind.name}:$key" else "${kind.name}:$key:$gameId"
@@ -281,7 +302,8 @@ internal class SaveProbes(
             old?.kept.orEmpty(), old?.staged.orEmpty(), repair, old?.recoveryRequired ?: false,
             subject = old?.subject?.takeIf { sameLocation },
             alternateSavePath = alternate ?: if (player is ArmsX2Player) old?.alternateSavePath.takeIf { sameLocation } else old?.retroArchAlternate(),
-            capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty()))
+            capturedAlternateHashes = old?.capturedAlternateHashes.orEmpty(),
+            besideGame = besideGame || old?.besideGame == true))
     }
 
     @Synchronized fun gate(player: Player, game: Game, target: LaunchTarget, hasKnownSave: Boolean = false, resolvedPackage: String? = null,
@@ -341,7 +363,19 @@ internal class SaveProbes(
                 before.configSavePath == null && after.configSavePath == null)) {
                 apply(player, after, RootVerdict.Uses(verdict.root, Evidence(EvidenceKind.SessionWrite, "${game.label} saved there"), after.atMillis), game)
             }
-            is SessionVerdict.WroteElsewhere -> apply(player, after, RootVerdict.UsesOther(verdict.live, Evidence(EvidenceKind.SessionWrite, verdict.live?.let { "${game.label} saved in ${it.label}" } ?: "${game.label} saved in another folder"), after.atMillis), game)
+            is SessionVerdict.WroteElsewhere -> {
+                val bound = after.roots.single { it.bound }.root
+                val live = verdict.live
+                val detail = when {
+                    verdict.besideGame -> "${game.label} saved beside the ROM."
+                    live != null -> "${game.label} saved in ${live.label}"
+                    else -> "${game.label} saved in another folder"
+                }
+                val evidence = Evidence(EvidenceKind.SessionWrite, detail)
+                if (player is ArmsX2Player) apply(player, after, RootVerdict.UsesOther(live, evidence, after.atMillis), game)
+                else open(player, bound, live, IncidentKind.WrongFolder, evidence,
+                    after.atMillis, game.takeIf { player is RetroArchPlayer || player.probesContentSaves }, besideGame = verdict.besideGame)
+            }
             is SessionVerdict.Signalled -> if (!unprotected || verdict.verdict !is RootVerdict.Uses) apply(player, after, verdict.verdict, game)
             is SessionVerdict.SilentStart -> {
                 val bound = after.roots.single { it.bound }.root
@@ -401,6 +435,10 @@ internal class SaveProbes(
             }
             return
         }
+        if (player.probesContentSaves) {
+            captureContentReturn(player, game, target, before, after, backupOnly)
+            return
+        }
         if (player is EdenPlayer) return // Eden stages only the account frozen for the session.
         // DuckStation's alternate card is captured by its observed name, never by a predicted path.
         if (player is DuckStationPlayer) return
@@ -425,6 +463,39 @@ internal class SaveProbes(
         val incident = scopedWrongFolders(player, pending.game).firstOrNull { it.blocksLaunch }
         val finder = android.finder(player, android.grants(emptyList()))
         return probe.preserveReturn(pending, spots, after, incident, store, copies, context.packageName) { armsReadable(finder, it) }
+    }
+
+    private fun captureContentReturn(player: Player, game: Game, target: LaunchTarget?, before: ProbeSnapshot?, after: ProbeSnapshot?, backupOnly: Boolean) {
+        val incident = scopedWrongFolders(player, game).firstOrNull { it.blocksLaunch }
+        if (incident == null && !backupOnly) return
+        target ?: return
+        val bound = incident?.bound ?: before?.roots?.singleOrNull { it.bound }?.root ?: return
+        val changed = if (before != null && after != null && before.packageName == after.packageName &&
+            before.installFirstMillis == after.installFirstMillis) after.roots.filter { !it.bound && spotChanged(before, it) } else emptyList()
+        if (incident?.besideGame == true || changed.any { it.besideGame }) {
+            val beside = besideCandidate(player, game, target, bound)
+            val bytes = (beside?.read as? FileReading.Bytes)?.bytes
+            if (beside != null && bytes != null) copies.stageCandidate(game, player, beside.spot, bytes, incident)
+            else if (changed.any { it.besideGame }) throw SaveNotPlaced()
+        }
+        val grants = android.grants(emptyList()).filter { it.allFiles || URI(it.uri).authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY }
+        val finder = android.finder(player, grants)
+        val known = incident?.takeUnless { it.besideGame }?.live
+        val written = changed.filterNot { it.besideGame }.map { it.root.identity }.toSet()
+        for (identity in written + listOfNotNull(known?.identity)) {
+            try {
+                val folder = finder.readable(identity) ?: throw SaveNotPlaced()
+                val spots = saves.probeSpots(player, game, target, folder)
+                val captured = spots.mapNotNull { spot ->
+                    saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first?.let { spot to it }
+                }
+                if (captured.isEmpty() && identity in written) throw SaveNotPlaced()
+                for ((spot, bytes) in captured) copies.stageCandidate(game, player, spot, bytes, incident)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (identity in written) throw failure
+            }
+        }
     }
 
     private fun configAlternate(snapshot: ProbeSnapshot?): String? = snapshot?.configSavePath

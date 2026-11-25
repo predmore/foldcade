@@ -132,6 +132,7 @@ data class SaveIncident(
     /** Exact alternate file named by the launch config, retained through guided repair. */
     val alternateSavePath: String? = null,
     val capturedAlternateHashes: List<String> = emptyList(),
+    val besideGame: Boolean = false,
 )
 
 /** The locally resolved game and player behind an incident, retained for repair after restart. */
@@ -306,13 +307,16 @@ object SaveProtectionCopy {
     const val folderSet = "Folder set"
     const val notChecked = "Not checked yet"
     const val checkByPlaying = "Play a game and save in it to check."
-    const val retroArchConfigUnavailableDetail = "Foldcade can’t read RetroArch’s settings file. It can still check for save writes during play."
     const val armsX2ConfigUnavailableDetail = "Foldcade can’t read PCSX2-Android.ini in this folder. Open ARMSX2 once, or choose the shared data folder ARMSX2 uses and allow access."
     const val armsX2CardOutside = "ARMSX2’s MemoryCards folder is outside its data folder, so Foldcade can’t sync this card. " +
         "With ARMSX2 closed, open PCSX2-Android.ini and, under [Folders], set MemoryCards = memcards."
     const val armsX2OutsideCardSteps = "1. Close ARMSX2.\n" +
         "2. In PCSX2-Android.ini in the ARMSX2 data folder, under [Folders], set MemoryCards = memcards. Don’t delete the outside card. Other games’ saves may be on it.\n" +
         "3. Choose the ARMSX2 data folder again."
+    fun configUnavailableDetail(name: String) = "Foldcade can’t read $name’s save settings. It can still check for save writes during play."
+    const val gbcPickInApp = "In GBC.emu, open Options › File Paths › Saves › Select Folder. Pick your save folder there, then choose the same folder in Foldcade."
+    const val savedBesideRom = "Saved beside the ROM"
+    const val besideNoHead = "Folder set. The copy from beside the ROM is in Backups."
     /** The Fix page once the folder is set and a save can be chosen now. */
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */
@@ -387,6 +391,12 @@ object SaveProtectionCopy {
         "eden" -> "1. Settings › Advanced settings › Custom Paths › Save Data Directory.\n2. Settings › Profile Manager: check the user you play as."
         else -> null
     }
+    fun besideLocationSteps(incident: SaveIncident): String? {
+        val folder = incident.bound?.label ?: return locationSteps(incident.playerKey)
+        return if (incident.playerKey == "melonds")
+            "1. Settings › Save Files › Save next to ROM file: Off.\n2. Save file directory › choose $folder."
+        else "1. Options › File Paths › Saves › Select Folder. Choose $folder to switch away from Same As Content. Check this game’s own save folder too.\n2. Options › System › Launch Mode › Main Slot (No State)."
+    }
     fun title(incident: SaveIncident): String = with(incident) { when (kind) {
         IncidentKind.WrongFolder -> when {
             isEdenGrant -> "Eden needs folder access"
@@ -412,6 +422,7 @@ object SaveProtectionCopy {
         IncidentKind.WrongFolder -> when {
             isEdenGrant -> "Allow ${live?.label} to sync Eden saves."
             saveLayoutChanged -> "Save layout changed. Fix it before you play."
+            besideGame -> "Saved beside the ROM. Fix it before you play."
             live != null -> "Saving in ${live.label}. Fix it before you play."
             else -> "Not saving in ${bound?.label ?: "this folder"}. Fix it before you play."
         }
@@ -456,6 +467,7 @@ object SaveProtectionCopy {
             IncidentKind.WrongFolder -> when {
                 isEdenGrant -> "Allow ${live?.label} so Foldcade can sync Eden’s saves."
                 saveLayoutChanged -> "$playerName uses a different save location inside ${live?.label ?: "the chosen folder"}."
+                besideGame -> "$playerName saved this game beside the ROM."
                 live != null -> "$playerName now saves in ${live.label} instead of the ${bound?.label ?: "chosen"} folder."
                 else -> "$playerName didn’t use the folder ${bound?.label ?: "set in Foldcade"} last time you played."
             }

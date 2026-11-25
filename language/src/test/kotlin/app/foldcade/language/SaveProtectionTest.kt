@@ -4,6 +4,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SaveProtectionTest {
+    @Test fun contentSaveChecksAndTheGuidedFixDescribeOnlyTheObservedWrite() {
+        for ((key, player, menu) in listOf(Triple("melonds", "melonDS", "Save next to ROM file: Off"),
+            Triple("gbc-emu", "GBC.emu", "Options › File Paths › Saves › Select Folder"))) {
+            val bound = FolderRef("primary:saves/QA", "saves/QA")
+            val live = FolderRef("primary:ROMs/QA", "ROMs/QA")
+            val incident = SaveIncident("WrongFolder:$key:game", IncidentKind.WrongFolder, key, player,
+                listOf("game"), bound, live, Evidence(EvidenceKind.SessionWrite, "Game saved beside the ROM."), 100,
+                besideGame = true)
+            val page = SaveFixPage(incident.id, HostScreen.Bottom, SaveProtectionCopy.besideLocationSteps(incident), game = "Game", hasRommDestination = true)
+            assertEquals(SaveProtectionCopy.savedBesideRom, saveCheckState(incident))
+            assertTrue(saveProtectionDialog(incident, HostScreen.Bottom).body.contains("$player saved this game beside the ROM."))
+            assertNull(saveFixTarget(incident))
+            assertEquals(listOf(SaveFixAction.OpenEmulator, SaveFixAction.ChooseFolder), saveFixActions(incident, page))
+            assertTrue(saveFixCard(incident, page).body.contains(menu))
+            assertTrue(saveFixCard(incident, page).body.contains(bound.label))
+            assertEquals("Choose saves/QA, then tap Use this folder › Allow.", saveFixCard(incident, page).detail)
+            val done = incident.copy(repair = RepairState.Done, automaticDone = true)
+            assertEquals(listOf(SaveFixAction.Close), saveFixActions(done, page))
+            assertEquals("Your RomM save is back in saves/QA.", saveFixCard(done, page).body)
+            val localDone = done.copy(automaticDone = false, staged = listOf("file:///save"))
+            assertEquals(SaveProtectionCopy.guidedDoneLocal, saveFixCard(localDone, page.copy(hasRommDestination = false)).body)
+            val setting = PlayerSaveSetting(key, player, chosen = true, location = LocationFact.Bound(bound, configUnavailable = true))
+            val model = PickerModel(count = 0, rowsPerPage = 1, playerSaves = listOf(setting))
+            assertEquals("Can’t read config", rowText(Row.SaveCheck(key), model).value)
+        }
+        val ask = saveFolderDialog(HostScreen.Bottom, syncs = true, playerName = "GBC.emu", inApp = SaveProtectionCopy.gbcPickInApp)
+        assertEquals(SaveProtectionCopy.gbcPickInApp, ask.body)
+    }
+
     @Test fun retroArchSettingsExplainsAnInaccessibleConfigUntilASaveWriteVerifiesTheFolder() {
         val id = "retroarch.game-boy-advance"
         val root = FolderRef("primary:RetroArch/saves", "RetroArch/saves")

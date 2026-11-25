@@ -12,6 +12,7 @@ import app.foldcade.api.plugin.PluginEntry
 import app.foldcade.api.plugin.PluginException
 import app.foldcade.api.plugin.SaveDeclaration
 import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.api.plugin.SaveLocationProbe
 import app.foldcade.api.plugin.StartDisplay
 
 /**
@@ -53,7 +54,7 @@ class MelonDsEntry : PluginEntry {
  * invent a layout extra. Whether the touch screen is the Thor's bottom panel
  * is a device check, not this plugin.
  */
-class MelonDsPlayer : Player, SaveFolderHolder {
+class MelonDsPlayer : Player, SaveFolderHolder, SaveLocationProbe {
     override val id: String = ID
     override val displayName: String = DISPLAY_NAME
     override val platformId: String = PLATFORM_ID
@@ -73,7 +74,9 @@ class MelonDsPlayer : Player, SaveFolderHolder {
     override fun hasSaveFolder(): Boolean = saveFolder != null
 
     override val saveFolderPlaces: List<String> = listOf("saves/nds")
+    override val probePlaces: List<String> = listOf("saves/melonDS")
     override val saveFolderPickedInPlayer: Boolean = true
+    override val saveConfigPrivate = true
 
     override fun saveDeclarations(game: Game): List<SaveDeclaration> =
         listOf(SaveDeclaration(slot = SAVE_SLOT, locationUri = saveFolder))
@@ -87,6 +90,8 @@ class MelonDsPlayer : Player, SaveFolderHolder {
         if (slot != SAVE_SLOT || romFileName.isBlank()) return null
         return romFileName.replaceAfterLast('.', "sav", "$romFileName.sav")
     }
+
+    override fun saveBesideGame(slot: String, romFileName: String): String? = saveFileName(slot, romFileName)
 
     override fun launchIntent(request: LaunchRequest): PlayerIntent {
         if (request.resolvedPackage !in PACKAGES) {

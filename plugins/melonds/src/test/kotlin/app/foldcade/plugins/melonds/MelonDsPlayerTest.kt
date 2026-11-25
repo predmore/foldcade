@@ -139,4 +139,12 @@ class MelonDsPlayerTest {
         assertNull(player.saveFileName("other", "game.nds"))
         assertNull(player.saveFileName(MelonDsPlayer.SAVE_SLOT, " "))
     }
+
+    @Test fun theBesideProbeUsesTheSameNameAndDoesNotReadPrivatePreferences() {
+        val player = MelonDsPlayer()
+        assertEquals("Counter.v2.sav", player.saveBesideGame("sav", "Counter.v2.nds"))
+        assertNull(player.saveBesideGame("state", "Counter.nds"))
+        assertTrue(player.saveConfigPrivate)
+        assertEquals(listOf("saves/melonDS"), player.probePlaces)
+    }
 }

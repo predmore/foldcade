@@ -4,6 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FolderPickerTest {
+    @Test fun aGuidedBesidePickKeepsItsIncidentAcrossRecreation() {
+        val state = FolderPickerState(FolderPurpose.Settings, settingsPlayerId = "melonds", besideFixId = "WrongFolder:melonds:romm:7")
+        assertEquals(state, decodeFolderPickerState(state.encode()))
+        assertEquals(null, decodeFolderPickerState("Settings\n\nmelonds").besideFixId)
+    }
     @Test fun aLivePickerGuideSurvivesRecreationAndOldStateDoesNotCreateOne() {
         val guide = app.foldcade.language.FolderGuide(app.foldcade.language.HostScreen.Top, "melonds", opensThere = false)
         val state = FolderPickerState(FolderPurpose.Settings, settingsPlayerId = "melonds", guide = guide)

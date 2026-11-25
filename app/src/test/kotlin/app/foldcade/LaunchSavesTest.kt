@@ -216,6 +216,82 @@ class LaunchSavesTest {
         assertTrue(server.observed.isEmpty())
     }
 
+    @Test fun contentWritesScopeTheIncidentAndTheBackupFenceToOneLibraryGame() = runBlocking {
+        for (player in listOf(app.foldcade.plugins.melonds.MelonDsPlayer(),
+            app.foldcade.plugins.explus.ExPlusEntry().players.single { it.id == "gbc-emu.game-boy-color" })) {
+            val game = owner.copy(platformId = player.platformId)
+            val key = player.saveFolderId()
+            val directory = Files.createTempDirectory("scoped-content-write")
+            val store = SaveProtectionStore(directory)
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies)
+            val bound = RootReading(FolderRef("primary:saves", "saves"), true, emptyList(), "placed", true, null, null)
+            val live = FolderRef("primary:ROMs", "ROMs")
+            for (beside in listOf(false, true)) {
+                val alternate = RootReading(live, false, emptyList(), null, true, null, null, besideGame = beside)
+                val before = ProbeSnapshot(100, 1, player.packageNames.first(), listOf(bound, alternate))
+                val after = before.copy(atMillis = 500, roots = listOf(bound, alternate.copy(spotHash = "session bytes")))
+                probes.noteSession(player, game, before, after)
+                val incident = SaveProtectionStore(directory).incidents().single()
+                assertEquals(beside, incident.besideGame)
+                assertTrue(incident.appliesTo(game))
+                assertFalse(incident.appliesTo(game.copy(remoteKey = "another")))
+                assertFalse(incident.appliesTo(game.copy(backendId = "other-library")))
+                assertTrue(store.pendingBackup(key, game))
+                assertFalse(store.pendingBackup(key, game.copy(remoteKey = "another")))
+                assertTrue(probes.location(player, after) is LocationFact.Bound)
+                store.close(incident.id)
+            }
+        }
+    }
+
+    @Test fun besideCopyKeepsItsExactBytesOnceAcrossFailureRestartAndRecapture() = runBlocking {
+        val dir = Files.createTempDirectory("beside-copy-retry")
+        val store = SaveProtectionStore(dir)
+        val incident = incident(IncidentKind.WrongFolder).copy(besideGame = true)
+        store.put(incident)
+        val spot = SaveSpot("sav", primaryFolderDocument("ROMs/NDS"), "Tetris DS (USA).sav")
+        val bytes = "progress beside the ROM".toByteArray()
+        val copies = SaveIncidentCopies(saves, plugins, store)
+        server.backupsFail = true
+        repeat(2) {
+            copies.stageCandidate(owner, Melon, spot, bytes, incident)
+            copies.keep(owner, Melon)
+        }
+        val staged = saves.queuedCopies().single()
+        assertArrayEquals(bytes, Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(staged.slot.contentUri!!))))
+        val restarted = SaveProtectionStore(dir)
+        val resumedCopies = SaveIncidentCopies(saves, plugins, restarted)
+        server.backupsFail = false
+        resumedCopies.keep(owner, Melon)
+        resumedCopies.stageCandidate(owner, Melon, spot, bytes, incident)
+        resumedCopies.keep(owner, Melon)
+        assertTrue(saves.queuedCopies().isEmpty())
+        assertEquals(listOf(md5Hex(bytes)), server.backups)
+        assertEquals(listOf("backup-1"), restarted.incident(incident.id)?.kept)
+        assertTrue(server.calls.isEmpty())
+        assertTrue(server.observed.isEmpty())
+    }
+
+    @Test fun aLocalOnlyBesideCopyStaysOnTheDevice() = runBlocking {
+        val dir = Files.createTempDirectory("local-beside-copy")
+        val store = SaveProtectionStore(dir)
+        val game = owner.copy(backendId = "unmatched-local", availability = Availability.LocalOnly)
+        val incident = incident(IncidentKind.WrongFolder).copy(besideGame = true)
+        val spot = SaveSpot("sav", primaryFolderDocument("ROMs/NDS"), "Counter.sav")
+        val bytes = byteArrayOf(3, 2, 1)
+        store.put(incident)
+        SaveIncidentCopies(saves, plugins, store, rommOrigin = { "https://another-server.test" })
+            .stageCandidate(game, Melon, spot, bytes, incident)
+        SaveIncidentCopies(saves, plugins, SaveProtectionStore(dir)).keep(game, Melon)
+        val localCopy = saves.queuedCopies().single()
+        assertEquals(game.backendId, localCopy.game.backendId)
+        assertEquals(null, localCopy.origin)
+        assertArrayEquals(bytes, Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(localCopy.slot.contentUri!!))))
+        assertTrue(server.backups.isEmpty())
+        assertTrue(server.observed.isEmpty())
+    }
+
     @Test fun removingARetroArchOverrideKeepsTheNewestAlternateBytesBeforePlacingRommHead() = runBlocking {
         val pkg = "com.retroarch.aarch64"
         val authority = SharedPaths.EXTERNAL_STORAGE_AUTHORITY

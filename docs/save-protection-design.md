@@ -917,9 +917,10 @@ PR11 silent-session caution: only after QA data from PR1–PR6
 
 **PR 6: melonDS + EX beside-game and candidate places.**
 
-- `saveBesideGame` and `probePlaces`.
-- A beside-game live copy is never bound, because a download folder isn't a save root. That Fix is always guided: turn the setting off. The repair keeps the beside copy as a Backup and places RomM's head in the bound folder.
-- QA: "Save next to ROM file" on, then a RomM download, then a save → `WroteElsewhere` beside the ROM → the guided Fix.
+- The probes use `saveBesideGame` and `probePlaces`. melonDS uses the game's `.sav`, with `saves/melonDS` as a candidate alongside `saves/nds`. EX uses its supported battery and clock bundle in the content folder and checks shared `EmuEx` alongside the existing places. A candidate must be readable before and after the session. An empty melonDS file created at boot contributes no write evidence.
+- API minor 27 gives `SaveLocationProbe.saveConfigPrivate` a default of `false`. Stock melonDS private preferences and EX private binary config yield **Can’t read config** until there is bound-folder session evidence. GBC.emu setup asks for the in-app selection first when Foldcade has no binding. The EX launch-mode step stays in setup.
+- A beside-game write opens a game-scoped incident and the Fix picker accepts only the previously bound folder. After the user changes the emulator setting and confirms that folder, repair verifies the unslotted Backup and restores the current RomM head there. The folder stays unchecked until a later session write. With no head, the verified Backup remains available in Y › Saves. A local-only game retains a durable device copy.
+- QA uses a writable local library with a matching RomM game to exercise the complete repair, and a second local-only title for device retention. Also test a RomM download directly. Foldcade’s download provider is read-only, so if the emulator cannot produce a sibling file through its own storage access, the evidence stays inconclusive. An unscanned melonDS launch can use its private fallback.
 - Risk: low.
 
 **PR 7: ARMSX2 config.**

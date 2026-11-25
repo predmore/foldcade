@@ -37,9 +37,12 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
     if (player.saveFolderId() != incident.playerKey) return null
     val holder = player as? SaveFolderHolder ?: return null
     val isQuarantine = incident.kind == IncidentKind.MaybeNewSave
+    val besideGame = incident.besideGame
     // Hosted cards belong to the provider. A separate data/BIOS grant is never a repair destination.
     if (player is HostedSaveFolder) return null
     if (!isQuarantine && (incident.kind != IncidentKind.WrongFolder || player is EdenPlayer)) return null
+    // A write beside the ROM can only be repaired after the in-app instructions and bound-folder pick.
+    if (!isQuarantine && player.probesContentSaves && (!besideGame || incident.repair == RepairState.NotStarted)) return null
     val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) } ?: return null
     val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: return null
     val eden = if (player is EdenPlayer) {
@@ -47,7 +50,11 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
     } else null
     val current = eden?.spot?.folderUri ?: playerSaveFolder(player) ?: return null
     val currentId = storageIdentity(current, packageName)
-    val live = if (isQuarantine) FolderRef(currentId, folderPathLabel(current)) else incident.live ?: return null
+    val live = when {
+        isQuarantine -> FolderRef(currentId, folderPathLabel(current))
+        besideGame -> incident.bound ?: return null
+        else -> incident.live ?: return null
+    }
     val bound = if (isQuarantine) live else incident.bound ?: return null
     if (currentId !in setOf(bound.identity, live.identity)) return null
 
@@ -73,7 +80,7 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
             launchWork.active || launchWork.waitingToLight ||
                 (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
                 player.packageNames.any { name ->
-                    val fallback = incident.openedAtMillis.takeIf { player is RetroArchPlayer && name == packageInfo.packageName }
+                    val fallback = incident.openedAtMillis.takeIf { (player is RetroArchPlayer || besideGame) && name == packageInfo.packageName }
                     name in closingPlayers || repairPlayerHolds.mayHold(name, fallback, repairHasRunningTask(name))
                 }
         }
@@ -103,13 +110,13 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
 
         override suspend fun readCopies(keptHashes: Set<String>, stage: Boolean): RepairCopies {
             val liveSpot = spot(liveUri)
-            val previous = if (isQuarantine || !stage) null else rommSyncedSave(library, game, slot, SAVE_ZIP_LIMIT)
+            val previous = if (isQuarantine || besideGame || !stage) null else rommSyncedSave(library, game, slot, SAVE_ZIP_LIMIT)
                 ?.let { rommSaveHash(it) to saveShape(it, liveSpot.isFolderSave()) }
             val seen = keptHashes.toMutableSet()
             var liveRawHash: String? = null
             var liveSuspect = false
-            fun read(spot: SaveSpot, live: Boolean = false): String? {
-                val bytes = playerSaves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return null
+            fun read(spot: SaveSpot, live: Boolean = false, bytes: ByteArray? = playerSaves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first): String? {
+                bytes ?: return null
                 val hash = rommSaveHash(bytes) ?: throw RepairFoldersUnavailable()
                 if (stage && seen.add(hash)) {
                     saveIncidentCopies.record(incident.id, listOf(playerSaves.stageCopy(game, player, spot, bytes, origin)))
@@ -122,10 +129,22 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
                 }
                 return hash
             }
+            val besideCopy = if (besideGame) {
+                val candidate = saveProbes.besideCandidate(player, game, target, bound) ?: throw RepairFoldersUnavailable()
+                when (val reading = candidate.read) {
+                    is FileReading.Bytes -> read(candidate.spot, bytes = reading.bytes)
+                    FileReading.Missing -> {
+                        val current = saveProtection.incident(incident.id) ?: throw RepairFoldersUnavailable()
+                        if (current.capturedAlternateHashes.isEmpty() && current.kept.isEmpty()) throw RepairFoldersUnavailable()
+                        null
+                    }
+                    FileReading.Unreadable -> throw RepairFoldersUnavailable()
+                }
+            } else null
             // Give a shared Backup the live folder's label when both roots hold the same bytes.
             val liveCopy = read(liveSpot, live = true)
             val boundCopy = if (bound.identity == live.identity) liveCopy else read(spot(boundUri))
-            return RepairCopies(boundCopy, liveCopy, beside()?.let { read(it) }, liveSuspect,
+            return RepairCopies(boundCopy, liveCopy, if (besideGame) besideCopy else beside()?.let { read(it) }, liveSuspect,
                 liveMatchesSynced = liveCopy != null && liveCopy == previous?.first, liveRawHash = liveRawHash)
         }
 
@@ -162,7 +181,7 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
         }
 
         override suspend fun verify() {
-            if (!isQuarantine) {
+            if (!isQuarantine && !besideGame) {
                 val markers = holder.saveFolderMarkers
                 val present = playerSaves.folderAccess(player, liveUri, allowWrite = false).list("")
                     ?.any { entry -> markers.any { it.equals(entry.name, ignoreCase = true) } }

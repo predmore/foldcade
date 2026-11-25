@@ -19,6 +19,8 @@ data class RootReading(
     val reachable: Boolean = true,
     /** An exact candidate file, which can share a directory with a different bound spot. */
     val spotFile: String? = null,
+    /** The ROM's parent is a candidate for this game only. */
+    val besideGame: Boolean = false,
 )
 
 data class ConfigSavePath(val expected: String?, val effective: String?, val live: FolderRef?, val proves: Boolean) {
@@ -35,7 +37,7 @@ sealed interface RootVerdict {
 }
 sealed interface SessionVerdict {
     data class Wrote(val root: FolderRef) : SessionVerdict
-    data class WroteElsewhere(val live: FolderRef?) : SessionVerdict
+    data class WroteElsewhere(val live: FolderRef?, val besideGame: Boolean = false) : SessionVerdict
     data class Signalled(val verdict: RootVerdict) : SessionVerdict
     data class SilentStart(val source: String) : SessionVerdict
     data object NoNews : SessionVerdict
@@ -86,7 +88,8 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
     if (spotChanged(before, bound)) return SessionVerdict.Wrote(bound.root)
     if (oldBound.spotReadable && bound.spotReadable && oldBound.spotFile == bound.spotFile && oldBound.spotHash == bound.spotHash) {
         val changedCandidates = after.roots.filter { !it.bound && spotChanged(before, it) }
-        if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(changedCandidates.singleOrNull()?.root)
+        if (changedCandidates.isNotEmpty()) return SessionVerdict.WroteElsewhere(
+            changedCandidates.singleOrNull()?.root, changedCandidates.any { it.besideGame })
     }
     val advanced = after.roots.any { root -> root.signals.any { signal ->
         signal.proves && signal.modifiedAtMillis != null && signal.modifiedAtMillis > before.atMillis &&
@@ -106,7 +109,9 @@ fun judgeSession(before: ProbeSnapshot, after: ProbeSnapshot, sessionMillis: Lon
 }
 
 fun spotChanged(before: ProbeSnapshot, root: RootReading): Boolean {
-    val old = before.roots.singleOrNull { it.bound == root.bound && it.root.identity == root.root.identity && it.spotFile == root.spotFile }
+    val old = before.roots.singleOrNull {
+        it.bound == root.bound && it.root.identity == root.root.identity && it.spotFile == root.spotFile && it.besideGame == root.besideGame
+    }
         ?: return false
     return old.spotReadable && root.spotReadable && root.spotHash != null && root.spotHash != old.spotHash
 }

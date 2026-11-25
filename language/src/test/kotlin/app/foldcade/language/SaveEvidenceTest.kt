@@ -63,6 +63,23 @@ class SaveEvidenceTest {
         assertEquals(SessionVerdict.WroteElsewhere(null), judgeSession(before, after, 400))
     }
 
+    @Test fun besideWriteNeedsAReadableUnchangedBoundAndTheSameReadableCandidate() {
+        val beside = root(FolderRef("primary:ROMs", "ROMs"), hash = null).copy(spotFile = "Game.sav", besideGame = true)
+        val saved = beside.copy(spotHash = "new bytes")
+        val before = snap(root(), beside, at = 100)
+        val after = snap(root(), saved)
+        assertEquals(SessionVerdict.WroteElsewhere(beside.root, besideGame = true), judgeSession(before, after, 400))
+        assertEquals(SessionVerdict.Wrote(bound), judgeSession(before, snap(root(hash = "bound write"), saved), 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, snap(root(), beside), 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, snap(root(), saved.copy(spotReadable = false)), 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, snap(root(), saved.copy(spotFile = "Other.sav")), 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(snap(root(), beside.copy(spotReadable = false)), after, 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(snap(root().copy(spotReadable = false), beside), after, 400))
+        assertEquals(SessionVerdict.NoNews, judgeSession(before, after.copy(installFirstMillis = 2), 400))
+        assertEquals(SessionVerdict.WroteElsewhere(null, besideGame = true),
+            judgeSession(snap(root(), beside, root(live)), snap(root(), saved, root(live, hash = "other write")), 400))
+    }
+
     @Test fun configMismatchComparesFilesAndRequiresPositivePrecedenceEvidence() {
         val config = ConfigSavePath("/saves/mGBA/Game.srm", "/saves/Game.srm", bound, false)
         val snapshot = snap(root()).copy(configSavePath = config)

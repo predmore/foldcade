@@ -24,13 +24,14 @@ class SaveRepairTest {
     ) : SaveRepairWork {
         override val slot = "3ds"
         var head = RommRepairSave("head-id", slot, "head", 1, 20)
+        var hasHead = true
         val backups = mutableMapOf<String, RommRepairSave>()
         val staged = linkedSetOf<String>()
         val events = mutableListOf<String>()
         override suspend fun running() = holdsGame
         override suspend fun versions(): List<RommRepairSave> {
             check(online)
-            return listOf(head) + backups.values
+            return listOfNotNull(head.takeIf { hasHead }) + backups.values
         }
         override suspend fun readCopies(keptHashes: Set<String>, stage: Boolean): RepairCopies {
             if (stage) staged += copies.hashes() - keptHashes
@@ -115,6 +116,41 @@ class SaveRepairTest {
         store.put(incident)
         assertNotNull(SaveRepair(store, { work }, settle = {}).advance(incident.id, start = true))
         assertEquals(listOf("backup-head"), work.backups.values.map { it.id })
+    }
+
+    @Test fun guidedBesideRepairRestoresOnlyTheExistingHeadAfterVerification() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val detected = incident.copy(besideGame = true, repair = RepairState.Binding)
+        val work = Work(RepairCopies("older-bound", "older-bound", "beside-progress"), online = false)
+        store.put(detected)
+        val repair = SaveRepair(store, { work }, settle = {})
+        assertNull(repair.advance(detected.id, start = true))
+        assertTrue(work.events.isEmpty())
+
+        store.put(detected.copy(repair = RepairState.Keeping))
+        assertNull(repair.advance(detected.id))
+        assertTrue(store.incident(detected.id)?.repair is RepairState.WaitingForRomm)
+        assertEquals(setOf("older-bound", "beside-progress"), work.staged)
+
+        work.online = true
+        val done = repair.advance(detected.id)!!
+        assertTrue(done.besideGame && done.automaticDone)
+        assertEquals(listOf("keep", "place:head-id", "verify"), work.events)
+        assertEquals(setOf("older-bound", "beside-progress"), work.backups.keys)
+        assertTrue(work.backups.values.all { it.slot == null })
+        assertEquals("head-id", work.head.id)
+    }
+
+    @Test fun guidedBesideRepairWithNoHeadKeepsABackupWithoutCreatingASlot() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val confirmed = incident.copy(besideGame = true, repair = RepairState.Keeping)
+        val work = Work(RepairCopies(null, null, "first-save")).apply { hasHead = false }
+        store.put(confirmed)
+        val done = SaveRepair(store, { work }, settle = {}).advance(confirmed.id)!!
+        assertEquals(RepairState.Done, done.repair)
+        assertFalse(done.automaticDone)
+        assertEquals(listOf("keep"), work.events)
+        assertEquals(listOf("backup-first-save"), done.kept)
     }
 
     @Test fun aPreviouslySyncedLiveCopyIsKeptWhileTheNewerHeadIsRestored() = runBlocking {

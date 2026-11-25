@@ -103,7 +103,9 @@ melonDS 2.0.1 keeps layout, renderer and audio preferences in private SharedPref
 
 For [RomM save sync](romm.md#save-sync), choose the same save directory in melonDS and **Foldcade Settings › Emulators › melonDS**, with **Save next to ROM file** off. A ROM named `Puzzle.nds` uses `Puzzle.sav`; keep filenames consistent across devices.
 
-Choose **Play without syncing** at the save-folder prompt to play with melonDS's own saves for this launch. Foldcade asks again next time.
+The **Check** row says **Can’t read config** until Foldcade observes a save write in its watched folder. Foldcade also checks `saves/nds`, `saves/melonDS`, and the ROM’s parent when it already has read access. If the game writes beside the ROM, **Fix it** takes you to **Settings › Save Files** in melonDS to turn off **Save next to ROM file** and select the folder Foldcade was watching. Then confirm that folder in Foldcade. A launch whose ROM has an unknown parent may use melonDS’s private fallback, which Foldcade cannot inspect. Foldcade’s RomM download provider opens files read-only, so a launch that cannot write beside the ROM supplies no evidence of that setting.
+
+Choose **Play anyway** at the save-folder prompt to play with melonDS's own saves for this launch. Foldcade asks again next time.
 
 ## DuckStation: PlayStation
 
@@ -283,6 +285,8 @@ For NES, SNES SRAM and MD, the bundle also keeps named battery slots at `<game>/
 EX defaults to the ROM’s directory, unless you select a save directory. **App Folder** uses `Android/data/<package>/files/EmuEx/<system>/saves` on current Android, which all-files access cannot open. The system names are `GBA`, `GB`, `FC-NES`, `SFC-SNES` and `MD-Genesis`. This private app folder has no public documents provider.
 
 For a shared save directory, open the emulator’s **Options › File Paths › Saves › Select Folder**, choose a shared folder such as `saves/GBC.emu`, and choose that same folder in **Foldcade Settings › Emulators › GBC.emu** (or the matching app). Existing saves stay where you put them; move copies using your file manager if needed. Known `saves/<app>` and legacy shared `EmuEx/<system>/saves` locations can be found through held grants or **Auto-find saves** when the emulator holds that exact folder too. Custom locations can always be picked manually. A retained grant cannot reveal EX’s private active-path setting, so confirm the selected folder in EX if you have changed its paths. Foldcade never rewrites it.
+
+If GBC.emu needs a folder set up again, re-pick it in GBC.emu first, then give Foldcade the same folder. The **Check** row says **Can’t read config** until a save write verifies the watched folder. The return can also detect a write to a readable candidate such as `EmuEx` or beside the ROM. **Same As Content** only produces evidence when the emulator can write there. **Fix it** for a beside-ROM save asks you to switch to **Select Folder** in EX, check the game’s own save path, and confirm the watched folder in Foldcade. **Main Slot (No State)** remains part of EX setup.
 
 Y › Saves refuses raw saves or incompatible archives before making them this emulator’s slot head, with a format explanation. Such saves remain available on RomM to copy to another server slot.
 
