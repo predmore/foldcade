@@ -1733,7 +1733,8 @@ fun rowText(row: Row, model: PickerModel): RowText = when (row) {
     Row.FindSaves -> RowText(SettingsCopy.findSaves, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     Row.FindGames -> RowText(FoundFolderCopy.autoFindGames, if (model.allFilesGranted) SettingsCopy.accessAllowed else SettingsCopy.accessAsk)
     // How many emulators still wait, in the attention colour, until every one syncs.
-    Row.SaveSetup -> RowText(SaveSetupCopy.title, savesDue(model).size.takeIf { it > 0 }?.let(SaveSetupCopy::toGo))
+    Row.SaveSetup -> RowText(SaveSetupCopy.title, savesDue(model).size.takeIf { it > 0 }?.let(SaveSetupCopy::toGo)
+        ?: model.savesOnlyHere.takeIf { it > 0 }?.let(SaveSetupCopy::onlyOnThisDevice))
     Row.ScreenLayout -> RowText(ScreenCopy.layout, layoutLabel(model.layout))
     Row.PlayOn -> RowText(ScreenCopy.playOn, screenLabel(model.playOn))
     Row.OpenWith -> RowText(PlayerChoiceCopy.openWith, model.tileActions?.openWith?.value())
@@ -1934,6 +1935,8 @@ sealed interface Effect {
     data class LoadSavePicker(val target: SavePickerTarget) : Effect
     data class FixSavePicker(val target: SavePickerTarget) : Effect
     data class SyncSavePicker(val target: SavePickerTarget) : Effect
+    /** Y › Saves' route: play [target]'s game with [choice] from now on, then show its saves again. */
+    data class UseSavePlayer(val target: SavePickerTarget, val choice: PlayerChoice) : Effect
     data class PlayPickedSave(val target: SavePickerTarget, val saveId: String) : Effect
     data class CopyPickedSave(val target: SavePickerTarget, val saveId: String, val destination: SaveDestination) : Effect
     /**
@@ -2327,6 +2330,8 @@ data class PickerModel(
     val saveSetup: SaveSetupPage? = null,
     val saveFix: SaveFixPage? = null,
     val saveIncidents: List<SaveIncident> = emptyList(),
+    /** Played games whose saves stay on this device with no way to RomM from here ([savesOnlyHere]). */
+    val savesOnlyHere: Int = 0,
     /** True while Foldcade reads what each emulator's folder still needs, as just after a pick. Set up saves waits on it before moving on. */
     val checkingSaves: Boolean = false,
     /** Every library is being read again. */

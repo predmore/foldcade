@@ -77,10 +77,12 @@ internal fun gameSaveHealth(
         reachable == true -> SpotFact.Resolved
         else -> SpotFact.Unchecked
     }
-    val destination = offDevice ?: when {
+    // Where a save can go is structural first: a receipt read from a local library, or a signed-out
+    // server, can't make a launch-only emulator sync or give a folder game a RomM copy (§7.1).
+    val destination = when {
         !supportsSync && emulator -> OffDeviceFact.NoDestination(NoDestinationWhy.PlayerCantSync)
         !onServer && emulator -> OffDeviceFact.NoDestination(NoDestinationWhy.NotOnRomm)
-        else -> OffDeviceFact.Unknown
+        else -> offDevice ?: OffDeviceFact.Unknown
     }
     return deriveSaveStatus(SaveFacts(keeper, location, spot, destination,
         if (waiting) waitingSinceMillis ?: 0 else null, incidents, playedHere))

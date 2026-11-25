@@ -475,22 +475,30 @@ object SaveSetupCopy {
      * The head's chip: how many emulators Home's games play on still need you ([savesDue]), the
      * count R1 says too. Then that those sync while others wait, and All set only once all do.
      */
-    fun head(due: Int, rest: Int, unverified: Boolean = false): String = when {
+    fun head(due: Int, rest: Int, unverified: Boolean = false, onlyHere: Int = 0): String = when {
         due > 0 -> toGo(due)
+        // Emulators can all be set while played games still have no way to RomM: never Your games sync then.
+        onlyHere > 0 -> onlyOnThisDevice(onlyHere)
         unverified -> SaveProtectionCopy.folderSet
         rest > 0 -> gamesSync
         else -> allSet
     }
 
     /** The end's title. Anything left still does not sync, so the page calls only nothing left All set. */
-    fun endTitle(due: Int, rest: Int): String = if (due == 0 && rest == 0) allSet else doneForNow
+    fun endTitle(due: Int, rest: Int, onlyHere: Int = 0): String = if (due == 0 && rest == 0 && onlyHere == 0) allSet else doneForNow
 
     /** Under Done for now: what still does not sync, and where to finish it. Null on All set. */
-    fun endBody(due: Int, rest: Int): String? = when {
+    fun endBody(due: Int, rest: Int, onlyHere: Int = 0): String? = when {
         due > 0 -> "$due still not syncing. $finishLater"
+        onlyHere > 0 -> "${onlyOnThisDevice(onlyHere)}. $eachGameSays"
         rest > 0 -> "$gamesSync. $finishLater"
         else -> null
     }
+
+    /** Played games whose saves have no way to RomM from here ([savesOnlyHere]). */
+    fun onlyOnThisDevice(count: Int): String = if (count == 1) "1 game only on this device" else "$count games only on this device"
+    /** Where a device-only game's way to RomM is shown: on the game, not on an emulator. */
+    const val eachGameSays = "Y › Saves on each game shows how to keep it on RomM."
 
     /** A pick that was not [name]'s folder, in one line. */
     fun wrongFolder(name: String, markers: Collection<String>): String =

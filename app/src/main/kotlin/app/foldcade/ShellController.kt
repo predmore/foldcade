@@ -686,6 +686,17 @@ class ShellController(
     internal var onPlayerChoiceChanged: (String) -> Unit = {}
     internal var onPlayerAvailabilityChanged: () -> Unit = {}
 
+    /** Y › Open with's choice for [gameId]'s tile, or Default ([choice] null) for every copy it folded from. */
+    private fun setGamePlayerChoice(gameId: String, choice: PlayerChoice?) {
+        val tile = tileOf(gameId)
+        if (choice == null) {
+            (listOf(tile) + sameGroups()[tile].orEmpty() + gameId).distinct().forEach { store.setGamePlayerChoice(it, null) }
+        } else store.setGamePlayerChoice(tile, choice)
+        onPlayerChoiceChanged("game:$tile")
+        refreshSaveHealth()
+        publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+    }
+
     internal fun canonicalSystem(platformId: String): String =
         canonicalPlatformId(plugins.platformDefinitions(), platformId)
             ?: plugins.playersFor(platformId).firstOrNull()?.platformId ?: platformId
@@ -945,6 +956,7 @@ class ShellController(
         // Settings › Emulators' own rows (savesDue), so R1 and Set up saves count the same ones.
         val board = routes.values.mapNotNullTo(linkedSetOf()) { route -> savePlayer(route)?.let { saveNoticePlayerId(it.id) } }
         refreshSavePickerHealth()
+        refreshSavesOnlyHere()
         // Each refresh is heard, as the waiting-saves notices ride on it, but only once.
         savesDuePublished = null
         if (board != boardEmulators) {
@@ -954,6 +966,16 @@ class ShellController(
         publishSavesDue()
     }
 
+
+    /** Settings' count of played games whose saves have no way to RomM from here. A first play changes it too. */
+    private fun refreshSavesOnlyHere() {
+        if (!saveHealthReady) return
+        // Played tiles first, by their own id, so a large catalog builds few routes whichever grid is showing.
+        val onlyHere = libraryGames.keys.mapTo(linkedSetOf(), ::tileOf).filter { lastPlayedMillis(it) != null }.count { tile ->
+            launchRoute(tile)?.let { route -> savesOnlyHere(saveHealthOf(tile), route.servers.isNotEmpty(), playedHere = true) } == true
+        }
+        if (onlyHere != model.savesOnlyHere) model = model.copy(savesOnlyHere = onlyHere)
+    }
 
     /** What R1's not-syncing notice last heard, so it hears again only when that changes. */
     private var savesDuePublished: Map<String, String>? = null
@@ -1413,13 +1435,7 @@ class ShellController(
             }
             Effect.Tidy -> changeHome { home.tidyBoard(it) }
             is Effect.SetGamePlayerChoice -> {
-                val tile = tileOf(effect.gameId)
-                if (effect.choice == null) {
-                    (listOf(tile) + sameGroups()[tile].orEmpty() + effect.gameId).distinct().forEach { store.setGamePlayerChoice(it, null) }
-                } else store.setGamePlayerChoice(tile, effect.choice)
-                onPlayerChoiceChanged("game:$tile")
-                refreshSaveHealth()
-                publish(model.copy(shelfEpoch = model.shelfEpoch + 1))
+                setGamePlayerChoice(effect.gameId, effect.choice)
                 null
             }
             is Effect.SetGameFan -> {
@@ -3554,7 +3570,7 @@ class ShellController(
             ?: return if (waiting) SaveStatus.Waiting(0) else SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
         val saves = saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }
         val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
-        return gameSaveHealth(owner, player, true, waiting,
+        return gameSaveHealth(owner, player, route.servers.isNotEmpty(), waiting,
             saveSync[player.id], setupSteps[player.id],
             reachable = checkedSaveReachability(owner, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable), saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
@@ -3572,9 +3588,38 @@ class ShellController(
             saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
         else emptyList()
         // A chip that stops acting gives its focus to the newest save.
-        model = model.copy(savePicker = page.copy(health = savePickerHealth(page.target), ownSlots = slots, canPlay = player != null,
-            restartsOpenGame = isRunning(page.target.gameId)).settled())
+        val health = savePickerHealth(page.target)
+        model = model.copy(savePicker = page.copy(health = health, ownSlots = slots, canPlay = player != null,
+            restartsOpenGame = isRunning(page.target.gameId), route = savePickerRoute(page.target, health)).settled())
     }
+
+    /**
+     * How [target]'s saves can leave this device, for Y › Saves (§7.1), or null when the ordinary
+     * page says it all. Only installed emulators are offered to switch to; one that isn't
+     * installed is named. Partners, streams and apps are only explained.
+     */
+    internal fun savePickerRoute(target: app.foldcade.language.SavePickerTarget, health: SaveStatus = savePickerHealth(target)): app.foldcade.language.SaveRoute? {
+        val route = savesMenuRoute(target.gameId) ?: return null
+        val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
+        fun syncs(candidate: Player) = saveSupport.getOrPut(candidate.id to owner) { readGameSaveSupport(owner, candidate) }.supportsSync
+        val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
+        val playerSyncs = player != null && syncs(player)
+        // gameSaveHealth's rule: a partner, stream or app is not an emulator that fails to sync.
+        val emulator = player?.takeIf { playerSyncs || it.needsLocalFile || it is app.foldcade.plugins.emulators.EmulatorPlayer }
+        val platformId = route.play.platformId
+        val supported = if (playerSyncs) null else playerOptionsFor(platformId).firstOrNull { choice ->
+            choice.playerId != player?.id && plugins.player(choice.playerId)?.let(::syncs) == true
+        }
+        val installable = if (playerSyncs || supported != null) null else plugins.playersFor(platformId)
+            .filter { it.packageNames.none(installedPlayers::contains) && syncs(it) }.minByOrNull(::playerRank)?.displayName
+        val system = canonicalSystem(platformId).let { id -> plugins.platformDefinitions().firstOrNull { it.id == id }?.displayName }
+        val fileName = route.play.takeIf { it.backendId == LocalFolderBackend.ID }?.remoteKey?.let(LocalFolderBackend::fileNameOf)
+        return saveRoute(app.foldcade.language.SaveRouteFacts(health, route.servers.isNotEmpty(), store.rommOrigin() != null,
+            emulator?.displayName, playerSyncs, supported, installable, fileName, system, emulator?.id))
+    }
+
+    /** Y › Saves' route: [gameId] plays with [choice] from now on, as Y › Open with sets it. */
+    internal fun useSavePlayer(gameId: String, choice: PlayerChoice) = setGamePlayerChoice(gameId, choice)
 
     fun presentSavePicker(state: app.foldcade.language.SavePickerState?) {
         artPicker = null
@@ -4319,8 +4364,9 @@ class ShellController(
         val withArt = if (tile?.bulk == null && home.selection == null && counted.artKeySaved && artPickerAvailable() && targetGame?.let(::artQuery) != null) {
             (offered ?: TileActions()).copy(art = true)
         } else offered
+        // Every library game has a Saves page: one RomM doesn't have shows how its saves can get there (§7.1).
         val withSaves = if (tile?.bulk == null && home.selection == null && targetGame != null &&
-            launchRoute(targetGame.id)?.servers?.isNotEmpty() == true) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
+            launchRoute(targetGame.id) != null) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
         // Only a game opens with an emulator. A platform folder has a system too, but no game to open.
         val choiceGame = (tile?.game ?: targetGame?.id)?.takeIf { id ->
             tile?.bulk == null && home.selection == null && targetGame?.platformId != null &&
@@ -4516,6 +4562,7 @@ class ShellController(
     fun notePlayChanged() {
         // An open page's bounds follow its history: a removed or imported first day moves them.
         refreshPlayPage()
+        refreshSavesOnlyHere()
         val focusedId = gridFocusId()
         if (homeReturnBlocked()) cancelHomeReturnOnInput()
         // All games' Recent and Most played reorder its rows, which the board does not see.
@@ -4575,7 +4622,7 @@ class ShellController(
         model = if (ready.libraryGrid) {
             val game = if (ready.panel != null) librarySavesMenuGame ?: libraryEntry(ready)?.game else libraryEntry(ready)?.game
             val id = game?.let { homeGameId(it.backendId, it.remoteKey) }
-            val canChoose = game != null && id != null && launchRoute(tileOf(id), game)?.servers?.isNotEmpty() == true
+            val canChoose = game != null && id != null && launchRoute(tileOf(id), game) != null
             ready.copy(tileActions = if (game != null && id != null) TileActions(saves = canChoose, game = id,
                 openWith = openWith(tileOf(id), game.platformId), gameFan = gameFanSetting(tileOf(id), ready.device)) else null,
                 playerSaves = playerSaveSettings(), systemPlayers = settingsPlayerChoices(ready))

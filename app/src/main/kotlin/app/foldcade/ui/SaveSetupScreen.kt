@@ -158,12 +158,13 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
         Spacer(Modifier.weight(1f))
         if (tiles.isNotEmpty()) {
             // Emulators no game on Home plays on wear their own marks; the head stays quiet about them.
+            val onlyHere = model.savesOnlyHere
             val look = when {
-                due > 0 -> StatusLook.NeedsYou
+                due > 0 || onlyHere > 0 -> StatusLook.NeedsYou
                 rest > 0 || tiles.any { !it.findSaves && !it.verified } -> StatusLook.Quiet
                 else -> StatusLook.Syncing
             }
-            SlideSwap(target = SaveSetupCopy.head(due, rest, tiles.any { it.onHome && !it.findSaves && !it.verified }) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
+            SlideSwap(target = SaveSetupCopy.head(due, rest, tiles.any { it.onHome && !it.findSaves && !it.verified }, onlyHere) to look, scale = scale, distance = 12.dp, vertical = true, direction = { _, _ -> 1 }) { (word, shown) ->
                 Chip(word, shown, theme)
             }
         }
@@ -711,6 +712,7 @@ private fun End(
     val model = app.shell.model
     val due = savesDue(model, tiles).size
     val rest = savesRest(tiles).size
+    val onlyHere = model.savesOnlyHere
     val mark = @Composable { modifier: Modifier ->
         Box(
             modifier
@@ -722,17 +724,17 @@ private fun End(
                 .background(theme.background.copy(alpha = design.tile.statusBackingAlpha)),
             contentAlignment = Alignment.Center,
         ) {
-            val (icon, tint) = if (due == 0 && tiles.any { !it.findSaves && !it.verified }) R.drawable.ic_badge_cloud to theme.muted
-                else badgeOf(if (due == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
+            val (icon, tint) = if (due == 0 && onlyHere == 0 && tiles.any { !it.findSaves && !it.verified }) R.drawable.ic_badge_cloud to theme.muted
+                else badgeOf(if (due == 0 && onlyHere == 0) StatusLook.Syncing else StatusLook.NeedsYou, theme)!!
             val badge = themeIcon(icon)
             Image(badge.painter, contentDescription = null, colorFilter = badge.tint(tint), modifier = Modifier.fillMaxSize(BADGE_INK))
         }
     }
     val title = @Composable {
-        BasicText(if (tiles.any { it.done && !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.endTitle(due, rest), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
+        BasicText(if (onlyHere == 0 && tiles.any { it.done && !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.endTitle(due, rest, onlyHere), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
     }
     val body = @Composable {
-        (SaveSetupCopy.endBody(due, rest) ?: SaveProtectionCopy.foldersSet.takeIf { tiles.any { it.done && !it.findSaves && !it.verified } })?.let {
+        (SaveSetupCopy.endBody(due, rest, onlyHere) ?: SaveProtectionCopy.foldersSet.takeIf { tiles.any { it.done && !it.findSaves && !it.verified } })?.let {
             BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }

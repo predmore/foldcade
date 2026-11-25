@@ -703,6 +703,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.FixSavePicker -> dispatch(foldcade.shell.savePickerFix(effect.target))
             is Effect.SyncSavePicker -> changeServerSave(effect.target, null)
+            is Effect.UseSavePlayer -> useSavePlayer(effect.target, effect.choice)
             is Effect.PlayPickedSave -> changeServerSave(effect.target, effect.saveId)
             is Effect.CopyPickedSave -> changeServerSave(effect.target, effect.saveId, effect.destination)
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
@@ -4551,24 +4552,42 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    /** Bind the whole screen and its later effects to the menu's original game. */
-    private fun openSaves(gameId: String) {
-        if (foldcade.launchWork.active) return
-        val route = foldcade.shell.savesMenuRoute(gameId) ?: return
-        val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: return
+    /**
+     * Bind the whole screen and its later effects to the menu's original game. A game RomM doesn't
+     * have opens on its own copy, with nothing to load: the page shows how its saves can get there.
+     */
+    private fun openSaves(gameId: String, message: String? = null): Boolean {
+        if (foldcade.launchWork.active) return false
+        val route = foldcade.shell.savesMenuRoute(gameId) ?: return false
+        val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: route.saves
+        val onRomm = route.servers.isNotEmpty()
         val player = foldcade.shell.savePlayer(route)
         val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
         foldcade.savePickerRequest = SavePickerRequest(target, route, owner, player)
+        val health = foldcade.shell.saveHealthOf(gameId)
         foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
             target, owner.label, player?.displayName ?: app.foldcade.language.SavePickerCopy.unknown,
-            foldcade.shell.saveHealthOf(gameId), ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
+            health, ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
             deviceName = app.foldcade.language.SavePickerCopy.thisDeviceName(Build.MANUFACTURER.orEmpty(), Build.MODEL.orEmpty()),
-        ))
-        loadSavePicker(target)
+            loading = onRomm, message = message, onRomm = onRomm,
+        ).let { it.copy(route = foldcade.shell.savePickerRoute(target, foldcade.shell.savePickerHealth(target))).settled() })
+        if (onRomm) loadSavePicker(target)
+        return true
+    }
+
+    /** The Saves page's route: switch the game to an emulator Foldcade syncs, then show its saves with it. */
+    private fun useSavePlayer(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.PlayerChoice) {
+        if (foldcade.shell.model.savePicker?.target != target) return
+        foldcade.shell.useSavePlayer(target.gameId, choice)
+        val message = app.foldcade.language.SaveRouteCopy.switched(choice.label)
+        // A launch starting meanwhile owns the screen; this page just stops waiting and says the switch happened.
+        if (!openSaves(target.gameId, message)) foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = message) }
     }
 
     private fun loadSavePicker(target: app.foldcade.language.SavePickerTarget) {
         val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
+        // A game RomM doesn't have has no list to ask for.
+        if (request.route.servers.isEmpty()) return
         foldcade.scope.launch {
             try {
                 val listed = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player)

@@ -1,0 +1,111 @@
+package app.foldcade
+
+import app.foldcade.api.plugin.*
+import app.foldcade.host.PluginHost
+import app.foldcade.language.*
+import app.foldcade.localfolder.LocalFolderEntry
+import app.foldcade.plugins.emulators.EmulatorsEntry
+import app.foldcade.plugins.explus.ExPlusEntry
+import kotlinx.coroutines.Dispatchers
+import org.junit.Assert.*
+import org.junit.Test
+
+/** Y › Saves for games whose saves stay on this device, end to end through the shell (design §7.1). */
+class ShellDeviceOnlySavesTest {
+    private val played = mutableSetOf<String>()
+    private val plugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply {
+        register(LocalFolderEntry()); register(ExPlusEntry()); register(EmulatorsEntry())
+    }
+    private val store = SessionStore(MemoryPrefs())
+    private val shell = ShellController(store, plugins, lastPlayedMillis = { if (it in played) 1L else null }).apply {
+        setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
+    }
+    private val myBoy = PlayerChoice("my-boy.game-boy-advance", label = "My Boy!")
+    private val gbaEmu = "gba-emu.game-boy-advance"
+    private val local = Game("local-folder", "content://tree/document/primary%3AGBA%2FPuzzle.gba", "game-boy-advance", Availability.LocalOnly, "Puzzle")
+    private val server = Game("romm", "7", "game-boy-advance", Availability.Cached, "Tetris")
+    private fun entry(game: Game, file: String) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game, file)
+    private val localId = homeGameId(local.backendId, local.remoteKey)
+    private val serverId = homeGameId(server.backendId, server.remoteKey)
+    private fun target(id: String, game: Game) = SavePickerTarget(id, game.backendId, game.remoteKey, shell.savePlayer(shell.launchRoute(id)!!)?.id)
+
+    @Test fun everyLibraryGameOffersSavesIncludingOnesRommDoesNotHave() {
+        shell.ingestLibrary("romm", listOf(entry(server, "Tetris.gba")), emptyList())
+        shell.ingestLibrary("local-folder", listOf(entry(local, "Puzzle.gba")), emptyList())
+        shell.openHomeAll()
+        for (title in listOf("Tetris", "Puzzle")) {
+            val index = (0 until shell.model.count).single { shell.homeFace(it)?.title == title }
+            shell.touchCell(index, HostScreen.Bottom)
+            assertTrue(title, shell.model.tileActions?.saves == true)
+        }
+    }
+
+    @Test fun aLaunchOnlyFolderGameOffersTheEmulatorThatSyncsThenItsSetupAndTheSameNameRoute() {
+        shell.ingestLibrary("local-folder", listOf(entry(local, "Puzzle.gba")), emptyList())
+        shell.useSavePlayer(localId, myBoy)
+        assertEquals(SaveStatus.DeviceOnly(NoDestinationWhy.PlayerCantSync, emulator = "My Boy!"), shell.saveHealthOf(localId))
+        val route = shell.savePickerRoute(target(localId, local))!!
+        assertEquals("Foldcade can’t sync My Boy!, so its saves stay on this device.", route.summary)
+        assertEquals("Play with GBA.emu", route.steps[0].title)
+        assertEquals(gbaEmu, (route.action as SaveRouteAction.UsePlayer).choice.playerId)
+        // No RomM server is signed in here, so the step says to sign in first.
+        assertEquals("Sign in to RomM, then add this game", route.steps[1].title)
+        assertTrue(route.steps[1].detail!!.contains("upload Puzzle.gba"))
+        assertEquals("My Boy! keeps the saves made in it. Foldcade can’t move them.", route.note)
+
+        // Switching is Y › Open with's choice, and the page then shows the new emulator's way on.
+        shell.useSavePlayer(localId, (route.action as SaveRouteAction.UsePlayer).choice)
+        assertEquals(gbaEmu, store.gamePlayerChoice(shell.tileOf(localId))?.playerId)
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(localId))
+        val next = shell.savePickerRoute(target(localId, local))!!
+        assertEquals(listOf(SaveRouteMark.Done, SaveRouteMark.Now, SaveRouteMark.Next), next.steps.map { it.mark })
+        assertEquals(SaveRouteAction.SetUp, next.action)
+    }
+
+    @Test fun aSyncingFolderGameStaysDeviceOnlyEvenWithAReceiptFromItsOwnLibrary() {
+        shell.ingestLibrary("local-folder", listOf(entry(local, "Puzzle.gba")), emptyList())
+        shell.useSavePlayer(localId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        (plugins.player(gbaEmu) as SaveFolderHolder).bindSaveFolder("content://saves")
+        shell.refreshPlayerSaves()
+        // The host reads receipts for folder games too; "nothing yet" there must not hide that RomM can't hold it.
+        shell.setSaveDestination(local, OffDeviceFact.NothingYet)
+        assertTrue(shell.saveHealthOf(localId) is SaveStatus.DeviceOnly)
+        shell.setSaveDestination(local, OffDeviceFact.Unknown)
+        assertTrue(shell.saveHealthOf(localId) is SaveStatus.DeviceOnly)
+        val route = shell.savePickerRoute(target(localId, local))!!
+        assertEquals("RomM doesn’t have this game, so its saves stay on this device.", route.summary)
+        assertEquals(listOf(SaveRouteMark.Done, SaveRouteMark.Now), route.steps.map { it.mark })
+    }
+
+    @Test fun aRommGameWithAnEmulatorThatSyncsHasNoRoute() {
+        shell.ingestLibrary("romm", listOf(entry(server, "Tetris.gba")), emptyList())
+        shell.useSavePlayer(serverId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        assertNull(shell.savePickerRoute(target(serverId, server)))
+        shell.useSavePlayer(serverId, myBoy)
+        val route = shell.savePickerRoute(target(serverId, server))!!
+        assertEquals(1, route.steps.size)
+        assertEquals("Play with GBA.emu", route.steps.single().title)
+    }
+
+    @Test fun settingsCountsOnlyPlayedGamesWhoseSavesStayHere() {
+        shell.ingestLibrary("romm", listOf(entry(server, "Tetris.gba")), emptyList())
+        shell.ingestLibrary("local-folder", listOf(entry(local, "Puzzle.gba")), emptyList())
+        shell.useSavePlayer(localId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        shell.useSavePlayer(serverId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        (plugins.player(gbaEmu) as SaveFolderHolder).bindSaveFolder("content://saves")
+        shell.refreshPlayerSaves()
+        // §10.1: a folder game nobody has played here has nothing at stake.
+        assertEquals(0, shell.model.savesOnlyHere)
+        played += shell.playId(localId)
+        shell.notePlayChanged()
+        assertEquals(1, shell.model.savesOnlyHere)
+        assertEquals(SaveSetupCopy.onlyOnThisDevice(1), rowText(Row.SaveSetup, shell.model).value)
+        // A played RomM game with an emulator that syncs is not counted.
+        played += shell.playId(serverId)
+        shell.notePlayChanged()
+        assertEquals(1, shell.model.savesOnlyHere)
+        // Played with an emulator Foldcade can't sync, the RomM game's saves stay here too.
+        shell.useSavePlayer(serverId, myBoy)
+        assertEquals(2, shell.model.savesOnlyHere)
+    }
+}

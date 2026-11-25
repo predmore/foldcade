@@ -116,6 +116,22 @@ class GameSaveHealthTest {
         assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer), gameSaveHealth(game(emulators.first()), null, true, false))
     }
 
+    @Test fun whereASaveCanGoOutranksAnyReceipt() {
+        val melon = MelonDsPlayer().apply { bindSaveFolder("content://saves") }
+        val verified = LocationFact.Verified(FolderRef("primary:saves", "saves"), Evidence(EvidenceKind.SessionWrite, "Game saved"), 1)
+        // A folder game's own library can report "nothing yet" or a matching hash: neither is RomM.
+        for (receipt in listOf(OffDeviceFact.NothingYet, OffDeviceFact.OnRomm(1), OffDeviceFact.Unknown)) {
+            assertEquals(receipt.toString(), SaveStatus.DeviceOnly(NoDestinationWhy.NotOnRomm, emulator = "melonDS"),
+                gameSaveHealth(game(melon), melon, false, false, reachable = true, location = verified, offDevice = receipt))
+        }
+        // A launch-only emulator on a signed-out server still can't sync: it says so, not "folder not checked".
+        val flycast = EmulatorsEntry().players.first { it.displayName == "Flycast" }
+        assertEquals(SaveStatus.DeviceOnly(NoDestinationWhy.PlayerCantSync, emulator = "Flycast"),
+            gameSaveHealth(game(flycast), flycast, true, false, offDevice = OffDeviceFact.NoDestination(NoDestinationWhy.SignedOut)))
+        // On a RomM game the receipt still decides.
+        assertEquals(SaveStatus.Protected(1, 1), gameSaveHealth(game(melon), melon, true, false, reachable = true, location = verified, offDevice = OffDeviceFact.OnRomm(1)))
+    }
+
     @Test fun emptyOrNullDeclarationsFromASyncingPlayerNeverLookFine() {
         val base = ArmsX2Player().apply { bindSaveFolder("content://saves") }
         for (declarations in listOf(emptyList(), listOf(SaveDeclaration("card1", null)))) {
