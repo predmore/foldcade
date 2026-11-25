@@ -293,8 +293,10 @@ object SaveProtectionCopy {
     const val guidedDone = "Folder set. Choose your RomM save in Y › Saves."
     /** The same, offline: Saves would only say it can't reach RomM, so the page just closes. */
     const val guidedDoneOffline = "Folder set. Join Wi-Fi, then choose your save in Y › Saves."
-    const val guidedDoneLocal = "Folder set. A copy is in Foldcade’s save backups."
-    const val guidedDoneWithoutLocalCopy = "Folder set. Foldcade didn’t keep a local backup."
+    const val guidedDoneLocal = "Folder set. A copy of your save is kept on this device."
+    const val guidedDoneWithoutLocalCopy = "Folder set. No copy is kept on this device yet."
+    /** Copies kept on RomM before its destination went away are still there. */
+    const val guidedDoneKeptOnRomm = "Folder set. Your copies are kept on RomM."
     const val chooseFolder = "Choose folder"
     const val chooseSave = "Choose save"
     const val thenChoose = "Then choose the same folder here."
@@ -320,12 +322,9 @@ object SaveProtectionCopy {
     fun nowWatches(folder: String) = "Foldcade now watches $folder."
     const val stepKeep = "Keep every copy on RomM"
     fun stepKept(count: Int) = if (count == 1) "1 kept" else "$count kept"
-    const val stepAlreadyOnRomm = "Already on RomM"
     const val stepWaiting = "Waiting for RomM"
     const val stepKeepLocal = "Keep a copy on this device"
-    const val stepKeptLocal = "Kept in Foldcade’s save backups"
-    const val stepNoLocalCopy = "No local backup kept"
-    const val stepNoVerifiedCopy = "No copy verified"
+    const val stepNotKeptYet = "Not kept yet"
     fun stepFolder(name: String, known: Boolean) = if (known) "Use the folder $name uses" else "Choose $name’s folder"
     const val stepChoose = "Choose which save to play"
 

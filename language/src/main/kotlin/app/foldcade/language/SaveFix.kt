@@ -95,6 +95,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         return SaveFixCard(SaveProtectionCopy.chooseInSaves, page.note)
     if (repair == RepairState.Done) return SaveFixCard(when {
         !page.hasRommDestination && incident.staged.isNotEmpty() -> SaveProtectionCopy.guidedDoneLocal
+        !page.hasRommDestination && incident.kept.isNotEmpty() -> SaveProtectionCopy.guidedDoneKeptOnRomm
         !page.hasRommDestination -> SaveProtectionCopy.guidedDoneWithoutLocalCopy
         page.offline -> SaveProtectionCopy.guidedDoneOffline
         else -> SaveProtectionCopy.guidedDone
@@ -134,14 +135,15 @@ fun saveFixSteps(incident: SaveIncident, page: SaveFixPage): List<SaveFixStep> {
     }
     val bound = incident.repair == RepairState.Done
     val keep = when {
-        !page.hasRommDestination -> if (incident.staged.isNotEmpty())
-            SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, SaveProtectionCopy.stepKeptLocal)
-        else SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Later, SaveProtectionCopy.stepNoLocalCopy)
+        !page.hasRommDestination -> when {
+            incident.staged.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.staged.size))
+            incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
+            else -> SaveFixStep(SaveProtectionCopy.stepKeepLocal, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet)
+        }
         incident.staged.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Now, SaveProtectionCopy.stepWaiting)
         incident.kept.isNotEmpty() -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepKept(incident.kept.size))
-        page.safe != null -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Done, SaveProtectionCopy.stepAlreadyOnRomm)
         incident.isEdenGrant -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later)
-        else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later, SaveProtectionCopy.stepNoVerifiedCopy)
+        else -> SaveFixStep(SaveProtectionCopy.stepKeep, SaveFixStepState.Later, SaveProtectionCopy.stepNotKeptYet)
     }
     val choose = SaveFixStep(SaveProtectionCopy.stepChoose, if (bound) SaveFixStepState.Now else SaveFixStepState.Later)
         .takeIf { page.hasRommDestination }
