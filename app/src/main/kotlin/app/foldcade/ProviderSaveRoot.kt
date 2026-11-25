@@ -6,9 +6,20 @@ import app.foldcade.language.EvidenceKind
 import app.foldcade.language.IncidentKind
 import app.foldcade.language.ProbeSnapshot
 import app.foldcade.language.RootVerdict
+import app.foldcade.language.SaveProtectionCopy
 import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.aps3e.Aps3eSavePath
 import app.foldcade.plugins.dolphin.DolphinPlayer
 import java.net.URI
+
+/** A null mapping means the selected folder isn't the supported provider root. */
+internal fun aps3eSaveConfigDetail(path: Aps3eSavePath?): String? = when (path) {
+    null -> SaveProtectionCopy.aps3eOwnFolder
+    Aps3eSavePath.Default -> null
+    Aps3eSavePath.Remapped -> SaveProtectionCopy.aps3eVfsRemapped
+    Aps3eSavePath.Unsupported -> SaveProtectionCopy.aps3eVfsUnsupported
+    Aps3eSavePath.Unreadable -> SaveProtectionCopy.cantReadConfig
+}
 
 /** The supported providers use different document IDs. An authority or provider descendant alone
  * does not prove the data root. aPS3e publishes the exact path of getExternalFilesDir("aps3e"). */

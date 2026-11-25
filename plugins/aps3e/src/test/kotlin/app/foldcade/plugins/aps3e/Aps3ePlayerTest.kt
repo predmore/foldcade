@@ -141,11 +141,18 @@ class Aps3ePlayerTest {
             override fun read(path: String, limit: Int) = text?.toByteArray()
         }
         val defaults = "\$(EmulatorDir): \"\"\n/dev_hdd0/: \$(EmulatorDir)dev_hdd0/\n/dev_usb***/:\n  /dev_usb000:\n    Path: \"\"\n"
-        assertTrue(usesDefaultAps3eSavePath(vfs(defaults)))
+        assertEquals(Aps3eSavePath.Default, readAps3eSavePath(vfs(defaults)))
         assertTrue(player.findSaveFolders("savedata", image, vfs(defaults), forLaunch = true) != null)
-        for (text in listOf(null, "\$(EmulatorDir): /sdcard/PS3\n", "/dev_hdd0/: /sdcard/PS3\n",
-            "  /dev_hdd0/: /sdcard/PS3\n", "{ /dev_hdd0/: /sdcard/PS3 }", "$defaults/dev_hdd0/: /sdcard/PS3\n")) {
-            assertFalse(usesDefaultAps3eSavePath(vfs(text)))
+        val unresolved = mapOf(
+            null to Aps3eSavePath.Unreadable,
+            "\$(EmulatorDir): /sdcard/PS3\n" to Aps3eSavePath.Remapped,
+            "/dev_hdd0/: /sdcard/PS3\n" to Aps3eSavePath.Remapped,
+            "  /dev_hdd0/: /sdcard/PS3\n" to Aps3eSavePath.Unsupported,
+            "{ /dev_hdd0/: /sdcard/PS3 }" to Aps3eSavePath.Unsupported,
+            "$defaults/dev_hdd0/: /sdcard/PS3\n" to Aps3eSavePath.Unsupported,
+        )
+        for ((text, state) in unresolved) {
+            assertEquals(state, readAps3eSavePath(vfs(text)))
             assertNull(player.findSaveFolders("savedata", image, vfs(text), forLaunch = true))
         }
     }

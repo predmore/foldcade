@@ -203,7 +203,7 @@ The first time you play a game with aPS3e, Foldcade asks for aPS3e's folder. Dec
 
 Foldcade checks the root when you allow the installed aPS3e build's provider. A reinstall invalidates that check and opens **Allow** to grant the folder again. For RomM games, Foldcade can stage `PS3UPDAT.PUP` again after you regrant access. Finish aPS3e's firmware and first-run setup before playing.
 
-Foldcade syncs `savedata` under the default `dev_hdd0` and account `00000001` through [RomM](romm.md#save-sync). For `BLUS30464`, a matching folder might be named `BLUS30464-ALIAS_SKATER`. Remapped VFS paths, other accounts, aliases without the title ID, and trophies are outside this slot. An unreadable or unsupported VFS configuration shows **Can’t read config** and leaves the destination unresolved. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
+Foldcade syncs `savedata` under the default `dev_hdd0` and account `00000001` through [RomM](romm.md#save-sync). For `BLUS30464`, a matching folder might be named `BLUS30464-ALIAS_SKATER`. Remapped VFS paths, other accounts, aliases without the title ID, and trophies are outside this slot. The Check row explains remapped or unsupported VFS settings and shows **Can’t read config** when the file cannot be read. ISO games can't take updates or DLC in aPS3e yet. That limit is in aPS3e's FAQ.
 
 aPS3e’s provider grant reaches `config/config.yml` and `config/default_config.yml`. Accessing that provider starts aPS3e’s process, which can cache settings and write them back. Foldcade does not patch that live configuration or its profiles. Apply tuning in aPS3e itself.
 
@@ -260,7 +260,7 @@ A zip contains the game's `.gci` files directly at the root, matching Argosy's G
 
 Foldcade checks `Config/Dolphin.ini` and the ISO/GCM's applicable `GameSettings` INIs. An unreadable configuration shows **Can’t read config**. A confirmed custom GCI destination in Dolphin's own config stops the affected game's ordinary launch and opens a guided Fix. A matching GCI write in another readable root can also stop launches. Foldcade keeps readable suspect GCI copies as verified **Backups** in RomM, or on the device for local-only games.
 
-Raw `.raw` cards can hold many games. Preserve the old card before choosing **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder** in Dolphin. Check the game's **Game Settings** for a card override and restore the default path. Dolphin's desktop **Memory Card Manager** can export saves as GCI files into `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A`. Foldcade leaves Dolphin's card settings to you.
+Raw `.raw` cards can hold many games. Preserve the old card before choosing **Settings › Config › GameCube › GameCube Slot A Device › GCI Folder** in Dolphin. For a custom GCI path, keep a copy of the game's `.gci` files, then remove the `GCIFolderAPath` lines from `Config/Dolphin.ini` and the applicable game settings INI. Dolphin's desktop **Memory Card Manager** can export saves as GCI files into `GC/USA/Card A`, `GC/JAP/Card A`, or `GC/EUR/Card A`. Foldcade leaves Dolphin's card settings to you.
 
 **Save sync covers official Dolphin's default GameCube Slot A GCI folder on ISO/GCM.** RVZ, Wii, MMJR, raw cards, custom GCI destinations, Slot B, and save states stay with the emulator. When a known incoming save has no safe destination, **Play anyway** bypasses sync for that launch.
 

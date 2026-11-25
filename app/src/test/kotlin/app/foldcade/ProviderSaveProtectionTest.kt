@@ -6,6 +6,7 @@ import app.foldcade.host.PluginHost
 import app.foldcade.language.*
 import app.foldcade.localfolder.LocalFolderBackend
 import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.aps3e.Aps3eSavePath
 import app.foldcade.plugins.dolphin.DolphinCard
 import app.foldcade.plugins.dolphin.DolphinPlayer
 import app.foldcade.plugins.dolphin.gameCubeDisc
@@ -141,6 +142,60 @@ class ProviderSaveProtectionTest {
         assertTrue(probes.location(dolphin, snapshot.copy(configUnavailable = false)) is LocationFact.Verified)
     }
 
+    @Test fun restoredDolphinCardClearsOnlyItsOwnStopAfterHandlingTheAlternate() {
+        val store = SaveProtectionStore(temporary.newFolder().toPath())
+        val incident = incident(game)
+        val other = incident(game.copy(remoteKey = "2"))
+        store.put(incident)
+        store.put(other)
+        val boundUri = treeUri(DolphinPlayer.PROVIDER, "root")
+        dolphin.bindSaveFolder(boundUri)
+        var ini: String? = "[Core]\nGCIFolderAPath = /sdcard/Custom\n"
+        val saves = shelf { ini }
+        val probes = SaveProbes(ContextWrapper(null), saves, store, { boundUri }, SaveIncidentCopies(saves, host(LocalFolderBackend()), store))
+        val target = LaunchTarget.ContentUri("content://game/Test.iso")
+
+        probes.closeRestoredDolphinCard(dolphin, game, target, alternateHandled = true)
+        assertTrue(store.incident(incident.id)?.gatesLaunch(dolphin, game) == true)
+        assertEquals(SpotFact.Unresolved(SpotIssue.CardNotFolder, SaveProtectionCopy.dolphinCustomCardSteps), saves.unresolvedSpot(dolphin, game, target))
+
+        ini = "[Core]\nSlotA = 1\n"
+        probes.closeRestoredDolphinCard(dolphin, game, target, alternateHandled = true)
+        assertTrue(store.incident(incident.id)?.gatesLaunch(dolphin, game) == true)
+        assertEquals(SpotFact.Unresolved(SpotIssue.CardNotFolder, Copy.dolphinFolderCard), saves.unresolvedSpot(dolphin, game, target))
+
+        ini = null
+        probes.closeRestoredDolphinCard(dolphin, game, target, alternateHandled = false)
+        assertTrue(store.incident(incident.id)?.gatesLaunch(dolphin, game) == true)
+        store.put(incident.copy(recoveryRequired = true))
+        probes.closeRestoredDolphinCard(dolphin, game, target, alternateHandled = true)
+        assertTrue(store.incident(incident.id)?.gatesLaunch(dolphin, game) == true)
+
+        store.put(incident)
+        store.requireBackup(dolphin.saveFolderId(), game)
+        probes.closeRestoredDolphinCard(dolphin, game, target, alternateHandled = true)
+        assertNull(store.incident(incident.id))
+        assertEquals(other, store.incident(other.id))
+        assertTrue(store.pendingBackup(dolphin.saveFolderId(), game))
+    }
+
+    @Test fun aps3eExplainsRemappedVfsAndWrongFolderWithoutClaimingAReadFailure() {
+        val player = Aps3ePlayer()
+        val pkg = player.packageNames.first()
+        val folder = FolderRef("$pkg.provider:/storage/emulated/0/Android/data/$pkg/files/aps3e", "aPS3e")
+        val store = SaveProtectionStore(temporary.newFolder().toPath())
+        store.verified(player.saveFolderId(), folder, Evidence(EvidenceKind.OwnProvider, "aPS3e’s own folder"), 100, pkg, 10, true)
+        val saves = shelf()
+        val probes = SaveProbes(ContextWrapper(null), saves, store, { null }, SaveIncidentCopies(saves, host(LocalFolderBackend()), store))
+        val remapped = aps3eSaveConfigDetail(Aps3eSavePath.Remapped)
+        assertEquals(SaveProtectionCopy.aps3eVfsRemapped, remapped)
+        assertEquals(SaveProtectionCopy.aps3eOwnFolder, aps3eSaveConfigDetail(null))
+        assertEquals(SaveProtectionCopy.cantReadConfig, aps3eSaveConfigDetail(Aps3eSavePath.Unreadable))
+        val now = snapshot(bound.copy(root = folder)).copy(packageName = pkg, configDetail = remapped)
+        assertEquals(now, snapshotFromJson(now.toJson()))
+        assertEquals(LocationFact.Bound(folder, configDetail = remapped), probes.location(player, now))
+    }
+
     @Test fun customCardCopiesAreFilteredDeduplicatedAndKeptThroughTheBackupApiOnly() = runBlocking {
         val saves = shelf()
         val store = SaveProtectionStore(temporary.newFolder().toPath())
@@ -165,7 +220,7 @@ class ProviderSaveProtectionTest {
             override suspend fun reconcile(game: Game, player: Player, observed: ObservedSaves): SyncResult = error("Unexpected slot handoff")
         }
         val copies = SaveIncidentCopies(saves, host(backend), store)
-        repeat(2) { stageDolphinCard(saves, copies, dolphin, game, reader, "content://card", incident) }
+        repeat(2) { assertTrue(stageDolphinCard(saves, copies, dolphin, game, reader, "content://card", incident)) }
         copies.keep(game, dolphin)
         assertEquals(1, saves.queuedCopies().size)
         assertTrue(store.incident(incident.id)?.kept.orEmpty().isEmpty())
@@ -208,16 +263,20 @@ class ProviderSaveProtectionTest {
         })
     }
 
-    private fun shelf(): PlayerSaves {
+    private fun shelf(dolphinIni: () -> String? = { null }): PlayerSaves {
         val dir = temporary.newFolder().toPath()
         val docs = object : SaveDocuments {
             private val files = mapOf("ours.gci" to "GFZE8P".gci(), "other.gci" to "GZLE01".gci(), "card.raw" to "GFZE8P".gci())
-            override fun children(folderUri: String, path: String) = files.map { (name, bytes) -> SaveChild(name, name, false, bytes.size.toLong()) }
+            override fun children(folderUri: String, path: String) = when (path) {
+                "Config" -> listOfNotNull(dolphinIni()?.let { SaveChild("Dolphin.ini", "Dolphin.ini", false, it.length.toLong()) })
+                "GameSettings" -> emptyList()
+                else -> files.map { (name, bytes) -> SaveChild(name, name, false, bytes.size.toLong()) }
+            }
             override fun list(folderUri: String, name: String) = files.keys.map { SaveEntry(it, it, false) }
-            override fun read(uri: String) = files[uri]
+            override fun read(uri: String) = if (uri == "Dolphin.ini") dolphinIni()?.toByteArray() else files[uri]
             override fun head(uri: String, size: Int) = read(uri)?.take(size)?.toByteArray()
             override fun displayName(uri: String) = "Test.iso"
-            override fun find(folderUri: String, name: String): String? = null
+            override fun find(folderUri: String, name: String): String? = "Dolphin.ini".takeIf { name == "Config/Dolphin.ini" }
             override fun create(folderUri: String, name: String): String? = error("Read only")
             override fun write(uri: String, bytes: ByteArray) = error("Read only")
             override fun delete(uri: String): Boolean = error("Read only")
@@ -227,7 +286,7 @@ class ProviderSaveProtectionTest {
             override fun setMark(key: String, hash: String) = error("No working slot was uploaded")
             override fun clearMark(key: String) = error("No working slot was uploaded")
         }
-        return PlayerSaves(docs, marks, dir.resolve("backups"), dir.resolve("handover"))
+        return PlayerSaves(docs, marks, dir.resolve("backups"), dir.resolve("handover"), gameFile = { reader })
     }
 
     private fun String.gci() = ByteArray(64).also { toByteArray().copyInto(it) }

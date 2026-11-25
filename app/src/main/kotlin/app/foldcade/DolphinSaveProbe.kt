@@ -35,9 +35,10 @@ internal fun dolphinConfigVerdict(snapshot: ProbeSnapshot): RootVerdict {
 
 /** The game filter still applies on a configured custom folder, including folders shared by games. */
 internal fun stageDolphinCard(saves: PlayerSaves, copies: SaveIncidentCopies, player: DolphinPlayer, game: Game,
-    reader: GameFileReader, cardUri: String, incident: SaveIncident) {
-    val filter = player.saveArchiveFilter(DolphinPlayer.SLOT, reader) ?: return
+    reader: GameFileReader, cardUri: String, incident: SaveIncident): Boolean {
+    val filter = player.saveArchiveFilter(DolphinPlayer.SLOT, reader) ?: return false
     val spot = SaveSpot(DolphinPlayer.SLOT, cardUri, "gci.zip", listOf(SaveFolderPart("", "")), filter = filter)
-    val bytes = saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return
+    val bytes = saves.readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return true
     copies.stageBackup(game, player, spot, bytes, incident)
+    return true
 }

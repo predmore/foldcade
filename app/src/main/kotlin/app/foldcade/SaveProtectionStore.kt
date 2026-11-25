@@ -245,6 +245,7 @@ private fun repairFromJson(json: JSONObject): RepairState = when (json.optString
 
 internal fun ProbeSnapshot.toJson(): JSONObject = JSONObject().put("atMillis", atMillis).put("installFirstMillis", installFirstMillis ?: JSONObject.NULL)
     .put("configUnavailable", configUnavailable)
+    .put("configDetail", configDetail ?: JSONObject.NULL)
     .put("configSavePath", configSavePath?.let { path -> JSONObject()
         .put("expected", path.expected ?: JSONObject.NULL).put("effective", path.effective ?: JSONObject.NULL)
         .put("live", path.live?.toJson() ?: JSONObject.NULL).put("proves", path.proves) } ?: JSONObject.NULL)
@@ -272,7 +273,8 @@ internal fun snapshotFromJson(json: JSONObject): ProbeSnapshot = ProbeSnapshot(j
     } }, json.optJSONObject("configSavePath")?.let { path -> ConfigSavePath(
         path.optString("expected").takeUnless { path.isNull("expected") },
         path.optString("effective").takeUnless { path.isNull("effective") },
-        path.optJSONObject("live")?.let(::folderFromJson), path.getBoolean("proves")) }, json.optBoolean("configUnavailable"))
+        path.optJSONObject("live")?.let(::folderFromJson), path.getBoolean("proves")) }, json.optBoolean("configUnavailable"),
+    json.optString("configDetail").takeUnless { json.isNull("configDetail") })
 
 internal fun EdenSaveSession.toJson(): JSONObject = JSONObject()
     .put("saveRoot", saveRoot).put("nandRoot", nandRoot).put("user", user ?: JSONObject.NULL)

@@ -37,7 +37,7 @@ sealed interface LocationFact {
     data class Missing(val issue: SaveIssue) : LocationFact
     /** A folder is bound and reachable. No live evidence for it yet. Unknown, not fine. */
     data class Bound(val root: FolderRef, val setAtMillis: Long? = null, val configUnavailable: Boolean = false,
-        val cardOutside: Boolean = false) : LocationFact
+        val cardOutside: Boolean = false, val configDetail: String? = null) : LocationFact
     /** Live evidence that the emulator uses [root], taken at [atMillis]. */
     data class Verified(val root: FolderRef, val evidence: Evidence, val atMillis: Long) : LocationFact
     /** Positive evidence that the emulator uses another folder, [live] when known. */
@@ -341,8 +341,11 @@ object SaveProtectionCopy {
     const val noHostedCard = "DuckStation didn’t open a memory card from Foldcade’s folder."
     const val canReadConfig = "Readable"
     const val cantReadConfig = "Can’t read config"
-    const val dolphinCustomCardDetail = "Dolphin’s Slot A configuration names a different GCI folder."
-    const val dolphinDefaultCard = "Keep a copy of your current card in Dolphin, then restore the default Slot A GCI Folder in Dolphin and check the game’s settings."
+    const val dolphinCustomCardDetail = "Dolphin’s config sends this game’s memory card to its own GCI folder."
+    const val dolphinCustomCardSteps = "1. Keep a copy of the game’s .gci files from that folder.\n2. Remove the GCIFolderAPath lines from Config/Dolphin.ini and the game’s GameSettings file, then choose Fix again."
+    const val aps3eVfsRemapped = "aPS3e’s VFS moves dev_hdd0, so Foldcade can’t find its saves."
+    const val aps3eVfsUnsupported = "Foldcade can’t confirm aPS3e’s dev_hdd0 mapping."
+    const val aps3eOwnFolder = "Choose aPS3e’s own folder."
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."

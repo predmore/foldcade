@@ -111,7 +111,7 @@ class Aps3ePlayer : Player, SaveFolderHolder {
         folder: SaveFolderAccess,
         forLaunch: Boolean,
     ): SaveFolderSearch? {
-        if (slot != SLOT || !usesDefaultAps3eSavePath(folder)) return null
+        if (slot != SLOT || readAps3eSavePath(folder) != Aps3eSavePath.Default) return null
         val titleId = ps3TitleId(game) ?: return null
         return SaveFolderSearch(SAVEDATA, titleId)
     }
@@ -216,32 +216,44 @@ class Aps3ePlayer : Player, SaveFolderHolder {
     }
 }
 
-/** RPCS3's VFS settings can redirect dev_hdd0 independently of config.yml. Accept the stock
+enum class Aps3eSavePath { Default, Remapped, Unsupported, Unreadable }
+
+/** RPCS3's VFS settings can redirect dev_hdd0 independently of config.yml. Resolve the stock
  * defaults or the simple top-level scalars written by aPS3e. Other mappings need an effective
  * VFS/account query before Foldcade can place a save there. */
-fun usesDefaultAps3eSavePath(folder: SaveFolderAccess): Boolean {
-    val files = folder.list("config") ?: return folder.list("")?.none { it.name == "config" } == true
-    if (files.none { it.name == "vfs.yml" }) return true
-    val text = folder.read("config/vfs.yml", 64 * 1024)?.toString(Charsets.UTF_8) ?: return false
+fun readAps3eSavePath(folder: SaveFolderAccess): Aps3eSavePath {
+    val files = folder.list("config") ?: return if (folder.list("")?.none { it.name == "config" } == true)
+        Aps3eSavePath.Default else Aps3eSavePath.Unreadable
+    if (files.none { it.name == "vfs.yml" }) return Aps3eSavePath.Default
+    val text = folder.read("config/vfs.yml", 64 * 1024)?.toString(Charsets.UTF_8) ?: return Aps3eSavePath.Unreadable
+    if ('\uFFFD' in text || '\u0000' in text) return Aps3eSavePath.Unsupported
     val keys = mutableSetOf<String>()
     var parent: String? = null
+    var emulatorDir = ""
+    var hdd0 = ""
     for (raw in text.removePrefix("\uFEFF").lineSequence()) {
         if (raw.isBlank() || raw.trimStart().startsWith('#')) continue
         if (raw.startsWith(' ')) {
             // Stock YAML writes a nested USB device map. Root scalars stay on one line.
-            if (parent != "/dev_usb***/") return false
+            if (parent != "/dev_usb***/") return Aps3eSavePath.Unsupported
             continue
         }
         val key = raw.substringBefore(':')
-        if (':' !in raw || !key.matches(Regex("(?:/[^: ]+/|\\$\\(EmulatorDir\\))")) || !keys.add(key)) return false
+        if (':' !in raw || !key.matches(Regex("(?:/[^: ]+/|\\$\\(EmulatorDir\\))")) || !keys.add(key)) return Aps3eSavePath.Unsupported
         parent = key
-        val value = raw.substringAfter(':').trim().removeSurrounding("\"").removeSurrounding("'")
         when (key) {
-            "\$(EmulatorDir)" -> if (value.isNotEmpty()) return false
-            "/dev_hdd0/" -> if (value.isNotEmpty() && value != "\$(EmulatorDir)dev_hdd0/") return false
+            "\$(EmulatorDir)" -> emulatorDir = vfsPathScalar(raw.substringAfter(':')) ?: return Aps3eSavePath.Unsupported
+            "/dev_hdd0/" -> hdd0 = vfsPathScalar(raw.substringAfter(':')) ?: return Aps3eSavePath.Unsupported
         }
     }
-    return true
+    return if (emulatorDir.isEmpty() && (hdd0.isEmpty() || hdd0.trimEnd('/') == "\$(EmulatorDir)dev_hdd0"))
+        Aps3eSavePath.Default else Aps3eSavePath.Remapped
+}
+
+private fun vfsPathScalar(raw: String): String? {
+    val value = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+    return value.takeIf { it.isEmpty() || (it.startsWith('/') || it.startsWith("\$(EmulatorDir)")) &&
+        it.none { char -> char in "#\"'\\" || char.isISOControl() } }
 }
 
 /** True when [folder] lists the file at [path]. A missing folder is not that file. */

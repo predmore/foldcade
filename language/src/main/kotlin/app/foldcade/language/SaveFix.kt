@@ -132,7 +132,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         if (page.hasRommDestination) "Check the user in Eden’s Profile Manager, then choose a save in Y › Saves."
         else "Check the user in Eden’s Profile Manager.", page.note)
     if (incident.armsX2OutsideCard) return SaveFixCard(SaveProtectionCopy.armsX2OutsideCardSteps, page.note)
-    if (incident.dolphinCustomCard) return SaveFixCard(SaveProtectionCopy.dolphinDefaultCard, page.note)
+    if (incident.dolphinCustomCard) return SaveFixCard(SaveProtectionCopy.dolphinCustomCardSteps, page.note)
     if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
     if (incident.besideGame && incident.bound != null)
         return SaveFixCard(SaveProtectionCopy.besideLocationSteps(incident).orEmpty(),

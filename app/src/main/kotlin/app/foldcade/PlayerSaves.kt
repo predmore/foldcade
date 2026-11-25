@@ -25,7 +25,7 @@ import app.foldcade.plugins.dolphin.DolphinCard
 import app.foldcade.plugins.dolphin.gameCubeDisc
 import app.foldcade.plugins.dolphin.readDolphinCard
 import app.foldcade.plugins.aps3e.Aps3ePlayer
-import app.foldcade.plugins.aps3e.usesDefaultAps3eSavePath
+import app.foldcade.plugins.aps3e.readAps3eSavePath
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.eden.EdenProfile
 import app.foldcade.plugins.eden.edenAccountSave
@@ -297,9 +297,11 @@ internal class PlayerSaves(
             }
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
-            if (folder != null && player is Aps3ePlayer && (!usesDefaultAps3eSavePath(folderAccess(player, folder, allowWrite = false)) ||
-                    providerSaveRootPackage(player, folder) == null)) return app.foldcade.language.SpotFact.Unresolved(
-                app.foldcade.language.SpotIssue.Unreadable, app.foldcade.language.SaveProtectionCopy.cantReadConfig)
+            if (player is Aps3ePlayer && folder != null) {
+                val path = if (providerSaveRootPackage(player, folder) != null)
+                    readAps3eSavePath(folderAccess(player, folder, allowWrite = false)) else null
+                aps3eSaveConfigDetail(path)?.let { return SpotFact.Unresolved(SpotIssue.Unreadable, it) }
+            }
             if (folder != null && player is app.foldcade.plugins.armsx2.ArmsX2Player) {
                 val config = player.cardConfig(folderAccess(player, folder, allowWrite = false))
                 if (config.directory == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable,
@@ -314,8 +316,8 @@ internal class PlayerSaves(
                 when (readDolphinCard(folderAccess(player, folder, allowWrite = false), disc)) {
                     DolphinCard.Unknown -> return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable,
                         app.foldcade.language.SaveProtectionCopy.cantReadConfig)
-                    DolphinCard.OtherDevice, is DolphinCard.Custom -> return app.foldcade.language.SpotFact.Unresolved(
-                        app.foldcade.language.SpotIssue.CardNotFolder, app.foldcade.language.SaveProtectionCopy.dolphinDefaultCard)
+                    DolphinCard.OtherDevice -> return SpotFact.Unresolved(SpotIssue.CardNotFolder, app.foldcade.language.Copy.dolphinFolderCard)
+                    is DolphinCard.Custom -> return SpotFact.Unresolved(SpotIssue.CardNotFolder, app.foldcade.language.SaveProtectionCopy.dolphinCustomCardSteps)
                     DolphinCard.Default -> Unit
                 }
             }

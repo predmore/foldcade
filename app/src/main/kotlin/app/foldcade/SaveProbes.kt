@@ -6,7 +6,8 @@ import android.os.Environment
 import app.foldcade.api.plugin.*
 import app.foldcade.language.*
 import app.foldcade.plugins.aps3e.Aps3ePlayer
-import app.foldcade.plugins.aps3e.usesDefaultAps3eSavePath
+import app.foldcade.plugins.aps3e.Aps3eSavePath
+import app.foldcade.plugins.aps3e.readAps3eSavePath
 import app.foldcade.plugins.armsx2.ArmsX2CardConfig
 import app.foldcade.plugins.armsx2.ArmsX2Player
 import app.foldcade.plugins.duckstation.DuckStationPlayer
@@ -63,7 +64,8 @@ internal class SaveProbes(
         val dolphinDisc = if (player is DolphinPlayer && game != null) target?.let(::armsGameFile)?.let(::gameCubeDisc) else null
         var armsConfig: ArmsX2CardConfig? = null
         var dolphinCard: DolphinCard? = null
-        var aps3eConfigReadable = false
+        val aps3eOwnRoot = player is Aps3ePlayer && providerSaveRootPackage(player, boundUri) != null
+        var aps3eSavePath = Aps3eSavePath.Unreadable.takeIf { aps3eOwnRoot }
         fun readRoot(uri: String): RootReading {
             val label = when (player) {
                 is EdenPlayer -> player.displayName
@@ -82,7 +84,7 @@ internal class SaveProbes(
             if (isBound) {
                 armsConfig = cardConfig
                 if (player is DolphinPlayer && canRead) dolphinCard = readDolphinCard(access, dolphinDisc)
-                if (player is Aps3ePlayer && canRead) aps3eConfigReadable = providerSaveRootPackage(player, uri) != null && usesDefaultAps3eSavePath(access)
+                if (aps3eOwnRoot && canRead) aps3eSavePath = readAps3eSavePath(access)
             }
             val signals = if (!canRead) emptyList() else try {
                 cardConfig?.signals ?: probe?.liveSignals(access).orEmpty()
@@ -105,7 +107,7 @@ internal class SaveProbes(
                         listOfNotNull(spot)
                     }
                     player is EdenPlayer -> edenSpots.orEmpty()
-                    player is Aps3ePlayer && !aps3eConfigReadable -> emptyList()
+                    player is Aps3ePlayer && aps3eSavePath != Aps3eSavePath.Default -> emptyList()
                     else -> saves.probeSpots(player, game, target, uri)
                 }
                 if (spots.isEmpty()) readable = false
@@ -164,7 +166,8 @@ internal class SaveProbes(
         return ProbeSnapshot(System.currentTimeMillis(), resolved?.firstInstallTime, resolved?.packageName ?: player.packageNames.firstOrNull().orEmpty(),
             listOf(bound) + adjacent + roots, outside ?: dolphinPath,
             configUnavailable = probe?.saveConfigPrivate == true || arms != null && armsConfig?.nativeReadable != true ||
-                player is DolphinPlayer && (dolphinCard == null || dolphinCard == DolphinCard.Unknown) || player is Aps3ePlayer && !aps3eConfigReadable)
+                player is DolphinPlayer && (dolphinCard == null || dolphinCard == DolphinCard.Unknown) || aps3eSavePath == Aps3eSavePath.Unreadable,
+            configDetail = if (player is Aps3ePlayer && aps3eSavePath != Aps3eSavePath.Unreadable) aps3eSaveConfigDetail(aps3eSavePath) else null)
     }
 
     private fun armsGameFile(target: LaunchTarget): GameFileReader? = when (target) {
@@ -243,8 +246,8 @@ internal class SaveProbes(
             player is ArmsX2Player && (snapshot.configUnavailable || snapshot.configSavePath != null) ->
                 LocationFact.Bound(bound, (last as? LocationFact.Bound)?.setAtMillis, configUnavailable = snapshot.configUnavailable,
                     cardOutside = snapshot.configSavePath != null)
-            snapshot.configUnavailable && (player is Aps3ePlayer || player is DolphinPlayer) ->
-                LocationFact.Bound(bound, configUnavailable = true)
+            (player is Aps3ePlayer || player is DolphinPlayer) && (snapshot.configUnavailable || snapshot.configDetail != null) ->
+                LocationFact.Bound(bound, configUnavailable = snapshot.configUnavailable, configDetail = snapshot.configDetail)
             last is LocationFact.Bound && snapshot.configUnavailable -> last.copy(configUnavailable = true)
             else -> last
         }
@@ -373,19 +376,36 @@ internal class SaveProbes(
             // Root judgement needs no game hashes. A failed optional probe is not a positive fact.
             reading = snapshot(player, game, target, hasKnownSave, resolvedPackage, readSpots = false)
             reading?.let { now ->
-                if (player is RetroArchPlayer && now.configSavePath?.proves == true) checkRetroArchLaunch(player, game, now, retroArchFiles(now.packageName))
-                else {
-                    if (player is DolphinPlayer && scopedWrongFolders(player, game).firstOrNull { it.dolphinCustomCard }
-                            ?.alternateSavePath?.let { it != now.configSavePath?.effective } == true)
-                        stageDolphinAlternate(player, game, target)
-                    check(player, now, game, eden)
-                    if (player is DolphinPlayer) stageDolphinAlternate(player, game, target)
+                when {
+                    player is RetroArchPlayer && now.configSavePath?.proves == true -> checkRetroArchLaunch(player, game, now, retroArchFiles(now.packageName))
+                    player is DolphinPlayer -> checkDolphinLaunch(player, game, target, now)
+                    else -> check(player, now, game, eden)
                 }
             }
         } catch (cancelled: CancellationException) { throw cancelled
         } catch (_: Exception) { Unit
         } finally { onReading(reading) }
         store.incidents().firstOrNull { it.gatesLaunch(player, game) }?.let { throw SaveProtectionStop(it) }
+    }
+
+    private fun checkDolphinLaunch(player: DolphinPlayer, game: Game, target: LaunchTarget?, now: ProbeSnapshot) {
+        val previous = dolphinCardIncident(player, game)
+        // Preserve the earlier path before the verdict can replace it with a newly configured one.
+        val handled = previous != null && previous.alternateSavePath != now.configSavePath?.effective &&
+            stageDolphinAlternate(player, game, target)
+        val verdict = check(player, now, game)
+        if (verdict is RootVerdict.UsesOther) stageDolphinAlternate(player, game, target)
+        if (verdict == RootVerdict.NoNews && target != null)
+            closeRestoredDolphinCard(player, game, target, handled)
+    }
+
+    /** The prior alternate was handled. Only the same game's resolved default spot clears the stop. */
+    internal fun closeRestoredDolphinCard(player: DolphinPlayer, game: Game, target: LaunchTarget, alternateHandled: Boolean) {
+        if (!alternateHandled) return
+        val incident = dolphinCardIncident(player, game)?.takeUnless { it.recoveryRequired } ?: return
+        val boundUri = folder(player) ?: return
+        if (storageIdentity(boundUri) != incident.bound?.identity || saves.probeSpots(player, game, target, boundUri).isEmpty()) return
+        store.close(incident.id)
     }
 
     internal fun checkRetroArchLaunch(player: RetroArchPlayer, game: Game, now: ProbeSnapshot, files: RetroArchSaveFiles) {
@@ -542,17 +562,21 @@ internal class SaveProbes(
         }
     }
 
-    fun stageDolphinAlternate(player: DolphinPlayer, game: Game, target: LaunchTarget?) {
-        val incident = scopedWrongFolders(player, game).firstOrNull { it.dolphinCustomCard && it.blocksLaunch } ?: return
-        val id = incident.alternateSavePath ?: return
+    private fun dolphinCardIncident(player: DolphinPlayer, game: Game): SaveIncident? =
+        scopedWrongFolders(player, game).firstOrNull { it.dolphinCustomCard && it.blocksLaunch }
+
+    /** True when the copy is staged, absent, or outside Foldcade's access. */
+    fun stageDolphinAlternate(player: DolphinPlayer, game: Game, target: LaunchTarget?): Boolean {
+        val incident = dolphinCardIncident(player, game) ?: return true
+        val id = incident.alternateSavePath ?: return false
         val path = id.removePrefix("primary:")
-        if (path.startsWith("Android/data/", ignoreCase = true) || path.startsWith("Android/obb/", ignoreCase = true)) return
-        val reader = target?.let(::armsGameFile) ?: return
+        if (path.startsWith("Android/data/", ignoreCase = true) || path.startsWith("Android/obb/", ignoreCase = true)) return true
         val grants = android.grants(emptyList()).filter(::sharedSaveGrant)
-        val folder = android.finder(player, grants).readable(id) ?: return
-        try { stageDolphinCard(saves, copies, player, game, reader, folder, incident) }
+        val folder = android.finder(player, grants).readable(id)?.takeIf(android::isDirectory) ?: return true
+        val reader = target?.let(::armsGameFile) ?: return false
+        return try { stageDolphinCard(saves, copies, player, game, reader, folder, incident) }
         catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: SaveNotPlaced) { Unit } // The configured card remains on disk for manual export.
+        catch (_: SaveNotPlaced) { false }
     }
 
     private fun sharedSaveGrant(grant: SaveFolderGrant) = grant.allFiles || URI(grant.uri).authority == SharedPaths.EXTERNAL_STORAGE_AUTHORITY

@@ -1967,7 +1967,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 return
             }
         }
-        // Dolphin's disc revision can override its global card setting.
+        // Defer Dolphin's launch setup check until the disc is known. A revision can override a global raw card.
         val syncState = if (first is SaveFolderHolder && first !is DolphinPlayer && first.hasSaveFolder()) {
             val folder = foldcade.playerSaveFolder(first)
             if (folder != null) withContext(Dispatchers.IO) { foldcade.playerSaves.saveSync(first, folder) } else null
@@ -3602,7 +3602,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val page = foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             owner = owner, offline = !foldcade.hasValidatedNetwork(), playerManagesFolder = hosted)
         foldcade.scope.launch { foldcade.refreshSaveFixDetails(incident) }
-        if (!hosted && !incident.isEdenGrant && !incident.isEdenSessionChange) {
+        if (!hosted && !incident.isEdenGrant && !incident.isEdenSessionChange && !incident.dolphinCustomCard) {
             if (page.hasRommDestination && incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
                 chooseRepairSave(id)
             else retrySaveRepair(id, start = true)
@@ -3770,7 +3770,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) } ?: return@withContext false
                 val game = subject.game()
                 if (foldcade.playerSaves.probeSpots(player, game, target, folder.toString()).isEmpty()) return@withContext false
-                foldcade.saveProbes.stageDolphinAlternate(player, game, target)
+                if (!foldcade.saveProbes.stageDolphinAlternate(player, game, target)) throw SaveNotPlaced()
                 foldcade.saveIncidentCopies.keep(game, player)
                 val latest = foldcade.saveProtection.incident(incident.id) ?: return@withContext false
                 foldcade.saveProtection.put(latest.copy(repair = RepairState.Done, recoveryRequired = false))
@@ -3778,7 +3778,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
         }
         if (done) foldcade.refreshSaveProtection(player)
-        else foldcade.shell.noteSaveFix(SaveProtectionCopy.dolphinDefaultCard)
+        else foldcade.shell.noteSaveFix(SaveProtectionCopy.dolphinCustomCardSteps)
     }
 
     /** An external save or NAND grant supplements Eden's provider grant for keys and config. */
@@ -3864,7 +3864,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val copy = app.foldcade.language.SaveProtectionCopy
         val detail = when (val location = setting.location) {
             is app.foldcade.language.LocationFact.Verified -> copy.checkDetail(location, setting.label, style = foldcade.deviceStatus.status.value.dateStyle)
-            is app.foldcade.language.LocationFact.Bound -> when {
+            is app.foldcade.language.LocationFact.Bound -> location.configDetail ?: when {
                 location.cardOutside -> copy.armsX2CardOutside
                 !location.configUnavailable -> copy.checkByPlaying
                 playerId == ArmsX2Player.ID -> copy.armsX2ConfigUnavailableDetail
