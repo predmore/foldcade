@@ -19,6 +19,7 @@ import app.foldcade.language.blocksLaunch
 import app.foldcade.language.suspectRegression
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.retroarch.RetroArchPlayer
+import app.foldcade.plugins.romm.RommRepairNeedsSync
 import app.foldcade.plugins.romm.rommRepairSaves
 import app.foldcade.plugins.romm.rommSyncedSave
 import app.foldcade.plugins.romm.supportsRommRepair
@@ -35,14 +36,17 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
     val player = plugins.player(subject.playerId) ?: return null
     if (player.saveFolderId() != incident.playerKey) return null
     val holder = player as? SaveFolderHolder ?: return null
-    val current = playerSaveFolder(player) ?: return null
-    val currentId = storageIdentity(current, packageName)
-    val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: return null
     val isQuarantine = incident.kind == IncidentKind.MaybeNewSave
-    val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) }
+    if (!isQuarantine && (incident.kind != IncidentKind.WrongFolder || player is HostedSaveFolder || player is EdenPlayer)) return null
+    val target = subject.targetUri?.let { LaunchTarget.ContentUri(it) } ?: return null
+    val slot = player.saveDeclarations(game).singleOrNull()?.slot ?: return null
+    val eden = if (player is EdenPlayer) {
+        playerSaves.edenRepairTarget(player, game, target, subject.edenContext)?.takeIf { it.spot.slot == slot } ?: return null
+    } else null
+    val current = eden?.spot?.folderUri ?: playerSaveFolder(player) ?: return null
+    val currentId = storageIdentity(current, packageName)
     val live = if (isQuarantine) FolderRef(currentId, folderPathLabel(current)) else incident.live ?: return null
     val bound = if (isQuarantine) live else incident.bound ?: return null
-    if (!isQuarantine && (incident.kind != IncidentKind.WrongFolder || player is HostedSaveFolder || player is EdenPlayer)) return null
     if (currentId !in setOf(bound.identity, live.identity)) return null
 
     val packageInfo = (subject.packageName?.takeIf { it in player.packageNames }?.let(::listOf) ?: player.packageNames)
@@ -79,8 +83,15 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
 
         override suspend fun versions() = rommRepairSaves(library, game, origin)
 
-        private fun spot(folder: String): SaveSpot = target?.let { playerSaves.probeSpots(player, game, it, folder).singleOrNull() }
-            ?.takeIf { it.slot == slot } ?: throw RepairFoldersUnavailable()
+        private fun spot(folder: String): SaveSpot {
+            if (player is EdenPlayer) {
+                val current = playerSaves.edenRepairTarget(player, game, target, subject.edenContext)
+                if (current == null || current != eden) throw RommRepairNeedsSync()
+                return current.spot
+            }
+            return playerSaves.probeSpots(player, game, target, folder).singleOrNull()
+                ?.takeIf { it.slot == slot } ?: throw RepairFoldersUnavailable()
+        }
 
         private fun beside(): SaveSpot? {
             val probe = player as? SaveLocationProbe ?: return null
@@ -144,10 +155,12 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
         override suspend fun place(selection: RepairState.Placing, copies: RepairCopies, backedUpLive: Boolean) {
             if (running()) throw RepairGameRunning()
             val spots = listOf(spot(liveUri))
+            if (eden != null) saveProtection.observeEdenContext(incident.playerKey, eden.session, System.currentTimeMillis())
             ServerSaveFlow(playerSaves, plugins, store::saveAwaitsLoad, onHeadPlaced = saveIncidentCopies::headPlaced,
                 awaitLoad = store::setSaveAwaitsLoad).repair(game, player, spots, origin, selection, copies.liveRawHash.takeIf { backedUpLive }) {
                 if (running() || !readCopies(emptySet(), stage = false).sameBytes(copies)) throw RepairGameRunning()
-                if (playerSaveFolder(player)?.let { storageIdentity(it, packageName) } != live.identity) throw RepairFoldersUnavailable()
+                if (player !is EdenPlayer && playerSaveFolder(player)?.let { storageIdentity(it, packageName) } != live.identity)
+                    throw RepairFoldersUnavailable()
             }
         }
 

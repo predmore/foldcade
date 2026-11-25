@@ -171,11 +171,11 @@ private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) nul
 
 private fun SaveIncidentGame.toJson(): JSONObject = JSONObject().put("library", libraryId).put("game", gameId).put("platform", platformId)
     .put("label", label).put("player", playerId).put("target", targetUri).put("origin", origin)
-    .put("package", packageName).put("install", installFirstMillis)
+    .put("package", packageName).put("install", installFirstMillis).put("edenContext", edenContext)
 
 private fun subjectFromJson(json: JSONObject): SaveIncidentGame = SaveIncidentGame(json.getString("library"), json.getString("game"),
     json.getString("platform"), json.getString("label"), json.getString("player"), json.stringOrNull("target"), json.stringOrNull("origin"),
-    json.stringOrNull("package"), json.nullableLong("install"))
+    json.stringOrNull("package"), json.nullableLong("install"), json.stringOrNull("edenContext"))
 
 private fun RepairState.toJson(): JSONObject = JSONObject().put("state", when (this) {
     RepairState.NotStarted -> "NotStarted"

@@ -582,6 +582,8 @@ A readable live game's copy is staged and kept through the independent Backup qu
 
 The rebound fence protects other games in the folder as they are opened. Repair leaves both folders in place and never changes the emulator’s settings. An upload still in progress keeps repair waiting for RomM. A missing repair destination, a missing head, or an unresolved sync conflict goes to guided recovery.
 
+For a quarantined Eden save, automatic placement resolves the configured SaveDir and the captured account again before choosing a destination, committing the selected head, and writing the save. It observes that Eden context before marking the game handled. Missing access or a changed account, SaveDir or NAND sends the repair to the guided Fix. Account and folder changes detected on return keep the frozen session's progress as a Backup and use the same guided path.
+
 ---
 
 ## 6. Guided repair and recovery: every surface

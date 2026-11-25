@@ -141,6 +141,7 @@ data class SaveIncidentGame(
     val origin: String?,
     val packageName: String?,
     val installFirstMillis: Long?,
+    val edenContext: String? = null,
 )
 
 enum class IncidentKind {

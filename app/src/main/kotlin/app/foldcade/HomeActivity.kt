@@ -3449,9 +3449,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val route = foldcade.hostedAsk?.pending?.route ?: foldcade.savePickerRequest?.route
         foldcade.shell.openSaveFix(incident, steps ?: app.foldcade.language.SaveProtectionCopy.locationSteps(incident.playerKey), player?.id,
             game = incident.subject?.label ?: route?.saves?.label, offline = !foldcade.hasValidatedNetwork())
-        if (incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
-            chooseRepairSave(id)
-        else retrySaveRepair(id, start = true)
+        if (!incident.isEdenGrant && !incident.isEdenSessionChange) {
+            if (incident.kind == app.foldcade.language.IncidentKind.MaybeNewSave && incident.repair is app.foldcade.language.RepairState.Choosing)
+                chooseRepairSave(id)
+            else retrySaveRepair(id, start = true)
+        }
         val owner = incident.subject?.game() ?: route?.saves ?: return
         foldcade.scope.launch {
             val receipts = try { foldcade.plugins.library(owner.backendId)?.saveReceipts(owner).orEmpty() }
@@ -4581,7 +4583,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 else -> saves.changedSince(pending.libraryId, pending.game, pending.player, spots) to null
             }
             val quarantined = returned?.let {
-                foldcade.saveRegression.quarantine(subject, pending.player, it, root, regressionContext)
+                foldcade.saveRegression.quarantine(subject.copy(edenContext = eden?.context?.repairKey()), pending.player, it, root, regressionContext)
             } == true
             if (!preserved && !quarantined) {
                 // The library may finish its sync before reconcile returns. The notice waits for either.

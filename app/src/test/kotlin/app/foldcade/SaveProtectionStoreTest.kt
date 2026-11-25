@@ -106,4 +106,15 @@ class SaveProtectionStoreTest {
         assertNotEquals(storageIdentity(alias, "other.package"), storageIdentity(external))
         assertNotEquals(storageIdentity("content://a.provider/tree/root"), storageIdentity("content://b.provider/tree/root"))
     }
+
+    @Test fun edenRepairContextSurvivesRestart() {
+        val dir = Files.createTempDirectory("eden-repair")
+        val session = EdenSaveSession("primary:custom", "primary:nand", "01" + "00".repeat(15))
+        val subject = SaveIncidentGame("romm", "37", "nintendo-switch", "Game", "eden", "content://rom", "https://romm",
+            packageName = "dev.eden.eden_emulator", installFirstMillis = 1, edenContext = session.repairKey())
+        val incident = SaveIncident("MaybeNewSave:eden:romm:37", IncidentKind.MaybeNewSave, "eden", "Eden", listOf("37"),
+            null, null, evidence, 100, subject = subject)
+        SaveProtectionStore(dir).put(incident)
+        assertEquals(subject, SaveProtectionStore(dir).incident(incident.id)?.subject)
+    }
 }
