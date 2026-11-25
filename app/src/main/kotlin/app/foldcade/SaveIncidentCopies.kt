@@ -65,6 +65,16 @@ internal class SaveIncidentCopies(
         true
     }
 
+    /** Bring an existing run forward without save preparation, then latch any open incident. */
+    suspend fun resume(running: RunningGame, start: () -> Boolean): RunningGame? {
+        if (!start()) return null
+        val saves = running.saves?.let { pending ->
+            pending.copy(preserveAsBackup = beginUnprotected(pending.game, pending.player) || pending.preserveAsBackup,
+                startedByFoldcade = false)
+        }
+        return running.copy(saves = saves)
+    }
+
     /** A checked head in the working folder ends the rebound fence, even without an outside copy. */
     suspend fun headPlaced(game: Game, player: Player) = withContext(Dispatchers.IO) {
         val key = player.saveFolderId()

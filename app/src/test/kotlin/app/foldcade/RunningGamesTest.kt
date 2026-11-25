@@ -81,6 +81,8 @@ class RunningGamesTest {
             forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = false))
         assertFalse("An explicit Home recall keeps the game",
             forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = true, holdsHomeRole = false))
+        assertFalse("An explicit launcher reopen keeps the game even when Foldcade is default Home",
+            forgetsRunOnReturn(returned = true, homeRecalledOnThisDisplay = false, holdsHomeRole = true, reopenedFromIntent = true))
 
         for (homeRecalled in listOf(false, true)) {
             for (holdsHomeRole in listOf(false, true)) {
@@ -109,6 +111,17 @@ class RunningGamesTest {
         assertEquals(true, resumeFound(listOf(menu), menu, menu))
         // Nothing seen yet, or no usage access.
         assertNull(resumeFound(emptyList(), menu, game))
+    }
+
+    @Test fun aPlayerThatQuitsItselfIsGoneOnDirectReturnButKeepsItsRunThroughHomeOrTheLauncher() {
+        for (holdsHome in listOf(false, true)) {
+            fun forgets(homeRecalled: Boolean, reopened: Boolean, returned: Boolean = true) =
+                forgetsRunOnReturn(returned, homeRecalled, holdsHome, replacesInPlayer = true, reopenedFromIntent = reopened)
+            assertTrue(forgets(homeRecalled = false, reopened = false))
+            assertFalse(forgets(homeRecalled = true, reopened = false))
+            assertFalse(forgets(homeRecalled = false, reopened = true))
+            assertFalse(forgets(homeRecalled = false, reopened = false, returned = false))
+        }
     }
 
     @Test

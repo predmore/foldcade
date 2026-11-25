@@ -2356,10 +2356,10 @@ class FoldcadeApp : Application() {
      * one it was last started with, so the game resumes. When a save was written
      * since, it uses the other one, so the player starts fresh and loads it.
      */
-    fun startIntent(player: Player, intent: PlayerIntent): PlayerIntent {
+    fun startIntent(player: Player, intent: PlayerIntent, fresh: Boolean = false): PlayerIntent {
         if (LaunchFlag.ReplaceRunning !in intent.flags) return intent
         val other = (player as? RetroArchPlayer)?.freshStart(intent) ?: return intent
-        val normal = chooseStart(intent, other, store.lastPlayerStart(intent.packageName), store.saveAwaitsLoad(player.saveFolderId()))
+        val normal = chooseStart(intent, other, store.lastPlayerStart(intent.packageName), fresh || store.saveAwaitsLoad(player.saveFolderId()))
         return launchWork.retroArchCore?.sideload(normal) ?: normal
     }
 

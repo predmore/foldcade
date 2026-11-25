@@ -337,6 +337,49 @@ class LaunchSavesTest {
         assertFalse(copies.preserveReturn(owner, Melon, spots, preserveAsBackup = false))
     }
 
+    @Test fun existingRunsResumeAndKeepTheirProgressAsBackupsWhileFreshLaunchesStayGated() = runBlocking {
+        val bytesKept = mutableListOf<String>()
+        for (kind in listOf(IncidentKind.WrongFolder, IncidentKind.FolderEmptied, IncidentKind.LostAccess)) {
+            val dir = Files.createTempDirectory("resume-save-protection")
+            val store = SaveProtectionStore(dir)
+            val warning = incident(kind)
+            store.put(warning)
+            val copies = SaveIncidentCopies(saves, plugins, store)
+            val probes = SaveProbes(android.content.ContextWrapper(null), saves, store, { SAVES }, copies, { null }, { null })
+            var gateReads = 0
+            val fresh = LaunchSaves(saves, plugins, protectionGate = { route, player, target ->
+                gateReads++
+                probes.gate(player, route.saves, target)
+            }) { awaiting += it }
+            val route = GameRoute("tile", owner, owner)
+            val pending = LibraryReturn(owner.backendId, owner, Melon, saves.spots(Melon, owner, local), local.uri)
+            val running = RunningGame(route.tileId, owner.label, owner.platformId, "melon", null, Panel.Top, false, 100, pending)
+
+            assertEquals(null, copies.resume(running) { false })
+            assertFalse(store.pendingBackup(Melon.id, owner))
+            var starts = 0
+            val resumed = copies.resume(running) { starts++; true }!!
+            assertEquals(1, starts)
+            assertEquals(0, gateReads)
+            val restored = decodeLibraryReturn(resumed.saves!!.encode()) { Melon }!!
+            assertTrue(restored.preserveAsBackup)
+            assertFalse(restored.startedByFoldcade)
+            assertTrue(SaveProtectionStore(dir).incidents().single().recoveryRequired)
+
+            val bytes = "resumed progress after $kind".toByteArray()
+            docs.files["$SAVES/Tetris DS (USA).sav"] = bytes
+            assertTrue(copies.preserveReturn(restored.game, restored.player, restored.spots, restored.preserveAsBackup))
+            bytesKept += md5Hex(bytes)
+            assertEquals(bytesKept, server.backups)
+            assertTrue(server.observed.isEmpty())
+            assertTrue(store.incidents().single().blocksLaunch)
+
+            assertTrue(runCatching { fresh.prepare(route, Melon, local) }.exceptionOrNull() is SaveProtectionStop)
+            assertEquals(1, gateReads)
+            assertTrue(server.calls.isEmpty())
+        }
+    }
+
     @Test fun offlineFixThenPlayAndIncidentClosureStillUploadsItsBackupAfterRestartAndReconnect() = runBlocking {
         val directory = Files.createTempDirectory("incident")
         val store = SaveProtectionStore(directory)

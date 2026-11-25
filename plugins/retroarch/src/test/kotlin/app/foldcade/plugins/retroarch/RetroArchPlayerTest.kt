@@ -91,7 +91,7 @@ class RetroArchPlayerTest {
         assertEquals(ACTION_MAIN, intent.action)
         assertNull(intent.dataUri)
         assertFalse(intent.grantReadUri)
-        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning), intent.flags)
+        assertEquals(setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning, LaunchFlag.SameStartResumes), intent.flags)
         assertEquals(
             listOf(
                 PlayerExtra.Text("ROM", shared.path),

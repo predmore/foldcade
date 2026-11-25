@@ -98,7 +98,7 @@ The Flycast core's VMUs, the PPSSPP core's save folders, the older melonDS core'
 
 Press **A** to play on the top screen or **X** on the bottom. RetroArch opens straight into the game.
 
-Home leaves RetroArch running, and starting the same game again picks up where you were. When the game has a newer save from another device, Foldcade starts it fresh so the synced save loads.
+Home leaves RetroArch running. Press A to bring that game back, including when it has a save-location warning. Foldcade keeps readable progress from that resumed session as a Backup while the warning is open. A fresh launch still checks the save location. When you choose a newer save from another device, Foldcade starts the game fresh so it can load that save.
 
 Quit RetroArch through its own menu. Foldcade does not offer its generic Close or screen Move for RetroArch, and closing another game leaves a RetroArch companion alone. Clearing the installed 1.22.2 build's activity can deadlock its native shutdown. Foldcade also keeps its launcher intent out of game resumes: that intent can change the ROM/core identity RetroArch remembers and make the next start reload the game. See the [Thor checks](emulators.md#resume-and-move-on-the-thor).
 

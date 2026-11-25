@@ -249,7 +249,7 @@ class RetroArchPlayer internal constructor(
                 PlayerExtra.Text("SDCARD", SHARED_STORAGE),
                 PlayerExtra.Text("EXTERNAL", external),
             ),
-            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning),
+            flags = setOf(LaunchFlag.NewTask, LaunchFlag.ReplaceRunning, LaunchFlag.SameStartResumes),
         )
     }
 
