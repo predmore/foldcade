@@ -264,6 +264,79 @@ def audiofx(c):
         out += [recess(capsule(x, 18, x, 48, 3), c), control(rr(x - 3.5, y - 2.6, 7, 5.2, 1.6), "#F4F4F6", sym=1)]
     return out
 
+# ---- the Thor's tool apps: thor-features' root tools and Foldcade's device plugin
+# Foldcade's own colours, the teal-to-violet of Afterglow's light, mark Foldcade's plugins.
+FOLD_TEAL, FOLD_VIOLET = "#3EE6C0", "#B98CFF"
+
+def _fan_blades(cx, cy, r, color, n=3, twist=34):
+    """Swept blades round a hub: the status fan's blade (symbols.fan) grown to radius [r], each point turned
+    further the farther out it lies, so the blades sweep with the turn."""
+    k = r / 10.0
+    blade = [(10.2, 9.8), (7.4, 7.6), (8.0, 2.4), (12.4, 2.2), (16.8, 2.0), (17.2, 6.8), (14.0, 9.6)]
+    out = []
+    for i in range(n):
+        pts = []
+        for x, y in blade:
+            dx, dy = (x - 12) * k, (y - 12) * k
+            a = 2 * math.pi * i / n + math.radians(twist) * math.hypot(dx, dy) / r
+            pts.append((cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)))
+        p = pts
+        d = (f"M{f(p[0][0])},{f(p[0][1])} C{f(p[1][0])},{f(p[1][1])} {f(p[2][0])},{f(p[2][1])} {f(p[3][0])},{f(p[3][1])} "
+             f"C{f(p[4][0])},{f(p[4][1])} {f(p[5][0])},{f(p[5][1])} {f(p[6][0])},{f(p[6][1])} Z")
+        out.append(control(d, color))
+    return out
+
+def fan_profiles(c):
+    """Fan profiles: a case fan in its square frame, the status bar's swept blades turning in the shroud."""
+    out = [shadow(32, 59, 23, 3), body(rr(8, 8, 48, 48, 10), c), recess(ci(32, 32, 21), c)]
+    out += [recess(ci(x, y, 1.9), c, sym=None) for x in (13.5, 50.5) for y in (13.5, 50.5)]
+    return out + _fan_blades(32, 32, 19, tone(c, 0.6)) + [control(ci(32, 32, 4.8), tone(c, -0.35), sym=1),
+                                                          control(ci(32, 32, 2.2), tone(c, 0.45), sym=None)]
+
+def screen_panel(c):
+    """Screen Panel: a panel of two brightness faders, one per screen. Each row starts with its screen, the top
+    one wide and bright, the bottom one small and dimmed, and its groove glows up to the fader's cap."""
+    out = [shadow(32, 58, 27, 3), body(rr(3, 9, 58, 46, 9), c)]
+    for y, (sw, sh), glass, level in ((21, (18, 11.5), GLASS, 0.8), (43, (13, 10.5), tone(GLASS, -0.4), 0.38)):
+        x0, x1 = 29, 55
+        knob = x0 + 3 + (x1 - x0 - 6) * level
+        out += [*bezel(17 - sw / 2, y - sh / 2, sw, sh, 2, c, glass, inset=1.2),
+                recess(capsule(x0, y, x1, y, 4.4), c),
+                screen(capsule(x0, y, knob, y, 2.6), "#F2FFE8", sym=0),
+                control(rr(knob - 3.2, y - 7, 6.4, 14, 2.6), tone(c, 0.75), sym=1)]
+    return out
+
+def oled_wash(c):
+    """OLED Wash: a squeegee pushing a lit band of wash up a dark screen, leaving it black behind."""
+    return [shadow(32, 58, 27, 3), body(rr(3, 9, 58, 40, 6), c), recess(rr(7, 13, 50, 32, 3), c),
+            screen(rr(8.5, 18, 47, 10, 1), tone(c, 0.2), sym=0),
+            body(capsule(32, 34, 37.5, 49, 4.4), tone(c, 0.15), sym=2),
+            control(capsule(37, 47, 39.5, 55, 6.6), tone(c, -0.3), sym=2),
+            control(capsule(10, 29.6, 54, 29.6, 2.8), sym=1),
+            body(rr(14, 31, 36, 5.2, 2.2), "#C3CEDF", gloss=0.35, sym=1)]
+
+def stick_cal(c):
+    """Stick Cal: a stick's range as a blue ring with a crosshair and its calibrated range dashed inside it, the
+    amber stick cap pushed out to the edge on a line from the centre."""
+    amber = "#FFC15A"
+    a = math.radians(-135); ex, ey = 32 + 22.5 * math.cos(a), 32 + 22.5 * math.sin(a)
+    out = [shadow(32, 60, 23, 3), body(ci(32, 32, 26.5), c), recess(ci(32, 32, 19.5), c)]
+    out += [control(arc_band(32, 32, 11.5, 1.8, t + 11, t + 34), tone(c, -0.05), sym=None) for t in range(0, 360, 45)]
+    for t in (0, 90, 180, 270):
+        u, v = math.cos(math.radians(t)), math.sin(math.radians(t))
+        out.append(control(capsule(32 + 14.5 * u, 32 + 14.5 * v, 32 + 17.5 * u, 32 + 17.5 * v, 2), tone(c, 0.1), sym=None))
+    return out + [control(ci(32, 32, 3.6), tone(c, 0.3), sym=1), control(capsule(32, 32, ex, ey, 3.4), tone(amber, -0.15), sym=1),
+                  control(ci(ex, ey, 7.5), amber, sym=2)]
+
+def foldcade_thor(c):
+    """Foldcade Thor: a jigsaw piece, the plugin that fits the Thor into Foldcade, carrying the Thor's two screens,
+    big over small, lit in Foldcade's teal and violet."""
+    piece = ("M10,15 H23 A5,5 0 1 1 29,15 H42 Q47,15 47,20 V35 A5,5 0 1 1 47,41 V52 Q47,57 42,57 H29 "
+             "A5,5 0 1 0 23,57 H10 Q5,57 5,52 V41 A5,5 0 1 0 5,35 V20 Q5,15 10,15 Z")
+    dx = 2
+    return [shadow(32, 60, 24, 2.8), body(xf(piece, dx=dx), c),
+            *bezel(9.5 + dx, 19, 33, 12, 2.5, c, "#2FE0B8", inset=1.5), *bezel(16.5 + dx, 35.5, 19.5, 10.5, 2.2, c, "#A57BFF", inset=1.5)]
+
 # name -> (drawing, accent, what it stands for, packages that wear it)
 APPS = {
     "chrome": (chrome, "#4C8DFF", "Chrome: three segments around a lens", ["com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary"]),
@@ -290,4 +363,9 @@ APPS = {
     "jelly": (jelly, "#6B95FF", "Browser (LineageOS Jelly): a compass with a four-point star", ["org.lineageos.jelly"]),
     "audiofx": (audiofx, "#FF4D97", "AudioFX: a knob beside two faders", ["org.lineageos.audiofx"]),
     "odin_launcher": (odin_launcher, "#9FB8FF", "Odin Launcher: a winged helmet", ["com.odin.odinlauncher"]),
+    "fan_profiles": (fan_profiles, "#6FD3FF", "Fan profiles: a case fan in its frame", ["com.thorfeatures.appprofiles"]),
+    "screen_panel": (screen_panel, "#A9DB8E", "Thor Screen Panel: a brightness fader for each screen", ["com.thorfeatures.screenpanel"]),
+    "oled_wash": (oled_wash, "#74DCCB", "Thor OLED Wash: a squeegee leaving a lit band across a dark screen", ["com.thorfeatures.oledwash"]),
+    "stick_cal": (stick_cal, "#4A78FF", "Thor Stick Cal: a stick cap pushed to the edge of its range, over a crosshair", ["com.thorfeatures.stickcal"]),
+    "foldcade_thor": (foldcade_thor, "#C3CEDF", "Foldcade Thor: a jigsaw piece carrying two lit screens", ["app.foldcade.thor"]),
 }

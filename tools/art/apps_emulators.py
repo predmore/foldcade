@@ -4,7 +4,7 @@ from art import *
 from palette import *
 from objects import *
 from marks import rr, ci, stick, bezel, hinge, _ring_half
-from marks import moonlight, pc, droiddeck, MOON, DECK
+from marks import moonlight, _crescent, pc, droiddeck, MOON, DECK
 
 # ---- shape helpers for this module
 def squash(pts, sy, cy):
@@ -315,10 +315,23 @@ def redream(c):
     bolt = xf(rpoly([((x - 11.5) * 1.35 + 32, (y - 13.5) * 1.35 + 32) for x, y in shape], 1.2), deg=25, dx=-8, dy=-4.5)
     return [shadow(32, 59, 23, 3), body(bolt, tone(c, 0.3), gloss=0.3), body(xf(bolt, deg=180, cy=31.5), c, gloss=0.3)]
 
+def foldcade_moonlight(c):
+    """Foldcade Moonlight: Moonlight's crescent and star lit in Foldcade's own light, the crescent teal into violet
+    and the star teal, so it sits beside Moonlight's own tile as Foldcade's build of it."""
+    teal = "#3EE6C0"
+    moon = _crescent(29, 35, 21, 39, 26, 17.5)
+    return [shadow(30, 59, 20, 3), body(moon, c, gloss=0),
+            paint(L(moon, fill=Lin(8, 14, 40, 56, [(0, tone(teal, 0.15), 1), (0.3, teal, 0.85), (0.75, teal, 0)]))),
+            paint(L(moon, fill=Lin(0, 14, 0, 38, [(0, "#FFFFFF", 0.3), (1, "#FFFFFF", 0)])),
+                  L(moon, stroke=Lin(0, 14, 0, 40, [(0, "#FFFFFF", 0.65), (1, "#FFFFFF", 0)]), sw=0.9)),
+            body("M50,6 Q51,13 57,14 Q51,15 50,22 Q49,15 43,14 Q49,13 50,6 Z", tone(teal, 0.2), gloss=0.1)]
+
+
 # name -> (drawing, accent, what it stands for, packages that wear it)
 APPS = {
     # The streaming and PC front-ends Foldcade already draws as places wear the same objects as apps.
     "moonlight": (moonlight, MOON, "Moonlight: a crescent moon and a star", ["com.limelight"]),
+    "foldcade_moonlight": (foldcade_moonlight, "#B98CFF", "Foldcade Moonlight: Moonlight's crescent and star in Foldcade's teal and violet", ["app.foldcade.moonlight", "app.foldcade.moonlight.debug"]),
     "gamenative": (pc, BLUE, "GameNative: a monitor showing a controller", ["app.gamenative", "app.gamenative.gold"]),
     "droiddeck": (droiddeck, DECK, "DroidDeck: a wide handheld with two sticks", ["com.droiddeck.launcher"]),
     "retroarch": (retroarch, "#B39DFF", "RetroArch: a space invader", ["com.retroarch", "com.retroarch.aarch64", "com.retroarch.ra32"]),
