@@ -2,6 +2,7 @@ package app.foldcade
 
 import app.foldcade.api.plugin.Availability
 import app.foldcade.api.plugin.Game
+import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.api.plugin.Player
 import app.foldcade.api.plugin.ObservedSaves
 import app.foldcade.api.plugin.PluginException
@@ -23,6 +24,7 @@ internal class ServerSaveFlow(
     private val awaitsLoad: (String) -> Boolean,
     private val preserveOutside: suspend (Game, Player, List<SaveSpot>, ObservedSaves) -> Boolean = { _, _, _, _ -> false },
     private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
+    private val protectionGate: suspend (Player, Game, LaunchTarget?) -> Unit = { _, _, _ -> },
     private val awaitLoad: (String, Boolean) -> Unit,
 ) {
     /** Repair has already captured the working files. They must never reach ordinary reconcile. */
@@ -51,6 +53,7 @@ internal class ServerSaveFlow(
         val wantsPlacement = saveId != null && ownsDestination
         val spots = if (remote) {
             if (wantsPlacement && player != null) {
+                protectionGate(player, owner, null)
                 val name = plugins.fileName(request.route.play.backendId, request.route.play) ?: throw SaveNeedsDownload()
                 saves.spotsForFileName(player, owner, name, eden).also {
                     if (it.size != declarations.size || it.isEmpty()) throw SaveNeedsDownload()
@@ -58,7 +61,10 @@ internal class ServerSaveFlow(
             } else emptyList()
         } else {
             val local = player?.takeIf { it.supportsSaveSync(owner) }?.let { plugins.ensureLocal(request.route.play.backendId, request.route.play) }
-            if (local != null) saves.spots(player, owner, local, eden = eden) else emptyList()
+            if (local != null) {
+                protectionGate(player, owner, local)
+                saves.spots(player, owner, local, eden = eden)
+            } else emptyList()
         }
         if (wantsPlacement && (player == null || !player.supportsSaveSync(owner) || declarations.isEmpty() || spots.size != declarations.size)) throw SaveNotPlaced()
         // A server-only ROM has no new emulator progress to capture. Reading its file is unnecessary.

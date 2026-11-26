@@ -32,6 +32,7 @@ internal fun treeUri(authority: String, documentId: String): String = "content:/
 /** How a folder reads to the user: its path on primary storage, `saves/Azahar`, or else its document id. */
 internal fun folderPathLabel(uri: String): String = folderDocumentId(uri).let { id ->
     if (URI(uri).authority == "org.dolphinemu.dolphinemu.user" && id.trimEnd('/') == "root") app.foldcade.language.Copy.dolphinFiles
+    else if (URI(uri).authority in setOf("aenu.aps3e.provider", "aenu.aps3e.premium.provider") && id.trimEnd('/').endsWith("/files/aps3e")) "aPS3e"
     else if (id.startsWith("primary:")) id.removePrefix("primary:").ifEmpty { "/" } else id
 }
 

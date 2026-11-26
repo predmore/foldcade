@@ -36,20 +36,20 @@ class DolphinPlayer : DolphinLaunchPlayer("gamecube"), SaveFolderHolder {
     override fun bindSaveFolder(contentUri: String) { folder = contentUri.takeIf { it.startsWith("content:") } }
     override fun hasSaveFolder() = folder != null
     override val saveFolderKey = "dolphin"
-    override val saveFolderPlaces = listOf("dolphin-emu", "Android/data/org.dolphinemu.dolphinemu/files")
+    override val saveFolderPlaces = listOf(LEGACY_FOLDER)
     override val saveFolderMarkers = setOf("GC", "Config")
     // Official provider exposes Android/data without an all-files workaround.
     // Source/Android/.../features/DocumentProvider.kt, ROOT_ID = "root".
-    override val suggestedSaveFolder = "content://org.dolphinemu.dolphinemu.user/root/root"
+    override val suggestedSaveFolder = "content://$PROVIDER/root/root"
     override fun saveDeclarations(game: Game) = listOf(SaveDeclaration(SLOT, folder))
 
     override fun findSaveFolderParts(slot: String, game: GameFileReader, folder: SaveFolderAccess): List<SaveFolderPart>? {
         if (slot != SLOT) return null
         val disc = gameCubeDisc(game) ?: return null
-        if (!defaultFolderCard(folder, disc.id)) return null
+        if (readDolphinCard(folder, disc) != DolphinCard.Default) return null
         // Flat *.gci bundle, as Argosy's GciSaveHandler.createBundle uses:
         // https://github.com/rommapp/argosy-launcher/blob/dbe576f3cfa5dfb9db7001f3d2de7f473e5238fe/app/src/main/kotlin/com/nendo/argosy/data/sync/platform/GciSaveHandler.kt
-        return listOf(SaveFolderPart("", "GC/${disc.region}/Card A"))
+        return listOf(SaveFolderPart("", disc.defaultCardPath))
     }
 
     override fun saveArchiveFilter(slot: String, game: GameFileReader): SaveArchiveFilter? {
@@ -63,24 +63,31 @@ class DolphinPlayer : DolphinLaunchPlayer("gamecube"), SaveFolderHolder {
         }
     }
 
-    override fun saveSyncState(folder: SaveFolderAccess): SaveSyncState =
-        if (defaultFolderCard(folder)) SaveSyncState.Syncing else SaveSyncState.NeedsSetup(SETUP)
+    override fun saveSyncState(folder: SaveFolderAccess): SaveSyncState? = when (readDolphinCard(folder, null)) {
+        DolphinCard.Default -> SaveSyncState.Syncing
+        DolphinCard.Unknown -> null
+        else -> SaveSyncState.NeedsSetup(SETUP)
+    }
 
     companion object {
         const val SLOT = "gci"
+        const val PROVIDER = "org.dolphinemu.dolphinemu.user"
+        const val LEGACY_FOLDER = "dolphin-emu"
         // Shared language copy is supplied by the shell for this stable reason key.
         const val SETUP = "dolphin-folder-card"
     }
 }
 
-internal data class GameCubeDisc(val id: String, val region: String)
+data class GameCubeDisc(val id: String, val region: String, val revision: Int = 0) {
+    val defaultCardPath: String get() = "GC/$region/Card A"
+}
 
 /** Authoritative ISO/GCM header and region word, never a title/filename guess.
  * VolumeGC.cpp GetRegion reads 0x458; Blob.cpp checks the 0x1c GameCube magic.
  * https://github.com/dolphin-emu/dolphin/tree/df4bd441dec5d6f3cff606eea76f183963e97a44/Source/Core/DiscIO
  * Compressed images need a real blob reader; they remain visibly unresolved.
  */
-internal fun gameCubeDisc(game: GameFileReader): GameCubeDisc? {
+fun gameCubeDisc(game: GameFileReader): GameCubeDisc? {
     val head = game.read(0, 0x460) ?: return null
     if (head.size < 0x45c || !head.copyOfRange(0x1c, 0x20).contentEquals(byteArrayOf(0xc2.toByte(), 0x33, 0x9f.toByte(), 0x3d))) return null
     val id = String(head, 0, 6, Charsets.US_ASCII)
@@ -91,38 +98,72 @@ internal fun gameCubeDisc(game: GameFileReader): GameCubeDisc? {
         listOf<Byte>(0, 0, 0, 2) -> "EUR"
         else -> return null
     }
-    return GameCubeDisc(id, region)
+    return GameCubeDisc(id, region, head[7].toInt() and 0xff)
 }
 
 /** MainSettings.cpp defaults SlotA to MemoryCardFolder (8). Never change choices.
  * Custom folders, raw cards and non-default per-game card settings stay unresolved.
  */
-internal fun defaultFolderCard(folder: SaveFolderAccess, gameId: String? = null): Boolean {
-    val entries = folder.list("Config") ?: return false
-    if (gameId != null) {
-        val gameSettings = folder.list("GameSettings").orEmpty().filter { !it.isFolder &&
-            (it.name in listOf("${gameId.take(1)}.ini", "${gameId.take(3)}.ini", "$gameId.ini") ||
-                (it.name.startsWith(gameId + "r") && it.name.endsWith(".ini"))) }
-        for (settings in gameSettings) {
-            val text = folder.read("GameSettings/${settings.name}", 256 * 1024)?.toString(Charsets.UTF_8) ?: return false
-            // GameConfigLoader.cpp maps legacy [Core] and [Main.Core] to Main/Core.
-            // Require defaults in both forms; resolving conflicting overrides is unsupported.
-            if (!defaultFolderCardSettings(coreSettings(text)) ||
-                !defaultFolderCardSettings(coreSettings(text, sectionName = "main.core"))) return false
-        }
-    }
-    if (entries.none { it.name == "Dolphin.ini" }) return true
-    val ini = folder.read("Config/Dolphin.ini", 256 * 1024)?.toString(Charsets.UTF_8) ?: return false
-    return defaultFolderCardSettings(coreSettings(ini))
+sealed interface DolphinCard {
+    data object Unknown : DolphinCard
+    data object Default : DolphinCard
+    data object OtherDevice : DolphinCard
+    /** [path] is the resolved setting for the disc if the config names an absolute primary-storage path. */
+    data class Custom(val path: String?) : DolphinCard
 }
 
-/** Both GCI settings are paths, not a path and an enable flag: even "False" is a custom path.
- * A raw-card path does not affect Slot A's GCI Folder device.
- * https://github.com/dolphin-emu/dolphin/blob/df4bd441dec5d6f3cff606eea76f183963e97a44/Source/Core/Core/HW/EXI/EXI_DeviceMemoryCard.cpp#L137-L156
- */
-private fun defaultFolderCardSettings(core: Map<String, String>): Boolean =
-    core["slota"].let { it == null || it == "8" } &&
-        core["gcifolderapath"].isNullOrEmpty() && core["gcifolderapathoverride"].isNullOrEmpty()
+fun readDolphinCard(folder: SaveFolderAccess, disc: GameCubeDisc?): DolphinCard {
+    val config = folder.list("Config") ?: return DolphinCard.Unknown
+    val values = mutableMapOf<String, String>()
+    if (config.any { it.name == "Dolphin.ini" }) {
+        values.putAll(readDolphinIni(folder, "Config/Dolphin.ini", game = false) ?: return DolphinCard.Unknown)
+    }
+    if (disc != null) {
+        val settings = folder.list("GameSettings")
+        if (settings == null && folder.list("")?.none { it.name == "GameSettings" } != true) return DolphinCard.Unknown
+        val id = disc.id
+        // GameConfigLoader.cpp loads the local system, title, region and exact revision in this order.
+        for (name in listOf("${id.take(1)}.ini", "${id.take(3)}.ini", "$id.ini", "${id}r${disc.revision}.ini")) {
+            if (settings?.any { it.name == name } != true) continue
+            values.putAll(readDolphinIni(folder, "GameSettings/$name", game = true) ?: return DolphinCard.Unknown)
+        }
+    }
+    val device = values["slota"]?.let { it.toIntOrNull() ?: return DolphinCard.Unknown } ?: 8
+    if (device != 8) return DolphinCard.OtherDevice
+    // EXI_DeviceMemoryCard.cpp uses the override literally; MainSettings.cpp adds/replaces the region otherwise.
+    val override = values["gcifolderapathoverride"].orEmpty()
+    if (override.isNotEmpty()) return DolphinCard.Custom(override.primaryPath())
+    val base = values["gcifolderapath"].orEmpty()
+    if (base.isEmpty()) return DolphinCard.Default
+    val path = base.replace('\\', '/').primaryPath()
+    val region = if (disc?.region == "JAP") "JPN" else disc?.region
+    return DolphinCard.Custom(if (path != null && region != null) {
+        val parent = if (path.substringAfterLast('/') in setOf("USA", "EUR", "JPN", "DEV")) path.substringBeforeLast('/') else path
+        "$parent/$region"
+    } else null)
+}
+
+private fun String.primaryPath(): String? {
+    val path = when {
+        startsWith("/sdcard/") -> removePrefix("/sdcard/")
+        startsWith("/storage/emulated/0/") -> removePrefix("/storage/emulated/0/")
+        else -> return null
+    }.trimEnd('/')
+    return path.takeIf { it.isNotEmpty() && it.split('/').none { part -> part.isEmpty() || part == "." || part == ".." } &&
+        it.none { char -> char.isISOControl() || char == '\\' } }
+}
+
+private fun readDolphinIni(folder: SaveFolderAccess, path: String, game: Boolean): Map<String, String>? {
+    val bytes = folder.read(path, 256 * 1024) ?: return null
+    val text = bytes.toString(Charsets.UTF_8)
+    if ('\u0000' in text || '\uFFFD' in text) return null
+    val core = coreSettings(text)
+    if (!game) return core
+    val mainCore = coreSettings(text, sectionName = "main.core")
+    // The two spellings can map to the same key. Leave conflicting spellings unresolved.
+    if (core.any { (key, value) -> key in mainCore && mainCore[key] != value }) return null
+    return core + mainCore
+}
 
 /** Common/IniFile.cpp: case-insensitive names, UTF-8 BOM, first closing bracket,
  * quoted values and last assignment wins. Leading whitespace does not start a section.
@@ -139,7 +180,10 @@ private fun coreSettings(text: String, sectionName: String = "core"): Map<String
         }
         if (section != sectionName) continue
         if ('=' !in line || line.firstOrNull() in listOf('#', '$', '+', '*')) continue
-        values[line.substringBefore('=').trim().lowercase()] = line.substringAfter('=').trim().removeSurrounding("\"")
+        val key = line.substringBefore('=').trim().lowercase()
+        if (key in setOf("slota", "gcifolderapath", "gcifolderapathoverride")) {
+            values[key] = line.substringAfter('=').trim().removeSurrounding("\"")
+        }
     }
     return values
 }

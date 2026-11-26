@@ -1,9 +1,26 @@
 package app.foldcade
 
+import app.foldcade.language.HostScreen
+import app.foldcade.language.saveFolderDialog
+import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.dolphin.DolphinPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FolderPickerTest {
+    @Test fun rejectedProviderPicksNameTheOwnFolderInBothPickerFlows() {
+        val cases = listOf(
+            Aps3ePlayer() to "Choose aPS3e’s own folder.",
+            DolphinPlayer() to "Choose Dolphin’s own folder.",
+        )
+        for ((player, expected) in cases) {
+            val reason = rejectedSaveFolderCopy(player)
+            assertEquals(expected, reason)
+            assertEquals(expected, rejectedSaveFolderCopy(player, inSetup = true))
+            assertEquals(expected, saveFolderDialog(HostScreen.Top, wrong = reason, playerName = player.displayName).body)
+        }
+    }
+
     @Test fun aGuidedBesidePickKeepsItsIncidentAcrossRecreation() {
         val state = FolderPickerState(FolderPurpose.Settings, settingsPlayerId = "melonds", besideFixId = "WrongFolder:melonds:romm:7")
         assertEquals(state, decodeFolderPickerState(state.encode()))

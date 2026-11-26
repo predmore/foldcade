@@ -67,6 +67,7 @@ import app.foldcade.credentials.AndroidCredentialStore
 import app.foldcade.host.PluginHost
 import app.foldcade.plugins.retroarch.PACKAGES as RETROARCH_PACKAGES
 import app.foldcade.plugins.retroarch.RetroArchPlayer
+import app.foldcade.language.dolphinCustomCard
 import app.foldcade.plugins.romm.CachePathContentUri
 import app.foldcade.plugins.romm.RomFolderDocuments
 import app.foldcade.plugins.romm.ROMM_MEDIA_PATH
@@ -1782,6 +1783,12 @@ class FoldcadeApp : Application() {
                 }
             }
         }
+        if (player is app.foldcade.plugins.dolphin.DolphinPlayer && subject.targetUri != null) {
+            val gameId = homeGameId(subject.libraryId, subject.gameId)
+            val scoped = saveProtection.incident("WrongFolder:${player.saveFolderId()}:$gameId")
+            if (scoped?.dolphinCustomCard == true && scoped.subject == null)
+                saveProtection.put(scoped.copy(subject = subject))
+        }
         if (player is HostedSaveFolder || subject.targetUri == null || !app.foldcade.plugins.romm.supportsRommRepair(plugins.library(subject.libraryId))) return
         val incident = saveProtection.incident("WrongFolder:${player.saveFolderId()}") ?: return
         if (incident.live != null && incident.repair == app.foldcade.language.RepairState.NotStarted && incident.subject == null)
@@ -1957,7 +1964,9 @@ class FoldcadeApp : Application() {
                 val finder = android.finder(player, grants)
                 val result = finder.find(holder)
                 if (result.placeStart != null) saveFolderStarts[key] = result.placeStart else saveFolderStarts.remove(key)
-                val next = detectedSaveFolder(saved) { result.folder }
+                // Keep the provider identity for a regrant even when discovery finds a shared copy instead.
+                val next = if (saved != null && providerSaveRootPackage(player, saved.uri) != null) saved
+                    else detectedSaveFolder(saved) { result.folder }
                 // A found folder was just probed. A chosen one only needs its grant: a slow provider is no reason to drop it.
                 val bound = next != null && android.holdsGrant(next.uri, grants)
                 // A picker can finish while the provider is being read. Its choice wins.
@@ -2034,8 +2043,12 @@ class FoldcadeApp : Application() {
     }
 
     internal fun saveFolderStart(player: Player?): String? = (player as? SaveFolderHolder)?.let {
-        (if (player is app.foldcade.plugins.retroarch.RetroArchPlayer)
-            app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER else null)
+        (when (player) {
+            is app.foldcade.plugins.retroarch.RetroArchPlayer -> app.foldcade.plugins.retroarch.DEFAULT_SAVE_FOLDER
+            is app.foldcade.plugins.aps3e.Aps3ePlayer -> player.packageNames.firstOrNull(::packageInstalled)?.let { "content://$it.provider/root/root" }
+            is app.foldcade.plugins.dolphin.DolphinPlayer -> it.suggestedSaveFolder
+            else -> null
+        })
             ?: saveFolderStarts[player.saveFolderId()] ?: it.suggestedSaveFolder ?: it.saveFolderPlaces.firstOrNull()?.let(::primaryFolderDocument)
     }
 

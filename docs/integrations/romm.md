@@ -155,13 +155,13 @@ For DuckStation, point its **Memory Cards** folder at the one Foldcade keeps for
 
 For ARMSX2, pick its data folder. Foldcade syncs slot 1 when that slot is a folder card inside the chosen data folder, including a custom `MemoryCards` directory and per-game card selection. The slot syncs as `card1`, one zip of the game’s folders. A confirmed write to an outside card opens **Wrong folder** for that game. A confirmed move to a different ARMSX2 data root opens it for every ARMSX2 game. Foldcade keeps readable suspect folder-card saves as verified, unslotted **Backups**. For local-only games, Foldcade keeps the copy on the device. ISO, BIN, CUE/BIN, multi-disc `.m3u`, and CHD games sync. chdman's defaults include FLAC as one choice per block. A CHD syncs when the part of the disc holding the serial (the start of its data) isn't stored with FLAC or Zstandard, which is how chdman usually compresses it, since FLAC suits audio. A CHD where that part is FLAC or Zstandard still launches, and its saves stay on the device. See [ARMSX2](emulators.md#memory-cards).
 
-For aPS3e, pick its own folder, the one the picker opens on. Foldcade syncs the `savedata` folders whose names contain the game's title id, such as `BLUS30464-ALIAS_SKATER`. Trophies are not synced. See [aPS3e](emulators.md#saves).
+For aPS3e, allow the installed build's own folder. A reinstall requires a new grant. After regranting, Foldcade can stage RomM's `PS3UPDAT.PUP` for aPS3e's installer. Foldcade syncs `savedata` from the default VFS path and account when the folder name matches the title ID. See [aPS3e](emulators.md#saves).
 
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
 For PPSSPP, Foldcade finds the PSP folder and syncs its game-ID savedata folders as slot `savedata`. ISO, CSO v1 and PBP metadata are supported. See [PPSSPP](emulators.md#ppsspp-psp).
 
-For Dolphin, Foldcade syncs the default GameCube Slot A GCI folder for ISO/GCM games as slot `gci`. Raw cards, RVZ, Wii NAND saves, custom card settings and MMJR do not sync yet. See [Dolphin](emulators.md#dolphin-gamecube).
+For Dolphin, Foldcade syncs the default GameCube Slot A GCI folder for ISO/GCM games as slot `gci`. Its own provider checks the root for this installation. A confirmed custom GCI configuration gates the affected game. A matching GCI write in another readable root can also raise a folder problem. Foldcade keeps the matching readable files under **Backups** in **Y › Saves** after verifying them on RomM. The **Playing** save stays selected. Local-only copies stay on the device. See [Dolphin](emulators.md#dolphin-gamecube).
 
 The remaining emulators and sources manage their own saves. Save-state sync is not implemented.
 

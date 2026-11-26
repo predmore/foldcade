@@ -1,5 +1,23 @@
 package app.foldcade
 
+import app.foldcade.api.plugin.Player
+import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.language.SaveProtectionCopy
+import app.foldcade.language.SaveSetupCopy
+import app.foldcade.language.wrongSaveFolderBody
+import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.dolphin.DolphinPlayer
+
+internal fun rejectedSaveFolderCopy(player: Player?, inSetup: Boolean = false): String = when (player) {
+    is Aps3ePlayer -> SaveProtectionCopy.aps3eOwnFolder
+    is DolphinPlayer -> SaveProtectionCopy.dolphinOwnFolder
+    else -> {
+        val name = player?.displayName.orEmpty()
+        val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
+        if (inSetup) SaveSetupCopy.wrongFolder(name, markers) else wrongSaveFolderBody(name, markers)
+    }
+}
+
 /**
  * Why the document-tree picker is open. The library, a player's save folder,
  * RetroArch's data folder, and Eden's data folder share one result callback. The purpose has to

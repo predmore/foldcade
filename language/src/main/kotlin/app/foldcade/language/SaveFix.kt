@@ -40,8 +40,11 @@ fun saveFixHeading(incident: SaveIncident): String = if (incident.kind == Incide
  * access was lost, the folder it already watched. Null when only the emulator can say.
  */
 fun saveFixTarget(incident: SaveIncident): FolderRef? =
-    if (incident.besideGame || incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard) null
+    if (incident.besideGame || incident.playerKey == "retroarch" && incident.gameIds.isNotEmpty() || incident.armsX2OutsideCard || incident.dolphinCustomCard) null
     else incident.live ?: incident.bound.takeIf { incident.kind == IncidentKind.LostAccess }
+
+val SaveIncident.dolphinCustomCard: Boolean get() = playerKey == "dolphin" && kind == IncidentKind.WrongFolder &&
+    evidence.kind == EvidenceKind.Config && alternateSavePath != null
 
 /**
  * A known folder needs one button, which opens the picker there: sending the player into the
@@ -129,6 +132,7 @@ fun saveFixCard(incident: SaveIncident, page: SaveFixPage): SaveFixCard {
         if (page.hasRommDestination) "Check the user in Eden’s Profile Manager, then choose a save in Y › Saves."
         else "Check the user in Eden’s Profile Manager.", page.note)
     if (incident.armsX2OutsideCard) return SaveFixCard(SaveProtectionCopy.armsX2OutsideCardSteps, page.note)
+    if (incident.dolphinCustomCard) return SaveFixCard(SaveProtectionCopy.dolphinCustomCardSteps, page.note)
     if (page.playerManagesFolder && page.steps != null) return SaveFixCard(page.steps, page.note)
     if (incident.besideGame && incident.bound != null)
         return SaveFixCard(SaveProtectionCopy.besideLocationSteps(incident).orEmpty(),

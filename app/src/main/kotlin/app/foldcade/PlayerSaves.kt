@@ -21,6 +21,11 @@ import app.foldcade.api.plugin.SaveArchiveFilter
 import app.foldcade.language.SpotFact
 import app.foldcade.language.SpotIssue
 import app.foldcade.plugins.dolphin.DolphinPlayer
+import app.foldcade.plugins.dolphin.DolphinCard
+import app.foldcade.plugins.dolphin.gameCubeDisc
+import app.foldcade.plugins.dolphin.readDolphinCard
+import app.foldcade.plugins.aps3e.Aps3ePlayer
+import app.foldcade.plugins.aps3e.readAps3eSavePath
 import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.plugins.eden.EdenProfile
 import app.foldcade.plugins.eden.edenAccountSave
@@ -292,17 +297,32 @@ internal class PlayerSaves(
             }
             if (name == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
             val folder = player.saveDeclarations(game).firstOrNull()?.locationUri
+            if (player is Aps3ePlayer && folder != null) {
+                val path = if (providerSaveRootPackage(player, folder) != null)
+                    readAps3eSavePath(folderAccess(player, folder, allowWrite = false)) else null
+                aps3eSaveConfigDetail(path)?.let { return SpotFact.Unresolved(SpotIssue.Unreadable, it) }
+            }
             if (folder != null && player is app.foldcade.plugins.armsx2.ArmsX2Player) {
                 val config = player.cardConfig(folderAccess(player, folder, allowWrite = false))
                 if (config.directory == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable,
                     if (config.nativeReadable) app.foldcade.language.SaveProtectionCopy.armsX2CardOutside
                     else app.foldcade.language.SaveProtectionCopy.armsX2ConfigUnavailableDetail)
             }
-            val sync = folder?.let { saveSync(player, it) }
-            if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
             val extension = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
             if (player is DolphinPlayer && extension !in setOf("iso", "gcm")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.UnsupportedImage,
                 app.foldcade.language.SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT).ifEmpty { "This file type" }, "ISO and GCM"))
+            if (player is DolphinPlayer && folder != null) {
+                val disc = gameCubeDisc(gameFile(uri)) ?: return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoTitleId)
+                when (readDolphinCard(folderAccess(player, folder, allowWrite = false), disc)) {
+                    DolphinCard.Unknown -> return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable,
+                        app.foldcade.language.SaveProtectionCopy.cantReadConfig)
+                    DolphinCard.OtherDevice -> return SpotFact.Unresolved(SpotIssue.CardNotFolder, app.foldcade.language.Copy.dolphinFolderCard)
+                    is DolphinCard.Custom -> return SpotFact.Unresolved(SpotIssue.CardNotFolder, app.foldcade.language.SaveProtectionCopy.dolphinCustomCardSteps)
+                    DolphinCard.Default -> Unit
+                }
+            }
+            val sync = folder?.let { saveSync(player, it) }
+            if (sync is app.foldcade.api.plugin.SaveSyncState.NeedsSetup) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.CardNotFolder, sync.steps)
             if (player is app.foldcade.plugins.explus.ExPlusPlayer && extension in setOf("zip", "7z")) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.ArchiveName)
             if (player.romHeaderSize > 0 && docs.head(uri!!, player.romHeaderSize) == null) return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.Unreadable)
             return app.foldcade.language.SpotFact.Unresolved(app.foldcade.language.SpotIssue.NoTitleId)
@@ -408,6 +428,7 @@ internal class PlayerSaves(
         }
         return player.saveDeclarations(game).mapNotNull { declaration ->
             val folder = declaration.locationUri ?: return@mapNotNull null
+            if (player is Aps3ePlayer && providerSaveRootPackage(player, folder) == null) return@mapNotNull null
             val access = folderAccess(player, folder, forLaunch)
             val filter = player.saveArchiveFilter(declaration.slot, namedReader)
             val resolved = player.findSaveFolderParts(declaration.slot, namedReader, folderAccess(player, folder, allowWrite = false))
