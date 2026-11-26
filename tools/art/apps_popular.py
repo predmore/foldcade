@@ -298,7 +298,7 @@ def wg_tunnel(c):
     out = [shadow(32, 60, 20, 3),
            control(capsule(21, 20, 21, 27, 6), SILVER), control(capsule(43, 20, 43, 27, 6), SILVER),
            control(arc_band(32, 20, 11, 6, 180, 360), SILVER),
-           body(rr(10, 23, 44, 34, 8), c), recess(arch(32, 53.5, 13, 30), c)]
+           body(rr(10, 23, 44, 34, 8), c), recess(arch(32, 53, 12.6, 30.4), c)]
     for i, (o, n, top) in enumerate(((13, 10, 30), (8, 5, 35))):
         out.append(body(rib(32, 53.5, o, n, top), mix(dark, lamp, 0.12 + 0.28 * i), gloss=0.12))
     return out + [screen(arch(32, 53.5, 5, 38), lamp, sym=0)]
