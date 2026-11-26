@@ -228,18 +228,54 @@ def xf_mirror(d):
         out.append(cmd + " ".join(f(x) for x in v))
     return "".join(out)
 
+def _star4(cx, cy, r, waist):
+    """A four-point star: points [r] out on the axes, its sides pulled in to [waist] on the diagonals."""
+    pts = [(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)]
+    w = waist / math.sqrt(2)
+    mids = [(cx + w, cy - w), (cx + w, cy + w), (cx - w, cy + w), (cx - w, cy - w)]
+    d = f"M{f(pts[0][0])},{f(pts[0][1])}"
+    for i in range(4):
+        (mx, my), (nx, ny) = mids[i], pts[(i + 1) % 4]
+        d += f" Q{f(mx)},{f(my)} {f(nx)},{f(ny)}"
+    return d + " Z"
+
+def jelly(c):
+    """Browser (LineageOS Jelly): a pocket compass, its white four-point star standing on a lit face."""
+    out = [shadow(32, 60, 23, 3),
+           body(ci(32, 8, 4) + circle_ccw(32, 8, 1.9), tone(c, -0.3), gloss=0.15, sym=1),
+           body(rr(28.8, 10.8, 6.4, 4, 1.3), tone(c, -0.2), gloss=0.15, sym=1),
+           body(ci(32, 35, 24), c), recess(ci(32, 35, 20.5), c), screen(ci(32, 35, 18), "#3466E0", sym=0)]
+    for a in (45, 135, 225, 315):
+        (x0, y0), (x1, y1) = [(32 + r * math.cos(math.radians(a)), 35 + r * math.sin(math.radians(a))) for r in (12.5, 15.5)]
+        out.append(control(capsule(x0, y0, x1, y1, 2), tone(c, 0.45), sym=None))
+    return out + [control(_star4(32, 35, 16, 6.2), "#FFFFFF"), control(rpoly([(32, 30), (37, 35), (32, 40), (27, 35)], 1), "#1E3266")]
+
+def audiofx(c):
+    """AudioFX: an effects unit, a big white knob in its dark collar beside two faders."""
+    knob = (24, 34)
+    out = [shadow(32, 59, 28, 3), body(rr(3, 11, 58, 45, 8), c)]
+    for i in range(7):
+        a = 150 + i * 40
+        x, y = knob[0] + 16 * math.cos(math.radians(a)), knob[1] + 16 * math.sin(math.radians(a))
+        out.append(screen(ci(x, y, 1.3), tone(c, 0.75) if i < 5 else tone(c, -0.45), sym=None))
+    out += [recess(ci(*knob, 13), c), control(ci(*knob, 11.8), "#2C3434"), control(ci(*knob, 9), "#F4F4F6"),
+            control(capsule(knob[0] + 2.4, knob[1] - 2.4, knob[0] + 5.6, knob[1] - 5.6, 2.3), tone(c, -0.2), sym=1)]
+    for x, y in ((46.5, 38), (55, 25)):
+        out += [recess(capsule(x, 18, x, 48, 3), c), control(rr(x - 3.5, y - 2.6, 7, 5.2, 1.6), "#F4F4F6", sym=1)]
+    return out
+
 # name -> (drawing, accent, what it stands for, packages that wear it)
 APPS = {
     "chrome": (chrome, "#4C8DFF", "Chrome: three segments around a lens", ["com.android.chrome", "com.chrome.beta", "com.chrome.dev", "com.chrome.canary"]),
     "files": (files, "#5AA9FF", "Files: a drawer of folders", ["com.android.documentsui", "com.google.android.documentsui", "com.google.android.apps.nbu.files"]),
     "settings": (settings, "#A7B6CC", "Settings: a cog", ["com.android.settings"]),
     "play_store": (play_store, "#3DDC84", "Play Store: a shopping bag with a play button", ["com.android.vending"]),
-    "calendar": (calendar, "#4C8DFF", "Calendar: a desk calendar page", ["com.android.calendar", "com.google.android.calendar", "ws.xsoh.etar"]),
+    "calendar": (calendar, "#4C8DFF", "Calendar: a desk calendar page", ["com.android.calendar", "com.google.android.calendar", "ws.xsoh.etar", "org.lineageos.etar"]),
     "clock": (clock, "#FF5C7A", "Clock: a twin-bell alarm clock", ["com.android.deskclock", "com.google.android.deskclock"]),
-    "gallery": (gallery, "#FFB547", "Gallery: a framed photo of mountains", ["com.android.gallery3d", "org.fossify.gallery", "com.simplemobiletools.gallery.pro"]),
+    "gallery": (gallery, "#FFB547", "Gallery: a framed photo of mountains", ["com.android.gallery3d", "org.fossify.gallery", "com.simplemobiletools.gallery.pro", "org.lineageos.glimpse"]),
     "photos": (photos, "#FFC93C", "Photos: a four-colour pinwheel", ["com.google.android.apps.photos", "com.google.android.apps.photosgo"]),
-    "music": (music, "#FF8A3D", "Music: headphones", ["com.android.music"]),
-    "recorder": (recorder, "#C3CEDF", "Recorder: a microphone with a red light", ["com.android.soundrecorder", "com.google.android.apps.recorder"]),
+    "music": (music, "#FF8A3D", "Music: headphones", ["com.android.music", "org.lineageos.twelve"]),
+    "recorder": (recorder, "#C3CEDF", "Recorder: a microphone with a red light", ["com.android.soundrecorder", "com.google.android.apps.recorder", "org.lineageos.recorder"]),
     "camera": (camera, "#7C8CFF", "Camera: a camera with a big lens", ["com.android.camera2", "com.android.camera", "com.google.android.GoogleCamera", "org.lineageos.aperture"]),
     "contacts": (contacts, "#4CC9FF", "Contacts: an address book with a person on it", ["com.android.contacts", "com.google.android.contacts"]),
     "phone": (phone, "#3EE68A", "Phone: a desk telephone", ["com.android.dialer", "com.google.android.dialer"]),
@@ -251,5 +287,7 @@ APPS = {
     "maps": (maps, "#6FD487", "Maps: a pin on a folded map", ["com.google.android.apps.maps"]),
     "drive": (drive, "#3DD47A", "Drive: a triangle of three bars", ["com.google.android.apps.docs"]),
     "keep": (keep, "#FFD23F", "Keep: a sticky note with a lightbulb", ["com.google.android.keep"]),
+    "jelly": (jelly, "#6B95FF", "Browser (LineageOS Jelly): a compass with a four-point star", ["org.lineageos.jelly"]),
+    "audiofx": (audiofx, "#FF4D97", "AudioFX: a knob beside two faders", ["org.lineageos.audiofx"]),
     "odin_launcher": (odin_launcher, "#9FB8FF", "Odin Launcher: a winged helmet", ["com.odin.odinlauncher"]),
 }
