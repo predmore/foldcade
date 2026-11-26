@@ -4674,6 +4674,7 @@ private fun TileStatus(
     val motion = LocalFoldTheme.current.theme.motion
     val theme = foldTheme()
     val tile = theme.style.tile
+    @Suppress("NAME_SHADOWING") val activity = app.foldcade.language.shownActivity(saveHealth, activity)
     // A paused game, or one its computer is streaming, is waiting, not working, so its mark holds still.
     val waiting = activity == TileActivity.Paused || activity is TileActivity.OnHost
     val busy = downloading || (activity != null && activity !is TileActivity.Synced && !waiting)

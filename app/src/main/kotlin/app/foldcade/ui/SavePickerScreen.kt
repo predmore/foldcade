@@ -292,8 +292,9 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
             }
             // RomM has the game but its emulator can't sync: the way on, over the list it can't load.
             val route = state.route
-            if (incident == null && route != null && state.onRomm && state.health is SaveStatus.DeviceOnly && !state.loading && !state.error) {
-                BasicText(SaveRouteCopy.banner(state.playerName, (route.action as? SaveRouteAction.UsePlayer)?.choice?.label),
+            val banner = route?.banner
+            if (incident == null && banner != null && state.onRomm && !state.loading && !state.error) {
+                BasicText(banner,
                     style = saveStyle(design.colors.attention, design.type.dialogBody, theme),
                     modifier = Modifier.hostPress { dispatch(app.shell.touchSavePickerHeader(state.target)) })
             }

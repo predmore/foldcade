@@ -207,7 +207,10 @@ internal suspend fun FoldcadeApp.saveRepairPrompt(incident: SaveIncident, subjec
     val folder = incident.live?.label ?: incident.bound?.label
     return SaveConflictPrompt(incident.id, subject.libraryId, subject.label,
         SaveConflictSide(SaveProtectionCopy.thisThor, backup.time, backup.size, folder?.let(SaveProtectionCopy::fromFolder),
-            SaveProtectionCopy.mayBeNewGame.takeIf { choice.suspect }),
+            // A first link's copy is this device's own progress, not a suspected reset (§7.1).
+            SaveProtectionCopy.mayBeNewGame.takeIf { choice.suspect && !incident.firstLink }),
         SaveConflictSide(SaveProtectionCopy.romm, head.time, head.size),
-        focus = SaveConflictFocus.Remote, repair = choice, canKeepBoth = incident.kind == IncidentKind.MaybeNewSave)
+        focus = SaveConflictFocus.Remote, repair = choice,
+        // Leaving both would place RomM's at the next launch, which is a choice the player didn't make.
+        canKeepBoth = incident.kind == IncidentKind.MaybeNewSave && !incident.firstLink)
 }

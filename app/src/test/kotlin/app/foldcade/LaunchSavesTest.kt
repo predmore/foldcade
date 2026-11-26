@@ -1426,6 +1426,95 @@ class LaunchSavesTest {
         assertEquals(listOf(player.saveFolderId()), awaiting)
     }
 
+    // First link (design §7.1): a folder copy's save meets a RomM copy that already holds a different one.
+    private val linkedPlay get() = play.copy(backendId = app.foldcade.localfolder.LocalFolderBackend.ID)
+    private val folderSave = "$SAVES/Tetris DS (USA).sav"
+    private fun head(text: String) = app.foldcade.plugins.romm.RommRepairSave("head-1", "sav", app.foldcade.romm.rommSaveHash(text.toByteArray())!!, 1, 1)
+    private fun firstLinkLaunch(store: SaveProtectionStore, heads: () -> List<app.foldcade.plugins.romm.RommRepairSave>): LaunchSaves {
+        val copies = SaveIncidentCopies(saves, plugins, store, { "https://romm.test" }) { _, _ -> heads() }
+        return LaunchSaves(saves, plugins, firstLink = copies::holdFirstLink) { awaiting += it }
+    }
+
+    @Test fun aFirstLinkWithADifferentRommSaveStopsBeforeEitherCopyIsPlacedOrHandedOver() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        server.toPlace = "another device"
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link"))
+        val launch = firstLinkLaunch(store) { listOf(head("another device")) }
+        val stop = runCatching { launch.prepare(GameRoute("tile", linkedPlay, owner), Melon, local) }.exceptionOrNull()
+        val incident = (stop as SaveProtectionStop).incident
+        assertTrue(incident.firstLink)
+        assertEquals(IncidentKind.MaybeNewSave, incident.kind)
+        assertEquals(RepairState.Keeping, incident.repair)
+        assertEquals(regressionIncidentId(owner, Melon), incident.id)
+        assertEquals("content://rf4", incident.subject?.targetUri)
+        // Nothing reached RomM's sync, nothing was placed, and the folder's progress is untouched and queued for a Backup.
+        assertTrue(server.calls.isEmpty())
+        assertTrue(marks.isEmpty())
+        assertEquals("months in the folder", String(docs.files.getValue(folderSave)))
+        assertEquals(1, saves.queuedCopies().size)
+        assertEquals(incident.quarantineSourceUri, incident.staged.single())
+        assertTrue(awaiting.isEmpty())
+        // Every launch stops again until a copy is chosen, without staging a second copy.
+        val again = runCatching { launch.prepare(GameRoute("tile", linkedPlay, owner), Melon, local) }.exceptionOrNull()
+        assertEquals(incident.id, (again as SaveProtectionStop).incident.id)
+        assertTrue(server.calls.isEmpty())
+        assertEquals(1, saves.queuedCopies().size)
+    }
+
+    @Test fun aFirstLinkWithTheSameOrNoRommSaveSyncsAsBefore() = runBlocking {
+        for (heads in listOf(listOf(head("months in the folder")), emptyList())) {
+            server.calls.clear()
+            marks.clear()
+            docs.files[folderSave] = "months in the folder".toByteArray()
+            val store = SaveProtectionStore(Files.createTempDirectory("first-link-same"))
+            firstLinkLaunch(store) { heads }.prepare(GameRoute("tile", linkedPlay, owner), Melon, local)
+            assertEquals(listOf("reconcile:12", "prepareSaves:12"), server.calls)
+            assertTrue(store.incidents().isEmpty())
+        }
+    }
+
+    @Test fun anUnreadableRommOrAnEarlierLinkLeavesTheOrdinarySyncInCharge() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-offline"))
+        firstLinkLaunch(store) { throw java.io.IOException("offline") }.prepare(GameRoute("tile", linkedPlay, owner), Melon, local)
+        assertTrue(store.incidents().isEmpty())
+        // Linked before: this device already synced the slot, so RomM's sync decides as it always has.
+        server.calls.clear()
+        server.held = listOf("sav")
+        docs.files[folderSave] = "newer here".toByteArray()
+        firstLinkLaunch(store) { listOf(head("another device")) }.prepare(GameRoute("tile", linkedPlay, owner), Melon, local)
+        assertTrue(store.incidents().isEmpty())
+        assertEquals(listOf("reconcile:12", "prepareSaves:12"), server.calls)
+    }
+
+    @Test fun aFirstLinkChosenElsewhereClosesItsStop() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-chosen"))
+        val launch = firstLinkLaunch(store) { listOf(head("another device")) }
+        assertTrue(runCatching { launch.prepare(GameRoute("tile", linkedPlay, owner), Melon, local) }.exceptionOrNull() is SaveProtectionStop)
+        // Y › Saves placed a chosen save: the library now holds the slot.
+        server.held = listOf("sav")
+        launch.prepare(GameRoute("tile", linkedPlay, owner), Melon, local)
+        assertTrue(store.incidents().isEmpty())
+    }
+
+    @Test fun onlyAFolderCopyMeetingRommIsAFirstLink() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-romm-only"))
+        // A RomM game played on its own keeps today's policy: RomM's sync keeps both and asks after.
+        firstLinkLaunch(store) { listOf(head("another device")) }.prepare(GameRoute("tile", owner, owner), Melon, local)
+        assertTrue(store.incidents().isEmpty())
+    }
+
+    @Test fun playingAnywayPastAFirstLinkKeepsTheSessionAsABackup() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-anyway"))
+        val copies = SaveIncidentCopies(saves, plugins, store, { "https://romm.test" }) { _, _ -> listOf(head("another device")) }
+        runCatching { LaunchSaves(saves, plugins, firstLink = copies::holdFirstLink) { awaiting += it }.prepare(GameRoute("tile", linkedPlay, owner), Melon, local) }
+        assertTrue(copies.beginUnprotected(owner, Melon))
+        assertTrue(store.pendingBackup(Melon.saveFolderId(), owner))
+    }
+
     private val libraries = HashMap<String, RecordingLibrary>()
     private val folder = RecordingLibrary("folder")
     private val server = RecordingLibrary("server")

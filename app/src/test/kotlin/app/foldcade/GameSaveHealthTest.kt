@@ -116,6 +116,15 @@ class GameSaveHealthTest {
         assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer), gameSaveHealth(game(emulators.first()), null, true, false))
     }
 
+    @Test fun anApkStreamingAdapterIsTheHostComputerByItsGamesBackend() {
+        val apk = object : Player by EmulatorsEntry().players.first() {
+            override val id = "apk:com.example.stream"
+            override val needsLocalFile = false
+        }
+        val stream = Game("moonlight", "host:app", "moonlight", Availability.Cached, "Desktop")
+        assertEquals(SaveStatus.Unconfirmed(UnconfirmedWhy.HostComputer), gameSaveHealth(stream, apk, true, false))
+    }
+
     @Test fun whereASaveCanGoOutranksAnyReceipt() {
         val melon = MelonDsPlayer().apply { bindSaveFolder("content://saves") }
         val verified = LocationFact.Verified(FolderRef("primary:saves", "saves"), Evidence(EvidenceKind.SessionWrite, "Game saved"), 1)

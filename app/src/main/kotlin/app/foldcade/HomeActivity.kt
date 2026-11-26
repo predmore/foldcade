@@ -931,6 +931,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setHomeRoleHeld(held)
         if (launchesCompanion) showRestoredSetup()
         foldcade.onSaveConflicts = { refreshSaveConflict() }
+        // A switch made while the old emulator held the game: once it closes, the page shows the new one.
+        foldcade.shell.onSavePickerPlayerChanged = { gameId -> openSaves(gameId) }
         foldcade.onNetworkBack = { foldcade.shell.model.savePicker?.takeIf { it.error }?.let { retrySavePicker(it.target) } }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
@@ -2708,6 +2710,10 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
                 },
                 preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
+                firstLink = { route, owner, player, target, spots, outside ->
+                    // The hero, R1 and Fix read the new two-saves incident at once.
+                    foldcade.saveIncidentCopies.holdFirstLink(route, owner, player, target, spots, outside)?.also { foldcade.publishSaveGate(player, null) }
+                },
                 onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
                 firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
@@ -3137,7 +3143,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
             }
             DialogKind.SaveProtection -> when (effect.button) {
-                DialogButton.SetUpSaves, DialogButton.FixSaves, DialogButton.PutSaveBack, DialogButton.Allow -> effect.subject?.let(::openSaveFix)
+                DialogButton.SetUpSaves, DialogButton.FixSaves, DialogButton.ChooseSaves, DialogButton.PutSaveBack, DialogButton.Allow -> effect.subject?.let(::openSaveFix)
                 DialogButton.PlayWithoutSyncing -> {
                     val pending = foldcade.hostedAsk?.pending
                     foldcade.hostedAsk = null
@@ -4578,8 +4584,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
     /** The Saves page's route: switch the game to an emulator Foldcade syncs, then show its saves with it. */
     private fun useSavePlayer(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.PlayerChoice) {
         if (foldcade.shell.model.savePicker?.target != target) return
+        // A running session is never interrupted: the choice applies once its emulator closes.
+        val running = foldcade.shell.runningPlayer(target.gameId)?.takeIf { it.id != choice.playerId }
         foldcade.shell.useSavePlayer(target.gameId, choice)
-        val message = app.foldcade.language.SaveRouteCopy.switched(choice.label)
+        val message = running?.let { app.foldcade.language.SaveRouteCopy.afterClose(choice.label, it.displayName) }
+            ?: app.foldcade.language.SaveRouteCopy.switched(choice.label)
         // A launch starting meanwhile owns the screen; this page just stops waiting and says the switch happened.
         if (!openSaves(target.gameId, message)) foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = message) }
     }

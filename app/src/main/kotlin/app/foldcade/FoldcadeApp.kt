@@ -584,7 +584,7 @@ class FoldcadeApp : Application() {
 
     /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
     internal val runningGames = RunningGames().also { games ->
-        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate(); resumeSaveRepairs() } }
+        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; shell.noteRunningChanged(); componentUpdates.reevaluate(); resumeSaveRepairs() } }
     }
 
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
@@ -1114,6 +1114,7 @@ class FoldcadeApp : Application() {
             homeTracks = music.homeTracks(),
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
+            playedTiles = { plays.played().keys },
             playMillis = { plays.shown(it).activeMillis },
             rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,

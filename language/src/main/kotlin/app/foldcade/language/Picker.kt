@@ -175,6 +175,8 @@ enum class DialogButton {
     ChooseSaveFolder,
     PlayWithoutSyncing,
     FixSaves,
+    /** The first-link stop's way on: the two-saves choice (§7.1). */
+    ChooseSaves,
     KeepWatchingSaveFolder,
     PutSaveBack,
     SetUpSaves,
@@ -241,6 +243,7 @@ fun dialogButtonLabel(button: DialogButton, subject: String? = null): String = w
     DialogButton.PlayWithoutSyncing -> SaveProtectionCopy.playAnyway
     DialogButton.KeepWatchingSaveFolder -> SaveProtectionCopy.itsFine
     DialogButton.FixSaves -> SaveProtectionCopy.fix
+    DialogButton.ChooseSaves -> SaveProtectionCopy.chooseSave
     DialogButton.PutSaveBack -> "Put it back"
     DialogButton.SetUpSaves -> Copy.setUp
     DialogButton.UseAsHome -> Copy.useAsHome

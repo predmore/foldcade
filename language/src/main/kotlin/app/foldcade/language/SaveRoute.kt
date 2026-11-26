@@ -24,6 +24,8 @@ data class SaveRouteFacts(
     val system: String? = null,
     /** The playing emulator's id, for sentences that differ by emulator. */
     val playerId: String? = null,
+    /** The game is already set to [supported], but [player] still has it open: the switch waits for it to close. */
+    val switchPending: Boolean = false,
 )
 
 /** A checklist in the Fix page's marks: ✓ done, ▸ now, ○ after that. */
@@ -45,6 +47,8 @@ data class SaveRoute(
     val steps: List<SaveRouteStep>,
     /** What happens to saves already here, said once. */
     val note: String? = null,
+    /** The line over a RomM game's list when its emulator can't sync: the way on, in one sentence. */
+    val banner: String? = null,
 ) {
     /** What A does on the page: the step being done now, when Foldcade can do it. */
     val action: SaveRouteAction? get() = steps.firstOrNull { it.mark == SaveRouteMark.Now }?.action
@@ -79,12 +83,15 @@ private fun SaveRouteFacts.route(): SaveRoute? {
         // 1. An emulator Foldcade syncs.
         when {
             player != null && playerSyncs -> add(SaveRouteStep(SaveRouteCopy.stepEmulator, SaveRouteCopy.syncs(player), SaveRouteMark.Done))
+            // Chosen already, while the old emulator still holds the game: nothing to press again.
+            supported != null && switchPending && player != null ->
+                add(SaveRouteStep(SaveRouteCopy.playWith(supported.label), SaveRouteCopy.afterClose(supported.label, player), SaveRouteMark.Now))
             supported != null -> add(SaveRouteStep(SaveRouteCopy.playWith(supported.label), SaveRouteCopy.syncs(supported.label), SaveRouteMark.Now,
                 SaveRouteAction.UsePlayer(supported)))
             installable != null -> add(SaveRouteStep(SaveRouteCopy.install(installable), SaveRouteCopy.installDetail(installable, system), SaveRouteMark.Now))
             // Nothing Foldcade syncs plays this system, so no later step could finish.
             else -> return SaveRoute(if (player != null) SaveRouteCopy.cantSyncYet(player) else SaveRouteCopy.noPlayer, emptyList(),
-                if (onRomm) null else SaveRouteCopy.notOnRommAlso)
+                if (onRomm) null else SaveRouteCopy.notOnRommAlso, player?.let(SaveRouteCopy::cantSyncYet))
         }
         // 2. Its setup, when that is what stands in the way.
         if (player != null && playerSyncs && status is SaveStatus.NotSyncing) add(setupStep(status, player, playerId == "azahar"))
@@ -102,7 +109,12 @@ private fun SaveRouteFacts.route(): SaveRoute? {
     }
     // Saves a launch-only emulator made stay with it, so that is the one thing to say about switching.
     val note = if (launchOnly) SaveRouteCopy.staysIn(player!!) else SaveRouteCopy.nextTime
-    return SaveRoute(summary, steps, note)
+    val banner = if (!launchOnly) null else when {
+        supported != null && switchPending -> SaveRouteCopy.afterCloseOnRomm(supported.label, player!!)
+        supported != null -> SaveRouteCopy.banner(player!!, supported.label)
+        else -> SaveRouteCopy.bannerInstall(player!!, installable!!)
+    }
+    return SaveRoute(summary, steps, note, banner)
 }
 
 private fun setupStep(status: SaveStatus.NotSyncing, player: String, azahar: Boolean): SaveRouteStep = when {
@@ -112,13 +124,12 @@ private fun setupStep(status: SaveStatus.NotSyncing, player: String, azahar: Boo
     else -> SaveRouteStep(saveStatusLine(status), null, SaveRouteMark.Now)
 }
 
-/** A played game whose saves have no way off this device from here: what Settings counts (§7.1). */
-fun savesOnlyHere(status: SaveStatus, onRomm: Boolean, playedHere: Boolean): Boolean = playedHere && when (status) {
-    is SaveStatus.DeviceOnly -> true
-    // A local game whose emulator isn't set up yet is device-only twice over.
-    is SaveStatus.NotSyncing -> !onRomm
-    else -> false
-}
+/**
+ * Where a game's saves can go, from structure alone, as Settings counts it (§7.1): an emulator that
+ * can't sync, or a game RomM doesn't have. Bytes still queued from an earlier emulator don't change
+ * where the next save goes, so a waiting upload never hides it.
+ */
+fun savesOnlyHere(emulator: Boolean, syncs: Boolean, onRomm: Boolean): Boolean = emulator && (!syncs || !onRomm)
 
 /** Y › Saves' words for saves that stay on this device. The voice is [SaveSetupCopy]'s. */
 object SaveRouteCopy {
@@ -149,7 +160,7 @@ object SaveRouteCopy {
         return if (connected) upload else "Settings › Library › Add › RomM server. Then ${upload.replaceFirstChar(Char::lowercase)}"
     }
     /** What finishing the steps does, as `romm.md` "Save sync" promises for a folded game. */
-    const val nextTime = "The next time you play, Foldcade puts this save on RomM. If RomM has one too, Foldcade asks which to play and keeps both."
+    const val nextTime = "The next time you play, Foldcade puts this save on RomM. If RomM already has a different one, Foldcade keeps both and asks which to play first."
     /** Names such as "My Boy!" end in their own mark, so a name never ends a sentence here. */
     fun staysIn(player: String) = "$player keeps the saves made in it. Foldcade can’t move them."
 
@@ -170,10 +181,14 @@ object SaveRouteCopy {
         "Change it any time in Y › Open with.",
     ).joinToString(" ")
     fun switched(player: String) = "$player plays this game now."
+    /** A switch made while the old emulator still holds the game. Names never end these sentences. */
+    fun afterClose(next: String, running: String) = "Once $running closes, $next plays this game."
+    fun afterCloseOnRomm(next: String, running: String) = "Once $running closes, $next plays this game and keeps its saves on RomM."
     /** A on a RomM save while a launch-only emulator plays the game. */
     fun cantLoad(player: String, supported: String?) =
         if (supported != null) "$player can’t load RomM saves. Play with $supported first." else "$player can’t load RomM saves through Foldcade."
     /** The line over the list when the game is on RomM but its emulator can't sync. */
     fun banner(player: String, supported: String?) =
         if (supported != null) "Foldcade can’t sync $player, so play with $supported to keep these saves on RomM." else cantSyncYet(player)
+    fun bannerInstall(player: String, installable: String) = "Foldcade can’t sync $player, so install $installable to keep these saves on RomM."
 }

@@ -28,6 +28,17 @@ class SaveProtectionStoreTest {
         assertTrue(SaveProtectionStore(dir).incidents().isEmpty())
     }
 
+    @Test fun aFirstLinkStopSurvivesARestart() {
+        val dir = Files.createTempDirectory("save-protection")
+        val incident = SaveIncident("MaybeNewSave:melonds:romm:12", IncidentKind.MaybeNewSave, "melonds", "melonDS", listOf("12"), root, null,
+            Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.firstLinkDetail), 40, repair = RepairState.Keeping, firstLink = true)
+        SaveProtectionStore(dir).put(incident)
+        assertEquals(listOf(incident), SaveProtectionStore(dir).incidents())
+        // Incidents written before this field read as ordinary ones.
+        SaveProtectionStore(dir).put(incident.copy(id = "older", firstLink = false))
+        assertFalse(SaveProtectionStore(dir).incident("older")!!.firstLink)
+    }
+
     @Test fun aGuidedChoiceRemainsBoundAndOldLogsCannotTurnItIntoProof() {
         val store = SaveProtectionStore(Files.createTempDirectory("save-protection"))
         store.bound("azahar", root, "azahar.app", 10, 100)

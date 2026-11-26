@@ -117,6 +117,7 @@ fun heroFactText(
     if (item == null) return HeroFactText(null, null,
         heroFacts(copy.title, copy.detail, (subject as HeroSubject.Folder).folder.availability, *rest.toTypedArray()))
     if (item.emptyShelfHint) return HeroFactText(null, null, copy.detail)
+    @Suppress("NAME_SHADOWING") val activity = shownActivity(health, activity)
     val save = health?.takeIf { saveHealthLeads(it, activity) }?.let(::saveHealthLine)
     val live = if (stopped) Copy.downloadStopped else activity?.let { if (health == null) activityLine(it) else heroActivityLine(health, it) }
     val lead = listOfNotNull(save, live).joinToString(" · ")

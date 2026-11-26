@@ -33,6 +33,10 @@ internal fun readGameSaveSupport(game: Game, player: Player?): GameSaveSupport =
     GameSaveSupport(emptyList(), player is SaveFolderHolder || player is HostedSaveFolder)
 }
 
+/** An emulator, synced or not, as opposed to a partner, a stream or an app that keeps its own saves. */
+internal fun isSaveEmulator(player: Player, supportsSync: Boolean): Boolean =
+    player.needsLocalFile || player is EmulatorPlayer || supportsSync
+
 /** Reads only player declarations and the host's cached checks; never reads a card on a frame. */
 internal fun gameSaveHealth(
     game: Game,
@@ -52,14 +56,15 @@ internal fun gameSaveHealth(
     spotDetail: String? = null,
 ): SaveStatus {
     val (declarations, supportsSync) = saves
-    val emulator = player != null && (player.needsLocalFile || player is EmulatorPlayer || supportsSync)
+    val emulator = player != null && isSaveEmulator(player, supportsSync)
     val keeper = when {
         player == null -> SaveKeeper.NoPlayer
         emulator && supportsSync -> SaveKeeper.Emulator(player.displayName)
         emulator -> SaveKeeper.LaunchOnly(player.displayName)
         player.id.startsWith("droiddeck") -> SaveKeeper.Partner("DroidDeck", "Steam Cloud")
         player.id.startsWith("gamenative") -> SaveKeeper.Partner("GameNative", null)
-        player.id.contains("moonlight") -> SaveKeeper.HostComputer
+        // A stream's adapter can come from an APK plugin with its own id: the game's backend says what it is.
+        player.id.contains("moonlight") || game.backendId == "moonlight" || game.platformId == "moonlight" -> SaveKeeper.HostComputer
         else -> SaveKeeper.App
     }
     val issue = playerSaveIssue(player, sync, setup) ?: SaveIssue.NoSlot.takeIf {

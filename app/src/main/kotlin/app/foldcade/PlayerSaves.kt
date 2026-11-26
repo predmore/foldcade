@@ -497,6 +497,12 @@ internal class PlayerSaves(
         return ObservedSaves(changed)
     }
 
+    /** True once Foldcade has placed or read [spot] for [game] here, finished or not. */
+    fun everHandled(libraryId: String, game: Game, player: Player, spot: SaveSpot): Boolean {
+        val key = key(libraryId, game, player, spot)
+        return marks.mark(key) != null || marks.mark(pendingKey(key)) != null || marks.mark(tornKey(key)) != null
+    }
+
     /** Call once the library has kept [observed]. */
     fun noteHandedOver(libraryId: String, game: Game, player: Player, spots: List<SaveSpot>, observed: ObservedSaves) {
         for (slot in observed.slots) {

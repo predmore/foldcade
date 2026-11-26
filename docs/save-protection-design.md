@@ -818,7 +818,7 @@ Design, 25 November 2026. A save that exists only on this device is at risk, bec
 
 | Case | Hero (tile badge) | Y › Saves, top screen | Y › Saves, bottom card | Settings |
 |---|---|---|---|---|
-| Folder game, emulator syncs and is set up | **Saves only on this device**, amber (badge if played) | Summary `"RomM doesn’t have this game, so its saves stay on this device."`, then ✓ **Play with an emulator Foldcade syncs** and ▸ **Add this game to RomM** | **Add this game to RomM** · `"Upload Puzzle.gba for Game Boy Advance, with the same file name."` · note `"The next time you play, Foldcade puts this save on RomM. If RomM has one too, Foldcade asks which to play and keeps both."` No button: Foldcade can't upload a game. | Counted once played |
+| Folder game, emulator syncs and is set up | **Saves only on this device**, amber (badge if played) | Summary `"RomM doesn’t have this game, so its saves stay on this device."`, then ✓ **Play with an emulator Foldcade syncs** and ▸ **Add this game to RomM** | **Add this game to RomM** · `"Upload Puzzle.gba for Game Boy Advance, with the same file name."` · note `"The next time you play, Foldcade puts this save on RomM. If RomM already has a different one, Foldcade keeps both and asks which to play first."` No button: Foldcade can't upload a game. | Counted once played |
 | Same, not signed in to RomM | same | ▸ **Sign in to RomM, then add this game** | `"Settings › Library › Add › RomM server. Then upload Puzzle.gba for Game Boy Advance, with the same file name."` | Counted once played |
 | Folder game, emulator syncs but isn't set up | **Saves not syncing**, amber (badge) | Same summary. ✓ emulator, ▸ **Set up GBA.emu’s saves**, ○ **Add this game to RomM** | **Set up GBA.emu’s saves**, with a **Set up** button (the chip's existing setup) | Counted once played |
 | Folder game whose file can't sync (e.g. `.zcci`) | **Saves not syncing** | ▸ **Use a game file that syncs** | The §6.3 sentence, no button | Counted once played |
@@ -841,15 +841,32 @@ Design, 25 November 2026. A save that exists only on this device is at risk, bec
 
 **Partner copy.** A partner with a named cloud reads `"$cloud keeps these saves when it’s on for the game. Foldcade can’t check it yet."` Without a cloud it reads `"$name keeps these saves. Foldcade can’t check its cloud yet."` Both keep §6.1's quiet hero lines. A partner receipt (§8.3) would be the first thing allowed to say more.
 
-**The same-name route.** It is the only way a folder game's save reaches RomM today. `foldSameGames` folds a folder copy and a RomM copy into one tile when the platform matches and the file name is spelled exactly the same (`SameGames.kt`). The first launch after the fold hands the emulator's save to RomM as progress. If another device has saved since, Foldcade asks which to play and keeps both (`romm.md` "Save sync"). So the step gives the exact file name and system, and the note says what happens on the next launch. A renamed file is a new game, so the detail insists on the same name.
+**The same-name route.** It is the only way a folder game's save reaches RomM today. `foldSameGames` folds a folder copy and a RomM copy into one tile when the platform matches and the file name is spelled exactly the same (`SameGames.kt`). If RomM has nothing for the slot, or the same bytes, the first launch after the fold hands the emulator's save to RomM as progress. So the step gives the exact file name and system, and the note says what happens on the next launch. A renamed file is a new game, so the detail insists on the same name.
 
-**Settings.** Settings › Emulators lists only emulators Foldcade syncs, and launch-only emulators have no row there. What Settings adds is a truthful total. `savesOnlyHere` counts played games whose status is `DeviceOnly`, or `NotSyncing` without a RomM copy. That count:
+**The first link, when RomM already has a different save.** RomM's ordinary conflict handling keeps both: it archives the local bytes, writes RomM's copy into the working slot and asks after the game returns. That is right for a game this device already syncs. It is wrong for a first link, because the folder's save may be months of play RomM has never seen, and the player would start on progress they didn't choose. So the first link asks first:
+
+- **When.** `LaunchSaves.negotiate` calls `SaveIncidentCopies.holdFirstLink` before anything is preserved, handed over or negotiated. All of these hold: the copy that plays is a folder copy and the owner is a RomM copy; this device has never placed or read that slot (`PlayerSaves.everHandled`); the library holds nothing for it; the folder has bytes; and RomM's head for the slot differs (`rommSaveHash`). If RomM has nothing, the same bytes, or can't be read, the ordinary sync runs. Offline, that sync fails before writing anything, as it always has.
+- **What.** The folder's bytes are staged for a verified, unslotted Backup. The incident is the quarantine's own `MaybeNewSave` (same id, `regressionIncidentId`), with `firstLink = true`, persisted in `incidents.json`. The launch stops with `SaveProtectionStop`.
+- **The stop.** Title `"Two saves for Puzzle"`. Body `"This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play. Choose first, or this session’s progress stays on this device."` Buttons **Choose save** · **Play anyway**.
+- **Choose save** opens Fix on the incident with the launch held. The repair keeps the Backup, verifies it, then shows the existing two-saves card (`Choosing`): **This Thor**, with the folder and no "May be a new game" tag, and **RomM**, focused first. There is no **Leave as is**, because leaving both would place RomM's copy at the next launch, which the player didn't choose. Choosing places that copy through `chooseSave`: a chosen device save becomes RomM's new head, with the old head kept. Then the held launch continues. **Later** (B) keeps both and stops again next launch.
+- **Play anyway** plays the folder's save without syncing. `beginUnprotected` counts an open first-link incident, so the session returns as a Backup and is never a slot head.
+- **Until chosen,** every launch stops again. A choice made another way, such as from Y › Saves, links the slot, and the next launch closes the stop.
+
+RomM games played only through RomM keep today's policy: the server copy is placed, local progress is archived, and the prompt comes on return. RomM stays the source of truth there.
+
+**Settings.** Settings › Emulators lists only emulators Foldcade syncs, and launch-only emulators have no row there. What Settings adds is a truthful total. `savesOnlyHere` counts played games, from one snapshot of play history, whose next save can't reach RomM. That means an emulator that can't sync this game, or a game RomM doesn't have. It reads where the next save goes, not the status, so an earlier emulator's queued upload (`Waiting`) never hides a game. The count:
 
 - is the **Set up saves** row's value (`"2 games only on this device"`, in the row's attention colour) once no emulator is due;
 - is the head chip of Set up saves, in amber, ahead of **Folder set**, **Your games sync** and **All set**;
 - turns the end into **Done for now** · `"1 game only on this device. Y › Saves on each game shows how to keep it on RomM."`.
 
-Set up saves never says **All set** or **Your games sync** while a played game's save has no way to RomM. The count refreshes with save health and on every play-history change, so a first play counts at once.
+Set up saves never says **All set** or **Your games sync** while a played game's save has no way to RomM. The row shows even on a device whose only emulators are launch-only, where Settings › Emulators otherwise has no emulators to list. The count refreshes with save health and on every play-history change, so a first play counts at once.
+
+**Switching while the old emulator is open.** **Use GBA.emu** never interrupts a running session. The choice is saved, and the page says `"Once My Boy! closes, GBA.emu plays this game."` The step loses its button, and a RomM game's line reads `"Once My Boy! closes, GBA.emu plays this game and keeps its saves on RomM."` When the old game closes, the page reopens with the new emulator.
+
+**Late results.** A finished upload from the earlier emulator doesn't put **Saves synced** in the hero or a check on the tile while the game is device-only (`shownActivity`).
+
+**Moonlight from an APK plugin.** The adapter isn't a registered player. The page finds it through the game's route, and `gameSaveHealth` classifies a game on the Moonlight backend as the host computer, so both the header and the card read the computer's words.
 
 **Not in PR 10.**
 

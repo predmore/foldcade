@@ -35,7 +35,7 @@ class SaveRouteTest {
             SaveRouteStep("Play with an emulator Foldcade syncs", "Foldcade syncs GBA.emu’s saves.", SaveRouteMark.Done),
             SaveRouteStep("Add this game to RomM", "Upload Puzzle.gba for Game Boy Advance, with the same file name.", SaveRouteMark.Now),
         ), route.steps)
-        assertEquals("The next time you play, Foldcade puts this save on RomM. If RomM has one too, Foldcade asks which to play and keeps both.", route.note)
+        assertEquals("The next time you play, Foldcade puts this save on RomM. If RomM already has a different one, Foldcade keeps both and asks which to play first.", route.note)
         // Foldcade can't upload a game, so A has nothing to press.
         assertNull(route.action)
     }
@@ -57,7 +57,7 @@ class SaveRouteTest {
         assertEquals(listOf(SaveRouteMark.Done, SaveRouteMark.Now, SaveRouteMark.Next), route.steps.map { it.mark })
         assertEquals(SaveRouteStep("Set up GBA.emu’s saves", null, SaveRouteMark.Now, SaveRouteAction.SetUp), route.steps[1])
         assertEquals(SaveRouteAction.SetUp, route.action)
-        assertTrue(savesOnlyHere(SaveStatus.NotSyncing(SaveIssue.NoFolder), onRomm = false, playedHere = true))
+        assertTrue(savesOnlyHere(emulator = true, syncs = true, onRomm = false))
     }
 
     @Test fun aGameFileThatCantSyncSaysWhyWithNothingToPress() {
@@ -93,7 +93,8 @@ class SaveRouteTest {
     @Test fun withNoEmulatorThatSyncsForTheSystemThePageOnlySaysSo() {
         val flycast = SaveStatus.DeviceOnly(NoDestinationWhy.PlayerCantSync, emulator = "Flycast")
         val onRomm = saveRoute(facts(flycast, onRomm = true, player = "Flycast", syncs = false))!!
-        assertEquals(SaveRoute("Foldcade can’t sync Flycast yet, so its saves stay on this device.", emptyList()), onRomm)
+        assertEquals(SaveRoute("Foldcade can’t sync Flycast yet, so its saves stay on this device.", emptyList(),
+            banner = "Foldcade can’t sync Flycast yet, so its saves stay on this device."), onRomm)
         assertEquals("Foldcade can’t sync Flycast yet, so its saves stay on this device.", SaveRouteCopy.banner("Flycast", null))
         val folder = saveRoute(facts(flycast, player = "Flycast", syncs = false))!!
         assertEquals("RomM doesn’t have this game either.", folder.note)
@@ -131,14 +132,41 @@ class SaveRouteTest {
         assertEquals("GBA.emu plays this game now.", SaveRouteCopy.switched("GBA.emu"))
     }
 
-    @Test fun onlyPlayedDeviceOnlyGamesCount() {
-        assertTrue(savesOnlyHere(folderGame, onRomm = false, playedHere = true))
-        assertTrue(savesOnlyHere(launchOnly, onRomm = true, playedHere = true))
-        // §10.1: a never-played folder game is not a save at risk.
-        assertFalse(savesOnlyHere(folderGame.copy(playedHere = false), onRomm = false, playedHere = false))
-        assertFalse(savesOnlyHere(SaveStatus.NotSyncing(SaveIssue.NoFolder), onRomm = true, playedHere = true))
-        assertFalse(savesOnlyHere(SaveStatus.Unconfirmed(UnconfirmedWhy.PartnerCloud), onRomm = false, playedHere = true))
-        assertFalse(savesOnlyHere(SaveStatus.Protected(1, 1), onRomm = true, playedHere = true))
+    @Test fun theCountIsWhereTheNextSaveGoesNotWhatIsQueued() {
+        // A folder game, set up or not, and a launch-only emulator on a RomM game.
+        assertTrue(savesOnlyHere(emulator = true, syncs = true, onRomm = false))
+        assertTrue(savesOnlyHere(emulator = true, syncs = false, onRomm = true))
+        // A RomM game with an emulator that syncs, and partners, streams and apps, are not counted.
+        assertFalse(savesOnlyHere(emulator = true, syncs = true, onRomm = true))
+        assertFalse(savesOnlyHere(emulator = false, syncs = false, onRomm = false))
+    }
+
+    @Test fun theBannerOverARommListSaysTheWayOn() {
+        fun banner(supported: PlayerChoice? = null, installable: String? = null, pending: Boolean = false) =
+            saveRoute(facts(launchOnly, onRomm = true, player = "My Boy!", syncs = false, supported = supported, installable = installable)
+                .copy(switchPending = pending))!!.banner
+        assertEquals("Foldcade can’t sync My Boy!, so play with GBA.emu to keep these saves on RomM.", banner(supported = gbaEmu))
+        assertEquals("Foldcade can’t sync My Boy!, so install GBA.emu to keep these saves on RomM.", banner(installable = "GBA.emu"))
+        assertEquals("Foldcade can’t sync My Boy! yet, so its saves stay on this device.", banner())
+        assertEquals("Once My Boy! closes, GBA.emu plays this game and keeps its saves on RomM.", banner(supported = gbaEmu, pending = true))
+        assertNull(saveRoute(facts(folderGame))!!.banner)
+    }
+
+    @Test fun aSwitchMadeWhileTheOldEmulatorIsOpenOffersNothingAgain() {
+        val route = saveRoute(facts(launchOnly, onRomm = true, player = "My Boy!", syncs = false, supported = gbaEmu).copy(switchPending = true))!!
+        assertEquals(listOf(SaveRouteStep("Play with GBA.emu", "Once My Boy! closes, GBA.emu plays this game.", SaveRouteMark.Now)), route.steps)
+        assertNull(route.action)
+    }
+
+    @Test fun aFinishedUploadFromAnEarlierEmulatorNeverMarksADeviceOnlyGameSynced() {
+        val synced = TileActivity.Synced(SyncMark.Synced, 10_000)
+        assertNull(shownActivity(launchOnly, synced))
+        assertEquals(TileActivity.Syncing, shownActivity(launchOnly, TileActivity.Syncing))
+        assertEquals(synced, shownActivity(SaveStatus.Protected(1, 1), synced))
+        val hero = heroFactText(HeroSubject.Item(HeroItem("g", "Puzzle", "")), launchOnly, synced)
+        // The device-only line leads, and no "synced" from the earlier emulator sits beside it.
+        assertEquals("My Boy! saves only on this device", hero.save)
+        assertNull(hero.live)
     }
 
     @Test fun aNeverPlayedFolderGameHasAnAmberLineButNoBadge() {
@@ -159,5 +187,22 @@ class SaveRouteTest {
         assertEquals("1 game only on this device. Y › Saves on each game shows how to keep it on RomM.", SaveSetupCopy.endBody(0, 0, onlyHere = 1))
         assertEquals("1 game only on this device. Y › Saves on each game shows how to keep it on RomM.", SaveSetupCopy.endBody(0, 4, onlyHere = 1))
         assertNull(SaveSetupCopy.endBody(0, 0))
+    }
+
+    @Test fun aFirstLinkStopSaysWhatEachCopyIsAndThatNothingIsPlacedFirst() {
+        val incident = SaveIncident("MaybeNewSave:melonds:romm:12", IncidentKind.MaybeNewSave, "melonds", "melonDS", listOf("12"), null, null,
+            Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.firstLinkDetail), 0, repair = RepairState.Keeping,
+            subject = SaveIncidentGame("romm", "12", "nintendo-ds", "Puzzle", "melonds", "content://rf4", "https://romm.test", null, null), firstLink = true)
+        assertEquals("Two saves for Puzzle", SaveProtectionCopy.title(incident))
+        assertEquals("This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play. " +
+            "Choose first, or this session’s progress stays on this device.", SaveProtectionCopy.body(incident, hasVersions = true, stop = true))
+        assertEquals("This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play.",
+            SaveProtectionCopy.body(incident, hasVersions = true))
+        val dialog = saveProtectionDialog(incident, HostScreen.Bottom)
+        assertEquals(listOf(DialogButton.ChooseSaves, DialogButton.PlayWithoutSyncing), dialog.buttons)
+        assertEquals("Choose save", dialogButtonLabel(DialogButton.ChooseSaves))
+        assertEquals("Two saves. Choose which to play.", SaveProtectionCopy.noticeBody(incident))
+        // It doesn't stop by kind: the launch hook stops it, so other games and Maybe* rules are unchanged.
+        assertFalse(incident.blocksLaunch)
     }
 }

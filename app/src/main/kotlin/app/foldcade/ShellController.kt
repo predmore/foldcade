@@ -205,6 +205,8 @@ class ShellController(
     private val homeTracks: List<MusicTrack> = emptyList(),
     private val themeTracks: List<MusicTrack?> = emptyList(),
     private val lastPlayedMillis: (String) -> Long? = { null },
+    /** Every tile with play here, read once per count rather than once per catalog game. */
+    private val playedTiles: () -> Collection<String> = { emptyList() },
     /** A game's total play time, which a folder sorted by Most played orders by. */
     private val playMillis: (String) -> Long? = { null },
     /** Delete shortcut was confirmed. The app drops its pinned shortcut. */
@@ -930,7 +932,7 @@ class ShellController(
             location = saveLocations[player.saveFolderId()],
             offDevice = saveDestination(route.saves),
             incidents = saveIncidents.filter { it.affectsSaveUse(player, route.saves) && it.repair != app.foldcade.language.RepairState.Done },
-            playedHere = lastPlayedMillis(playId(route.tileId)) != null,
+            playedHere = lastPlayedMillis(route.tileId) != null,
         )
     }
 
@@ -970,9 +972,13 @@ class ShellController(
     /** Settings' count of played games whose saves have no way to RomM from here. A first play changes it too. */
     private fun refreshSavesOnlyHere() {
         if (!saveHealthReady) return
-        // Played tiles first, by their own id, so a large catalog builds few routes whichever grid is showing.
-        val onlyHere = libraryGames.keys.mapTo(linkedSetOf(), ::tileOf).filter { lastPlayedMillis(it) != null }.count { tile ->
-            launchRoute(tile)?.let { route -> savesOnlyHere(saveHealthOf(tile), route.servers.isNotEmpty(), playedHere = true) } == true
+        // One snapshot of played tiles, then only those, from cached save metadata: where the next save
+        // goes, not what an earlier emulator still has queued.
+        val onlyHere = playedTiles().mapTo(linkedSetOf(), ::tileOf).count { tile ->
+            val route = launchRoute(tile) ?: return@count false
+            val player = savePlayer(route) ?: return@count false
+            val support = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
+            savesOnlyHere(isSaveEmulator(player, support.supportsSync), support.supportsSync, route.servers.isNotEmpty())
         }
         if (onlyHere != model.savesOnlyHere) model = model.copy(savesOnlyHere = onlyHere)
     }
@@ -2314,6 +2320,7 @@ class ShellController(
             )
             if (kind == HomeKind.Rom) {
                 val fileName = entry.fileName
+                if (fileName != null) catalogFileNames[id] = fileName else catalogFileNames.remove(id)
                 sameSources[id] = SameSource(
                     key = sameKey(game.platformId, fileName),
                     rank = libraryRank(libraryId),
@@ -3566,7 +3573,7 @@ class ShellController(
         val route = savesMenuRoute(target.gameId) ?: return model.savePicker?.health ?: SaveStatus.Unconfirmed(UnconfirmedWhy.FolderNotChecked)
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
         val waiting = route.servers.any { it.remoteKey in unsyncedSaves[it.backendId].orEmpty() }
-        val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
+        val player = savePickerPlayer(target)
             ?: return if (waiting) SaveStatus.Waiting(0) else SaveStatus.Unconfirmed(UnconfirmedWhy.NoPlayer)
         val saves = saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }
         val reachability = reachableSaves[homeGameId(owner.backendId, owner.remoteKey) to player.id]
@@ -3575,15 +3582,39 @@ class ShellController(
             reachable = checkedSaveReachability(owner, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable), saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
-            incidents = saveIncidents.filter { it.affectsSaveUse(player, owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(playId(target.gameId)) != null)
+            incidents = saveIncidents.filter { it.affectsSaveUse(player, owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(tileOf(target.gameId)) != null) // The target names the tile; playId would qualify it again.
     }
+
+    /**
+     * The installed player the page's target names. An APK-provided Moonlight adapter isn't a registered
+     * player, so it is found through the game's route, as the launch finds it.
+     */
+    private fun savePickerPlayer(target: app.foldcade.language.SavePickerTarget): Player? = target.playerId?.let { id ->
+        plugins.player(id) ?: savesMenuRoute(target.gameId)?.let(::savePlayer)?.takeIf { it.id == id }
+    }?.takeIf { it.packageNames.any(installedPlayers::contains) }
+
+    /** Each library game's file name as its catalog recorded it, by home id. */
+    private val catalogFileNames = HashMap<String, String>()
+
+    /** Y › Saves asks for a fresh page for [gameId]: the emulator its target names is no longer the one that plays it. */
+    internal var onSavePickerPlayerChanged: (String) -> Unit = {}
+
+    /** A game opened or closed: an open Saves page may now belong to another emulator. */
+    internal fun noteRunningChanged() = refreshSavePickerHealth()
 
     private fun refreshSavePickerHealth() {
         val page = model.savePicker ?: return
+        // A switch made while the old emulator held the game takes effect once it closes; the page follows.
+        val playing = savesMenuRoute(page.target.gameId)?.let(::savePlayer)?.id
+        // An uninstalled one leaves the page as it is: it says there is no emulator to play with.
+        if (playing != null && playing != page.target.playerId && !page.busy && page.confirmation == null && page.copying == null) {
+            onSavePickerPlayerChanged(page.target.gameId)
+            return
+        }
         val owner = savesMenuRoute(page.target.gameId)?.servers?.firstOrNull {
             it.backendId == page.target.libraryId && it.remoteKey == page.target.remoteKey
         }
-        val player = page.target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
+        val player = savePickerPlayer(page.target)
         val slots = if (owner != null && player != null)
             saveSupport.getOrPut(player.id to owner) { readGameSaveSupport(owner, player) }.declarations.map { it.slot }
         else emptyList()
@@ -3602,20 +3633,26 @@ class ShellController(
         val route = savesMenuRoute(target.gameId) ?: return null
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
         fun syncs(candidate: Player) = saveSupport.getOrPut(candidate.id to owner) { readGameSaveSupport(owner, candidate) }.supportsSync
-        val player = target.playerId?.let(plugins::player)?.takeIf { it.packageNames.any(installedPlayers::contains) }
+        val player = savePickerPlayer(target)
         val playerSyncs = player != null && syncs(player)
         // gameSaveHealth's rule: a partner, stream or app is not an emulator that fails to sync.
-        val emulator = player?.takeIf { playerSyncs || it.needsLocalFile || it is app.foldcade.plugins.emulators.EmulatorPlayer }
+        val emulator = player?.takeIf { isSaveEmulator(it, playerSyncs) }
         val platformId = route.play.platformId
-        val supported = if (playerSyncs) null else playerOptionsFor(platformId).firstOrNull { choice ->
+        // Already switched while the old emulator still holds the game: say when it takes effect, offer nothing again.
+        val chosen = gamePlayerChoice(route.tileId)?.takeIf { choice ->
+            choice.playerId != player?.id && plugins.player(choice.playerId)?.let(::syncs) == true
+        }
+        val switchPending = !playerSyncs && chosen != null && player != null && runningPlayer(route.tileId)?.id == player.id
+        val supported = if (playerSyncs) null else chosen?.takeIf { switchPending } ?: playerOptionsFor(platformId).firstOrNull { choice ->
             choice.playerId != player?.id && plugins.player(choice.playerId)?.let(::syncs) == true
         }
         val installable = if (playerSyncs || supported != null) null else plugins.playersFor(platformId)
             .filter { it.packageNames.none(installedPlayers::contains) && syncs(it) }.minByOrNull(::playerRank)?.displayName
         val system = canonicalSystem(platformId).let { id -> plugins.platformDefinitions().firstOrNull { it.id == id }?.displayName }
-        val fileName = route.play.takeIf { it.backendId == LocalFolderBackend.ID }?.remoteKey?.let(LocalFolderBackend::fileNameOf)
+        // The name the catalog recorded, which same-name folding matches on. A provider's document id can be opaque.
+        val fileName = route.play.takeIf { it.backendId == LocalFolderBackend.ID }?.let { catalogFileNames[homeGameId(it.backendId, it.remoteKey)] }
         return saveRoute(app.foldcade.language.SaveRouteFacts(health, route.servers.isNotEmpty(), store.rommOrigin() != null,
-            emulator?.displayName, playerSyncs, supported, installable, fileName, system, emulator?.id))
+            emulator?.displayName, playerSyncs, supported, installable, fileName, system, emulator?.id, switchPending))
     }
 
     /** Y › Saves' route: [gameId] plays with [choice] from now on, as Y › Open with sets it. */

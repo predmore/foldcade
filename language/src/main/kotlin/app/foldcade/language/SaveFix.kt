@@ -291,7 +291,7 @@ fun saveProtectionDialog(
     buttons = listOf(when (incident.kind) {
         IncidentKind.FolderEmptied -> DialogButton.PutSaveBack
         IncidentKind.LostAccess -> DialogButton.Allow
-        else -> DialogButton.FixSaves
+        else -> if (incident.firstLink) DialogButton.ChooseSaves else DialogButton.FixSaves
     }, DialogButton.PlayWithoutSyncing), index = 0, safeIndex = BACK_CLOSES,
     screen = screen, subject = incident.id, holdsLaunch = true,
 )

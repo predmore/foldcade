@@ -134,6 +134,12 @@ data class SaveIncident(
     val capturedAlternateHashes: List<String> = emptyList(),
     val besideGame: Boolean = false,
     val besideSource: BesideSaveSource? = null,
+    /**
+     * A folder copy's save met a RomM copy holding a different one, the first time the two
+     * are one tile (§7.1). Every launch stops until a copy is chosen, and neither copy is
+     * placed before then.
+     */
+    val firstLink: Boolean = false,
 )
 
 enum class BesideSaveSource { Progress, Blank, Missing }
@@ -269,6 +275,13 @@ fun saveAge(at: Long, now: Long): String = when (val days = ((now - at).coerceAt
     1L -> "yesterday"
     else -> "$days days ago"
 }
+
+/**
+ * The activity a game's tile and hero show. A finished upload belongs to the emulator that made
+ * it: once the game plays with one whose saves stay here, its "synced" mark would be a false all-clear (§7.1).
+ */
+fun shownActivity(health: SaveStatus?, activity: TileActivity?): TileActivity? =
+    if (health is SaveStatus.DeviceOnly && activity is TileActivity.Synced) null else activity
 
 // Keep these surface helpers shared by the hero and save picker.
 fun saveHealthLine(health: SaveStatus): String = saveStatusLine(health)
@@ -494,14 +507,20 @@ object SaveProtectionCopy {
             IncidentKind.MaybeNewSave -> when {
                 isEdenSessionChange -> "${evidence.detail} Check Eden’s user before choosing a save."
                 hostedCardMismatch -> evidence.detail
+                firstLink -> firstLinkBody
                 else -> "Choose which save to play."
             }
-        }, safe, when (kind) {
-            IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
-            IncidentKind.FolderEmptied -> "Put it back before you play."
+        }, safe.takeUnless { firstLink }.orEmpty(), when {
+            firstLink -> if (stop) firstLinkStop else ""
+            kind == IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
+            kind == IncidentKind.FolderEmptied -> "Put it back before you play."
             else -> ""
         }).filter { it.isNotEmpty() }.joinToString(" ")
     }
+    /** The first-link stop (§7.1): what each copy is, then that nothing is placed until one is chosen. */
+    const val firstLinkDetail = "This Thor and RomM have different saves."
+    const val firstLinkBody = "This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play."
+    const val firstLinkStop = "Choose first, or this session’s progress stays on this device."
     fun unsupportedFormat(format: String, supported: String) = "$format doesn’t sync yet. $supported do."
     fun spot(issue: SpotIssue, azahar: Boolean = false): String = when (issue) {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."

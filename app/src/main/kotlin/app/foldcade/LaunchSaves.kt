@@ -26,6 +26,12 @@ internal class LaunchSaves(
     private val baseline: (Player, Game, LaunchTarget, List<SaveSpot>) -> app.foldcade.language.ProbeSnapshot? = { _, _, _, _ -> null },
     private val preserveOutside: suspend (Game, Player, List<SaveSpot>, app.foldcade.api.plugin.ObservedSaves) -> Boolean = { _, _, _, _ -> false },
     private val onHeadPlaced: suspend (Game, Player) -> Unit = { _, _ -> },
+    /**
+     * A folder copy's save meeting a RomM copy with a different one for the first time (§7.1).
+     * A non-null incident stops the launch before either copy is placed or handed over.
+     */
+    private val firstLink: suspend (GameRoute, Game, Player, LaunchTarget, List<SaveSpot>, app.foldcade.api.plugin.ObservedSaves) -> app.foldcade.language.SaveIncident? =
+        { _, _, _, _, _, _ -> null },
     /** A save was written for the player with this save folder key, which must load it. */
     private val awaitLoad: (String) -> Unit,
 ) {
@@ -170,6 +176,8 @@ internal class LaunchSaves(
         val syncingPlayer = playerForSaveSpots(player, owner, spots, allowFirmware = available)
         try {
             val outside = saves.changedSince(libraryId, owner, player, spots)
+            // Before anything is preserved, handed over or negotiated: both copies must still be as they were.
+            firstLink(route, owner, player, local, spots, outside)?.let { throw SaveProtectionStop(it) }
             val preserved = preserveOutside(owner, player, spots, outside)
             if (outside.slots.isNotEmpty() && !preserved) {
                 plugins.reconcile(libraryId, owner, syncingPlayer, outside)
@@ -183,6 +191,8 @@ internal class LaunchSaves(
             return Negotiated(owner, spots, placement)
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (stop: SaveProtectionStop) {
+            throw stop
         } catch (failure: Exception) {
             // With a save folder in play, any failure here would start the game from a save the library does not know.
             if (spots.isNotEmpty()) throw SaveNotPlaced() else throw failure

@@ -17,12 +17,13 @@ class ShellDeviceOnlySavesTest {
         register(LocalFolderEntry()); register(ExPlusEntry()); register(EmulatorsEntry())
     }
     private val store = SessionStore(MemoryPrefs())
-    private val shell = ShellController(store, plugins, lastPlayedMillis = { if (it in played) 1L else null }).apply {
+    private val shell = ShellController(store, plugins, lastPlayedMillis = { if (it in played) 1L else null }, playedTiles = { played.toList() }).apply {
         setInstalledApps(emptyList(), plugins.playerPackageNames(), plugins.playerPackageNames())
     }
     private val myBoy = PlayerChoice("my-boy.game-boy-advance", label = "My Boy!")
     private val gbaEmu = "gba-emu.game-boy-advance"
-    private val local = Game("local-folder", "content://tree/document/primary%3AGBA%2FPuzzle.gba", "game-boy-advance", Availability.LocalOnly, "Puzzle")
+    // A provider may name the file by an opaque document id: the name must come from the catalog, never the URI.
+    private val local = Game("local-folder", "content://tree/document/42", "game-boy-advance", Availability.LocalOnly, "Puzzle")
     private val server = Game("romm", "7", "game-boy-advance", Availability.Cached, "Tetris")
     private fun entry(game: Game, file: String) = GridEntry(game.remoteKey, game.label, "", game.platformId, null, true, game, file)
     private val localId = homeGameId(local.backendId, local.remoteKey)
@@ -107,5 +108,54 @@ class ShellDeviceOnlySavesTest {
         // Played with an emulator Foldcade can't sync, the RomM game's saves stay here too.
         shell.useSavePlayer(serverId, myBoy)
         assertEquals(2, shell.model.savesOnlyHere)
+    }
+
+    @Test fun aQueuedUploadFromTheEarlierEmulatorNeverHidesTheCount() {
+        shell.ingestLibrary("romm", listOf(entry(server, "Tetris.gba")), emptyList())
+        played += shell.playId(serverId)
+        shell.useSavePlayer(serverId, myBoy)
+        assertEquals(1, shell.model.savesOnlyHere)
+        // GBA.emu's last upload is still waiting: the next save still goes nowhere but this device.
+        shell.setUnsyncedSaves("romm", setOf(server.remoteKey))
+        assertTrue(shell.saveHealthOf(serverId) is SaveStatus.Waiting)
+        shell.notePlayChanged()
+        assertEquals(1, shell.model.savesOnlyHere)
+    }
+
+    @Test fun aSwitchWhileTheOldEmulatorIsOpenWaitsForItToCloseThenTheSavesPageFollows() {
+        shell.ingestLibrary("romm", listOf(entry(server, "Tetris.gba")), emptyList())
+        shell.useSavePlayer(serverId, myBoy)
+        val myBoyPlayer = plugins.player(myBoy.playerId)!!
+        var open: Player? = myBoyPlayer
+        shell.runningPlayer = { id -> open.takeIf { id == shell.tileOf(serverId) } }
+        val reopened = mutableListOf<String>()
+        shell.onSavePickerPlayerChanged = { reopened += it }
+        shell.useSavePlayer(serverId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        val pageTarget = SavePickerTarget(shell.tileOf(serverId), server.backendId, server.remoteKey, myBoy.playerId)
+        val route = shell.savePickerRoute(pageTarget)!!
+        // Nothing to press again, and the line says when the switch happens.
+        assertNull(route.action)
+        assertEquals("Once My Boy! closes, GBA.emu plays this game.", route.steps.single().detail)
+        assertEquals("Once My Boy! closes, GBA.emu plays this game and keeps its saves on RomM.", route.banner)
+        shell.presentSavePicker(SavePickerState(pageTarget, "Tetris", "My Boy!", shell.savePickerHealth(pageTarget), loading = false, route = route))
+        assertTrue(reopened.isEmpty())
+        open = null
+        shell.noteRunningChanged()
+        assertEquals(listOf(shell.tileOf(serverId)), reopened)
+    }
+
+    @Test fun onlyLaunchOnlyEmulatorsStillShowTheSettingsCount() {
+        val launchOnlyPlugins = PluginHost(Dispatchers.Unconfined, MemoryCredentialStore()).apply { register(LocalFolderEntry()); register(EmulatorsEntry()) }
+        val only = ShellController(SessionStore(MemoryPrefs()), launchOnlyPlugins, lastPlayedMillis = { 1L }, playedTiles = { played.toList() }).apply {
+            setInstalledApps(emptyList(), launchOnlyPlugins.playerPackageNames(), launchOnlyPlugins.playerPackageNames())
+        }
+        val dreamcast = Game("local-folder", "content://tree/document/7", "dreamcast", Availability.LocalOnly, "Racer")
+        only.ingestLibrary("local-folder", listOf(entry(dreamcast, "Racer.gdi")), emptyList())
+        played += only.tileOf(homeGameId(dreamcast.backendId, dreamcast.remoteKey))
+        only.notePlayChanged()
+        assertEquals(1, only.model.savesOnlyHere)
+        assertTrue(emulatorShelf(only.model).isEmpty())
+        assertTrue(Row.SaveSetup in settingsRows(SettingsCategory.Players, only.model))
+        assertEquals(SaveSetupCopy.onlyOnThisDevice(1), rowText(Row.SaveSetup, only.model).value)
     }
 }
