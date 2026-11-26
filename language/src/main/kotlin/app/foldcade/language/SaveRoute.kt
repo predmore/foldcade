@@ -82,7 +82,7 @@ private fun SaveRouteFacts.route(): SaveRoute? {
     val steps = buildList {
         // 1. An emulator Foldcade syncs.
         when {
-            player != null && playerSyncs -> add(SaveRouteStep(SaveRouteCopy.stepEmulator, SaveRouteCopy.syncs(player), SaveRouteMark.Done))
+            player != null && playerSyncs -> add(SaveRouteStep(SaveRouteCopy.playWith(player), SaveRouteCopy.syncs(player), SaveRouteMark.Done))
             // Chosen already, while the old emulator still holds the game: nothing to press again.
             supported != null && switchPending && player != null ->
                 add(SaveRouteStep(SaveRouteCopy.playWith(supported.label), SaveRouteCopy.afterClose(supported.label, player), SaveRouteMark.Now))
@@ -105,10 +105,17 @@ private fun SaveRouteFacts.route(): SaveRoute? {
     val summary = when {
         launchOnly -> SaveRouteCopy.cantSync(player!!)
         player == null -> SaveRouteCopy.noPlayer
+        // Signed out, Foldcade can't know whether RomM has the game.
+        !rommConnected -> SaveRouteCopy.signedOut
         else -> SaveRouteCopy.notOnRomm
     }
     // Saves a launch-only emulator made stay with it, so that is the one thing to say about switching.
-    val note = if (launchOnly) SaveRouteCopy.staysIn(player!!) else SaveRouteCopy.nextTime
+    // A file that can't sync never reaches RomM by these steps, so the promise isn't made beside it.
+    val note = when {
+        launchOnly -> SaveRouteCopy.staysIn(player!!, supported?.label ?: installable!!)
+        steps.firstOrNull { it.mark == SaveRouteMark.Now }?.title == SaveRouteCopy.stepSpot -> null
+        else -> SaveRouteCopy.nextTime
+    }
     val banner = if (!launchOnly) null else when {
         supported != null && switchPending -> SaveRouteCopy.afterCloseOnRomm(supported.label, player!!)
         supported != null -> SaveRouteCopy.banner(player!!, supported.label)
@@ -139,7 +146,6 @@ object SaveRouteCopy {
     const val noPlayer = "No emulator Foldcade syncs is installed for this game."
     const val notOnRommAlso = "RomM doesn’t have this game either."
 
-    const val stepEmulator = "Play with an emulator Foldcade syncs"
     fun syncs(player: String) = "Foldcade syncs $player’s saves."
     fun playWith(player: String) = "Play with $player"
     fun use(player: String) = "Use $player"
@@ -153,22 +159,26 @@ object SaveRouteCopy {
     /** The same-name route: RomM must list the same file for the same system (`SameGames.kt`). */
     fun rommDetail(fileName: String?, system: String?, connected: Boolean): String {
         val upload = when {
-            fileName != null && system != null -> "Upload $fileName for $system, with the same file name."
-            fileName != null -> "Upload $fileName, with the same file name."
-            else -> "Upload it with the same file name and system."
+            fileName != null && system != null -> "Upload $fileName to $system in RomM. Keep this exact file name."
+            fileName != null -> "Upload $fileName to RomM. Keep this exact file name."
+            else -> "Upload it to RomM with the same file name and system."
         }
         return if (connected) upload else "Settings › Library › Add › RomM server. Then ${upload.replaceFirstChar(Char::lowercase)}"
     }
     /** What finishing the steps does, as `romm.md` "Save sync" promises for a folded game. */
-    const val nextTime = "The next time you play, Foldcade puts this save on RomM. If RomM already has a different one, Foldcade keeps both and asks which to play first."
-    /** Names such as "My Boy!" end in their own mark, so a name never ends a sentence here. */
-    fun staysIn(player: String) = "$player keeps the saves made in it. Foldcade can’t move them."
+    const val nextTime = "When these steps are done, Foldcade puts this game’s save on RomM the next time you play. " +
+        "If RomM already has a different save, Foldcade keeps both and asks which one to play."
+    const val signedOut = "Foldcade isn’t signed in to RomM, so this game’s saves stay on this device."
+    /** An Azahar `.zcci` has no title id to place its save by. */
+    const val zcci = "Use a .cci copy of this game instead. Foldcade can’t sync .zcci files yet."
+    /** Progress made in [old] stays with it; [new] starts without it. Names such as "My Boy!" never end these sentences. */
+    fun staysIn(old: String, new: String) = "Your progress in $old stays there. $new starts without it."
 
     /** Partners: only what Foldcade knows. No partner gives Foldcade a receipt yet (§8.3). */
     fun partner(keeper: SaveKeeper.Partner?): String = when {
         keeper?.cloud != null -> "${keeper.cloud} keeps these saves when it’s on for the game. Foldcade can’t check it yet."
         keeper != null -> "${keeper.name} keeps these saves. Foldcade can’t check its cloud yet."
-        else -> "The player keeps these saves. Foldcade can’t check them yet."
+        else -> "The app that plays this game keeps its saves. Foldcade can’t check them yet."
     }
     const val hostComputer = "These saves stay on your computer, or with the game’s own cloud."
     const val appKeepsSaves = "This app keeps its own saves. Foldcade can’t see them."
@@ -177,7 +187,7 @@ object SaveRouteCopy {
     fun switchTitle(player: String) = "Play with $player?"
     fun switchBody(to: String, from: String?, playedHere: Boolean): String = listOfNotNull(
         syncs(to),
-        from?.takeIf { playedHere }?.let(::staysIn),
+        from?.takeIf { playedHere }?.let { staysIn(it, to) },
         "Change it any time in Y › Open with.",
     ).joinToString(" ")
     fun switched(player: String) = "$player plays this game now."

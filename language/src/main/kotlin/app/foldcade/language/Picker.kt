@@ -2335,6 +2335,8 @@ data class PickerModel(
     val saveIncidents: List<SaveIncident> = emptyList(),
     /** Played games whose saves stay on this device with no way to RomM from here ([savesOnlyHere]). */
     val savesOnlyHere: Int = 0,
+    /** Those games by name, for Set up saves' end. */
+    val savesOnlyHereGames: List<String> = emptyList(),
     /** True while Foldcade reads what each emulator's folder still needs, as just after a pick. Set up saves waits on it before moving on. */
     val checkingSaves: Boolean = false,
     /** Every library is being read again. */

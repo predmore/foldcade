@@ -52,12 +52,13 @@ class ShellDeviceOnlySavesTest {
         // No RomM server is signed in here, so the step says to sign in first.
         assertEquals("Sign in to RomM, then add this game", route.steps[1].title)
         assertTrue(route.steps[1].detail!!.contains("upload Puzzle.gba"))
-        assertEquals("My Boy! keeps the saves made in it. Foldcade can’t move them.", route.note)
+        assertEquals("Your progress in My Boy! stays there. GBA.emu starts without it.", route.note)
 
         // Switching is Y › Open with's choice, and the page then shows the new emulator's way on.
         shell.useSavePlayer(localId, (route.action as SaveRouteAction.UsePlayer).choice)
         assertEquals(gbaEmu, store.gamePlayerChoice(shell.tileOf(localId))?.playerId)
-        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder), shell.saveHealthOf(localId))
+        // Never played here: the line is amber, the tile stays plain (§10.1).
+        assertEquals(SaveStatus.NotSyncing(SaveIssue.NoFolder, badge = false), shell.saveHealthOf(localId))
         val next = shell.savePickerRoute(target(localId, local))!!
         assertEquals(listOf(SaveRouteMark.Done, SaveRouteMark.Now, SaveRouteMark.Next), next.steps.map { it.mark })
         assertEquals(SaveRouteAction.SetUp, next.action)
@@ -74,7 +75,8 @@ class ShellDeviceOnlySavesTest {
         shell.setSaveDestination(local, OffDeviceFact.Unknown)
         assertTrue(shell.saveHealthOf(localId) is SaveStatus.DeviceOnly)
         val route = shell.savePickerRoute(target(localId, local))!!
-        assertEquals("RomM doesn’t have this game, so its saves stay on this device.", route.summary)
+        // No RomM server is signed in here, so the page doesn't claim RomM lacks the game.
+        assertEquals("Foldcade isn’t signed in to RomM, so this game’s saves stay on this device.", route.summary)
         assertEquals(listOf(SaveRouteMark.Done, SaveRouteMark.Now), route.steps.map { it.mark })
     }
 

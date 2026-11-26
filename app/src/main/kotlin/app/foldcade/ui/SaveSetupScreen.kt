@@ -737,7 +737,7 @@ private fun End(
         BasicText(if (onlyHere == 0 && tiles.any { it.done && !it.findSaves && !it.verified }) SaveProtectionCopy.folderSet else SaveSetupCopy.endTitle(due, rest, onlyHere), style = setupStyle(theme.onBackground, design.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
     }
     val body = @Composable {
-        (SaveSetupCopy.endBody(due, rest, onlyHere) ?: SaveProtectionCopy.foldersSet.takeIf { tiles.any { it.done && !it.findSaves && !it.verified } })?.let {
+        (SaveSetupCopy.endBody(due, rest, model.savesOnlyHereGames) ?: SaveProtectionCopy.foldersSet.takeIf { tiles.any { it.done && !it.findSaves && !it.verified } })?.let {
             BasicText(it, style = setupStyle(theme.muted, design.type.dialogBody, theme), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }

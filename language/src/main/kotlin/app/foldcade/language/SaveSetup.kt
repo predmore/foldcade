@@ -492,17 +492,22 @@ object SaveSetupCopy {
     fun endTitle(due: Int, rest: Int, onlyHere: Int = 0): String = if (due == 0 && rest == 0 && onlyHere == 0) allSet else doneForNow
 
     /** Under Done for now: what still does not sync, and where to finish it. Null on All set. */
-    fun endBody(due: Int, rest: Int, onlyHere: Int = 0): String? = when {
+    fun endBody(due: Int, rest: Int, onlyHere: List<String> = emptyList()): String? = when {
         due > 0 -> "$due still not syncing. $finishLater"
-        onlyHere > 0 -> "${onlyOnThisDevice(onlyHere)}. $eachGameSays"
+        onlyHere.isNotEmpty() -> onlyHereGames(onlyHere)
         rest > 0 -> "$gamesSync. $finishLater"
         else -> null
     }
 
-    /** Played games whose saves have no way to RomM from here ([savesOnlyHere]). */
-    fun onlyOnThisDevice(count: Int): String = if (count == 1) "1 game only on this device" else "$count games only on this device"
-    /** Where a device-only game's way to RomM is shown: on the game, not on an emulator. */
-    const val eachGameSays = "Y › Saves on each game shows how to keep it on RomM."
+    /** Played games whose saves have no way to RomM from here ([savesOnlyHere]), as the row and chip count them. */
+    fun onlyOnThisDevice(count: Int): String = if (count == 1) "1 game saves only on this device" else "$count games save only on this device"
+
+    /** The end names those games, since its grid lists emulators: the way to RomM is on each game's own page. */
+    fun onlyHereGames(games: List<String>): String = when (games.size) {
+        1 -> "${games.single()} saves only on this device. Its Y › Saves shows how to put its saves on RomM."
+        2, 3 -> "${spoken(games, "and")} save only on this device. Y › Saves on each shows how to put their saves on RomM."
+        else -> "${onlyOnThisDevice(games.size)}. Y › Saves on each shows how to put their saves on RomM."
+    }
 
     /** A pick that was not [name]'s folder, in one line. */
     fun wrongFolder(name: String, markers: Collection<String>): String =

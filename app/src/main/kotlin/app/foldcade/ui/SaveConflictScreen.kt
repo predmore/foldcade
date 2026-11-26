@@ -141,10 +141,10 @@ internal fun SaveConflictBottom(
                     verticalAlignment = Alignment.Top,
                 ) {
                     val newer = if (prompt.repair == null) newerSide(prompt) else null
-                    SaveCard(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, confirmKey, Modifier.weight(1f)) {
+                    SaveCard(prompt.local, dateStyle, prompt.focus == SaveConflictFocus.Local, fit.compact, newer == SaveConflictFocus.Local, confirmKey, Modifier.weight(1f), sized = prompt.repair == null) {
                         onFocus(SaveConflictFocus.Local)
                     }
-                    SaveCard(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, newer == SaveConflictFocus.Remote, confirmKey, Modifier.weight(1f)) {
+                    SaveCard(prompt.remote, dateStyle, prompt.focus == SaveConflictFocus.Remote, fit.compact, newer == SaveConflictFocus.Remote, confirmKey, Modifier.weight(1f), sized = prompt.repair == null) {
                         onFocus(SaveConflictFocus.Remote)
                     }
                 }
@@ -179,6 +179,8 @@ private fun SaveCard(
     newer: Boolean,
     confirmKey: PromptKey,
     modifier: Modifier,
+    /** A repair's choice names where each save is from instead: byte sizes say nothing to the choice. */
+    sized: Boolean = true,
     onKeep: () -> Unit,
 ) {
     val theme = LocalFoldTheme.current.theme
@@ -204,8 +206,10 @@ private fun SaveCard(
         side.where?.let { BasicLine(it, theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2) }
         side.note?.let { BasicLine(it, theme.style.colors.attention, type.dialogBody.value, theme, TextAlign.Start, maxLines = 2) }
         // The newer copy says so in the focus colour, so the two times need no comparing.
-        val size = formatSaveSize(side.sizeBytes)
-        BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+        if (sized) {
+            val size = formatSaveSize(side.sizeBytes)
+            BasicLine(if (newer) "$size · ${Copy.newerSave}" else size, if (newer) theme.focus else theme.muted, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
+        } else if (newer) BasicLine(Copy.newerSave, theme.focus, type.dialogBody.value, theme, TextAlign.Start, maxLines = 1)
         // What A does here, at full ink on the focused card, so the card reads as its own button.
         // It sits at the card's foot, so the two line up whatever their names' lengths.
         Spacer(Modifier.weight(1f))

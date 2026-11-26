@@ -33,6 +33,20 @@ internal fun readGameSaveSupport(game: Game, player: Player?): GameSaveSupport =
     GameSaveSupport(emptyList(), player is SaveFolderHolder || player is HostedSaveFolder)
 }
 
+/**
+ * What a game file's type alone says about its save, before Foldcade reads it: an Azahar `.zcci`
+ * names no title, and Dolphin syncs only ISO and GCM. Null when only the file's contents can tell.
+ */
+internal fun fileSpotIssue(player: Player, fileName: String?): SpotFact.Unresolved? {
+    val extension = fileName?.substringAfterLast('.', "")?.lowercase(java.util.Locale.ROOT)?.takeIf { it.isNotEmpty() } ?: return null
+    return when {
+        player is app.foldcade.plugins.azahar.AzaharPlayer && extension == "zcci" -> SpotFact.Unresolved(SpotIssue.NoTitleId, SaveRouteCopy.zcci)
+        player is app.foldcade.plugins.dolphin.DolphinPlayer && extension !in setOf("iso", "gcm") -> SpotFact.Unresolved(SpotIssue.UnsupportedImage,
+            SaveProtectionCopy.unsupportedFormat(extension.uppercase(java.util.Locale.ROOT), "ISO and GCM"))
+        else -> null
+    }
+}
+
 /** An emulator, synced or not, as opposed to a partner, a stream or an app that keeps its own saves. */
 internal fun isSaveEmulator(player: Player, supportsSync: Boolean): Boolean =
     player.needsLocalFile || player is EmulatorPlayer || supportsSync
@@ -54,6 +68,8 @@ internal fun gameSaveHealth(
     waitingSinceMillis: Long? = null,
     spotIssue: SpotIssue? = null,
     spotDetail: String? = null,
+    /** The game file's name as the catalog recorded it, for what its type alone says before any launch. */
+    fileName: String? = null,
 ): SaveStatus {
     val (declarations, supportsSync) = saves
     val emulator = player != null && isSaveEmulator(player, supportsSync)
@@ -76,9 +92,12 @@ internal fun gameSaveHealth(
         else -> LocationFact.NotApplicable
     }
     val coreIssue = (player as? RetroArchPlayer)?.unsupportedSaveFormat("")
+    val fileIssue = player?.let { fileSpotIssue(it, fileName) }
     val spot = when {
         coreIssue != null -> SpotFact.Unresolved(SpotIssue.UnsupportedSaveFormat, coreIssue)
-        reachable == false -> SpotFact.Unresolved(spotIssue ?: SpotIssue.NoTitleId, spotDetail)
+        reachable == false -> SpotFact.Unresolved(spotIssue ?: fileIssue?.reason ?: SpotIssue.NoTitleId, spotDetail ?: fileIssue?.detail)
+        // Known before the first launch: the file's type alone means its save has no place.
+        reachable == null && fileIssue != null -> fileIssue
         reachable == true -> SpotFact.Resolved
         else -> SpotFact.Unchecked
     }

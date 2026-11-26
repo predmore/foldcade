@@ -47,7 +47,7 @@ class SavePickerRouteTest {
         // Progress made in My Boy! won't follow, so the question opens on Cancel.
         assertEquals(1, asked.confirmIndex)
         assertEquals("Play with GBA.emu?", SavePickerCopy.confirmationTitle(choice, "My Boy!"))
-        assertEquals("Foldcade syncs GBA.emu’s saves. My Boy! keeps the saves made in it. Foldcade can’t move them. Change it any time in Y › Open with.",
+        assertEquals("Foldcade syncs GBA.emu’s saves. Your progress in My Boy! stays there. GBA.emu starts without it. Change it any time in Y › Open with.",
             SavePickerCopy.confirmationBody(choice, target.playerId, "My Boy!", DateStyle()))
         assertNull(applySavePicker(asked, Meaning.Activate).second)
         val confirmed = applySavePicker(asked.copy(confirmIndex = 0), Meaning.Activate)

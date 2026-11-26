@@ -4571,7 +4571,12 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      */
     private fun openSaves(gameId: String, message: String? = null, owner: Pair<String, String>? = null): Boolean {
         if (foldcade.launchWork.active) return false
-        val route = foldcade.shell.savesMenuRoute(gameId) ?: return false
+        val route = foldcade.shell.savesMenuRoute(gameId) ?: return foldcade.shell.partnerSavesPage(gameId)?.let { page ->
+            // Nothing to load or play: the page says who keeps this game's saves, and no request can act on it.
+            foldcade.savePickerRequest = null
+            foldcade.shell.presentSavePicker(page)
+            true
+        } ?: false
         @Suppress("NAME_SHADOWING") val owner = route.servers.firstOrNull { owner != null && it.backendId == owner.first && it.remoteKey == owner.second }
             ?: route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: route.saves
         val onRomm = route.servers.isNotEmpty()

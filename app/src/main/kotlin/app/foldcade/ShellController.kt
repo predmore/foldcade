@@ -929,6 +929,7 @@ class ShellController(
             reachable = checkedSaveReachability(route.saves, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable),
             saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
+            fileName = catalogFileNames[homeGameId(route.play.backendId, route.play.remoteKey)],
             location = saveLocations[player.saveFolderId()],
             offDevice = saveDestination(route.saves),
             incidents = saveIncidents.filter { it.affectsSaveUse(player, route.saves) && it.repair != app.foldcade.language.RepairState.Done },
@@ -974,8 +975,13 @@ class ShellController(
         if (!saveHealthReady) return
         // One snapshot of played tiles, then only those, from cached save metadata: where the next save
         // goes, not what an earlier emulator still has queued.
-        val onlyHere = playedTiles().mapTo(linkedSetOf(), ::tileOf).count { tile -> launchRoute(tile)?.let(::routeStaysHere) == true }
-        if (onlyHere != model.savesOnlyHere) model = model.copy(savesOnlyHere = onlyHere)
+        val games = playedTiles().mapTo(linkedSetOf(), ::tileOf).mapNotNull { tile ->
+            val route = launchRoute(tile)?.takeIf(::routeStaysHere) ?: return@mapNotNull null
+            // Named on Set up saves' end, whose grid lists emulators, not games.
+            homeTileOf(tile).title.ifBlank { route.play.label }
+        }.sortedBy { it.lowercase() }
+        if (games.size != model.savesOnlyHere || games != model.savesOnlyHereGames)
+            model = model.copy(savesOnlyHere = games.size, savesOnlyHereGames = games)
     }
 
     /** Where [route]'s next save goes, from structure and cached metadata: true when it can't leave this device. */
@@ -3587,6 +3593,7 @@ class ShellController(
             saveSync[player.id], setupSteps[player.id],
             reachable = checkedSaveReachability(owner, player, reachability?.takeIf { it.locations == saves.declarations }?.reachable), saves = saves,
             spotIssue = reachability?.spot?.reason, spotDetail = reachability?.spot?.detail,
+            fileName = catalogFileNames[homeGameId(route.play.backendId, route.play.remoteKey)],
             location = saveLocations[player.saveFolderId()], offDevice = saveDestination(owner),
             incidents = saveIncidents.filter { it.affectsSaveUse(player, owner) && it.repair != app.foldcade.language.RepairState.Done }, playedHere = lastPlayedMillis(tileOf(target.gameId)) != null) // The target names the tile; playId would qualify it again.
     }
@@ -3636,7 +3643,10 @@ class ShellController(
      * installed is named. Partners, streams and apps are only explained.
      */
     internal fun savePickerRoute(target: app.foldcade.language.SavePickerTarget, health: SaveStatus = savePickerHealth(target)): app.foldcade.language.SaveRoute? {
-        val route = savesMenuRoute(target.gameId) ?: return null
+        // A partner's tile has no library route: its page only says who keeps the saves.
+        val route = savesMenuRoute(target.gameId) ?: return if (partnerSaves(target.gameId))
+            saveRoute(app.foldcade.language.SaveRouteFacts(health, onRomm = false, rommConnected = store.rommOrigin() != null, player = null, playerSyncs = false))
+        else null
         val owner = route.servers.firstOrNull { it.backendId == target.libraryId && it.remoteKey == target.remoteKey } ?: route.saves
         fun syncs(candidate: Player) = saveSupport.getOrPut(candidate.id to owner) { readGameSaveSupport(owner, candidate) }.supportsSync
         val player = savePickerPlayer(target)
@@ -3659,6 +3669,24 @@ class ShellController(
         val fileName = route.play.takeIf { it.backendId == LocalFolderBackend.ID }?.let { catalogFileNames[homeGameId(it.backendId, it.remoteKey)] }
         return saveRoute(app.foldcade.language.SaveRouteFacts(health, route.servers.isNotEmpty(), store.rommOrigin() != null,
             emulator?.displayName, playerSyncs, supported, installable, fileName, system, emulator?.id, switchPending))
+    }
+
+    /** A DroidDeck, GameNative or Moonlight tile: its player keeps its saves, and Y › Saves only says so. */
+    internal fun partnerSaves(gameId: String): Boolean =
+        home.item(tileOf(gameId))?.kind in setOf(HomeKind.DroidDeck, HomeKind.GameNative, HomeKind.Moonlight)
+
+    /**
+     * Y › Saves for a partner's tile: who keeps its saves, in the partner's words, with nothing to load,
+     * play or press. Null for any other tile, which opens on its library route.
+     */
+    internal fun partnerSavesPage(gameId: String): app.foldcade.language.SavePickerState? {
+        val tile = tileOf(gameId)
+        if (launchRoute(tile) != null || !partnerSaves(tile)) return null
+        val game = homeTileOf(tile)
+        val health = saveHealthOf(tile)
+        val target = app.foldcade.language.SavePickerTarget(tile, game.libraryId.orEmpty(), game.remoteKey.orEmpty(), null)
+        return app.foldcade.language.SavePickerState(target, game.title, app.foldcade.language.SavePickerCopy.unknown, health,
+            loading = false, onRomm = false, canPlay = false, route = savePickerRoute(target, health))
     }
 
     /** Y › Saves' route: [gameId] plays with [choice] from now on, as Y › Open with sets it. */
@@ -4409,7 +4437,7 @@ class ShellController(
         } else offered
         // Every library game has a Saves page: one RomM doesn't have shows how its saves can get there (§7.1).
         val withSaves = if (tile?.bulk == null && home.selection == null && targetGame != null &&
-            launchRoute(targetGame.id) != null) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
+            (launchRoute(targetGame.id) != null || partnerSaves(targetGame.id))) (withArt ?: TileActions()).copy(saves = true, game = tile?.game ?: targetGame.id) else withArt
         // Only a game opens with an emulator. A platform folder has a system too, but no game to open.
         val choiceGame = (tile?.game ?: targetGame?.id)?.takeIf { id ->
             tile?.bulk == null && home.selection == null && targetGame?.platformId != null &&
