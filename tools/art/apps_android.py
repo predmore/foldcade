@@ -242,9 +242,9 @@ def _star4(cx, cy, r, waist):
 def jelly(c):
     """Browser (LineageOS Jelly): a pocket compass, its white four-point star standing on a lit face."""
     out = [shadow(32, 60, 23, 3),
-           body(ci(32, 7.5, 5) + circle_ccw(32, 7.5, 2.4), tone(c, -0.3), gloss=0.15, sym=1),
-           body(rr(28, 10, 8, 5, 1.6), tone(c, -0.2), gloss=0.15, sym=1),
-           body(ci(32, 35, 24), c), recess(ci(32, 35, 20.5), c), screen(ci(32, 35, 18), tone(c, -0.3), sym=0)]
+           body(ci(32, 8, 4) + circle_ccw(32, 8, 1.9), tone(c, -0.3), gloss=0.15, sym=1),
+           body(rr(28.8, 10.8, 6.4, 4, 1.3), tone(c, -0.2), gloss=0.15, sym=1),
+           body(ci(32, 35, 24), c), recess(ci(32, 35, 20.5), c), screen(ci(32, 35, 18), "#3466E0", sym=0)]
     for a in (45, 135, 225, 315):
         (x0, y0), (x1, y1) = [(32 + r * math.cos(math.radians(a)), 35 + r * math.sin(math.radians(a))) for r in (12.5, 15.5)]
         out.append(control(capsule(x0, y0, x1, y1, 2), tone(c, 0.45), sym=None))
@@ -252,16 +252,16 @@ def jelly(c):
 
 def audiofx(c):
     """AudioFX: an effects unit, a big white knob in its dark collar beside two faders."""
-    knob = (23, 34)
+    knob = (24, 34)
     out = [shadow(32, 59, 28, 3), body(rr(3, 11, 58, 45, 8), c)]
     for i in range(7):
         a = 150 + i * 40
-        x, y = knob[0] + 16.5 * math.cos(math.radians(a)), knob[1] + 16.5 * math.sin(math.radians(a))
-        out.append(screen(ci(x, y, 1.3), tone(c, 0.75) if i < 5 else tone(c, -0.3), sym=None))
+        x, y = knob[0] + 16 * math.cos(math.radians(a)), knob[1] + 16 * math.sin(math.radians(a))
+        out.append(screen(ci(x, y, 1.3), tone(c, 0.75) if i < 5 else tone(c, -0.45), sym=None))
     out += [recess(ci(*knob, 13), c), control(ci(*knob, 11.8), "#2C3434"), control(ci(*knob, 9), "#F4F4F6"),
             control(capsule(knob[0] + 2.4, knob[1] - 2.4, knob[0] + 5.6, knob[1] - 5.6, 2.3), tone(c, -0.2), sym=1)]
-    for x, y in ((45, 37), (54, 25)):
-        out += [recess(capsule(x, 18, x, 48, 3), c), control(rr(x - 4, y - 2.6, 8, 5.2, 1.6), "#F4F4F6", sym=1)]
+    for x, y in ((46.5, 38), (55, 25)):
+        out += [recess(capsule(x, 18, x, 48, 3), c), control(rr(x - 3.5, y - 2.6, 7, 5.2, 1.6), "#F4F4F6", sym=1)]
     return out
 
 # name -> (drawing, accent, what it stands for, packages that wear it)
