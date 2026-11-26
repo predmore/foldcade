@@ -554,6 +554,36 @@
       "tint": false,
       "accent": "#7C8CFF"
     },
+    "app.org.lineageos.audiofx": {
+      "file": "icons/app_audiofx.xml",
+      "tint": false,
+      "accent": "#FF4D97"
+    },
+    "app.org.lineageos.etar": {
+      "file": "icons/app_calendar.xml",
+      "tint": false,
+      "accent": "#4C8DFF"
+    },
+    "app.org.lineageos.glimpse": {
+      "file": "icons/app_gallery.xml",
+      "tint": false,
+      "accent": "#FFB547"
+    },
+    "app.org.lineageos.jelly": {
+      "file": "icons/app_jelly.xml",
+      "tint": false,
+      "accent": "#6B95FF"
+    },
+    "app.org.lineageos.recorder": {
+      "file": "icons/app_recorder.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
+    "app.org.lineageos.twelve": {
+      "file": "icons/app_music.xml",
+      "tint": false,
+      "accent": "#FF8A3D"
+    },
     "app.org.mm.jr": {
       "file": "icons/app_dolphin_mmjr.xml",
       "tint": false,
