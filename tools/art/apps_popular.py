@@ -276,8 +276,8 @@ def magisk(c):
     stache = ("M32,42 C28,40 21,41 16,46 C13,49 9.5,49 9,45.5 C7.5,50 12,54.5 18,53 C24,51.5 28.5,49 32,50 "
               "C35.5,49 40,51.5 46,53 C52,54.5 56.5,50 55,45.5 C54.5,49 51,49 48,46 C43,41 36,40 32,42 Z")
     return out + [body(mask, c), recess(eye(19.5, 10), c), recess(eye(44.5, -10), c),
-                  control(ci(32, 28.5, 2.6), "#FFC93C", sym=None), control(stache, "#2A2D35", sym=2),
-                  control("M28.5,49.5 Q32,51.5 35.5,49.5 L33.1,55.6 Q32,57.6 30.9,55.6 Z", "#2A2D35", sym=2)]
+                  control(ci(32, 28.5, 2.6), "#FF6F61", sym=None), control(stache, RUBBER, sym=2),
+                  control("M28.5,49.5 Q32,51.5 35.5,49.5 L33.1,55.6 Q32,57.6 30.9,55.6 Z", RUBBER, sym=2)]
 
 def arch(cx, base, half, top):
     """A doorway [half] wide either side of [cx], its round head at [top] and its sill at [base]."""
@@ -293,15 +293,15 @@ def rib(cx, base, out, inn, top):
             f"H{f(cx + inn)} V{f(spring)} A{f(inn)},{f(inn)} 0 0 0 {f(cx - inn)},{f(spring)} V{f(base)} Z")
 
 def wg_tunnel(c):
-    """WG Tunnel: a padlock with a tunnel bored through it, its rings closing in on the light at the far end."""
+    """WG Tunnel: a padlock with a tunnel bored through it, two rings closing in on the light at the far end."""
     lamp = "#FFE9B0"; dark = tone(c, -0.62)
-    out = [shadow(32, 60, 23, 3),
-           control(capsule(19, 22, 19, 29, 6), SILVER), control(capsule(45, 22, 45, 29, 6), SILVER),
-           control(arc_band(32, 22, 13, 6, 180, 360), SILVER),
-           body(rr(6, 26, 52, 31, 8.5), c), recess(arch(32, 53.5, 13.5, 30.5), c)]
-    for i, (base, o, n, top) in enumerate(((53.5, 12, 9.4, 32.2), (52, 8.3, 6.3, 37), (50.7, 5.4, 3.9, 41))):
-        out.append(body(rib(32, base, o, n, top), mix(dark, lamp, 0.12 + 0.2 * i), gloss=0.12))
-    return out + [screen(arch(32, 50.7, 3.7, 43.4), lamp, sym=0)]
+    out = [shadow(32, 60, 20, 3),
+           control(capsule(21, 20, 21, 27, 6), SILVER), control(capsule(43, 20, 43, 27, 6), SILVER),
+           control(arc_band(32, 20, 11, 6, 180, 360), SILVER),
+           body(rr(10, 23, 44, 34, 8), c), recess(arch(32, 53.5, 13, 30), c)]
+    for i, (o, n, top) in enumerate(((13, 10, 30), (8, 5, 35))):
+        out.append(body(rib(32, 53.5, o, n, top), mix(dark, lamp, 0.12 + 0.28 * i), gloss=0.12))
+    return out + [screen(arch(32, 53.5, 5, 38), lamp, sym=0)]
 
 # name -> (drawing, accent, what it stands for, packages that wear it)
 APPS = {
