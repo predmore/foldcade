@@ -672,6 +672,10 @@ class FoldcadeApp : Application() {
      * The screen that started a download is gone. Ask a Home that is still up
      * to show a save conflict that download left behind.
      */
+    /** The Home still up, the resumed one first: a Saves page reopen goes there, not to whichever Home registered last. */
+    internal fun liveHome(): FoldcadeHomeActivity? = homes.values.mapNotNull { it.get() }.filterNot { it.isDestroyed || it.isFinishing }
+        .sortedByDescending { it.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }.firstOrNull()
+
     internal fun refreshSaveConflictOnSurvivor() {
         val snapshot = homes.mapNotNull { (displayId, ref) ->
             val activity = ref.get() ?: return@mapNotNull null
@@ -1143,6 +1147,8 @@ class FoldcadeApp : Application() {
         shell.runningPlayer = { id -> runningOn(id)?.takeIf { packageInstalled(it.packageName) }?.player }
         shell.hostedCardChecked = { player, game -> saveProtection.hostedCardChecked(player.saveFolderId(), game) }
         shell.onPlayerChoiceChanged = { scope -> dismissNotice("foldcade:player-choice:$scope") }
+        // A switch made while the old emulator held the game: once it closes, the open Saves page shows the new one.
+        shell.onSavePickerPlayerChanged = { target -> liveHome()?.reopenSaves(target) }
         shell.onPlayerAvailabilityChanged = ::clearUsablePlayerChoiceNotices
         shell.canCloseGame = ::canCloseGame
         shell.moveGameScreen = { id -> moveGameTarget(id)?.let { if (it == Panel.Top) app.foldcade.language.HostScreen.Top else app.foldcade.language.HostScreen.Bottom } }
@@ -1246,10 +1252,13 @@ class FoldcadeApp : Application() {
         val main = Handler(Looper.getMainLooper())
         plugins.activityListener = { libraryId, remoteKey, reported ->
             main.post {
-                if (reported is GameActivity.Synced) {
-                    returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
+                // An earlier emulator's upload finishing, even one that showed as waiting, doesn't speak for a
+                // game whose current emulator keeps its saves here: no "Saves synced", no check (§7.1).
+                val shown = if (reported is GameActivity.Synced && shell.savesStayHere(libraryId, remoteKey)) GameActivity.Idle else reported
+                if (shown is GameActivity.Synced) {
+                    returnNotices.synced(libraryId, remoteKey, shown.result, System.currentTimeMillis())?.let(::postNotice)
                 }
-                val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
+                val until = shell.noteActivity(libraryId, remoteKey, shown, System.currentTimeMillis())
                 if (reported.refreshesSaveHealth()) {
                     refreshUnsyncedSaves(libraryId)
                 }

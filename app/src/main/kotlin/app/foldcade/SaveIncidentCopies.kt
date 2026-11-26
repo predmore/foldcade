@@ -11,6 +11,9 @@ import app.foldcade.language.RepairState
 import app.foldcade.language.SaveProtectionCopy
 import app.foldcade.api.plugin.LaunchTarget
 import app.foldcade.romm.rommSaveHash
+import app.foldcade.api.plugin.HostedSaveFolder
+import app.foldcade.api.plugin.SaveFolderHolder
+import app.foldcade.plugins.eden.EdenPlayer
 import app.foldcade.language.Evidence
 import app.foldcade.language.EvidenceKind
 import app.foldcade.language.IncidentKind
@@ -36,38 +39,40 @@ internal class SaveIncidentCopies(
     private val versions: (suspend (Game, String) -> List<app.foldcade.plugins.romm.RommRepairSave>)? = null,
 ) {
     /**
-     * First link (design §7.1): the first time a folder copy's save meets a RomM copy whose slot
-     * holds a different save. The folder's bytes are staged for a verified Backup, and the launch
-     * stops on the two-saves choice, so neither copy is placed or handed over until the player
-     * picks one. Until then every launch stops again. Null lets the ordinary sync run: the game
-     * was linked here before, RomM has nothing or the same bytes, or RomM can't be read now (the
-     * ordinary negotiation then fails before writing anything too).
+     * First link (design §7.1): a folder copy's save that RomM has never seen, meeting a RomM copy
+     * whose slot holds something else. The folder's bytes are staged for a verified Backup, and the
+     * launch stops on the two-saves choice, so neither copy is placed or handed over until the player
+     * picks one. Until a choice succeeds (This Thor, RomM, or a save played from Y › Saves) every
+     * launch stops again, whatever a Play anyway return has kept meanwhile.
+     *
+     * "Never seen" is decided by content, not by this device's history, so a reinstall that wiped
+     * marks and caches still recognises an old synced save ([firstLinkDiffers]). Null lets the
+     * ordinary sync run: the slot was linked here before, RomM knows these bytes or has no
+     * verifiable head, RomM can't be read now (the ordinary negotiation then fails before writing
+     * anything too), or the emulator can't finish a choice yet (Eden, hosted cards).
      */
     suspend fun holdFirstLink(route: GameRoute, owner: Game, player: Player, local: LaunchTarget, spots: List<SaveSpot>,
         outside: ObservedSaves): SaveIncident? {
         if (route.play.backendId != LocalFolderBackend.ID || owner.backendId == LocalFolderBackend.ID) return null
+        // Repair can't place a chosen copy for these yet; they keep the ordinary sync (follow-up in §7.1).
+        if (player !is SaveFolderHolder || player is HostedSaveFolder || player is EdenPlayer) return null
         val origin = rommOrigin() ?: return null
         val spot = spots.singleOrNull() ?: return null
         if (player.saveDeclarations(owner).singleOrNull()?.slot != spot.slot) return null
         val id = regressionIncidentId(owner, player)
-        val open = store.incident(id)?.takeIf { it.firstLink && it.repair != RepairState.Done }
-        val unlinked = try {
-            !saves.everHandled(owner.backendId, owner, player, spot) && plugins.saves(owner.backendId, owner).slots.none { it.slot == spot.slot }
-        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return open }
-        if (!unlinked) {
-            // Chosen another way, such as from Y › Saves: the link is made, and the stop has done its job.
-            if (open != null) store.close(id)
-            return null
-        }
-        if (open != null) return open
-        if (outside.slots.none { it.slot == spot.slot }) return null
+        // An open stop belongs to the server it was raised for; another server decides afresh.
+        store.incident(id)?.takeIf { it.firstLink && it.repair != RepairState.Done && it.subject?.origin == origin }?.let { return it }
+        // Cheap first: a slot this device has placed, read or held is an ordinary RomM game here.
+        val linked = try {
+            saves.everHandled(owner.backendId, owner, player, spot) || plugins.saves(owner.backendId, owner).slots.any { it.slot == spot.slot }
+        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { true }
+        if (linked || outside.slots.none { it.slot == spot.slot }) return null
         val target = (local as? LaunchTarget.ContentUri)?.uri ?: return null
         val bytes = withContext(Dispatchers.IO) { saves.readSpot(spot, strict = true)?.first } ?: return null
         val hash = rommSaveHash(bytes) ?: return null
-        val head = try {
-            (versions ?: ::rommVersions)(owner, origin).firstOrNull { it.slot == spot.slot }
-        } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return null }
-        if (head == null || head.hash == hash) return null
+        val listed = try { (versions ?: ::rommVersions)(owner, origin) }
+            catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { return null }
+        if (!firstLinkDiffers(hash, spot.slot, listed)) return null
         val uri = withContext(Dispatchers.IO) { saves.stageCopy(owner, player, spot, bytes, origin) }
         val folder = FolderRef(storageIdentity(spot.folderUri), runCatching { folderPathLabel(spot.folderUri) }.getOrDefault(spot.folderUri))
         store.put(SaveIncident(id, IncidentKind.MaybeNewSave, player.saveFolderId(), player.displayName, listOf(owner.remoteKey), folder, null,
@@ -77,6 +82,27 @@ internal class SaveIncidentCopies(
         // Offline, the copy stays queued, and the choice waits for it to verify.
         keep(owner, player)
         return store.incident(id)
+    }
+
+    /**
+     * A Play anyway session past a first-link stop made newer progress here. The stop stays open, and
+     * "This Thor" in its choice becomes those bytes, kept and verified again before it is offered.
+     */
+    private fun followFirstLink(game: Game, player: Player, observed: ObservedSaves) {
+        val open = store.incident(regressionIncidentId(game, player))?.takeIf { it.firstLink && it.repair != RepairState.Done } ?: return
+        val slot = observed.slots.singleOrNull() ?: return
+        val uri = slot.contentUri ?: return
+        val bytes = runCatching { java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(uri))) }.getOrNull() ?: return
+        val hash = rommSaveHash(bytes) ?: return
+        if (hash == open.quarantinedHash) return
+        store.put(open.copy(quarantinedHash = hash, quarantineSourceUri = uri, quarantineBackupId = null,
+            staged = (open.staged + uri).distinct(), repair = RepairState.Keeping))
+    }
+
+    /** An explicit choice placed a save for [game] (This Thor, RomM, or Y › Saves): its first-link stop has done its job. */
+    fun firstLinkChosen(game: Game, player: Player) {
+        val id = regressionIncidentId(game, player)
+        if (store.incident(id)?.firstLink == true) store.close(id)
     }
 
     private suspend fun rommVersions(game: Game, origin: String): List<app.foldcade.plugins.romm.RommRepairSave> {
@@ -191,7 +217,8 @@ internal class SaveIncidentCopies(
         // Retained through strict-read failures and later launches until durable staging succeeds.
         store.requireBackup(key, game)
         if (spots.isEmpty()) throw SaveNotPlaced()
-        stage(game, player, spots, incident, mark = true)
+        val observed = stage(game, player, spots, incident, mark = true)
+        followFirstLink(game, player, observed)
         store.handled(key, game)
         keep(game, player)
         return true
@@ -282,4 +309,16 @@ internal class SaveIncidentCopies(
             // Offline, unsupported backends and uncertain uploads leave the sidecar and bytes queued.
         }
     }
+}
+
+/**
+ * Whether the device's [hash] is progress RomM has never seen, against a slot head it can verify.
+ * Every version RomM lists for the game counts as seen: the slot's head and older versions, other
+ * slots, and unslotted Backups, from any device. A head without a hash can't be compared, so it
+ * never raises the stop.
+ */
+internal fun firstLinkDiffers(hash: String, slot: String, versions: List<app.foldcade.plugins.romm.RommRepairSave>): Boolean {
+    val head = versions.firstOrNull { it.slot == slot } ?: return false
+    if (head.hash.isBlank()) return false
+    return versions.none { it.hash.isNotBlank() && it.hash.equals(hash, ignoreCase = true) }
 }

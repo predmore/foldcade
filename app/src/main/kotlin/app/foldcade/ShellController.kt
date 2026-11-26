@@ -974,14 +974,20 @@ class ShellController(
         if (!saveHealthReady) return
         // One snapshot of played tiles, then only those, from cached save metadata: where the next save
         // goes, not what an earlier emulator still has queued.
-        val onlyHere = playedTiles().mapTo(linkedSetOf(), ::tileOf).count { tile ->
-            val route = launchRoute(tile) ?: return@count false
-            val player = savePlayer(route) ?: return@count false
-            val support = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
-            savesOnlyHere(isSaveEmulator(player, support.supportsSync), support.supportsSync, route.servers.isNotEmpty())
-        }
+        val onlyHere = playedTiles().mapTo(linkedSetOf(), ::tileOf).count { tile -> launchRoute(tile)?.let(::routeStaysHere) == true }
         if (onlyHere != model.savesOnlyHere) model = model.copy(savesOnlyHere = onlyHere)
     }
+
+    /** Where [route]'s next save goes, from structure and cached metadata: true when it can't leave this device. */
+    private fun routeStaysHere(route: GameRoute): Boolean {
+        val player = savePlayer(route) ?: return false
+        val support = saveSupport.getOrPut(player.id to route.saves) { readGameSaveSupport(route.saves, player) }
+        return savesOnlyHere(isSaveEmulator(player, support.supportsSync), support.supportsSync, route.servers.isNotEmpty())
+    }
+
+    /** True when the game's current emulator, or its missing RomM copy, keeps its next save on this device. */
+    internal fun savesStayHere(libraryId: String, remoteKey: String): Boolean =
+        launchRoute(tileOf(homeGameId(libraryId, remoteKey)))?.let(::routeStaysHere) == true
 
     /** What R1's not-syncing notice last heard, so it hears again only when that changes. */
     private var savesDuePublished: Map<String, String>? = null
@@ -3597,7 +3603,7 @@ class ShellController(
     private val catalogFileNames = HashMap<String, String>()
 
     /** Y › Saves asks for a fresh page for [gameId]: the emulator its target names is no longer the one that plays it. */
-    internal var onSavePickerPlayerChanged: (String) -> Unit = {}
+    internal var onSavePickerPlayerChanged: (app.foldcade.language.SavePickerTarget) -> Unit = {}
 
     /** A game opened or closed: an open Saves page may now belong to another emulator. */
     internal fun noteRunningChanged() = refreshSavePickerHealth()
@@ -3608,7 +3614,7 @@ class ShellController(
         val playing = savesMenuRoute(page.target.gameId)?.let(::savePlayer)?.id
         // An uninstalled one leaves the page as it is: it says there is no emulator to play with.
         if (playing != null && playing != page.target.playerId && !page.busy && page.confirmation == null && page.copying == null) {
-            onSavePickerPlayerChanged(page.target.gameId)
+            onSavePickerPlayerChanged(page.target)
             return
         }
         val owner = savesMenuRoute(page.target.gameId)?.servers?.firstOrNull {

@@ -120,6 +120,10 @@ class ShellDeviceOnlySavesTest {
         assertTrue(shell.saveHealthOf(serverId) is SaveStatus.Waiting)
         shell.notePlayChanged()
         assertEquals(1, shell.model.savesOnlyHere)
+        // GBA.emu's upload finishing now can't put "Saves synced" on a game My Boy! plays.
+        assertTrue(shell.savesStayHere(server.backendId, server.remoteKey))
+        shell.useSavePlayer(serverId, PlayerChoice(gbaEmu, label = "GBA.emu"))
+        assertFalse(shell.savesStayHere(server.backendId, server.remoteKey))
     }
 
     @Test fun aSwitchWhileTheOldEmulatorIsOpenWaitsForItToCloseThenTheSavesPageFollows() {
@@ -128,7 +132,7 @@ class ShellDeviceOnlySavesTest {
         val myBoyPlayer = plugins.player(myBoy.playerId)!!
         var open: Player? = myBoyPlayer
         shell.runningPlayer = { id -> open.takeIf { id == shell.tileOf(serverId) } }
-        val reopened = mutableListOf<String>()
+        val reopened = mutableListOf<SavePickerTarget>()
         shell.onSavePickerPlayerChanged = { reopened += it }
         shell.useSavePlayer(serverId, PlayerChoice(gbaEmu, label = "GBA.emu"))
         val pageTarget = SavePickerTarget(shell.tileOf(serverId), server.backendId, server.remoteKey, myBoy.playerId)
@@ -141,7 +145,8 @@ class ShellDeviceOnlySavesTest {
         assertTrue(reopened.isEmpty())
         open = null
         shell.noteRunningChanged()
-        assertEquals(listOf(shell.tileOf(serverId)), reopened)
+        // The whole target, so the reopened page keeps the RomM copy it named.
+        assertEquals(listOf(pageTarget), reopened)
     }
 
     @Test fun onlyLaunchOnlyEmulatorsStillShowTheSettingsCount() {
@@ -157,5 +162,8 @@ class ShellDeviceOnlySavesTest {
         assertTrue(emulatorShelf(only.model).isEmpty())
         assertTrue(Row.SaveSetup in settingsRows(SettingsCategory.Players, only.model))
         assertEquals(SaveSetupCopy.onlyOnThisDevice(1), rowText(Row.SaveSetup, only.model).value)
+        // The page it opens has no emulator tiles, and ends on what stays here instead of going blank.
+        assertTrue(saveSetupShowsEnd(saveSetupTiles(only.model, SaveSetupPage()), SaveSetupPage(), only.model.savesOnlyHere))
+        assertEquals(SaveSetupCopy.doneForNow, SaveSetupCopy.endTitle(0, 0, only.model.savesOnlyHere))
     }
 }

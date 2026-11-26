@@ -59,6 +59,7 @@ import app.foldcade.language.actionFaces
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.saveSetupActions
 import app.foldcade.language.saveSetupFinished
+import app.foldcade.language.saveSetupShowsEnd
 import app.foldcade.language.saveSetupPause
 import app.foldcade.language.savesDue
 import app.foldcade.language.savesRest
@@ -156,7 +157,8 @@ private fun Head(app: FoldcadeApp, page: SaveSetupPage, screen: HostScreen, scal
             BasicText(SaveSetupCopy.title, style = setupStyle(theme.onBackground, theme.style.type.heroTitle, theme, bold = true, display = true), maxLines = 1)
         }
         Spacer(Modifier.weight(1f))
-        if (tiles.isNotEmpty()) {
+        // With only launch-only emulators there are no tiles, and the head still says what stays here.
+        if (tiles.isNotEmpty() || model.savesOnlyHere > 0) {
             // Emulators no game on Home plays on wear their own marks; the head stays quiet about them.
             val onlyHere = model.savesOnlyHere
             val look = when {
@@ -447,7 +449,8 @@ private fun Showcase(
             val tile = tiles.firstOrNull { it.key == subject.key }
             when {
                 tile != null -> TileShowcase(app, page, tile, screen, compact, scale, dispatch)
-                saveSetupFinished(tiles, page) -> End(app, page, tiles, screen, compact, scale, dispatch)
+                // No emulator to set up, but played games keep saves only here: the end says so, never a blank page.
+                saveSetupShowsEnd(tiles, page, model.savesOnlyHere) -> End(app, page, tiles, screen, compact, scale, dispatch)
                 // The emulators are still loading, as when the page comes back with a new process.
                 else -> Box(Modifier.fillMaxSize())
             }

@@ -79,7 +79,8 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
 
         override suspend fun running(): Boolean = withContext(Dispatchers.Main.immediate) {
             launchWork.active || launchWork.waitingToLight ||
-                (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
+                // A player-wide stop, such as melonDS saving beside its ROMs, holds this placement too.
+                (isQuarantine && saveProtection.incidents().any { it.gatesLaunch(player, game) }) ||
                 player.packageNames.any { name ->
                     val fallback = incident.openedAtMillis.takeIf { (player is RetroArchPlayer || besideGame) && name == packageInfo.packageName }
                     name in closingPlayers || repairPlayerHolds.mayHold(name, fallback, repairHasRunningTask(name))

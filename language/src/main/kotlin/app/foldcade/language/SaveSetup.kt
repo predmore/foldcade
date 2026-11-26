@@ -194,6 +194,10 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
  */
 fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = tiles.isNotEmpty() && tiles.none { it.needsYou(page) }
 
+/** The page ends when every tile is done, and also with no tiles at all while played games keep saves only here (§7.1). */
+fun saveSetupShowsEnd(tiles: List<SetupTile>, page: SaveSetupPage, onlyHere: Int): Boolean =
+    saveSetupFinished(tiles, page) || tiles.isEmpty() && onlyHere > 0
+
 /**
  * The one count of emulators that need you: those Home's games play on whose saves can't reach
  * RomM yet, as Settings › Emulators' rows read. R1's notice names these, Settings › Emulators'

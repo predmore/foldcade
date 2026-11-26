@@ -931,8 +931,6 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         foldcade.shell.setHomeRoleHeld(held)
         if (launchesCompanion) showRestoredSetup()
         foldcade.onSaveConflicts = { refreshSaveConflict() }
-        // A switch made while the old emulator held the game: once it closes, the page shows the new one.
-        foldcade.shell.onSavePickerPlayerChanged = { gameId -> openSaves(gameId) }
         foldcade.onNetworkBack = { foldcade.shell.model.savePicker?.takeIf { it.error }?.let { retrySavePicker(it.target) } }
         applyDialogPreview(intent)
         applySaveConflictPreview(intent)
@@ -4562,10 +4560,11 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
      * Bind the whole screen and its later effects to the menu's original game. A game RomM doesn't
      * have opens on its own copy, with nothing to load: the page shows how its saves can get there.
      */
-    private fun openSaves(gameId: String, message: String? = null): Boolean {
+    private fun openSaves(gameId: String, message: String? = null, owner: Pair<String, String>? = null): Boolean {
         if (foldcade.launchWork.active) return false
         val route = foldcade.shell.savesMenuRoute(gameId) ?: return false
-        val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: route.saves
+        @Suppress("NAME_SHADOWING") val owner = route.servers.firstOrNull { owner != null && it.backendId == owner.first && it.remoteKey == owner.second }
+            ?: route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: route.saves
         val onRomm = route.servers.isNotEmpty()
         val player = foldcade.shell.savePlayer(route)
         val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
@@ -4581,6 +4580,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         return true
     }
 
+    /**
+     * The open Saves page again for [target]'s game and the RomM copy it named, now with the emulator
+     * that plays it: a switch made while the old one held the game took effect when it closed.
+     */
+    internal fun reopenSaves(target: app.foldcade.language.SavePickerTarget) {
+        if (isDestroyed || isFinishing || foldcade.shell.model.savePicker?.target != target) return
+        openSaves(target.gameId, owner = target.libraryId to target.remoteKey)
+    }
+
     /** The Saves page's route: switch the game to an emulator Foldcade syncs, then show its saves with it. */
     private fun useSavePlayer(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.PlayerChoice) {
         if (foldcade.shell.model.savePicker?.target != target) return
@@ -4590,7 +4598,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         val message = running?.let { app.foldcade.language.SaveRouteCopy.afterClose(choice.label, it.displayName) }
             ?: app.foldcade.language.SaveRouteCopy.switched(choice.label)
         // A launch starting meanwhile owns the screen; this page just stops waiting and says the switch happened.
-        if (!openSaves(target.gameId, message)) foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = message) }
+        if (!openSaves(target.gameId, message, owner = target.libraryId to target.remoteKey)) foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = message) }
     }
 
     private fun loadSavePicker(target: app.foldcade.language.SavePickerTarget) {
@@ -4689,6 +4697,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         onHeadPlaced = { game, player ->
                             foldcade.saveIncidentCopies.headPlaced(game, player)
                             if (saveId != null && destination == null) {
+                                // Playing a chosen save is the explicit choice a first-link stop waits for.
+                                foldcade.saveIncidentCopies.firstLinkChosen(game, player)
                                 val id = regressionIncidentId(game, player)
                                 if (foldcade.saveProtection.incident(id)?.repair == app.foldcade.language.RepairState.Guided) {
                                     foldcade.saveProtection.close(id)
