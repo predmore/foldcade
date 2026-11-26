@@ -137,7 +137,11 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
             is SaveStatus.Problem, is SaveStatus.NotSyncing -> state to Effect.FixSavePicker(state.target)
             is SaveStatus.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
-        } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
+        } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null
+        // Two saves at a first link: playing one of them is the explicit choice the stop waits for (§7.1).
+        else if ((state.health as? SaveStatus.Problem)?.incident?.firstLink == true)
+            state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
+        else when (state.health) {
             // Set up loses nothing and is the only way on, so it is the one focused.
             is SaveStatus.Problem, is SaveStatus.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
             is SaveStatus.DeviceOnly -> state.copy(message = if (state.health.why == NoDestinationWhy.PlayerCantSync)

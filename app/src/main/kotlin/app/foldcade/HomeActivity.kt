@@ -2120,16 +2120,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         )
                         if (started) {
                             foldcade.notePlayerChoiceLaunch(id, game.platformId, resolution)
+                            val bypass = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor)
                             val saves = LibraryReturn(
                                 owner.backendId,
                                 owner,
                                 plan.player,
                                 spots,
                                 (target as? LaunchTarget.ContentUri)?.uri ?: (target as? LaunchTarget.SharedFile)?.uri,
-                                saveBaseline, !saveSyncForLaunch(plan.player, saveSyncDeclinedFor),
-                                preserveAsBackup = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor) && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
+                                saveBaseline, bypass,
+                                preserveAsBackup = bypass && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
                                 sessionStartedAtMillis = startedAt,
                                 edenSession = edenSession,
+                                firstLink = if (bypass) foldcade.saveIncidentCopies.firstLinkSession(owner, plan.player) else null,
                             )
                             rememberReturn(saves)
                             noteRunning(id, title, game.platformId, plan.player, playerIntent, installedIntent, saves, activityGrant)
@@ -2710,7 +2712,13 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
                 firstLink = { route, owner, player, target, spots, outside ->
                     // The hero, R1 and Fix read the new two-saves incident at once.
-                    foldcade.saveIncidentCopies.holdFirstLink(route, owner, player, target, spots, outside)?.also { foldcade.publishSaveGate(player, null) }
+                    // The build that launches, as other incidents record it, so repair picks it when two are installed.
+                    val packageName = launchReading?.packageName ?: resolvedPackage
+                    val installed = launchReading?.installFirstMillis ?: packageName?.let { name ->
+                        runCatching { packageManager.getPackageInfo(name, 0).firstInstallTime }.getOrNull()
+                    }
+                    foldcade.saveIncidentCopies.holdFirstLink(route, owner, player, target, spots, outside, packageName, installed)
+                        ?.also { foldcade.publishSaveGate(player, null) }
                 },
                 onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
                 firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
@@ -2917,7 +2925,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (game.libraryId != null) {
                 val saves = LibraryReturn(game.libraryId, apiGame, player, spots, saveReadUri, baseline, !syncing,
                     preserveAsBackup = !syncing && foldcade.saveIncidentCopies.beginUnprotected(apiGame, player),
-                    sessionStartedAtMillis = startedAt, edenSession = edenSession)
+                    sessionStartedAtMillis = startedAt, edenSession = edenSession,
+                    firstLink = if (!syncing) foldcade.saveIncidentCopies.firstLinkSession(apiGame, player) else null)
                 rememberReturn(saves)
                 noteRunning(game.id, game.title, game.platformId, player, intent, start, saves, activityGrant)
             }
@@ -4695,10 +4704,9 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             }
                         },
                         onHeadPlaced = { game, player ->
-                            foldcade.saveIncidentCopies.headPlaced(game, player)
+                            // Playing a chosen save is the explicit choice a first-link stop waits for.
+                            foldcade.saveIncidentCopies.headPlaced(game, player, chosen = saveId != null && destination == null)
                             if (saveId != null && destination == null) {
-                                // Playing a chosen save is the explicit choice a first-link stop waits for.
-                                foldcade.saveIncidentCopies.firstLinkChosen(game, player)
                                 val id = regressionIncidentId(game, player)
                                 if (foldcade.saveProtection.incident(id)?.repair == app.foldcade.language.RepairState.Guided) {
                                     foldcade.saveProtection.close(id)
@@ -4896,7 +4904,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     true
                 }
                 else foldcade.saveProbes.preserveArmsX2Return(pending, probeTarget, spots, after) ||
-                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider)
+                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider, pending.firstLink)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.
@@ -5102,6 +5110,8 @@ internal data class LibraryReturn(
     val sessionStartedAtMillis: Long? = null,
     val sessionEndedAtMillis: Long? = null,
     val edenSession: EdenSaveSession? = null,
+    /** The first-link stop this session played past, on the server it was raised for. Only it is followed on return. */
+    val firstLink: FirstLinkSession? = null,
 )
 
 /**
@@ -5161,6 +5171,7 @@ internal fun LibraryReturn.encode(): String = JSONObject().apply {
     put("sessionStartedAtMillis", sessionStartedAtMillis ?: JSONObject.NULL)
     put("sessionEndedAtMillis", sessionEndedAtMillis ?: JSONObject.NULL)
     edenSession?.let { put("edenSession", it.toJson()) }
+    firstLink?.let { put("firstLink", JSONObject().put("incident", it.incidentId).put("origin", it.origin)) }
     put(
         "spots",
         JSONArray(
@@ -5237,6 +5248,7 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
         sessionStartedAtMillis = json.nullableLong("sessionStartedAtMillis"),
         sessionEndedAtMillis = json.nullableLong("sessionEndedAtMillis"),
         edenSession = json.optJSONObject("edenSession")?.let(::edenSessionFromJson),
+        firstLink = json.optJSONObject("firstLink")?.let { FirstLinkSession(it.getString("incident"), it.getString("origin")) },
     )
 }
 

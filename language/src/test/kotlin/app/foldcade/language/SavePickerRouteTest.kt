@@ -103,4 +103,19 @@ class SavePickerRouteTest {
         assertTrue(state.setupInCard)
         assertEquals(Effect.FixSavePicker(target), applySavePicker(state, Meaning.Activate).second)
     }
+
+    @Test fun aFirstLinkStopStillLetsTheSavesPagePlayAChosenSave() {
+        val incident = SaveIncident("MaybeNewSave:melonds:romm:12:firstLink:x", IncidentKind.MaybeNewSave, "melonds", "melonDS", listOf("12"), null, null,
+            Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.firstLinkDetail), 0, firstLink = true)
+        val state = page(SaveStatus.Problem(incident), onRomm = true, saves = listOf(save), route = null, player = "melonDS").copy(index = 1)
+        val asked = applySavePicker(state, Meaning.Activate).first!!
+        // A asks Play this save?, opening on Cancel, rather than sending the player to set up.
+        assertEquals(SavePickerChoice.Play(save), asked.confirmation)
+        assertEquals(1, asked.confirmIndex)
+        assertEquals("Play this save?", SavePickerCopy.confirmationTitle(asked.confirmation!!, "melonDS"))
+        assertEquals(Effect.PlayPickedSave(target, save.id), applySavePicker(asked.copy(confirmIndex = 0), Meaning.Activate).second)
+        // A folder or access problem keeps its gate.
+        val wrongFolder = incident.copy(kind = IncidentKind.WrongFolder, firstLink = false)
+        assertEquals(SavePickerChoice.Setup, applySavePicker(state.copy(health = SaveStatus.Problem(wrongFolder)), Meaning.Activate).first!!.confirmation)
+    }
 }

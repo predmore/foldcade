@@ -43,6 +43,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 
@@ -1453,7 +1454,7 @@ class LaunchSavesTest {
         assertTrue(incident.firstLink)
         assertEquals(IncidentKind.MaybeNewSave, incident.kind)
         assertEquals(RepairState.Keeping, incident.repair)
-        assertEquals(regressionIncidentId(owner, folderMelon), incident.id)
+        assertEquals(firstLinkIncidentId(owner, folderMelon, origin), incident.id)
         assertEquals("content://rf4", incident.subject?.targetUri)
         assertEquals(origin, incident.subject?.origin)
         // Nothing reached RomM's sync, nothing was placed, and the folder's progress is untouched and queued for a Backup.
@@ -1533,12 +1534,14 @@ class LaunchSavesTest {
         val store = SaveProtectionStore(Files.createTempDirectory("first-link-anyway"))
         val copies = firstLinkCopies(store) { listOf(version("another device")) }
         val first = launchStops(copies)!!
-        // Play anyway: the session is Backup-only from the start.
+        // Play anyway: the session is Backup-only from the start, and its return record names this stop and server.
         assertTrue(copies.beginUnprotected(owner, folderMelon))
+        val session = copies.firstLinkSession(owner, folderMelon)!!
+        assertEquals(FirstLinkSession(first.id, origin), session)
         docs.files[folderSave] = "an evening more".toByteArray()
         val spots = saves.spots(folderMelon, owner, local)
         // The return keeps the session as a Backup. Its marks are bookkeeping, not a choice.
-        assertTrue(copies.preserveReturn(owner, folderMelon, spots, preserveAsBackup = true))
+        assertTrue(copies.preserveReturn(owner, folderMelon, spots, preserveAsBackup = true, firstLink = session))
         assertTrue(marks.isNotEmpty())
         val after = store.incident(first.id)!!
         assertTrue(after.firstLink)
@@ -1573,10 +1576,11 @@ class LaunchSavesTest {
         val copies = firstLinkCopies(store) { listOf(version("another device")) }
         val first = launchStops(copies)!!
         assertTrue(copies.beginUnprotected(owner, folderMelon))
+        val session = copies.firstLinkSession(owner, folderMelon)
         docs.files[folderSave] = "an evening more".toByteArray()
         // Returned offline on server A.
         server.backupsFail = true
-        copies.preserveReturn(owner, folderMelon, saves.spots(folderMelon, owner, local), preserveAsBackup = true)
+        copies.preserveReturn(owner, folderMelon, saves.spots(folderMelon, owner, local), preserveAsBackup = true, firstLink = session)
         val serverA = origin
         val queued = saves.queuedCopies().filter { it.slot.contentUri == store.incident(first.id)!!.quarantineSourceUri }
         assertEquals(listOf(serverA), queued.map { it.origin })
@@ -1590,6 +1594,82 @@ class LaunchSavesTest {
         // Nor does a choice on server B answer A's stop.
         copies.firstLinkChosen(owner, folderMelon)
         assertNotNull(store.incident(first.id))
+    }
+
+    @Test fun aGameFoldedFromTwoRommIdsKeepsTheOrdinarySync() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-two-owners"))
+        val second = owner.copy(remoteKey = "13")
+        assertNull(launchStops(firstLinkCopies(store) { listOf(version("another device")) }, route = GameRoute("tile", linkedPlay, owner, servers = listOf(owner, second))))
+        assertTrue(store.incidents().isEmpty())
+    }
+
+    @Test fun anOpenStopGatesEveryLaunchOfTheGameWhateverEmulatorOrCopy() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-every-launch"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val incident = launchStops(copies)!!
+        val another = object : Player by folderMelon, app.foldcade.api.plugin.SaveFolderHolder by folderMelon {
+            override val id = "melonds.other"
+        }
+        server.calls.clear()
+        // Another emulator, and a route that names the game through its RomM copy alone, both meet it.
+        assertEquals(incident.id, launchStops(copies, player = another)?.id)
+        assertEquals(incident.id, launchStops(copies, player = another, route = GameRoute("tile", owner, owner, servers = listOf(owner)))?.id)
+        assertTrue(server.calls.isEmpty())
+    }
+
+    @Test fun eachServerKeepsItsOwnStop() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-two-servers"))
+        val onA = launchStops(firstLinkCopies(store) { listOf(version("another device")) })!!
+        val serverA = origin
+        origin = "https://other.romm.test"
+        val onB = launchStops(firstLinkCopies(store) { listOf(version("a third save")) })!!
+        // B's stop never overwrites A's: both stay, each for its own server.
+        assertNotEquals(onA.id, onB.id)
+        assertEquals(setOf(serverA, origin), store.incidents().mapNotNull { it.subject?.origin }.toSet())
+    }
+
+    @Test fun aSessionOnAnotherServerNeverLatchesFollowsOrStagesForTheStop() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-other-session"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val onA = launchStops(copies)!!
+        origin = "https://other.romm.test"
+        // Playing on server B: A's stop is not this session's.
+        assertFalse(copies.beginUnprotected(owner, folderMelon))
+        assertNull(copies.firstLinkSession(owner, folderMelon))
+        docs.files[folderSave] = "played on B".toByteArray()
+        copies.preserveReturn(owner, folderMelon, saves.spots(folderMelon, owner, local), preserveAsBackup = true, firstLink = null)
+        val after = store.incident(onA.id)!!
+        assertEquals(onA.quarantinedHash, after.quarantinedHash)
+        assertEquals(onA.staged, after.staged)
+    }
+
+    @Test fun theStopRecordsTheBuildThatLaunched() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-package"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val launch = LaunchSaves(saves, plugins, firstLink = { route, game, player, target, spots, outside ->
+            copies.holdFirstLink(route, game, player, target, spots, outside, packageName = "aenu.aps3e.premium", installFirstMillis = 42)
+        }) { awaiting += it }
+        val incident = (runCatching { launch.prepare(GameRoute("tile", linkedPlay, owner), folderMelon, local) }.exceptionOrNull() as SaveProtectionStop).incident
+        assertEquals("aenu.aps3e.premium", incident.subject?.packageName)
+        assertEquals(42L, incident.subject?.installFirstMillis)
+    }
+
+    @Test fun onlyAPlayedChosenSaveClosesTheStopWhenItsHeadIsPlaced() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-head"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val incident = launchStops(copies)!!
+        // An ordinary head placement, or a copy into a slot, is not the choice.
+        copies.headPlaced(owner, folderMelon)
+        assertNotNull(store.incident(incident.id))
+        // Y › Saves played the save the player picked.
+        copies.headPlaced(owner, folderMelon, chosen = true)
+        assertNull(store.incident(incident.id))
     }
 
     @Test fun aStopRaisedForAnotherServerDecidesAfresh() = runBlocking {

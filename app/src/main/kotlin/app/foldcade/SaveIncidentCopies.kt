@@ -52,17 +52,19 @@ internal class SaveIncidentCopies(
      * anything too), or the emulator can't finish a choice yet (Eden, hosted cards).
      */
     suspend fun holdFirstLink(route: GameRoute, owner: Game, player: Player, local: LaunchTarget, spots: List<SaveSpot>,
-        outside: ObservedSaves): SaveIncident? {
+        outside: ObservedSaves, packageName: String? = null, installFirstMillis: Long? = null): SaveIncident? {
         val origin = rommOrigin() ?: return null
-        // Every route meets an open stop, the RomM grid's included, before any filter for raising one.
-        // It belongs to the server it was raised for; another server decides afresh.
-        openFirstLink(owner, player, origin)?.let { return it }
+        // Any open stop for any copy of this game, on this server, gates every launch of it, whichever copy
+        // or route starts it, before any filter for raising one. Another server's stop is not this one's.
+        openFirstLinkFor(route, origin)?.let { return it }
         if (route.play.backendId != LocalFolderBackend.ID || owner.backendId == LocalFolderBackend.ID) return null
+        // One RomM owner only: a game folded from several RomM ids keeps the ordinary sync (§7.1 scope).
+        if (route.servers.distinctBy { it.backendId to it.remoteKey }.size != 1) return null
         // Repair can't place a chosen copy for these yet; they keep the ordinary sync (follow-up in §7.1).
         if (player !is SaveFolderHolder || player is HostedSaveFolder || player is EdenPlayer) return null
         val spot = spots.singleOrNull() ?: return null
         if (player.saveDeclarations(owner).singleOrNull()?.slot != spot.slot) return null
-        val id = regressionIncidentId(owner, player)
+        val id = firstLinkIncidentId(owner, player, origin)
         // Cheap first: a slot this device has placed, read or held is an ordinary RomM game here.
         val linked = try {
             saves.everHandled(owner.backendId, owner, player, spot) || plugins.saves(owner.backendId, owner).slots.any { it.slot == spot.slot }
@@ -78,7 +80,9 @@ internal class SaveIncidentCopies(
         val folder = FolderRef(storageIdentity(spot.folderUri), runCatching { folderPathLabel(spot.folderUri) }.getOrDefault(spot.folderUri))
         store.put(SaveIncident(id, IncidentKind.MaybeNewSave, player.saveFolderId(), player.displayName, listOf(owner.remoteKey), folder, null,
             Evidence(EvidenceKind.SessionWrite, SaveProtectionCopy.firstLinkDetail), System.currentTimeMillis(),
-            staged = listOf(uri), repair = RepairState.Keeping, subject = incidentGame(owner, player, target, origin, null),
+            staged = listOf(uri), repair = RepairState.Keeping,
+            // The build that launched, so repair finds it when two builds of the emulator are installed.
+            subject = incidentGame(owner, player, target, origin, null).copy(packageName = packageName, installFirstMillis = installFirstMillis),
             quarantinedHash = hash, quarantineSourceUri = uri, firstLink = true))
         // Offline, the copy stays queued, and the choice waits for it to verify.
         keep(owner, player)
@@ -106,13 +110,25 @@ internal class SaveIncidentCopies(
         openFirstLink(game, player, origin)?.let { store.close(it.id) }
     }
 
-    /** [game]'s open first-link stop on this player, raised for [origin]; with null, for whichever server. */
-    private fun openFirstLink(game: Game, player: Player, origin: String?): SaveIncident? =
-        store.incident(regressionIncidentId(game, player))
-            ?.takeIf { incident ->
-                val raisedFor = incident.subject?.origin
-                incident.firstLink && incident.repair != RepairState.Done && raisedFor != null && (origin == null || raisedFor == origin)
-            }
+    /** The open first-link stop a session of [game] on the current server would answer to: its id and origin, for the return record. */
+    fun firstLinkSession(game: Game, player: Player): FirstLinkSession? {
+        val origin = rommOrigin() ?: return null
+        return openFirstLink(game, player, origin)?.let { FirstLinkSession(it.id, origin) }
+    }
+
+    /** [game]'s open first-link stop on this player, raised for [origin]. */
+    private fun openFirstLink(game: Game, player: Player, origin: String): SaveIncident? =
+        store.incident(firstLinkIncidentId(game, player, origin))?.takeIf { it.isOpenFirstLink(origin) }
+
+    /** Any open stop raised on [origin] for a copy of [route]'s game, by any emulator. */
+    private fun openFirstLinkFor(route: GameRoute, origin: String): SaveIncident? {
+        val copies = (listOf(route.play, route.saves) + route.servers).map { it.backendId to it.remoteKey }.toSet()
+        return store.incidents().firstOrNull { incident ->
+            incident.isOpenFirstLink(origin) && incident.subject?.let { (it.libraryId to it.gameId) in copies } == true
+        }
+    }
+
+    private fun SaveIncident.isOpenFirstLink(origin: String) = firstLink && repair != RepairState.Done && subject?.origin == origin
 
     private suspend fun rommVersions(game: Game, origin: String): List<app.foldcade.plugins.romm.RommRepairSave> {
         val library = plugins.library(game.backendId)
@@ -184,8 +200,9 @@ internal class SaveIncidentCopies(
     suspend fun beginUnprotected(game: Game, player: Player): Boolean = withContext(NonCancellable + Dispatchers.IO) {
         val key = player.saveFolderId()
         val incidents = store.incidents().filter { it.gatesLaunch(player, game) }
-        // Play anyway past a first-link stop plays this device's save: keep it a Backup, never a slot head.
-        val firstLink = store.incidents().any { it.firstLink && it.playerKey == key && it.repair != RepairState.Done && it.appliesTo(game) }
+        // Play anyway past a first-link stop on this server plays this device's save: a Backup, never a slot head.
+        // Another server's stop doesn't latch a session here.
+        val firstLink = firstLinkSession(game, player) != null
         if (incidents.isEmpty() && !firstLink && !store.needsBackup(key, game)) return@withContext false
         store.requireBackup(key, game)
         incidents.filter { it.appliesTo(game) }.forEach { store.put(it.copy(recoveryRequired = true)) }
@@ -197,6 +214,7 @@ internal class SaveIncidentCopies(
         if (!start()) return null
         val saves = running.saves?.let { pending ->
             pending.copy(preserveAsBackup = beginUnprotected(pending.game, pending.player) || pending.preserveAsBackup,
+                firstLink = firstLinkSession(pending.game, pending.player) ?: pending.firstLink,
                 startedByFoldcade = false,
                 sessionStartedAtMillis = sessionStartedAtMillis ?: pending.sessionStartedAtMillis,
                 sessionEndedAtMillis = if (sessionStartedAtMillis == null) pending.sessionEndedAtMillis else null)
@@ -204,14 +222,19 @@ internal class SaveIncidentCopies(
         return running.copy(saves = saves)
     }
 
-    /** A checked head in the working folder ends the rebound fence, even without an outside copy. */
-    suspend fun headPlaced(game: Game, player: Player) = withContext(Dispatchers.IO) {
+    /**
+     * A checked head in the working folder ends the rebound fence, even without an outside copy.
+     * [chosen] when the player picked that save, as from Y › Saves: the explicit choice a first-link stop waits for.
+     */
+    suspend fun headPlaced(game: Game, player: Player, chosen: Boolean = false) = withContext(Dispatchers.IO) {
         val key = player.saveFolderId()
         if (store.needsBackup(key, game)) store.handled(key, game)
+        if (chosen) firstLinkChosen(game, player)
     }
 
     /** The launch's persisted decision wins even if a guided fix closed the incident meanwhile. */
-    suspend fun preserveReturn(game: Game, player: Player, spots: List<SaveSpot>, preserveAsBackup: Boolean): Boolean {
+    suspend fun preserveReturn(game: Game, player: Player, spots: List<SaveSpot>, preserveAsBackup: Boolean,
+        firstLink: FirstLinkSession? = null): Boolean {
         val key = player.saveFolderId()
         val incident = backupIncident(game, player)
         if (!preserveAsBackup && !store.pendingBackup(key, game)) {
@@ -226,11 +249,13 @@ internal class SaveIncidentCopies(
         // Retained through strict-read failures and later launches until durable staging succeeds.
         store.requireBackup(key, game)
         if (spots.isEmpty()) throw SaveNotPlaced()
-        // A session past a first-link stop is that server's progress: its Backup goes to that server
-        // alone, even if another one is connected by the time it uploads.
-        val firstLink = openFirstLink(game, player, null)
-        val observed = stage(game, player, spots, incident, mark = true, origin = firstLink?.subject?.origin)
-        firstLink?.let { followFirstLink(it, observed) }
+        // A session past a first-link stop is that server's progress, as its return record says: its Backup
+        // goes to that server alone, even if another is connected by the time it uploads, and only that
+        // stop follows it. Nothing else decides which stop a session belongs to.
+        val observed = stage(game, player, spots, incident, mark = true, origin = firstLink?.origin)
+        firstLink?.let { session ->
+            store.incident(session.incidentId)?.takeIf { it.isOpenFirstLink(session.origin) }?.let { followFirstLink(it, observed) }
+        }
         store.handled(key, game)
         keep(game, player)
         return true
@@ -257,7 +282,8 @@ internal class SaveIncidentCopies(
     /** First outside bytes after a rebind (or an unfinished bypass) never reach ordinary reconcile. */
     suspend fun preserveBeforeLaunch(game: Game, player: Player, spots: List<SaveSpot>, outside: ObservedSaves): Boolean {
         val key = player.saveFolderId()
-        val quarantine = store.incident(regressionIncidentId(game, player))
+        // A first-link stop on this server keeps outside bytes out of reconcile too, as when a save is played from Y › Saves.
+        val quarantine = store.incident(regressionIncidentId(game, player)) ?: rommOrigin()?.let { openFirstLink(game, player, it) }
         val blocked = store.incidents().firstOrNull { it.gatesLaunch(player, game) }
         // Another game's melonDS beside incident can gate this launch; copies are recorded on this game's own incident.
         val incident = store.incidents().firstOrNull { it.gatesLaunch(player, game) && it.appliesTo(game) }
@@ -336,3 +362,10 @@ internal fun firstLinkDiffers(hash: String, slot: String, versions: List<app.fol
     if (head.hash.isBlank()) return false
     return versions.none { it.hash.isNotBlank() && it.hash.equals(hash, ignoreCase = true) }
 }
+
+/** The first-link stop a Play anyway session answers to, persisted in its return record. */
+internal data class FirstLinkSession(val incidentId: String, val origin: String)
+
+/** First-link stops are keyed by server, so one server's stop never overwrites another's. */
+internal fun firstLinkIncidentId(game: Game, player: Player, origin: String) =
+    "${regressionIncidentId(game, player)}:firstLink:${md5Hex(origin.toByteArray())}"
