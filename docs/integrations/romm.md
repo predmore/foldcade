@@ -159,7 +159,7 @@ For aPS3e, allow the installed build's own folder. A reinstall requires a new gr
 
 A game that is also in a [local folder](local-games.md) syncs through RomM too, whichever copy opens. Its first launch after the two become one tile hands the emulator's save to RomM as progress, so a save made from the folder is kept. If another device saved since, Foldcade asks which to play and keeps both.
 
-For PPSSPP, Foldcade finds the PSP folder and syncs its game-ID savedata folders as slot `savedata`. ISO, CSO v1 and PBP metadata are supported. See [PPSSPP](emulators.md#ppsspp-psp).
+For PPSSPP, use the same **PSP** folder in PPSSPP’s **Memory Stick Folder** setting and in Foldcade. Foldcade checks for save writes during play and syncs game-ID savedata folders as slot `savedata`. If a matching save changes in another readable PSP folder, **Fix it** can keep that copy and rebind to the folder PPSSPP uses. ISO, CSO v1 and PBP metadata are supported. See [PPSSPP](emulators.md#ppsspp-psp).
 
 For Dolphin, Foldcade syncs the default GameCube Slot A GCI folder for ISO/GCM games as slot `gci`. Its own provider checks the root for this installation. A confirmed custom GCI configuration gates the affected game. A matching GCI write in another readable root can also raise a folder problem. Foldcade keeps the matching readable files under **Backups** in **Y › Saves** after verifying them on RomM. The **Playing** save stays selected. Local-only copies stay on the device. See [Dolphin](emulators.md#dolphin-gamecube).
 

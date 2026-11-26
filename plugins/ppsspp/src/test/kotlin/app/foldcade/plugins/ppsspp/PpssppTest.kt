@@ -45,6 +45,38 @@ class PpssppTest {
         assertTrue(ServiceLoader.load(PluginEntry::class.java).any { it is PpssppEntry })
     }
 
+    @Test fun noPpssppPackageOrVersionIsApprovedForPinning() {
+        val player: SaveLocationProbe = PpssppPlayer()
+        for (pkg in listOf("org.ppsspp.ppsspp", "org.ppsspp.ppssppgold", "unrecognized.package")) {
+            for (version in listOf(0L, 120_039_999L, 120_040_000L, 120_040_001L, Long.MAX_VALUE)) {
+                assertFalse("$pkg version $version", player.pinsSaveFolder(pkg, version))
+            }
+        }
+        assertTrue(player.saveConfigPrivate)
+    }
+
+    @Test fun bothEditionsUseOnlyTheGameUriEvenWithASharedPspBinding() {
+        val player = PpssppPlayer()
+        val game = Game("test", "1", "psp", Availability.LocalOnly, "Game")
+        val target = LaunchTarget.ContentUri("content://test/game.iso")
+        val ordinaryFlags = setOf(LaunchFlag.NewTask, LaunchFlag.ClearTop, LaunchFlag.ClearTask)
+        for (root in listOf(
+            "content://com.android.externalstorage.documents/tree/primary%3APSP",
+            "content://com.android.externalstorage.documents/tree/primary%3AQA%20With%20Spaces%2FPSP",
+            "content://com.android.externalstorage.documents/tree/1234-5678%3APSP",
+            "content://example.provider/tree/PSP",
+        )) {
+            player.bindSaveFolder(root)
+            for (pkg in player.packageNames) {
+                val intent = player.launchIntent(LaunchRequest(game, target, pkg))
+                assertEquals(target.uri, intent.dataUri)
+                assertTrue(intent.grantReadUri)
+                assertEquals(ordinaryFlags, intent.flags)
+                assertTrue(intent.extras.isEmpty())
+            }
+        }
+    }
+
     @Test fun emptyPbpIconUsesRepeatedOffsetsAndAZeroOffsetDoesNotExposeIgnoredMetadata() {
         val sfo = sfo("ULUS12345")
         val pbp = ByteArray(40 + sfo.size + 8)

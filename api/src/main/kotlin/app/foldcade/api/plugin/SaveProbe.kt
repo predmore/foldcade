@@ -33,6 +33,13 @@ interface SaveLocationProbe {
      */
     val saveConfigPrivate: Boolean get() = false
 
+    /**
+     * Whether the exact installed package and version support a save-folder override
+     * on a protected launch. A true result is a capability, not evidence that a
+     * particular launch applied the override. Added in API minor 29.
+     */
+    fun pinsSaveFolder(packageName: String, versionCode: Long): Boolean = false
+
     /** What [root] says about the folder the player last used. Called before launch, after return, and on Home resume. */
     fun liveSignals(root: SaveFolderAccess): List<LiveSignal> = emptyList()
 
