@@ -3,7 +3,7 @@ import math
 from art import *
 from palette import *
 from objects import *
-from marks import rr, ci, stick, bezel, PAD, PS, _crescent
+from marks import rr, ci, stick, bezel, PAD, PS, SILVER, _crescent
 
 # ---- shape helpers for this module
 def rhomb(cx, cy, rx, ry, r=2.0):
@@ -258,6 +258,51 @@ def cocoonshell(c):
             body(capsule(19, 27, 45.5, 21.5, 3.4), silk, gloss=0.15), body(capsule(19.5, 37.5, 45, 32, 3.4), silk, gloss=0.15),
             body(capsule(24, 47, 40.5, 43, 3.4), silk, gloss=0.15)]
 
+def plume(x, y, length, width, deg):
+    """A feather standing on its quill at (x, y), [length] long and [width] across, leaning [deg] from upright."""
+    w, l = width / 2, length
+    d = (f"M{f(x)},{f(y)} C{f(x + w * 1.3)},{f(y - l * 0.3)} {f(x + w)},{f(y - l * 0.85)} {f(x)},{f(y - l)} "
+         f"C{f(x - w)},{f(y - l * 0.85)} {f(x - w * 1.3)},{f(y - l * 0.3)} {f(x)},{f(y)} Z")
+    return xf(d, deg=deg, cx=x, cy=y)
+
+def magisk(c):
+    """Magisk: a teal masquerade mask, warm plumes fanning above it and a handlebar moustache under it."""
+    out = [shadow(32, 60, 22, 3)]
+    for deg, length, shade in ((-50, 18, "#FF6F61"), (50, 18, "#FF6F61"), (-25, 21, "#FF9A3D"), (25, 21, "#FF9A3D"), (0, 24, "#FFC93C")):
+        out.append(body(plume(32, 29, length, 8.5, deg), shade, gloss=0.22, sym=1))
+    mask = ("M32,28 C24,24 14,21.5 7.5,19 Q4.5,18 4.5,21 C4.5,28 6,34 10,38.5 C15,44 23,45 28,41 Q32,37.5 36,41 "
+            "C41,45 49,44 54,38.5 C58,34 59.5,28 59.5,21 Q59.5,18 56.5,19 C50,21.5 40,24 32,28 Z")
+    eye = lambda x, deg: xf(f"M{f(x - 7.5)},32 Q{f(x)},25 {f(x + 7.5)},32 Q{f(x)},38 {f(x - 7.5)},32 Z", deg=deg, cx=x, cy=32)
+    stache = ("M32,42 C28,40 21,41 16,46 C13,49 9.5,49 9,45.5 C7.5,50 12,54.5 18,53 C24,51.5 28.5,49 32,50 "
+              "C35.5,49 40,51.5 46,53 C52,54.5 56.5,50 55,45.5 C54.5,49 51,49 48,46 C43,41 36,40 32,42 Z")
+    return out + [body(mask, c), recess(eye(19.5, 10), c), recess(eye(44.5, -10), c),
+                  control(ci(32, 28.5, 2.6), "#FF6F61", sym=None), control(stache, RUBBER, sym=2),
+                  control("M28.5,49.5 Q32,51.5 35.5,49.5 L33.1,55.6 Q32,57.6 30.9,55.6 Z", RUBBER, sym=2)]
+
+def arch(cx, base, half, top):
+    """A doorway [half] wide either side of [cx], its round head at [top] and its sill at [base]."""
+    spring = top + half
+    return (f"M{f(cx - half)},{f(base)} V{f(spring)} A{f(half)},{f(half)} 0 0 1 {f(cx + half)},{f(spring)} "
+            f"V{f(base)} Z")
+
+def rib(cx, base, out, inn, top):
+    """A tunnel's ring: an arch [out] wide either side of [cx], its crown at [top], with an arch [inn] wide
+    cut from it on the same springing line, so the ring is one width all round."""
+    spring = top + out
+    return (f"M{f(cx - out)},{f(base)} V{f(spring)} A{f(out)},{f(out)} 0 0 1 {f(cx + out)},{f(spring)} V{f(base)} "
+            f"H{f(cx + inn)} V{f(spring)} A{f(inn)},{f(inn)} 0 0 0 {f(cx - inn)},{f(spring)} V{f(base)} Z")
+
+def wg_tunnel(c):
+    """WG Tunnel: a padlock with a tunnel bored through it, two rings closing in on the light at the far end."""
+    lamp = "#FFE9B0"; dark = tone(c, -0.62)
+    out = [shadow(32, 60, 20, 3),
+           control(capsule(21, 20, 21, 27, 6), SILVER), control(capsule(43, 20, 43, 27, 6), SILVER),
+           control(arc_band(32, 20, 11, 6, 180, 360), SILVER),
+           body(rr(10, 23, 44, 34, 8), c), recess(arch(32, 53, 12.6, 30.4), c)]
+    for i, (o, n, top) in enumerate(((13, 10, 30), (8, 5, 35))):
+        out.append(body(rib(32, 53.5, o, n, top), mix(dark, lamp, 0.12 + 0.28 * i), gloss=0.12))
+    return out + [screen(arch(32, 53.5, 5, 38), lamp, sym=0)]
+
 # name -> (drawing, accent, what it stands for, packages that wear it)
 APPS = {
     "firefox": (firefox, "#FF7A2E", "Firefox: a fox curled around a globe",
@@ -290,4 +335,7 @@ APPS = {
     "pegasus": (pegasus, "#FF4B3E", "Pegasus: a winged arrowhead", ["org.pegasus_frontend.android"]),
     "beacon": (beacon, "#FF6FAE", "Beacon: a lighthouse with its lamp lit", ["com.radikal.gamelauncher"]),
     "cocoonshell": (cocoonshell, "#6EDDB0", "CocoonShell: a silk cocoon on a twig", ["rip.moth.cocoonshell"]),
+    "magisk": (magisk, "#2FD3C4", "Magisk: a masquerade mask with plumes and a moustache",
+               ["com.topjohnwu.magisk", "io.github.huskydg.magisk", "io.github.vvb2060.magisk"]),
+    "wg_tunnel": (wg_tunnel, "#F2424E", "WG Tunnel: a padlock with a lit tunnel through it", ["com.zaneschepke.wireguardautotunnel"]),
 }
