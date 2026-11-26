@@ -802,6 +802,98 @@ Dismiss works "for now", as `SaveSetupNotices` does. The notice comes back when 
 
 Partner receipts are deferred (§8.3). When one exists later, `OffDeviceFact.PartnerUnknown` gets a receipt sibling, and nothing else changes.
 
+### 7.1 Device-only routes (PR 10)
+
+Design, 25 November 2026. A save that exists only on this device is at risk, because RomM is where every device meets. PR 10 makes sure no surface calls such a save fine, and that each game shows the one way off the device that works today. Where there is no such way, it says so plainly.
+
+**Rules**
+
+- **Structure beats receipts.** If a game has no RomM copy, or its emulator can't sync, that settles where the save can go, so `gameSaveHealth` checks those first. A receipt read from the game's own folder library ("nothing yet", or a matching hash) used to override them and show a quiet **No saves yet** or **Save checked · No RomM copy confirmed**. A launch-only emulator on a signed-out server used to read **Save folder not checked yet**. Both now read as device-only.
+- **Every library game has Y › Saves.** A game RomM doesn't have opens on its own copy. Nothing loads, and the card shows the route instead of a list.
+- **Badge only when `playedHere`. The amber line always shows (§10.1).** The hero line, the Saves chip and the top screen's status line are amber for every device-only game. The tile badge, and Settings' count, appear only once the game has been played on this device.
+- **Partners are never confirmed.** No partner gives Foldcade a receipt (§8.3), so no sentence says a partner's cloud holds a save. Partner copy is quiet and ends with what Foldcade can't check.
+- **No new storage.** **Use $emulator** writes the same `game_player:` choice as Y › Open with. The Settings count is derived each time.
+
+**Each case**
+
+| Case | Hero (tile badge) | Y › Saves, top screen | Y › Saves, bottom card | Settings |
+|---|---|---|---|---|
+| Folder game, emulator syncs and is set up | **Saves only on this device**, amber (badge if played) | Summary `"RomM doesn’t have this game, so its saves stay on this device."`, then ✓ **Play with GBA.emu** and ▸ **Add this game to RomM** | **Add this game to RomM** · `"Upload Puzzle.gba to Game Boy Advance in RomM. Keep this exact file name."` · note `"When these steps are done, Foldcade puts this game’s save on RomM the next time you play. If RomM already has a different save, Foldcade keeps both and asks which one to play."` No button: Foldcade can't upload a game. | Counted once played |
+| Same, not signed in to RomM | same, summary `"Foldcade isn’t signed in to RomM, so this game’s saves stay on this device."` | ▸ **Sign in to RomM, then add this game** | `"Settings › Library › Add › RomM server. Then upload Puzzle.gba to Game Boy Advance in RomM. Keep this exact file name."` | Counted once played |
+| Folder game, emulator syncs but isn't set up | **Saves not syncing**, amber (badge) | Same summary. ✓ emulator, ▸ **Set up GBA.emu’s saves**, ○ **Add this game to RomM** | **Set up GBA.emu’s saves**, with a **Set up** button (the chip's existing setup) | Counted once played |
+| Folder game whose file can't sync (e.g. `.zcci`), known from its file type before any launch | **Saves not syncing**, amber (badge if played) | ▸ **Use a game file that syncs** · `"Use a .cci copy of this game instead. Foldcade can’t sync .zcci files yet."`, with no promise about the next play | The §6.3 sentence, no button | Counted once played |
+| Launch-only emulator, a syncing one installed (folder game) | **My Boy! saves only on this device**, amber (badge if played) | `"Foldcade can’t sync My Boy!, so its saves stay on this device."` ▸ **Play with GBA.emu**, ○ **Add this game to RomM** | **Play with GBA.emu** · `"Foldcade syncs GBA.emu’s saves."` · **Use GBA.emu** · note `"Your progress in My Boy! stays there. GBA.emu starts without it."` | Counted once played |
+| Launch-only emulator on a RomM game | same | Same summary, then the RomM list as usual | The list. An amber line over it: `"Foldcade can’t sync My Boy!, so play with GBA.emu to keep these saves on RomM."` The chip leads, with A labelled **Use GBA.emu**. A on a save: `"My Boy! can’t load RomM saves. Play with GBA.emu first."` | Counted once played |
+| Launch-only, a syncing one exists but isn't installed | same | ▸ **Install GBA.emu** · `"Foldcade syncs GBA.emu’s saves for Game Boy Advance."` | Same, no button | Counted once played |
+| Launch-only, nothing Foldcade syncs plays the system (Flycast) | **Flycast saves only on this device** | `"Foldcade can’t sync Flycast yet, so its saves stay on this device."` and, for a folder game, `"RomM doesn’t have this game either."` | The summary as a note, no steps | Counted once played |
+| Folder game, no emulator installed | **No emulator for these saves**, quiet | `"No emulator Foldcade syncs is installed for this game."` ▸ **Install …** when one is known | Same | — |
+| DroidDeck (Steam) | **Saves in Steam Cloud · not confirmed**, quiet | `"Steam Cloud keeps these saves when it’s on for the game. Foldcade can’t check it yet."` | The same sentence, under the cloud mark | — |
+| GameNative | **Saves in GameNative · not confirmed**, quiet | `"GameNative keeps these saves. Foldcade can’t check its cloud yet."` | same | — |
+| Moonlight | **Saves on your computer**, quiet | `"These saves stay on your computer, or with the game’s own cloud."` | same | — |
+| A problem (incident) on any of these | the incident (§6.1) | — | Fix first, as today: `SetUpInCard` with **Fix it** | the incident |
+
+**Partner tiles.** DroidDeck, GameNative and Moonlight tiles have no library route, but their Y menu offers **Saves** too. The page only shows the partner's sentence: nothing loads, and nothing can be played, set up or pressed. Without a named partner, it reads `"The app that plays this game keeps its saves. Foldcade can’t check them yet."`
+
+**Before the first launch.** A file whose type alone means its save has no place is known from the catalog's file name: an Azahar `.zcci`, and a Dolphin file other than ISO or GCM. The hero and the page say so before any launch. A folder game nobody has played here gets the amber line without a tile badge, as device-only does (§10.1).
+
+**Two saves on the hero.** The hero line under the game's title reads **Two saves · choose one** (§6.1). The stop's title and R1 keep **Two saves for $game**. The two-saves card leaves out byte sizes and names where RomM's save came from, when RomM records it (`"From Steam Deck"`, `"From this Thor"`).
+
+**"Play with $supported".** The page offers an emulator when the playing one can't sync this game, and an installed emulator for the same system can (`supportsSaveSync(game)`). The first one in Open with's order wins. If no syncing emulator is installed but one is known for the system, the page names it under **Install** with no button. A shows a confirmation in the usual dialog:
+
+- The title is `"Play with GBA.emu?"`.
+- The body is `"Foldcade syncs GBA.emu’s saves. Your progress in My Boy! stays there. GBA.emu starts without it. Change it any time in Y › Open with."`. Without play history, the middle sentence is left out.
+- The buttons are **Use GBA.emu** and **Cancel**. A played game opens on **Cancel**, because its progress stays behind in the old emulator. An unplayed game opens on the switch.
+- Confirming writes the game's Open with choice, then reopens Saves with the new emulator. Its message reads `"GBA.emu plays this game now."`, and the page then shows that emulator's true status, which is usually its setup step.
+
+**Partner copy.** A partner with a named cloud reads `"$cloud keeps these saves when it’s on for the game. Foldcade can’t check it yet."` Without a cloud it reads `"$name keeps these saves. Foldcade can’t check its cloud yet."` Both keep §6.1's quiet hero lines. A partner receipt (§8.3) would be the first thing allowed to say more.
+
+**The same-name route.** It is the only way a folder game's save reaches RomM today. `foldSameGames` folds a folder copy and a RomM copy into one tile when the platform matches and the file name is spelled exactly the same (`SameGames.kt`). If RomM has nothing for the slot, or the same bytes, the first launch after the fold hands the emulator's save to RomM as progress. So the step gives the exact file name and system, and the note says what happens on the next launch. A renamed file is a new game, so the detail insists on the same name.
+
+**The first link, when RomM already has a different save.** RomM's ordinary conflict handling keeps both: it archives the local bytes, writes RomM's copy into the working slot and asks after the game returns. That is right for a game this device already syncs. It is wrong for a first link, because the folder's save may be months of play RomM has never seen, and the player would start on progress they didn't choose. So the first link asks first:
+
+- **When.** `LaunchSaves.negotiate` calls `SaveIncidentCopies.holdFirstLink` before anything is preserved, handed over or negotiated. The decision is by content, not by this device's history, so a reinstall that wiped marks and RomM's cache can't stop an already synced game. All of these must hold:
+  - The copy that plays is a folder copy, and the owner is a RomM copy.
+  - The emulator is one repair can finish a choice for: a folder holder that is neither Eden nor a hosted card.
+  - This device hasn't placed, read or held the slot. `PlayerSaves.everHandled` and the library's held slots are only a cheap filter.
+  - The folder has bytes.
+  - `firstLinkDiffers` is true. RomM's slot head has a verifiable hash, and the device's `rommSaveHash` matches no version RomM lists for the game. That list is `rommRepairSaves`, the same `GET /api/saves?rom_id=` listing Y › Saves and repair already use, with each version's `content_hash`. It covers the slot head, the slot's older versions, other slots (such as another client's) and unslotted Backups, from every device. Review of RomM 5.4.1 confirmed that this endpoint lists every retained save for the user and ROM without pagination, and that `device_id` only adds sync metadata. A version RomM has already pruned can't be recognised, so a save matching only a pruned version raises the stop. That is accepted, because both copies are kept before anything is asked. Hashes follow RomM's own order for ZIP members: by Unicode code point, as Python sorts. Kotlin's UTF-16 order differs only past the BMP, so ASCII and BMP names, and the ledgers hashed with them, are unchanged (`CodePointOrder`, `RommSaveHashTest`).
+
+  A device save that matches any listed version is an old synced save. The ordinary sync places RomM's newer head, and its existing policy archives the local bytes. If RomM has no head for the slot, a head without a hash, or can't be read, the ordinary sync runs too. Offline, that sync fails before writing anything, as it always has.
+- **Scope.** A stop is raised only for a folded game with exactly one RomM owner, on the server that is current. A game folded from two or more RomM ids, Eden, and hosted cards keep the ordinary sync: both copies are kept, and RomM's head is placed. That is safe and RomM-first, and it keeps the stop to the case it can finish cleanly.
+- **Every route.** Any open stop for any copy of the game on the current server gates every launch of that game, whichever copy, emulator or route starts it. This is checked before the filters above, which only decide whether a new stop is raised.
+- **One stop per server.** The incident id includes the server's origin, so server B's stop never overwrites server A's. A session on another server never latches, follows, stages for or updates the stop. The return record persists the stop's id and origin when a Play anyway session starts, and only that record decides staging and candidate updates on return.
+- **The build that launched.** The incident's subject keeps the resolved package and its `firstInstallTime`, as other incidents do, so repair picks the right build when two of an emulator, such as aPS3e, are installed.
+- **What.** The folder's bytes are staged for a verified, unslotted Backup. The incident is the quarantine's own `MaybeNewSave` (same id, `regressionIncidentId`), with `firstLink = true` and the RomM origin in its subject, persisted in `incidents.json`. The launch stops with `SaveProtectionStop`.
+- **The stop.** Title `"Two saves for Puzzle"`. Body `"This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play. Choose first, or this session won’t sync until you do."` Buttons **Choose save** · **Play anyway**. "Hasn’t seen" is true by construction.
+- **Choose save** opens Fix on the incident with the launch held. The repair keeps the Backup, verifies it, then shows the existing two-saves card (`Choosing`): **This Thor**, with the folder and no "May be a new game" tag, and **RomM**, focused first. There is no **Leave as is**, because leaving both would place RomM's copy at the next launch, which the player didn't choose. Choosing places that copy through `chooseSave`: a chosen device save becomes RomM's new head, with the old head kept. Then the held launch continues. **Later** (B) keeps both and stops again next launch. A player-wide stop, such as melonDS saving beside its ROMs, holds the placement too (`gatesLaunch`).
+- **Play anyway** plays the folder's save without syncing. `beginUnprotected` counts an open first-link incident, so the session returns as a Backup and is never a slot head. That return's marks are Backup bookkeeping and never resolve the stop. The return's copy is bound to the stop's RomM origin: it is queued for that server alone, never uploaded to another one connected meanwhile, and only a copy kept on that server can become the stop's **This Thor**. The incident follows the newer bytes, so **This Thor** in the choice is the latest progress, kept and verified again.
+- **Until a choice succeeds,** every launch stops again. Only these close it: **This Thor** or **RomM** in the card (repair completes), or a save played from Y › Saves on the stop's own server. Y › Saves keeps **Play** open on a first-link stop: A on a version asks **Play this save?**, and placing it closes the stop (`headPlaced(chosen = true)`). Folder and access problems keep their own gate there. Repair never finishes a first link by itself. If another device moves RomM's head to the saved bytes, the card still waits, as one confirmation: **Play this save?** · `"This Thor’s save is RomM’s newest now. Both are the same, and both are kept."` Without a verified Backup to offer, the repair waits too. Local history changing, such as marks or held slots, does not. A stop raised for another RomM server is ignored on this one, which decides afresh.
+- **Follow-up.** Eden and hosted cards (DuckStation) keep the ordinary sync at first link. Eden's repair needs the resolved account context in the incident, and repair doesn't place hosted cards. Both need repair support before they can ask first.
+
+RomM games played only through RomM keep today's policy: the server copy is placed, local progress is archived, and the prompt comes on return. RomM stays the source of truth there.
+
+**Settings.** Settings › Emulators lists only emulators Foldcade syncs, and launch-only emulators have no row there. What Settings adds is a truthful total. `savesOnlyHere` counts played games, from one snapshot of play history, whose next save can't reach RomM. That means an emulator that can't sync this game, or a game RomM doesn't have. It reads where the next save goes, not the status, so an earlier emulator's queued upload (`Waiting`) never hides a game. The count:
+
+- is the **Set up saves** row's value (`"2 games save only on this device"`, in the row's attention colour) once no emulator is due;
+- is the head chip of Set up saves, in amber, ahead of **Folder set**, **Your games sync** and **All set**;
+- turns the end into **Done for now** · the games by name: `"Puzzle saves only on this device. Its Y › Saves shows how to put its saves on RomM."`, `"Puzzle and Racer save only on this device. Y › Saves on each shows how to put their saves on RomM."` (up to three named), or `"4 games save only on this device. Y › Saves on each shows how to put their saves on RomM."`.
+
+Set up saves never says **All set** or **Your games sync** while a played game's save has no way to RomM. The row shows even on a device whose only emulators are launch-only, where Settings › Emulators otherwise has no emulators to list. The count refreshes with save health and on every play-history change, so a first play counts at once.
+
+**Set up saves with no emulator tiles.** On a device whose only emulators are launch-only, the page opens straight on its end: **Done for now** and the count, never a blank page.
+
+**Switching while the old emulator is open.** **Use GBA.emu** never interrupts a running session. The choice is saved, and the page says `"Once My Boy! closes, GBA.emu plays this game."` The step loses its button, and a RomM game's line reads `"Once My Boy! closes, GBA.emu plays this game and keeps its saves on RomM."` When the old game closes, the live Home reopens the page with the new emulator and the same RomM copy.
+
+**Late results.** A finished upload from the earlier emulator doesn't put **Saves synced** in the hero or R1, or a check on the tile, once the game's current emulator or missing RomM copy keeps its next save here. The library's report is read against the game's save route (`savesStayHere`), so it holds even while that upload shows as waiting.
+
+**Moonlight from an APK plugin.** The adapter isn't a registered player. The page finds it through the game's route, and `gameSaveHealth` classifies a game on the Moonlight backend as the host computer, so both the header and the card read the computer's words.
+
+**Not in PR 10.**
+
+- **No R1 notice for device-only games.** The badge, the hero and Settings already say it, and none of them can be fixed from R1.
+- **No link between a folder save and a RomM game with a different file name.** See §8.3.
+- **No partner receipts.**
+
 ---
 
 ## 8. Delivery plan
@@ -962,11 +1054,13 @@ The JVM tests check the API default, refusal for Free and Gold across version co
 4. In the isolated profile, make the default `PSP` location a readable candidate and keep Foldcade bound to a separate scratch `PSP` tree. Write a new homebrew save through PPSSPP to the candidate. Verify **Wrong folder** on return and the next launch gate. Use **Fix it** to confirm the candidate binding and preserved copies. If checking RomM, use a disposable game record on a test server and verify the unslotted Backup and slot head independently.
 5. Exit PPSSPP normally in the test profile. Repeat the original user’s snapshots and compare them byte-for-byte or by SHA-256, including path sets and absent files. Any difference is a QA failure. On v1.20.4 the expected result is the disabled route. Reserve a positive pin trial with a spaced path for a supporting APK in an isolated profile, and confirm real read/write behavior as PPSSPP’s app UID and the effective INIs on cold start before testing warm behavior.
 
-**PR 10: Device-only routes.**
+**PR 10: Device-only routes.** Designed in §7.1.
 
 - Y › Saves routes for local-only and launch-only games (§7).
 - The "Play with $supported" suggestion.
 - Partner copy.
+- **Files:** `language/.../SaveRoute.kt` (new: `saveRoute`, `savesOnlyHere`, `SaveRouteCopy`), `SavePicker.kt` (route card, `UsePlayer` confirmation, keys), `SaveSetup.kt` (count), `Picker.kt` (`Effect.UseSavePlayer`, `savesOnlyHere`); `app/.../GameSaveHealth.kt` (structure before receipts), `ShellController.kt` (`savePickerRoute`, Saves for every library game, the count), `HomeActivity.kt` (open without a RomM copy, switch), `ui/SavePickerScreen.kt`, `ui/SaveSetupScreen.kt`.
+- **Tests:** `SaveRouteTest` (each state and its copy), `SavePickerRouteTest` (A, focus, keys and the confirmation), `ShellDeviceOnlySavesTest` (the shell end to end, including the count), `GameSaveHealthTest` (precedence).
 
 **PR 11 (later, needs data): silent-session caution.**
 
@@ -982,7 +1076,7 @@ The JVM tests check the API default, refusal for Free and Gold across version co
 | 15: partner cloud receipts | Needs DroidDeck/GameNative/host APIs, which don't exist. The `Unconfirmed` copy is truthful in the meantime. |
 | 16: firmware/key gaps | Separate from save location. Eden's `title.keys` gap is noted in `romm.md`. |
 | 17: maintained emulator builds | The last resort. Upstream patches (§8.4) come first. No current emulator needs one to reach the PR 1–9 level. |
-| 5 (part): linking local saves to an existing RomM record without a matching file name | Needs RomM support to be checked first (audit). PR 10 covers the same-name route. |
+| 5 (part): linking local saves to an existing RomM record without a matching file name | RomM is not the blocker. Its save upload takes any `rom_id` (`RommClient.uploadSave`, checked for PR 10). Foldcade is. It needs a stored link from a folder file to a RomM record that the user chose explicitly, because similar editions can't be guessed. It also needs save placement to rename between the two ROM names, because emulators name saves after the ROM file. PR 10 covers the same-name route (§7.1). |
 | 12: common live-path/no-state bridge for melonDS/EX | An upstream ask (§8.4). EX Launch Mode stays a standing setup step. |
 
 ### 8.4 Upstream patches worth drafting

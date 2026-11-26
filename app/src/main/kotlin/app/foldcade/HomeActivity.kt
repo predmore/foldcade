@@ -703,6 +703,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             }
             is Effect.FixSavePicker -> dispatch(foldcade.shell.savePickerFix(effect.target))
             is Effect.SyncSavePicker -> changeServerSave(effect.target, null)
+            is Effect.UseSavePlayer -> useSavePlayer(effect.target, effect.choice)
             is Effect.PlayPickedSave -> changeServerSave(effect.target, effect.saveId)
             is Effect.CopyPickedSave -> changeServerSave(effect.target, effect.saveId, effect.destination)
             is Effect.ResolveSaveConflict -> resolveSaveConflict(effect)
@@ -2119,16 +2120,18 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         )
                         if (started) {
                             foldcade.notePlayerChoiceLaunch(id, game.platformId, resolution)
+                            val bypass = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor)
                             val saves = LibraryReturn(
                                 owner.backendId,
                                 owner,
                                 plan.player,
                                 spots,
                                 (target as? LaunchTarget.ContentUri)?.uri ?: (target as? LaunchTarget.SharedFile)?.uri,
-                                saveBaseline, !saveSyncForLaunch(plan.player, saveSyncDeclinedFor),
-                                preserveAsBackup = !saveSyncForLaunch(plan.player, saveSyncDeclinedFor) && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
+                                saveBaseline, bypass,
+                                preserveAsBackup = bypass && foldcade.saveIncidentCopies.beginUnprotected(owner, plan.player),
                                 sessionStartedAtMillis = startedAt,
                                 edenSession = edenSession,
+                                firstLink = if (bypass) foldcade.saveIncidentCopies.firstLinkSession(owner, plan.player) else null,
                             )
                             rememberReturn(saves)
                             noteRunning(id, title, game.platformId, plan.player, playerIntent, installedIntent, saves, activityGrant)
@@ -2707,6 +2710,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { null }
                 },
                 preserveOutside = foldcade.saveIncidentCopies::preserveBeforeLaunch,
+                firstLink = { route, owner, player, target, spots, outside ->
+                    // The hero, R1 and Fix read the new two-saves incident at once.
+                    // The build that launches, as other incidents record it, so repair picks it when two are installed.
+                    val packageName = launchReading?.packageName ?: resolvedPackage
+                    val installed = launchReading?.installFirstMillis ?: packageName?.let { name ->
+                        runCatching { packageManager.getPackageInfo(name, 0).firstInstallTime }.getOrNull()
+                    }
+                    foldcade.saveIncidentCopies.holdFirstLink(route, owner, player, target, spots, outside, packageName, installed)
+                        ?.also { foldcade.publishSaveGate(player, null) }
+                },
                 onHeadPlaced = foldcade.saveIncidentCopies::headPlaced,
                 firmwareAvailable = { picked, game, target -> foldcade.playerFirmware.canPlace(picked, game, foldcade.playerSaveFolder(picked), target) },
                 awaitLoad = { foldcade.store.setSaveAwaitsLoad(it, true) },
@@ -2912,7 +2925,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
             if (game.libraryId != null) {
                 val saves = LibraryReturn(game.libraryId, apiGame, player, spots, saveReadUri, baseline, !syncing,
                     preserveAsBackup = !syncing && foldcade.saveIncidentCopies.beginUnprotected(apiGame, player),
-                    sessionStartedAtMillis = startedAt, edenSession = edenSession)
+                    sessionStartedAtMillis = startedAt, edenSession = edenSession,
+                    firstLink = if (!syncing) foldcade.saveIncidentCopies.firstLinkSession(apiGame, player) else null)
                 rememberReturn(saves)
                 noteRunning(game.id, game.title, game.platformId, player, intent, start, saves, activityGrant)
             }
@@ -3136,7 +3150,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 }
             }
             DialogKind.SaveProtection -> when (effect.button) {
-                DialogButton.SetUpSaves, DialogButton.FixSaves, DialogButton.PutSaveBack, DialogButton.Allow -> effect.subject?.let(::openSaveFix)
+                DialogButton.SetUpSaves, DialogButton.FixSaves, DialogButton.ChooseSaves, DialogButton.PutSaveBack, DialogButton.Allow -> effect.subject?.let(::openSaveFix)
                 DialogButton.PlayWithoutSyncing -> {
                     val pending = foldcade.hostedAsk?.pending
                     foldcade.hostedAsk = null
@@ -4551,24 +4565,60 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
         }
     }
 
-    /** Bind the whole screen and its later effects to the menu's original game. */
-    private fun openSaves(gameId: String) {
-        if (foldcade.launchWork.active) return
-        val route = foldcade.shell.savesMenuRoute(gameId) ?: return
-        val owner = route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: return
+    /**
+     * Bind the whole screen and its later effects to the menu's original game. A game RomM doesn't
+     * have opens on its own copy, with nothing to load: the page shows how its saves can get there.
+     */
+    private fun openSaves(gameId: String, message: String? = null, owner: Pair<String, String>? = null): Boolean {
+        if (foldcade.launchWork.active) return false
+        val route = foldcade.shell.savesMenuRoute(gameId) ?: return foldcade.shell.partnerSavesPage(gameId)?.let { page ->
+            // Nothing to load or play: the page says who keeps this game's saves, and no request can act on it.
+            foldcade.savePickerRequest = null
+            foldcade.shell.presentSavePicker(page)
+            true
+        } ?: false
+        @Suppress("NAME_SHADOWING") val owner = route.servers.firstOrNull { owner != null && it.backendId == owner.first && it.remoteKey == owner.second }
+            ?: route.servers.firstOrNull { it == route.saves } ?: route.servers.firstOrNull() ?: route.saves
+        val onRomm = route.servers.isNotEmpty()
         val player = foldcade.shell.savePlayer(route)
         val target = app.foldcade.language.SavePickerTarget(route.tileId, owner.backendId, owner.remoteKey, player?.id, ++foldcade.savePickerSerial)
         foldcade.savePickerRequest = SavePickerRequest(target, route, owner, player)
+        val health = foldcade.shell.saveHealthOf(gameId)
         foldcade.shell.presentSavePicker(app.foldcade.language.SavePickerState(
             target, owner.label, player?.displayName ?: app.foldcade.language.SavePickerCopy.unknown,
-            foldcade.shell.saveHealthOf(gameId), ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
+            health, ownSlots = player?.saveDeclarations(owner).orEmpty().map { it.slot },
             deviceName = app.foldcade.language.SavePickerCopy.thisDeviceName(Build.MANUFACTURER.orEmpty(), Build.MODEL.orEmpty()),
-        ))
-        loadSavePicker(target)
+            loading = onRomm, message = message, onRomm = onRomm,
+        ).let { it.copy(route = foldcade.shell.savePickerRoute(target, foldcade.shell.savePickerHealth(target))).settled() })
+        if (onRomm) loadSavePicker(target)
+        return true
+    }
+
+    /**
+     * The open Saves page again for [target]'s game and the RomM copy it named, now with the emulator
+     * that plays it: a switch made while the old one held the game took effect when it closed.
+     */
+    internal fun reopenSaves(target: app.foldcade.language.SavePickerTarget) {
+        if (isDestroyed || isFinishing || foldcade.shell.model.savePicker?.target != target) return
+        openSaves(target.gameId, owner = target.libraryId to target.remoteKey)
+    }
+
+    /** The Saves page's route: switch the game to an emulator Foldcade syncs, then show its saves with it. */
+    private fun useSavePlayer(target: app.foldcade.language.SavePickerTarget, choice: app.foldcade.language.PlayerChoice) {
+        if (foldcade.shell.model.savePicker?.target != target) return
+        // A running session is never interrupted: the choice applies once its emulator closes.
+        val running = foldcade.shell.runningPlayer(target.gameId)?.takeIf { it.id != choice.playerId }
+        foldcade.shell.useSavePlayer(target.gameId, choice)
+        val message = running?.let { app.foldcade.language.SaveRouteCopy.afterClose(choice.label, it.displayName) }
+            ?: app.foldcade.language.SaveRouteCopy.switched(choice.label)
+        // A launch starting meanwhile owns the screen; this page just stops waiting and says the switch happened.
+        if (!openSaves(target.gameId, message, owner = target.libraryId to target.remoteKey)) foldcade.shell.updateSavePicker(target) { it.copy(busy = false, message = message) }
     }
 
     private fun loadSavePicker(target: app.foldcade.language.SavePickerTarget) {
         val request = foldcade.savePickerRequest?.takeIf { it.target == target } ?: return
+        // A game RomM doesn't have has no list to ask for.
+        if (request.route.servers.isEmpty()) return
         foldcade.scope.launch {
             try {
                 val listed = foldcade.plugins.serverSaves(request.owner.backendId, request.owner, request.player)
@@ -4659,7 +4709,8 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                             }
                         },
                         onHeadPlaced = { game, player ->
-                            foldcade.saveIncidentCopies.headPlaced(game, player)
+                            // Playing a chosen save is the explicit choice a first-link stop waits for.
+                            foldcade.saveIncidentCopies.headPlaced(game, player, chosen = saveId != null && destination == null)
                             if (saveId != null && destination == null) {
                                 val id = regressionIncidentId(game, player)
                                 if (foldcade.saveProtection.incident(id)?.repair == app.foldcade.language.RepairState.Guided) {
@@ -4858,7 +4909,7 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                     true
                 }
                 else foldcade.saveProbes.preserveArmsX2Return(pending, probeTarget, spots, after) ||
-                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider)
+                    foldcade.saveIncidentCopies.preserveReturn(pending.game, pending.player, spots, pending.preserveAsBackup || lostProvider, pending.firstLink)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 // Keep both the return record and the durable per-game latch. A later launch must stage it before placement.
@@ -5064,6 +5115,8 @@ internal data class LibraryReturn(
     val sessionStartedAtMillis: Long? = null,
     val sessionEndedAtMillis: Long? = null,
     val edenSession: EdenSaveSession? = null,
+    /** The first-link stop this session played past, on the server it was raised for. Only it is followed on return. */
+    val firstLink: FirstLinkSession? = null,
 )
 
 /**
@@ -5123,6 +5176,7 @@ internal fun LibraryReturn.encode(): String = JSONObject().apply {
     put("sessionStartedAtMillis", sessionStartedAtMillis ?: JSONObject.NULL)
     put("sessionEndedAtMillis", sessionEndedAtMillis ?: JSONObject.NULL)
     edenSession?.let { put("edenSession", it.toJson()) }
+    firstLink?.let { put("firstLink", JSONObject().put("incident", it.incidentId).put("origin", it.origin)) }
     put(
         "spots",
         JSONArray(
@@ -5199,6 +5253,7 @@ private fun decodeLibraryReturn(json: JSONObject, player: Player): LibraryReturn
         sessionStartedAtMillis = json.nullableLong("sessionStartedAtMillis"),
         sessionEndedAtMillis = json.nullableLong("sessionEndedAtMillis"),
         edenSession = json.optJSONObject("edenSession")?.let(::edenSessionFromJson),
+        firstLink = json.optJSONObject("firstLink")?.let { FirstLinkSession(it.getString("incident"), it.getString("origin")) },
     )
 }
 

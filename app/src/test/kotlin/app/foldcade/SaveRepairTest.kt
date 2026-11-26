@@ -324,6 +324,36 @@ class SaveRepairTest {
         assertTrue("reset" in work.backups)
     }
 
+    @Test fun aFirstLinkNeverClosesItselfWhenRommsHeadBecomesThisThorsSave() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        // Another device moved RomM's head to the bytes the stop kept, while this Thor's working copy differs.
+        val work = Work(RepairCopies("newer here", "newer here", null))
+        work.head = RommRepairSave("head-id", work.slot, "kept", 3, 20)
+        work.backups["kept"] = RommRepairSave("kept-id", null, "kept", 2, 20)
+        val firstLink = incident.copy(kind = IncidentKind.MaybeNewSave, repair = RepairState.Keeping, quarantinedHash = "kept", firstLink = true)
+        store.put(firstLink)
+        val repair = SaveRepair(store, { work }, settle = {})
+        assertNull(repair.advance(firstLink.id))
+        // It waits for one confirmation instead of finishing in the background.
+        val choice = store.incident(firstLink.id)!!.repair as RepairState.Choosing
+        assertEquals(RepairState.Choosing("head-id", "kept-id", "kept", suspect = false), choice)
+        assertTrue(work.events.none { it.startsWith("place") })
+        // Confirming places that one save, then closes the stop.
+        assertNotNull(repair.advance(firstLink.id, choice = choice to SaveConflictAction.KeepRemote))
+        assertTrue("place:head-id" in work.events)
+        assertNull(store.incident(firstLink.id))
+    }
+
+    @Test fun aFirstLinkWithoutItsVerifiedBackupWaitsRatherThanPlacingAnything() = runBlocking {
+        val store = SaveProtectionStore(temp.newFolder().toPath())
+        val work = Work(RepairCopies("head", "head", null), online = true)
+        val firstLink = incident.copy(kind = IncidentKind.MaybeNewSave, repair = RepairState.Keeping, quarantinedHash = "head", firstLink = true)
+        store.put(firstLink)
+        assertNull(SaveRepair(store, { work }, settle = {}).advance(firstLink.id))
+        assertTrue(work.events.none { it.startsWith("place") })
+        assertNotNull(store.incident(firstLink.id))
+    }
+
     @Test fun aNormalLaunchCanRestoreTheHeadBeforeTheQuarantineChoice() = runBlocking {
         val store = SaveProtectionStore(temp.newFolder().toPath())
         val work = Work(RepairCopies("head", "head", null))

@@ -215,6 +215,9 @@ fun settingsRows(category: SettingsCategory, model: PickerModel): List<Row> = wh
         if (shelf.isNotEmpty()) {
             add(Row.SaveSetup)
             add(Row.FindSaves)
+        } else if (model.savesOnlyHere > 0) {
+            // Only launch-only emulators here: the row still says how many played games keep saves only on this device.
+            add(Row.SaveSetup)
         }
     }
     SettingsCategory.Screens -> buildList {

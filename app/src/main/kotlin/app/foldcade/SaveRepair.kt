@@ -114,9 +114,13 @@ internal class SaveRepair(
             } else kept[working.live]
             val liveIsHead = if (quarantine) (live?.hash ?: incident.quarantinedHash) == head.hash else working.live == head.hash
             val suspect = quarantine || working.suspect
-            val next = if (!incident.besideGame && live != null && live.hash != head.hash && (quarantine || !suspect && !working.liveMatchesSynced)) {
-                RepairState.Choosing(head.id, live.id, head.hash, suspect)
-            } else null
+            val next = when {
+                !incident.besideGame && live != null && live.hash != head.hash && (quarantine || !suspect && !working.liveMatchesSynced) ->
+                    RepairState.Choosing(head.id, live.id, head.hash, suspect && !incident.firstLink)
+                // A first link waits for the player even when RomM's head has become the same save: one confirmation.
+                incident.firstLink && live != null -> RepairState.Choosing(head.id, live.id, head.hash, suspect = false)
+                else -> null
+            }
 
             // A restart of an approved placement accepts either the original bytes or the chosen
             // bytes already written. Any subsequent save deserves a fresh decision.
@@ -129,11 +133,12 @@ internal class SaveRepair(
                 update(next ?: RepairState.WaitingForRomm())
                 return null
             }
-            if (quarantine && !liveIsHead && live == null) {
+            if (quarantine && !liveIsHead && live == null || incident.firstLink && selection == null && next == null) {
+                // A first link never places a copy before its verified Backup can be offered.
                 update(RepairState.WaitingForRomm(selection))
                 return null
             }
-            if (quarantine && selection == null && (choice?.second == SaveConflictAction.KeepBoth || liveIsHead)) {
+            if (quarantine && selection == null && (choice?.second == SaveConflictAction.KeepBoth || liveIsHead && !incident.firstLink)) {
                 if (working.live != null && working.live != head.hash) {
                     val subject = incident.subject
                     if (subject != null) store.requireBackup(incident.playerKey, subject.game())

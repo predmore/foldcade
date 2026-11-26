@@ -79,7 +79,8 @@ internal fun FoldcadeApp.repairWork(incident: SaveIncident): SaveRepairWork? {
 
         override suspend fun running(): Boolean = withContext(Dispatchers.Main.immediate) {
             launchWork.active || launchWork.waitingToLight ||
-                (isQuarantine && saveProtection.incidents().any { it.playerKey == incident.playerKey && it.blocksLaunch && it.appliesTo(game) }) ||
+                // A player-wide stop, such as melonDS saving beside its ROMs, holds this placement too.
+                (isQuarantine && saveProtection.incidents().any { it.gatesLaunch(player, game) }) ||
                 player.packageNames.any { name ->
                     val fallback = incident.openedAtMillis.takeIf { (player is RetroArchPlayer || besideGame) && name == packageInfo.packageName }
                     name in closingPlayers || repairPlayerHolds.mayHold(name, fallback, repairHasRunningTask(name))
@@ -205,9 +206,15 @@ internal suspend fun FoldcadeApp.saveRepairPrompt(incident: SaveIncident, subjec
     if (listed.firstOrNull { it.slot == head.slot }?.id != head.id) return null
     val backup = listed.firstOrNull { it.id == choice.backupId && it.slot == null } ?: return null
     val folder = incident.live?.label ?: incident.bound?.label
+    // Where RomM's save came from, when RomM says (§6.6); its time is on the card already.
+    val maker = runCatching { plugins.serverSaveOrigins(subject.libraryId, subject.game())[head.id] }.getOrNull()
+    val from = SaveProtectionCopy.fromDevice(maker?.thisDevice == true, app.foldcade.language.SavePickerCopy.deviceName(maker?.deviceName) ?: maker?.client)
     return SaveConflictPrompt(incident.id, subject.libraryId, subject.label,
         SaveConflictSide(SaveProtectionCopy.thisThor, backup.time, backup.size, folder?.let(SaveProtectionCopy::fromFolder),
-            SaveProtectionCopy.mayBeNewGame.takeIf { choice.suspect }),
-        SaveConflictSide(SaveProtectionCopy.romm, head.time, head.size),
-        focus = SaveConflictFocus.Remote, repair = choice, canKeepBoth = incident.kind == IncidentKind.MaybeNewSave)
+            // A first link's copy is this device's own progress, not a suspected reset (§7.1).
+            SaveProtectionCopy.mayBeNewGame.takeIf { choice.suspect && !incident.firstLink }),
+        SaveConflictSide(SaveProtectionCopy.romm, head.time, head.size, from),
+        focus = SaveConflictFocus.Remote, repair = choice, same = backup.hash == head.hash,
+        // Leaving both would place RomM's at the next launch, which is a choice the player didn't make.
+        canKeepBoth = incident.kind == IncidentKind.MaybeNewSave && !incident.firstLink)
 }

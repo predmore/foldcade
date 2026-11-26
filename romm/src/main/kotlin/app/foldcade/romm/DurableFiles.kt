@@ -114,9 +114,31 @@ fun rommSaveHash(bytes: ByteArray): String? {
     // Entries the directory lists and the stream could not reach make the zip unreadable, as in Python.
     val listed = (bytes[end + 10].toInt() and 0xff) or ((bytes[end + 11].toInt() and 0xff) shl 8)
     if (listed != 0xffff && listed != entries) return null
-    // RomM sorts by name, then joins, so `a` comes before `a.bak` whatever their hashes.
-    val lines = files.sortedBy { it.first }.map { (name, hash) -> "$name:$hash" }
+    // RomM sorts by name, then joins, so `a` comes before `a.bak` whatever their hashes. Python orders
+    // strings by code point; Kotlin's own order is UTF-16 units, which differs only past the BMP.
+    val lines = files.sortedWith(compareBy(CodePointOrder) { it.first }).map { (name, hash) -> "$name:$hash" }
     return md5Hex(lines.joinToString("\n").toByteArray())
+}
+
+/**
+ * Python's string order: by Unicode code point. It matches [String.compareTo] for every name made
+ * of BMP characters, so ASCII names, and every hash already in a ledger for them, are unchanged.
+ */
+internal val CodePointOrder: Comparator<String> = Comparator { a, b ->
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        val x = a.codePointAt(i)
+        val y = b.codePointAt(j)
+        if (x != y) return@Comparator x.compareTo(y)
+        i += Character.charCount(x)
+        j += Character.charCount(y)
+    }
+    when {
+        i < a.length -> 1
+        j < b.length -> -1
+        else -> 0
+    }
 }
 
 /** The MD5 of the zip entry [zip] is at, read in blocks, or null past RomM's limit for one entry. */

@@ -584,7 +584,7 @@ class FoldcadeApp : Application() {
 
     /** Games left open in their players behind Home. Their tiles read Paused, and A brings them back. */
     internal val runningGames = RunningGames().also { games ->
-        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; componentUpdates.reevaluate(); resumeSaveRepairs() } }
+        games.onChange = { ids -> if (::shell.isInitialized) { shell.running = ids; shell.noteRunningChanged(); componentUpdates.reevaluate(); resumeSaveRepairs() } }
     }
 
     /** A library launch held while its player's save folder is asked for. It outlives a recreated Home, as the ask does. */
@@ -672,6 +672,10 @@ class FoldcadeApp : Application() {
      * The screen that started a download is gone. Ask a Home that is still up
      * to show a save conflict that download left behind.
      */
+    /** The Home still up, the resumed one first: a Saves page reopen goes there, not to whichever Home registered last. */
+    internal fun liveHome(): FoldcadeHomeActivity? = homes.values.mapNotNull { it.get() }.filterNot { it.isDestroyed || it.isFinishing }
+        .sortedByDescending { it.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }.firstOrNull()
+
     internal fun refreshSaveConflictOnSurvivor() {
         val snapshot = homes.mapNotNull { (displayId, ref) ->
             val activity = ref.get() ?: return@mapNotNull null
@@ -1114,6 +1118,7 @@ class FoldcadeApp : Application() {
             homeTracks = music.homeTracks(),
             themeTracks = themeTrackList,
             lastPlayedMillis = plays::lastPlayedMillis,
+            playedTiles = { plays.played().keys },
             playMillis = { plays.shown(it).activeMillis },
             rememberedPlayName = plays::name,
             onMoonlightRemoved = ::unpinMoonlightGame,
@@ -1142,6 +1147,8 @@ class FoldcadeApp : Application() {
         shell.runningPlayer = { id -> runningOn(id)?.takeIf { packageInstalled(it.packageName) }?.player }
         shell.hostedCardChecked = { player, game -> saveProtection.hostedCardChecked(player.saveFolderId(), game) }
         shell.onPlayerChoiceChanged = { scope -> dismissNotice("foldcade:player-choice:$scope") }
+        // A switch made while the old emulator held the game: once it closes, the open Saves page shows the new one.
+        shell.onSavePickerPlayerChanged = { target -> liveHome()?.reopenSaves(target) }
         shell.onPlayerAvailabilityChanged = ::clearUsablePlayerChoiceNotices
         shell.canCloseGame = ::canCloseGame
         shell.moveGameScreen = { id -> moveGameTarget(id)?.let { if (it == Panel.Top) app.foldcade.language.HostScreen.Top else app.foldcade.language.HostScreen.Bottom } }
@@ -1245,10 +1252,14 @@ class FoldcadeApp : Application() {
         val main = Handler(Looper.getMainLooper())
         plugins.activityListener = { libraryId, remoteKey, reported ->
             main.post {
+                // The hand-back that upload settles always hears its result, so its waiting notice never fires late.
                 if (reported is GameActivity.Synced) {
                     returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
                 }
-                val until = shell.noteActivity(libraryId, remoteKey, reported, System.currentTimeMillis())
+                // But an earlier emulator's upload finishing, even one that showed as waiting, puts no check on
+                // the tile and no "synced" in the hero of a game whose current emulator keeps its saves here (§7.1).
+                val shown = if (reported is GameActivity.Synced && shell.savesStayHere(libraryId, remoteKey)) GameActivity.Idle else reported
+                val until = shell.noteActivity(libraryId, remoteKey, shown, System.currentTimeMillis())
                 if (reported.refreshesSaveHealth()) {
                     refreshUnsyncedSaves(libraryId)
                 }

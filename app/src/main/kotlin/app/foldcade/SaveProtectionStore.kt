@@ -179,7 +179,7 @@ private fun SaveIncident.toJson(): JSONObject = JSONObject().put("id", id).put("
     .put("live", live?.toJson() ?: JSONObject.NULL).put("evidence", evidence.toJson()).put("openedAtMillis", openedAtMillis)
     .put("alternateSavePath", alternateSavePath ?: JSONObject.NULL).put("capturedAlternateHashes", JSONArray(capturedAlternateHashes))
     .put("besideGame", besideGame)
-    .put("besideSource", besideSource?.name)
+    .put("besideSource", besideSource?.name).put("firstLink", firstLink)
     .put("recoveryRequired", recoveryRequired).put("kept", JSONArray(kept)).put("staged", JSONArray(staged))
     .put("subject", subject?.toJson()).put("quarantinedHash", quarantinedHash).put("automaticDone", automaticDone)
     .put("quarantineSourceUri", quarantineSourceUri).put("quarantineBackupId", quarantineBackupId)
@@ -195,6 +195,7 @@ private fun incidentFromJson(json: JSONObject): SaveIncident = SaveIncident(
     json.stringOrNull("quarantineSourceUri"), json.stringOrNull("quarantineBackupId"),
     json.stringOrNull("alternateSavePath"), json.optJSONArray("capturedAlternateHashes")?.strings().orEmpty(), json.optBoolean("besideGame"),
     json.stringOrNull("besideSource")?.let(BesideSaveSource::valueOf),
+    firstLink = json.optBoolean("firstLink"),
 )
 
 private fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else getString(key)

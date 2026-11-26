@@ -95,7 +95,9 @@ enum class SaveIssue { NoFolder, HostedFolder, NeedsSetup, NoSlot, LostAccess }
 
 sealed interface SaveStatus {
     data class Problem(val incident: SaveIncident) : SaveStatus
-    data class NotSyncing(val issue: SaveIssue? = null, val spot: SpotIssue? = null, val destination: NoDestinationWhy? = null, val detail: String? = null) : SaveStatus
+    /** [badge] is false for a never-played game RomM doesn't have: the line is amber, the tile stays plain (§10.1). */
+    data class NotSyncing(val issue: SaveIssue? = null, val spot: SpotIssue? = null, val destination: NoDestinationWhy? = null, val detail: String? = null,
+        val badge: Boolean = true) : SaveStatus
     data class Waiting(val sinceMillis: Long) : SaveStatus
     data class DeviceOnly(val why: NoDestinationWhy, val playedHere: Boolean = false, val emulator: String? = null) : SaveStatus
     data class Unconfirmed(val why: UnconfirmedWhy, val lastReceiptMillis: Long? = null, val keeper: SaveKeeper? = null) : SaveStatus
@@ -134,6 +136,12 @@ data class SaveIncident(
     val capturedAlternateHashes: List<String> = emptyList(),
     val besideGame: Boolean = false,
     val besideSource: BesideSaveSource? = null,
+    /**
+     * A folder copy's save met a RomM copy holding a different one, the first time the two
+     * are one tile (§7.1). Every launch stops until a copy is chosen, and neither copy is
+     * placed before then.
+     */
+    val firstLink: Boolean = false,
 )
 
 enum class BesideSaveSource { Progress, Blank, Missing }
@@ -211,6 +219,7 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus = with(facts) {
         emulator && destination in setOf(NoDestinationWhy.SignedOut, NoDestinationWhy.ServerTooOld) -> SaveStatus.NotSyncing(null, null, destination)
         emulator && (location is LocationFact.Missing || spot is SpotFact.Unresolved) -> SaveStatus.NotSyncing(
             (location as? LocationFact.Missing)?.issue, (spot as? SpotFact.Unresolved)?.reason, null, (spot as? SpotFact.Unresolved)?.detail,
+            badge = playedHere || destination != NoDestinationWhy.NotOnRomm,
         )
         waitingSinceMillis != null -> SaveStatus.Waiting(waitingSinceMillis)
         (emulator || keeper is SaveKeeper.LaunchOnly) && destination in setOf(NoDestinationWhy.NotOnRomm, NoDestinationWhy.PlayerCantSync) ->
@@ -233,16 +242,21 @@ fun deriveSaveStatus(facts: SaveFacts): SaveStatus = with(facts) {
 }
 
 val SaveStatus.needsAttention: Boolean get() = when (this) {
-    is SaveStatus.Problem, is SaveStatus.NotSyncing, is SaveStatus.Waiting -> true
+    is SaveStatus.Problem, is SaveStatus.Waiting -> true
+    is SaveStatus.NotSyncing -> badge
     is SaveStatus.DeviceOnly -> playedHere
     else -> false
 }
 
 /** Device-only has an attention line even before it earns a tile badge. */
-val SaveStatus.attentionLine: Boolean get() = needsAttention || this is SaveStatus.DeviceOnly
+val SaveStatus.attentionLine: Boolean get() = needsAttention || this is SaveStatus.DeviceOnly || this is SaveStatus.NotSyncing
 
 fun saveStatusLine(status: SaveStatus, now: Long = System.currentTimeMillis()): String = when (status) {
-    is SaveStatus.Problem -> SaveProtectionCopy.title(status.incident)
+    // The hero sits under the game's title, so two saves aren't named by it again (§6.1).
+    is SaveStatus.Problem -> with(status.incident) {
+        if (kind == IncidentKind.MaybeNewSave && !isEdenSessionChange && !hostedCardMismatch) SaveProtectionCopy.twoSavesChoose
+        else SaveProtectionCopy.title(this)
+    }
     is SaveStatus.NotSyncing -> when (status.destination) {
         NoDestinationWhy.ServerTooOld -> "Update RomM to 5.4 to sync saves"
         NoDestinationWhy.SignedOut -> Copy.rommSignInNoticeTitle
@@ -270,6 +284,13 @@ fun saveAge(at: Long, now: Long): String = when (val days = ((now - at).coerceAt
     else -> "$days days ago"
 }
 
+/**
+ * The activity a game's tile and hero show. A finished upload belongs to the emulator that made
+ * it: once the game plays with one whose saves stay here, its "synced" mark would be a false all-clear (§7.1).
+ */
+fun shownActivity(health: SaveStatus?, activity: TileActivity?): TileActivity? =
+    if (health is SaveStatus.DeviceOnly && activity is TileActivity.Synced) null else activity
+
 // Keep these surface helpers shared by the hero and save picker.
 fun saveHealthLine(health: SaveStatus): String = saveStatusLine(health)
 fun saveHealthLeads(health: SaveStatus, activity: TileActivity?): Boolean =
@@ -295,8 +316,10 @@ object SaveProtectionCopy {
     const val openSaves = "Open Saves"
     const val chooseInSaves = "Open Y › Saves to choose which progress to keep."
     const val thisThor = "This Thor"
+    const val fromThisThor = "From this Thor"
     const val romm = "RomM"
     const val twoSaves = "Two saves"
+    const val twoSavesChoose = "Two saves · choose one"
     fun waitForClose(game: String?, player: String) =
         "Already quit ${game ?: "the game"} in $player? Confirm to continue. If it’s still open, save and quit first."
     fun quitInEmulator(game: String?, player: String) = "Quit ${game ?: "the game"} in $player, then come back."
@@ -307,6 +330,12 @@ object SaveProtectionCopy {
     fun besideRepairDone(folder: String) = "${repairDone(folder)} The save from beside the ROM is in Y › Saves under Backups."
     fun fixed(game: String) = "Fixed: $game"
     fun fromFolder(folder: String) = "From the folder $folder"
+    /** A RomM save's maker, when RomM records one: this Thor, or another device or client by name. */
+    fun fromDevice(thisDevice: Boolean, name: String?): String? = when {
+        thisDevice -> fromThisThor
+        name.isNullOrBlank() -> null
+        else -> "From $name"
+    }
     const val fix = "Fix it"
     const val playAnyway = "Play anyway"
     const val folderSet = "Folder set"
@@ -494,14 +523,23 @@ object SaveProtectionCopy {
             IncidentKind.MaybeNewSave -> when {
                 isEdenSessionChange -> "${evidence.detail} Check Eden’s user before choosing a save."
                 hostedCardMismatch -> evidence.detail
+                firstLink -> firstLinkBody
                 else -> "Choose which save to play."
             }
-        }, safe, when (kind) {
-            IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
-            IncidentKind.FolderEmptied -> "Put it back before you play."
+        }, safe.takeUnless { firstLink }.orEmpty(), when {
+            firstLink -> if (stop) firstLinkStop else ""
+            kind == IncidentKind.WrongFolder -> if (stop) "Fix it first, or this session’s progress isn’t protected." else "Fix it before you play."
+            kind == IncidentKind.FolderEmptied -> "Put it back before you play."
             else -> ""
         }).filter { it.isNotEmpty() }.joinToString(" ")
     }
+    /** The first-link stop (§7.1): what each copy is, then that nothing is placed until one is chosen. */
+    const val firstLinkDetail = "This Thor and RomM have different saves."
+    const val firstLinkBody = "This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play."
+    const val firstLinkStop = "Choose first, or this session won’t sync until you do."
+    /** The first-link card once both copies turned out the same: one save, confirmed before it is placed. */
+    const val sameSaveTitle = "Play this save?"
+    const val sameSaveBody = "This Thor’s save is RomM’s newest now. Both are the same, and both are kept."
     fun unsupportedFormat(format: String, supported: String) = "$format doesn’t sync yet. $supported do."
     fun spot(issue: SpotIssue, azahar: Boolean = false): String = when (issue) {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."

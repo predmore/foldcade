@@ -25,6 +25,8 @@ sealed interface SavePickerChoice {
     data class Play(val save: SavePickerSave) : SavePickerChoice
     data class Copy(val save: SavePickerSave, val destination: SaveDestination) : SavePickerChoice
     data object Setup : SavePickerChoice
+    /** Play the game with an emulator Foldcade syncs. [from] is the one it leaves, when there is one. */
+    data class UsePlayer(val choice: PlayerChoice, val from: String?, val playedHere: Boolean) : SavePickerChoice
 }
 
 data class SavePickerState(
@@ -50,6 +52,10 @@ data class SavePickerState(
     val message: String? = null,
     val canPlay: Boolean = true,
     val restartsOpenGame: Boolean = false,
+    /** How the saves can leave this device, when they can't reach RomM from here (§7.1). */
+    val route: SaveRoute? = null,
+    /** The game has a RomM copy. Without one there is no list to load: the card holds the route. */
+    val onRomm: Boolean = true,
 ) {
     val focused: SavePickerSave? get() = copying ?: saves.getOrNull(index - 1)
 
@@ -58,13 +64,22 @@ data class SavePickerState(
      * syncing held progress. Otherwise the newest save is where the page starts, and
      * the chip is only read.
      */
-    val statusActs: Boolean get() = health.needsAttention
+    val statusActs: Boolean get() = when {
+        routeInCard -> route?.action != null
+        // Device-only is said, not set up: the chip acts only when there is a way off the device.
+        health is SaveStatus.DeviceOnly -> route?.action != null
+        else -> health.needsAttention
+    }
+
+    /** A game RomM doesn't have: the card's centre is its route, and A presses that route's one button. */
+    val routeInCard: Boolean get() = route != null && !onRomm && health !is SaveStatus.Problem
 
     /**
      * Nothing on RomM yet and the emulator needs setting up: the card's centre is the one way
      * on, Set up saves with A on its cap, so the head's chip only says how things are.
      */
-    val setupInCard: Boolean get() = (health is SaveStatus.NotSyncing || health is SaveStatus.Problem) && saves.isEmpty() && !loading && !error && !busy && copying == null
+    val setupInCard: Boolean get() = (health is SaveStatus.NotSyncing || health is SaveStatus.Problem) && saves.isEmpty() && !loading && !error && !busy && copying == null &&
+        !routeInCard
     val firstIndex: Int get() = if (statusActs || saves.isEmpty()) 0 else 1
 
     /** [index] moved onto a row that can hold it, after the saves or the health change. */
@@ -91,6 +106,7 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
                 is SavePickerChoice.Play -> if (!state.canPlay) state.copy(confirmation = null, message = SavePickerCopy.installFirst) to null
                     else state.copy(confirmation = null, busy = true, message = null) to Effect.PlayPickedSave(state.target, confirm.save.id)
                 is SavePickerChoice.Copy -> state.copy(confirmation = null, busy = true, message = null) to Effect.CopyPickedSave(state.target, confirm.save.id, confirm.destination)
+                is SavePickerChoice.UsePlayer -> state.copy(confirmation = null, busy = true, message = null) to Effect.UseSavePlayer(state.target, confirm.choice)
             }
             else -> state to null
         }
@@ -117,19 +133,36 @@ fun applySavePicker(state: SavePickerState, meaning: Meaning): Pair<SavePickerSt
     return when (meaning) {
         Meaning.MoveUp -> state.copy(index = (state.index - 1).coerceAtLeast(state.firstIndex), message = null) to null
         Meaning.MoveDown -> state.copy(index = (state.index + 1).coerceAtMost(state.saves.size), message = null) to null
-        Meaning.Activate -> if (state.index == 0) when (state.health) {
+        Meaning.Activate -> if (state.index == 0) if (state.routeInCard || state.health is SaveStatus.DeviceOnly) routeActivate(state) else when (state.health) {
             is SaveStatus.Problem, is SaveStatus.NotSyncing -> state to Effect.FixSavePicker(state.target)
             is SaveStatus.Waiting -> state.copy(busy = true, message = null) to Effect.SyncSavePicker(state.target)
             else -> state to null
-        } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null else when (state.health) {
+        } else if (!state.canPlay) state.copy(message = SavePickerCopy.installFirst) to null
+        // Two saves at a first link: playing one of them is the explicit choice the stop waits for (§7.1).
+        else if ((state.health as? SaveStatus.Problem)?.incident?.firstLink == true)
+            state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
+        else when (state.health) {
             // Set up loses nothing and is the only way on, so it is the one focused.
             is SaveStatus.Problem, is SaveStatus.NotSyncing -> state.copy(confirmation = SavePickerChoice.Setup, confirmIndex = 0) to null
-            is SaveStatus.DeviceOnly -> state.copy(message = SavePickerCopy.unsupported) to null
+            is SaveStatus.DeviceOnly -> state.copy(message = if (state.health.why == NoDestinationWhy.PlayerCantSync)
+                SaveRouteCopy.cantLoad(state.playerName, (state.route?.action as? SaveRouteAction.UsePlayer)?.choice?.label) else SavePickerCopy.unsupported) to null
             else -> state.copy(confirmation = state.focused?.let(SavePickerChoice::Play), confirmIndex = 1) to null
         }
         Meaning.Options -> state.copy(copying = state.focused, destinationIndex = 0) to null
         else -> state to null
     }
+}
+
+/** A on the route's button: switching emulators is asked first; setup opens as the chip's Set up does. */
+private fun routeActivate(state: SavePickerState): Pair<SavePickerState, Effect?> = when (val action = state.route?.action) {
+    is SaveRouteAction.UsePlayer -> {
+        val played = (state.health as? SaveStatus.DeviceOnly)?.playedHere == true
+        // Progress made in the old emulator won't follow, so a played game opens on Cancel.
+        state.copy(confirmation = SavePickerChoice.UsePlayer(action.choice, state.playerName.takeIf { state.target.playerId != null }, played),
+            confirmIndex = if (played) 1 else 0) to null
+    }
+    SaveRouteAction.SetUp -> state to Effect.FixSavePicker(state.target)
+    null -> state to null
 }
 
 /** All screen, confirmation and failure copy stays with the shared UI language. */
@@ -240,7 +273,8 @@ object SavePickerCopy {
         is SaveStatus.NotSyncing -> health.detail ?: health.spot?.let { SaveProtectionCopy.spot(it, azahar) }
             ?: "Set up the emulator to keep this game’s saves on RomM."
         is SaveStatus.Waiting -> "Progress on this device is waiting to reach RomM."
-        is SaveStatus.DeviceOnly -> "This emulator keeps its saves on this device."
+        is SaveStatus.DeviceOnly -> if (health.why == NoDestinationWhy.PlayerCantSync) SaveRouteCopy.cantSync(health.emulator ?: "this emulator")
+            else SaveRouteCopy.notOnRomm
         else -> saveStatusLine(health)
     }
     /**
@@ -257,6 +291,7 @@ object SavePickerCopy {
         is SavePickerChoice.Play -> "Play this save?"
         is SavePickerChoice.Copy -> owner(choice.destination)?.takeIf { generic }?.let { "Copy to ${possessive(it)} save?" } ?: "Copy to $destination?"
         SavePickerChoice.Setup -> "Set up $player first"
+        is SavePickerChoice.UsePlayer -> SaveRouteCopy.switchTitle(choice.choice.label)
     }
 
     /** Whose slot [destination] is, as a player says it, or null when no one is known. */
@@ -308,6 +343,7 @@ object SavePickerCopy {
         is SavePickerChoice.Copy -> copyBody(choice.destination, current) +
             (if (restartsOpenGame && choice.destination.slot in ownSlots) " $restartOpen" else "")
         SavePickerChoice.Setup -> "Set up save syncing before playing a save from RomM."
+        is SavePickerChoice.UsePlayer -> SaveRouteCopy.switchBody(choice.choice.label, choice.from, choice.playedHere)
     }
 }
 
@@ -432,12 +468,13 @@ fun savePickerHints(state: SavePickerState, faces: FaceMap): List<HintKey> {
     if (state.loading || state.busy || state.confirmation != null) return emptyList()
     val confirm = promptKeyOf(faces.confirmKey) ?: PromptKey.FaceA
     // The card's own button carries A: Wi-Fi or Try again, or Set up saves.
-    if (state.error || state.setupInCard) return emptyList()
+    if (state.error || state.setupInCard || state.routeInCard) return emptyList()
     if (state.copying != null) return if (state.destinations().isEmpty()) emptyList() else listOf(HintKey(confirm, SavePickerCopy.copy))
     if (state.focused != null) return listOf(HintKey(confirm, SavePickerCopy.play), HintKey(actionFaces(faces).optionsGlyph, SavePickerCopy.copy))
     return when (state.health) {
         is SaveStatus.Problem, is SaveStatus.NotSyncing -> listOf(HintKey(confirm, Copy.setUp))
         is SaveStatus.Waiting -> listOf(HintKey(confirm, SavePickerCopy.syncNow))
+        is SaveStatus.DeviceOnly -> (state.route?.action as? SaveRouteAction.UsePlayer)?.let { listOf(HintKey(confirm, SaveRouteCopy.use(it.choice.label))) }.orEmpty()
         else -> emptyList()
     }
 }

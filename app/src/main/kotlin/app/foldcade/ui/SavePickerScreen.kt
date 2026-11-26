@@ -66,7 +66,12 @@ import app.foldcade.language.Theme
 import app.foldcade.language.actionFaces
 import app.foldcade.language.formatSaveSize
 import app.foldcade.language.saveWhen
-import app.foldcade.language.needsAttention
+import app.foldcade.language.attentionLine
+import app.foldcade.language.SaveRoute
+import app.foldcade.language.SaveRouteAction
+import app.foldcade.language.SaveRouteCopy
+import app.foldcade.language.SaveRouteMark
+import app.foldcade.language.SaveRouteStep
 import app.foldcade.language.promptKeyOf
 import app.foldcade.language.relativeSaveWhen
 import app.foldcade.language.savePickerHints
@@ -197,18 +202,48 @@ private fun Overview(state: SavePickerState, theme: Theme, scale: Float, modifie
             Image(icon.painter, contentDescription = null, colorFilter = icon.tint(tint), modifier = Modifier.size(28.dp))
             BasicText(
                 SavePickerCopy.header(state.health),
-                style = saveStyle(if (state.health.needsAttention) design.colors.attention else theme.onBackground, design.type.heroMeta, theme, bold = true),
+                // Device-only reads amber even before it earns a tile badge (§10.1).
+                style = saveStyle(if (state.health.attentionLine) design.colors.attention else theme.onBackground, design.type.heroMeta, theme, bold = true),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (state.health is SaveStatus.NotSyncing) BasicText(SavePickerCopy.explanation(state.health, state.target.playerId == "azahar"),
-            style = saveStyle(theme.muted, design.type.dialogBody, theme))
+        val route = state.route
         when {
+            route != null -> BasicText(route.summary, style = saveStyle(theme.muted, design.type.dialogBody, theme))
+            state.health is SaveStatus.NotSyncing -> BasicText(SavePickerCopy.explanation(state.health, state.target.playerId == "azahar"),
+                style = saveStyle(theme.muted, design.type.dialogBody, theme))
+        }
+        // A game RomM doesn't have: the way there, in the Fix page's marks. The bottom card does the step marked now.
+        if (route != null && !state.onRomm && route.steps.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { route.steps.forEach { RouteStep(it, theme) } }
+        }
+        when {
+            !state.onRomm -> Unit
             state.loading -> Pulsing(SavePickerCopy.loading, theme, design.type.heroMeta, scale)
             state.error -> BasicText(if (state.offline) Copy.noInternet else SavePickerCopy.error, style = saveStyle(theme.muted, design.type.heroMeta, theme))
             else -> BasicText(SavePickerCopy.count(state.saves.size), style = saveStyle(theme.muted, design.type.heroMeta, theme))
         }
+    }
+}
+
+/** One step of the way to RomM: a check once done, a mark on the one to do now, a ring for later, as the Fix page draws them. */
+@Composable
+private fun RouteStep(step: SaveRouteStep, theme: Theme) {
+    val design = theme.style
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            when (step.mark) {
+                SaveRouteMark.Done -> {
+                    val check = themeIcon("badge.check", R.drawable.ic_badge_check)
+                    Image(check.painter, contentDescription = null, colorFilter = check.tint(theme.focus), modifier = Modifier.size(24.dp))
+                }
+                SaveRouteMark.Now -> BasicText("▸", style = saveStyle(theme.focus, design.type.dialogBody, theme, bold = true))
+                SaveRouteMark.Next -> BasicText("○", style = saveStyle(theme.muted, design.type.dialogBody, theme))
+            }
+        }
+        BasicText(step.title, style = saveStyle(if (step.mark == SaveRouteMark.Next) theme.muted else theme.onBackground, design.type.dialogBody, theme,
+            bold = step.mark == SaveRouteMark.Now), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -243,8 +278,8 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                 Spacer(Modifier.weight(1f))
                 StatusChip(
                     state.health,
-                    // With nothing on RomM yet, the card's Set up saves holds the focus instead.
-                    focused = state.index == 0 && state.statusActs && !state.setupInCard && state.copying == null && !state.loading && !state.error && !state.busy,
+                    // With nothing on RomM yet, the card's Set up saves, or its route's button, holds the focus instead.
+                    focused = state.index == 0 && state.statusActs && !state.setupInCard && !state.routeInCard && state.copying == null && !state.loading && !state.error && !state.busy,
                     lit = state.confirmation == null,
                     scale = scale,
                 ) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
@@ -252,6 +287,14 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
             val incident = (state.health as? SaveStatus.Problem)?.incident
             if (incident != null && !state.loading && !state.error && state.saves.isNotEmpty()) {
                 BasicText(SaveProtectionCopy.fixBeforeChoosing(incident),
+                    style = saveStyle(design.colors.attention, design.type.dialogBody, theme),
+                    modifier = Modifier.hostPress { dispatch(app.shell.touchSavePickerHeader(state.target)) })
+            }
+            // RomM has the game but its emulator can't sync: the way on, over the list it can't load.
+            val route = state.route
+            val banner = route?.banner
+            if (incident == null && banner != null && state.onRomm && !state.loading && !state.error) {
+                BasicText(banner,
                     style = saveStyle(design.colors.attention, design.type.dialogBody, theme),
                     modifier = Modifier.hostPress { dispatch(app.shell.touchSavePickerHeader(state.target)) })
             }
@@ -270,6 +313,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                     state.error -> CardMode.Error
                     state.copying != null -> CardMode.Destinations
                     state.setupInCard -> CardMode.SetUp
+                    state.routeInCard -> CardMode.Route
                     state.saves.isEmpty() -> CardMode.Empty
                     else -> CardMode.Saves
                 }
@@ -294,6 +338,7 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
                         }
                         CardMode.Empty -> CardNote("saves", SavePickerCopy.empty, pulse = false, scale = scale)
                         CardMode.SetUp -> SetUpInCard(app, scale) { dispatch(app.shell.touchSavePickerHeader(state.target)) }
+                        CardMode.Route -> state.route?.let { route -> RouteInCard(app, route, scale) { dispatch(app.shell.touchSavePickerHeader(state.target)) } }
                         CardMode.Saves -> SaveList(app, state, art, dates, scale, dispatch)
                         CardMode.Destinations -> DestinationList(app, state.copy(copying = state.copying ?: copying), art, dates, scale, dispatch)
                     }
@@ -338,7 +383,37 @@ internal fun SavePickerBottom(app: FoldcadeApp, state: SavePickerState, dates: D
 }
 
 /** What the card holds. Choosing a slot is a level in, so it slides in from the right and back out. */
-private enum class CardMode(val depth: Int) { Loading(0), Busy(0), Error(0), Empty(0), SetUp(0), Saves(0), Destinations(1) }
+private enum class CardMode(val depth: Int) { Loading(0), Busy(0), Error(0), Empty(0), SetUp(0), Route(0), Saves(0), Destinations(1) }
+
+/**
+ * A game RomM doesn't have: the step to do now, with its button when Foldcade can do it, and what
+ * happens to saves already here. With no step to offer, as for a partner's cloud, only what
+ * Foldcade knows. The top screen holds the whole checklist.
+ */
+@Composable
+private fun RouteInCard(app: FoldcadeApp, route: SaveRoute, scale: Float, onClick: () -> Unit) {
+    val theme = LocalFoldTheme.current.theme
+    val design = theme.style
+    val now = route.steps.firstOrNull { it.mark == SaveRouteMark.Now }
+    if (now == null) {
+        CardNote(if (route.steps.isEmpty()) "cloud" else "saves", route.summary, pulse = false, scale = scale)
+        return
+    }
+    Column(
+        Modifier.fillMaxSize().padding(CARD_PAD).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        BasicText(now.title, style = saveStyle(theme.onBackground, design.type.menuRow, theme, bold = true).copy(textAlign = TextAlign.Center))
+        now.detail?.let { BasicText(it, style = saveStyle(theme.muted, design.type.dialogBody, theme).copy(textAlign = TextAlign.Center)) }
+        when (val action = now.action) {
+            is SaveRouteAction.UsePlayer -> CardButton(app, SaveRouteCopy.use(action.choice.label), scale, onClick)
+            SaveRouteAction.SetUp -> CardButton(app, Copy.setUp, scale, onClick)
+            null -> Unit
+        }
+        route.note?.let { BasicText(it, style = saveStyle(theme.muted, design.type.hint, theme).copy(textAlign = TextAlign.Center)) }
+    }
+}
 
 /**
  * Nothing on RomM yet and the emulator still needs setting up: the card's centre is the way on,
@@ -607,7 +682,7 @@ private fun StatusChip(health: SaveStatus, focused: Boolean, lit: Boolean, scale
     val ringLit = eased(if (lit) 1f else 0f, theme.motion.durationFocus, scale)
     val pop = bouncy(if (focused) 1f else 0f, scale)
     val focusRing = remember(theme) { FocusRing(theme) }
-    val attention = health.needsAttention
+    val attention = health.attentionLine
     val (badge, tint) = healthBadge(health, theme)
     Row(
         Modifier
@@ -644,7 +719,7 @@ private fun StatusChip(health: SaveStatus, focused: Boolean, lit: Boolean, scale
 /** The sync badge in focus while saves reach RomM, the unsynced cloud in amber while they can't. */
 private fun healthBadge(health: SaveStatus, theme: Theme): Pair<Int, Color> = when (health) {
     is SaveStatus.Protected -> R.drawable.ic_badge_check to theme.focus
-    is SaveStatus.Problem, is SaveStatus.NotSyncing, is SaveStatus.Waiting -> R.drawable.ic_badge_unsynced to theme.style.colors.attention
+    is SaveStatus.Problem, is SaveStatus.NotSyncing, is SaveStatus.Waiting, is SaveStatus.DeviceOnly -> R.drawable.ic_badge_unsynced to theme.style.colors.attention
     else -> R.drawable.ic_badge_cloud to theme.muted
 }
 
@@ -665,6 +740,7 @@ private fun Confirmation(app: FoldcadeApp, state: SavePickerState, choice: SaveP
         is SavePickerChoice.Play -> SavePickerCopy.play
         is SavePickerChoice.Copy -> SavePickerCopy.copy
         SavePickerChoice.Setup -> Copy.setUp
+        is SavePickerChoice.UsePlayer -> SaveRouteCopy.use(choice.choice.label)
     }
     DialogFrame(
         app = app,

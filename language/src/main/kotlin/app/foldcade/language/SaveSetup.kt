@@ -194,6 +194,10 @@ fun saveSetupTiles(model: PickerModel, page: SaveSetupPage): List<SetupTile> {
  */
 fun saveSetupFinished(tiles: List<SetupTile>, page: SaveSetupPage): Boolean = tiles.isNotEmpty() && tiles.none { it.needsYou(page) }
 
+/** The page ends when every tile is done, and also with no tiles at all while played games keep saves only here (§7.1). */
+fun saveSetupShowsEnd(tiles: List<SetupTile>, page: SaveSetupPage, onlyHere: Int): Boolean =
+    saveSetupFinished(tiles, page) || tiles.isEmpty() && onlyHere > 0
+
 /**
  * The one count of emulators that need you: those Home's games play on whose saves can't reach
  * RomM yet, as Settings › Emulators' rows read. R1's notice names these, Settings › Emulators'
@@ -302,7 +306,7 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
         }
         Meaning.Back -> closeSaveSetup(model, page) to null
         Meaning.Activate -> when {
-            tile == null -> if (saveSetupFinished(tiles, page)) closeSaveSetup(model, page) to null else model to null
+            tile == null -> if (saveSetupShowsEnd(tiles, page, model.savesOnlyHere)) closeSaveSetup(model, page) to null else model to null
             // A press while a fresh check lands goes on at once rather than into its Settings,
             // once Foldcade has read what the new folder still needs.
             page.celebrating == tile.key -> model.advanceSaveSetup(tile.key) to null
@@ -407,7 +411,7 @@ fun saveSetupActions(model: PickerModel, page: SaveSetupPage): List<HintKey> {
     val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
     val tiles = saveSetupTiles(model, page)
     val tile = tiles.firstOrNull { it.key == page.focus }
-        ?: return if (saveSetupFinished(tiles, page)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
+        ?: return if (saveSetupShowsEnd(tiles, page, model.savesOnlyHere)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
     return buildList {
         add(HintKey(confirm, SaveSetupCopy.action(tile)))
         if (tile.needsYou(page)) add(HintKey(actionFaces(model.faceMap).bottomGlyph, SaveSetupCopy.skip))
@@ -475,21 +479,34 @@ object SaveSetupCopy {
      * The head's chip: how many emulators Home's games play on still need you ([savesDue]), the
      * count R1 says too. Then that those sync while others wait, and All set only once all do.
      */
-    fun head(due: Int, rest: Int, unverified: Boolean = false): String = when {
+    fun head(due: Int, rest: Int, unverified: Boolean = false, onlyHere: Int = 0): String = when {
         due > 0 -> toGo(due)
+        // Emulators can all be set while played games still have no way to RomM: never Your games sync then.
+        onlyHere > 0 -> onlyOnThisDevice(onlyHere)
         unverified -> SaveProtectionCopy.folderSet
         rest > 0 -> gamesSync
         else -> allSet
     }
 
     /** The end's title. Anything left still does not sync, so the page calls only nothing left All set. */
-    fun endTitle(due: Int, rest: Int): String = if (due == 0 && rest == 0) allSet else doneForNow
+    fun endTitle(due: Int, rest: Int, onlyHere: Int = 0): String = if (due == 0 && rest == 0 && onlyHere == 0) allSet else doneForNow
 
     /** Under Done for now: what still does not sync, and where to finish it. Null on All set. */
-    fun endBody(due: Int, rest: Int): String? = when {
+    fun endBody(due: Int, rest: Int, onlyHere: List<String> = emptyList()): String? = when {
         due > 0 -> "$due still not syncing. $finishLater"
+        onlyHere.isNotEmpty() -> onlyHereGames(onlyHere)
         rest > 0 -> "$gamesSync. $finishLater"
         else -> null
+    }
+
+    /** Played games whose saves have no way to RomM from here ([savesOnlyHere]), as the row and chip count them. */
+    fun onlyOnThisDevice(count: Int): String = if (count == 1) "1 game saves only on this device" else "$count games save only on this device"
+
+    /** The end names those games, since its grid lists emulators: the way to RomM is on each game's own page. */
+    fun onlyHereGames(games: List<String>): String = when (games.size) {
+        1 -> "${games.single()} saves only on this device. Its Y › Saves shows how to put its saves on RomM."
+        2, 3 -> "${spoken(games, "and")} save only on this device. Y › Saves on each shows how to put their saves on RomM."
+        else -> "${onlyOnThisDevice(games.size)}. Y › Saves on each shows how to put their saves on RomM."
     }
 
     /** A pick that was not [name]'s folder, in one line. */

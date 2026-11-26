@@ -105,11 +105,12 @@ class ShellSavePickerTest {
         assertTrue(shell.model.savePicker!!.restartsOpenGame)
     }
 
-    @Test fun homeAndAllOfferSavesForRemoteAndDownloadedGamesButNotLocalOnes() {
+    @Test fun homeAndAllOfferSavesForRemoteDownloadedAndLocalGames() {
         shell.ingestLibrary("romm", listOf(entry(game), entry(game.copy(remoteKey = "4", label = "Remote", availability = Availability.RemoteOnly))), emptyList())
         shell.ingestLibrary("local-folder", listOf(entry(game.copy(backendId = "local-folder", remoteKey = "file", label = "Local", availability = Availability.LocalOnly))), emptyList())
         shell.openHomeAll()
-        for ((title, offers) in listOf("Original" to true, "Remote" to true, "Local" to false)) {
+        // A folder game's page shows how its saves can reach RomM (§7.1).
+        for ((title, offers) in listOf("Original" to true, "Remote" to true, "Local" to true)) {
             val index = (0 until shell.model.count).single { shell.homeFace(it)?.title == title }
             shell.touchCell(index, HostScreen.Bottom)
             assertEquals(title, offers, shell.model.tileActions?.saves == true)

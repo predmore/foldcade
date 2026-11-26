@@ -78,7 +78,7 @@ Choose the common parent of your games and `bios` if you want Foldcade to find b
 
 ## Saves
 
-The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the same file, with the same name and system, the folder's game and the server's are one tile with one save: it opens the folder's copy and syncs saves through RomM with a supported save setup. Its play time, places, and art carry over from both. A file renamed later is a new game.
+The emulator keeps its saves. When a [RomM](romm.md#save-sync) server has the same file, with the same name and system, the folder's game and the server's are one tile with one save: it opens the folder's copy and syncs saves through RomM with a supported save setup. Its play time, places, and art carry over from both. A file renamed later is a new game. Without a RomM copy, the game's saves stay only on this device, and **Y › Saves** shows how to get them onto RomM ([RomM › Saves only on this device](romm.md#saves-only-on-this-device)).
 
 ## If a game is missing or will not start
 
