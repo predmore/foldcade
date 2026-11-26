@@ -53,15 +53,16 @@ internal class SaveIncidentCopies(
      */
     suspend fun holdFirstLink(route: GameRoute, owner: Game, player: Player, local: LaunchTarget, spots: List<SaveSpot>,
         outside: ObservedSaves): SaveIncident? {
+        val origin = rommOrigin() ?: return null
+        // Every route meets an open stop, the RomM grid's included, before any filter for raising one.
+        // It belongs to the server it was raised for; another server decides afresh.
+        openFirstLink(owner, player, origin)?.let { return it }
         if (route.play.backendId != LocalFolderBackend.ID || owner.backendId == LocalFolderBackend.ID) return null
         // Repair can't place a chosen copy for these yet; they keep the ordinary sync (follow-up in §7.1).
         if (player !is SaveFolderHolder || player is HostedSaveFolder || player is EdenPlayer) return null
-        val origin = rommOrigin() ?: return null
         val spot = spots.singleOrNull() ?: return null
         if (player.saveDeclarations(owner).singleOrNull()?.slot != spot.slot) return null
         val id = regressionIncidentId(owner, player)
-        // An open stop belongs to the server it was raised for; another server decides afresh.
-        store.incident(id)?.takeIf { it.firstLink && it.repair != RepairState.Done && it.subject?.origin == origin }?.let { return it }
         // Cheap first: a slot this device has placed, read or held is an ordinary RomM game here.
         val linked = try {
             saves.everHandled(owner.backendId, owner, player, spot) || plugins.saves(owner.backendId, owner).slots.any { it.slot == spot.slot }
@@ -88,8 +89,7 @@ internal class SaveIncidentCopies(
      * A Play anyway session past a first-link stop made newer progress here. The stop stays open, and
      * "This Thor" in its choice becomes those bytes, kept and verified again before it is offered.
      */
-    private fun followFirstLink(game: Game, player: Player, observed: ObservedSaves) {
-        val open = store.incident(regressionIncidentId(game, player))?.takeIf { it.firstLink && it.repair != RepairState.Done } ?: return
+    private fun followFirstLink(open: SaveIncident, observed: ObservedSaves) {
         val slot = observed.slots.singleOrNull() ?: return
         val uri = slot.contentUri ?: return
         val bytes = runCatching { java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(java.net.URI(uri))) }.getOrNull() ?: return
@@ -101,9 +101,18 @@ internal class SaveIncidentCopies(
 
     /** An explicit choice placed a save for [game] (This Thor, RomM, or Y › Saves): its first-link stop has done its job. */
     fun firstLinkChosen(game: Game, player: Player) {
-        val id = regressionIncidentId(game, player)
-        if (store.incident(id)?.firstLink == true) store.close(id)
+        // Only a choice made on the stop's own server answers it.
+        val origin = rommOrigin() ?: return
+        openFirstLink(game, player, origin)?.let { store.close(it.id) }
     }
+
+    /** [game]'s open first-link stop on this player, raised for [origin]; with null, for whichever server. */
+    private fun openFirstLink(game: Game, player: Player, origin: String?): SaveIncident? =
+        store.incident(regressionIncidentId(game, player))
+            ?.takeIf { incident ->
+                val raisedFor = incident.subject?.origin
+                incident.firstLink && incident.repair != RepairState.Done && raisedFor != null && (origin == null || raisedFor == origin)
+            }
 
     private suspend fun rommVersions(game: Game, origin: String): List<app.foldcade.plugins.romm.RommRepairSave> {
         val library = plugins.library(game.backendId)
@@ -111,8 +120,8 @@ internal class SaveIncidentCopies(
         return app.foldcade.plugins.romm.rommRepairSaves(library, game, origin)
     }
 
-    fun stage(game: Game, player: Player, spots: List<SaveSpot>, incident: SaveIncident? = null, mark: Boolean): ObservedSaves {
-        val observed = saves.stageCopies(game, player, spots)
+    fun stage(game: Game, player: Player, spots: List<SaveSpot>, incident: SaveIncident? = null, mark: Boolean, origin: String? = null): ObservedSaves {
+        val observed = saves.stageCopies(game, player, spots, origin)
         incident?.let { record(it.id, observed.slots.mapNotNull { slot -> slot.contentUri }) }
         // Sidecars are durable before marks advance. Their queue survives every incident close path.
         if (mark) saves.noteHandedOver(game.backendId, game, player, spots, observed)
@@ -217,8 +226,11 @@ internal class SaveIncidentCopies(
         // Retained through strict-read failures and later launches until durable staging succeeds.
         store.requireBackup(key, game)
         if (spots.isEmpty()) throw SaveNotPlaced()
-        val observed = stage(game, player, spots, incident, mark = true)
-        followFirstLink(game, player, observed)
+        // A session past a first-link stop is that server's progress: its Backup goes to that server
+        // alone, even if another one is connected by the time it uploads.
+        val firstLink = openFirstLink(game, player, null)
+        val observed = stage(game, player, spots, incident, mark = true, origin = firstLink?.subject?.origin)
+        firstLink?.let { followFirstLink(it, observed) }
         store.handled(key, game)
         keep(game, player)
         return true
@@ -298,7 +310,9 @@ internal class SaveIncidentCopies(
             val kept = if (copy.origin != null) keepRommRepairBackup(library, copy.game, player, observed, copy.origin)
                 else library.keepAsBackups(copy.game, player, observed)
             if (kept.size != 1 || kept.single().isBlank()) throw PluginException.Unavailable("Backup did not verify")
-            store.incidents().filter { it.playerKey == copy.playerKey && copy.slot.contentUri in it.staged }.forEach { current ->
+            // A first-link stop takes only copies kept on its own server as its candidate.
+            store.incidents().filter { it.playerKey == copy.playerKey && copy.slot.contentUri in it.staged &&
+                (!it.firstLink || it.subject?.origin == copy.origin) }.forEach { current ->
                 val candidate = if (current.quarantineSourceUri == copy.slot.contentUri) kept.single() else current.quarantineBackupId
                 store.put(current.copy(kept = (current.kept + kept).distinct(),
                     staged = current.staged.filterNot { it == copy.slot.contentUri }, quarantineBackupId = candidate))

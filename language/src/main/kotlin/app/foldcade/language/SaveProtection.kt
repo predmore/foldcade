@@ -521,6 +521,9 @@ object SaveProtectionCopy {
     const val firstLinkDetail = "This Thor and RomM have different saves."
     const val firstLinkBody = "This Thor has a save RomM hasn’t seen, and RomM has a different one. Foldcade keeps both on RomM, then you choose which to play."
     const val firstLinkStop = "Choose first, or this session’s progress stays on this device."
+    /** The first-link card once both copies turned out the same: one save, confirmed before it is placed. */
+    const val sameSaveTitle = "Play this save?"
+    const val sameSaveBody = "This Thor’s save is RomM’s newest now. Both are the same, and both are kept."
     fun unsupportedFormat(format: String, supported: String) = "$format doesn’t sync yet. $supported do."
     fun spot(issue: SpotIssue, azahar: Boolean = false): String = when (issue) {
         SpotIssue.NoTitleId -> if (azahar) "This game file doesn’t say which 3DS game it is. A .cci syncs; a .zcci doesn’t." else "Foldcade can’t read this disc’s game ID."

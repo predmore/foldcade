@@ -355,9 +355,9 @@ internal class PlayerSaves(
         return stageCopy(game, player, spot, bytes)
     }
 
-    fun stageCopies(game: Game, player: Player, spots: List<SaveSpot>): ObservedSaves = ObservedSaves(spots.mapNotNull { spot ->
+    fun stageCopies(game: Game, player: Player, spots: List<SaveSpot>, origin: String? = null): ObservedSaves = ObservedSaves(spots.mapNotNull { spot ->
         val bytes = readSpot(spot, strict = true, limit = SAVE_ZIP_LIMIT)?.first ?: return@mapNotNull null
-        ObservedSlot(spot.slot, md5Hex(bytes), player.id, stageCopy(game, player, spot, bytes))
+        ObservedSlot(spot.slot, md5Hex(bytes), player.id, stageCopy(game, player, spot, bytes, origin))
     })
 
     /** Sidecars are the queue; incidents are only presentation and may close at any time. */

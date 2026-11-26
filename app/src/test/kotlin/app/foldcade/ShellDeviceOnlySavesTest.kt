@@ -165,5 +165,10 @@ class ShellDeviceOnlySavesTest {
         // The page it opens has no emulator tiles, and ends on what stays here instead of going blank.
         assertTrue(saveSetupShowsEnd(saveSetupTiles(only.model, SaveSetupPage()), SaveSetupPage(), only.model.savesOnlyHere))
         assertEquals(SaveSetupCopy.doneForNow, SaveSetupCopy.endTitle(0, 0, only.model.savesOnlyHere))
+        // Its end has a Done that A presses, which closes the page.
+        val page = SaveSetupPage()
+        val opened = only.model.copy(saveSetup = page)
+        assertEquals(listOf(HintKey(PromptKey.FaceA, SaveSetupCopy.done)), saveSetupActions(opened, page))
+        assertNull(applySaveSetup(opened, page, Meaning.Activate).first.saveSetup)
     }
 }

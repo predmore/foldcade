@@ -306,7 +306,7 @@ fun applySaveSetup(model: PickerModel, page: SaveSetupPage, meaning: Meaning, re
         }
         Meaning.Back -> closeSaveSetup(model, page) to null
         Meaning.Activate -> when {
-            tile == null -> if (saveSetupFinished(tiles, page)) closeSaveSetup(model, page) to null else model to null
+            tile == null -> if (saveSetupShowsEnd(tiles, page, model.savesOnlyHere)) closeSaveSetup(model, page) to null else model to null
             // A press while a fresh check lands goes on at once rather than into its Settings,
             // once Foldcade has read what the new folder still needs.
             page.celebrating == tile.key -> model.advanceSaveSetup(tile.key) to null
@@ -411,7 +411,7 @@ fun saveSetupActions(model: PickerModel, page: SaveSetupPage): List<HintKey> {
     val confirm = promptKeyOf(model.faceMap.confirmKey) ?: PromptKey.FaceA
     val tiles = saveSetupTiles(model, page)
     val tile = tiles.firstOrNull { it.key == page.focus }
-        ?: return if (saveSetupFinished(tiles, page)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
+        ?: return if (saveSetupShowsEnd(tiles, page, model.savesOnlyHere)) listOf(HintKey(confirm, SaveSetupCopy.done)) else emptyList()
     return buildList {
         add(HintKey(confirm, SaveSetupCopy.action(tile)))
         if (tile.needsYou(page)) add(HintKey(actionFaces(model.faceMap).bottomGlyph, SaveSetupCopy.skip))

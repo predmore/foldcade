@@ -45,9 +45,19 @@ data class SaveConflictPrompt(
     val preview: Boolean = false,
     val repair: RepairState.Choosing? = null,
     val canKeepBoth: Boolean = true,
+    /** Both sides are the same save now, as when RomM's head became this device's: the card only confirms it. */
+    val same: Boolean = false,
 ) {
-    val title get() = if (repair is RepairState.Choosing) SaveProtectionCopy.chooseProgress else Copy.saveConflictTitle
-    val body get() = if (repair is RepairState.Choosing) SaveProtectionCopy.bothKept else Copy.saveConflictBody
+    val title get() = when {
+        repair is RepairState.Choosing && same -> SaveProtectionCopy.sameSaveTitle
+        repair is RepairState.Choosing -> SaveProtectionCopy.chooseProgress
+        else -> Copy.saveConflictTitle
+    }
+    val body get() = when {
+        repair is RepairState.Choosing && same -> SaveProtectionCopy.sameSaveBody
+        repair is RepairState.Choosing -> SaveProtectionCopy.bothKept
+        else -> Copy.saveConflictBody
+    }
 }
 
 /**

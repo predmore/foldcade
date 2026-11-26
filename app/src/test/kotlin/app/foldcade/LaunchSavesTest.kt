@@ -1545,14 +1545,51 @@ class LaunchSavesTest {
         // This Thor in the choice is now the newer progress, kept and verified again before it is offered.
         assertEquals(app.foldcade.romm.rommSaveHash("an evening more".toByteArray()), after.quarantinedHash)
         assertEquals(RepairState.Keeping, after.repair)
-        // Kept and verified at once here, so the choice's This Thor is that Backup.
-        assertNotNull(after.quarantineBackupId)
-        assertTrue(md5Hex("an evening more".toByteArray()) in server.backups)
+        // The Backup is bound to the stop's server, queued until that server keeps it.
+        assertTrue(saves.queuedCopies().any { it.origin == origin && it.slot.contentUri == after.quarantineSourceUri })
         // Relaunch: still stopped, nothing placed over the device's save.
         server.calls.clear()
         assertEquals(first.id, launchStops(copies)?.id)
         assertTrue(server.calls.isEmpty())
         assertEquals("an evening more", String(docs.files.getValue(folderSave)))
+    }
+
+    @Test fun launchingTheRommCopyMeetsTheOpenStopToo() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        server.toPlace = "another device"
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-romm-grid"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val incident = launchStops(copies)!!
+        // The RomM grid presses the RomM copy itself: the same stop, and nothing placed.
+        server.calls.clear()
+        assertEquals(incident.id, launchStops(copies, route = GameRoute("tile", owner, owner))?.id)
+        assertTrue(server.calls.isEmpty())
+        assertEquals("months in the folder", String(docs.files.getValue(folderSave)))
+    }
+
+    @Test fun aPlayAnywayBackupGoesOnlyToTheStopsOwnServer() = runBlocking {
+        docs.files[folderSave] = "months in the folder".toByteArray()
+        val store = SaveProtectionStore(Files.createTempDirectory("first-link-backup-origin"))
+        val copies = firstLinkCopies(store) { listOf(version("another device")) }
+        val first = launchStops(copies)!!
+        assertTrue(copies.beginUnprotected(owner, folderMelon))
+        docs.files[folderSave] = "an evening more".toByteArray()
+        // Returned offline on server A.
+        server.backupsFail = true
+        copies.preserveReturn(owner, folderMelon, saves.spots(folderMelon, owner, local), preserveAsBackup = true)
+        val serverA = origin
+        val queued = saves.queuedCopies().filter { it.slot.contentUri == store.incident(first.id)!!.quarantineSourceUri }
+        assertEquals(listOf(serverA), queued.map { it.origin })
+        // Server B, with a ROM of the same id, is connected before the retry: it never receives that Backup.
+        origin = "https://other.romm.test"
+        server.backupsFail = false
+        copies.keepAll(server.id)
+        copies.keep(owner, folderMelon)
+        assertTrue(md5Hex("an evening more".toByteArray()) !in server.backups)
+        assertEquals(null, store.incident(first.id)!!.quarantineBackupId)
+        // Nor does a choice on server B answer A's stop.
+        copies.firstLinkChosen(owner, folderMelon)
+        assertNotNull(store.incident(first.id))
     }
 
     @Test fun aStopRaisedForAnotherServerDecidesAfresh() = runBlocking {

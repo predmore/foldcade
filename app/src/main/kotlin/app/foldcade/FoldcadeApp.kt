@@ -1252,12 +1252,13 @@ class FoldcadeApp : Application() {
         val main = Handler(Looper.getMainLooper())
         plugins.activityListener = { libraryId, remoteKey, reported ->
             main.post {
-                // An earlier emulator's upload finishing, even one that showed as waiting, doesn't speak for a
-                // game whose current emulator keeps its saves here: no "Saves synced", no check (§7.1).
-                val shown = if (reported is GameActivity.Synced && shell.savesStayHere(libraryId, remoteKey)) GameActivity.Idle else reported
-                if (shown is GameActivity.Synced) {
-                    returnNotices.synced(libraryId, remoteKey, shown.result, System.currentTimeMillis())?.let(::postNotice)
+                // The hand-back that upload settles always hears its result, so its waiting notice never fires late.
+                if (reported is GameActivity.Synced) {
+                    returnNotices.synced(libraryId, remoteKey, reported.result, System.currentTimeMillis())?.let(::postNotice)
                 }
+                // But an earlier emulator's upload finishing, even one that showed as waiting, puts no check on
+                // the tile and no "synced" in the hero of a game whose current emulator keeps its saves here (§7.1).
+                val shown = if (reported is GameActivity.Synced && shell.savesStayHere(libraryId, remoteKey)) GameActivity.Idle else reported
                 val until = shell.noteActivity(libraryId, remoteKey, shown, System.currentTimeMillis())
                 if (reported.refreshesSaveHealth()) {
                     refreshUnsyncedSaves(libraryId)
