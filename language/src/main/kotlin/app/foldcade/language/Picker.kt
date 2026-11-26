@@ -581,13 +581,13 @@ fun forgetArtKeyPrompt(screen: HostScreen): DialogState = DialogState(
 /**
  * The ask for a player's save folder. Choose folder opens the picker by default.
  * Play without syncing applies to this launch only. [playerName] names the player,
- * and [opensThere] says the picker opens at its folder. [wrong] is set after a
- * pick that was not the player's folder: what its folder holds.
+ * and [opensThere] says the picker opens at its folder. [wrong] explains how to
+ * correct a rejected pick.
  */
 fun saveFolderDialog(
     screen: HostScreen,
     syncs: Boolean = false,
-    wrong: Pair<String, Collection<String>>? = null,
+    wrong: String? = null,
     playerName: String? = null,
     opensThere: Boolean = false,
     needed: Boolean = false,
@@ -595,7 +595,7 @@ fun saveFolderDialog(
 ): DialogState = DialogState(
     kind = DialogKind.SaveFolder,
     title = playerName?.let(Copy::syncSavesTitle) ?: Copy.saveFolderTitle,
-    body = wrong?.let { (player, markers) -> wrongSaveFolderBody(player, markers) }
+    body = wrong
         ?: listOfNotNull(
             inApp ?: when {
                 needed -> Copy.saveFolderNeededBody

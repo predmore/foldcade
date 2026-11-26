@@ -19,7 +19,7 @@ class LaunchGateDialogsTest {
         saveFolderDialog(screen),
         saveFolderDialog(screen, syncs = true, playerName = "Azahar", opensThere = true),
         saveFolderDialog(screen, syncs = true, playerName = "aPS3e", needed = true),
-        saveFolderDialog(screen, syncs = true, wrong = "melonDS" to setOf("sav"), playerName = "melonDS"),
+        saveFolderDialog(screen, syncs = true, wrong = wrongSaveFolderBody("melonDS", setOf("sav")), playerName = "melonDS"),
         hostedSavesDialog("DuckStation", "1. Open DuckStation.\n2. Pick Foldcade.", beforeLaunch = true, screen = screen),
         saveSyncDialog("ARMSX2", "Open ARMSX2.", screen, beforeLaunch = true),
         retroArchCoresDialog(screen),

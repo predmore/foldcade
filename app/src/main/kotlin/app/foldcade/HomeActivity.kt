@@ -105,7 +105,6 @@ import app.foldcade.language.retroArchStoreBuildDialog
 import app.foldcade.language.hostedSavesDialog
 import app.foldcade.language.playerSetupDialog
 import app.foldcade.language.saveFolderDialog
-import app.foldcade.language.wrongSaveFolderBody
 import app.foldcade.language.closeGameDialog
 import app.foldcade.language.restartGameDialog
 import app.foldcade.language.resumeGameDialog
@@ -353,12 +352,16 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                         val repairInPlace = scopedRetroArch || incident.armsX2OutsideCard || incident.dolphinCustomCard
                         val expected = if (repairInPlace) incident.bound?.identity else incident.live?.identity
                         val oldOwnProvider = incident.bound?.identity?.substringBefore(':') == DolphinPlayer.PROVIDER
-                        val requiresDolphinProvider = player is DolphinPlayer && incident.kind == IncidentKind.LostAccess && oldOwnProvider
+                        val requiresDolphinProvider = player is DolphinPlayer && oldOwnProvider &&
+                            (incident.kind == IncidentKind.LostAccess || incident.dolphinCustomCard)
                         if (!repairFolderMatches(expected, storageIdentity(folder.toString(), packageName)) ||
                             requiresDolphinProvider && providerSaveRootPackage(player, folder.toString()) == null) {
                             val copy = app.foldcade.language.SaveProtectionCopy
-                            foldcade.shell.noteSaveFix(if (repairInPlace || requiresDolphinProvider) copy.chooseThere(incident.bound?.label.orEmpty())
-                                else copy.wrongPick(incident.playerName, incident.live?.label.orEmpty()))
+                            foldcade.shell.noteSaveFix(when {
+                                requiresDolphinProvider -> copy.dolphinOwnFolder
+                                repairInPlace -> copy.chooseThere(incident.bound?.label.orEmpty())
+                                else -> copy.wrongPick(incident.playerName, incident.live?.label.orEmpty())
+                            })
                             return@launch
                         }
                         if (!persistTreeGrant(write = true) { flags -> contentResolver.takePersistableUriPermission(Uri.parse(folderGrantUri(folder.toString())), flags) }) {
@@ -4383,16 +4386,15 @@ abstract class FoldcadeHomeActivity : PanelKeyActivity() {
                 ?: uri.takeIf { AndroidSaveDocuments(contentResolver).childNames(it.toString()) == null }
         }
         if (narrowed != null) return narrowed
-        val markers = (player as? SaveFolderHolder)?.saveFolderMarkers.orEmpty()
-        val name = player?.displayName.orEmpty()
+        val wrong = rejectedSaveFolderCopy(player)
         if (ask) {
             foldcade.shell.present(saveFolderDialog(
-                hostScreen(), syncs = true, wrong = name to markers,
+                hostScreen(), syncs = true, wrong = wrong,
                 playerName = player?.displayName, needed = needsItsFolder(player),
             ))
-        } else if (player == null || !foldcade.shell.noteSaveSetup(player.id, app.foldcade.language.SaveSetupCopy.wrongFolder(name, markers))) {
+        } else if (player == null || !foldcade.shell.noteSaveSetup(player.id, rejectedSaveFolderCopy(player, inSetup = true))) {
             // Set up saves says it in its own line, under the step, which stays.
-            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, wrongSaveFolderBody(name, markers), hostScreen()))
+            foldcade.shell.present(playerNotice(Copy.saveFolderTitle, wrong, hostScreen()))
         }
         return null
     }

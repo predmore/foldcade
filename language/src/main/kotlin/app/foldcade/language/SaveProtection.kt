@@ -346,6 +346,7 @@ object SaveProtectionCopy {
     const val aps3eVfsRemapped = "aPS3e’s VFS moves dev_hdd0, so Foldcade can’t find its saves."
     const val aps3eVfsUnsupported = "Foldcade can’t confirm aPS3e’s dev_hdd0 mapping."
     const val aps3eOwnFolder = "Choose aPS3e’s own folder."
+    const val dolphinOwnFolder = "Choose Dolphin’s own folder."
     const val later = "Later"
     const val itsFine = "It’s fine"
     const val checkWhere = "Check where they save before you play."

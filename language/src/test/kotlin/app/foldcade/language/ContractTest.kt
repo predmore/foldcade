@@ -823,10 +823,10 @@ class ContractTest {
 
     @Test
     fun aWrongRequiredFolderStillOffersNotNow() {
-        val dialog = saveFolderDialog(HostScreen.Top, syncs = true, wrong = "aPS3e" to setOf("config", "logs"),
+        val dialog = saveFolderDialog(HostScreen.Top, syncs = true, wrong = SaveProtectionCopy.aps3eOwnFolder,
             playerName = "aPS3e", needed = true)
         assertEquals("Sync aPS3e saves?", dialog.title)
-        assertEquals(wrongSaveFolderBody("aPS3e", setOf("config", "logs")), dialog.body)
+        assertEquals(SaveProtectionCopy.aps3eOwnFolder, dialog.body)
         assertEquals(listOf(DialogButton.ChooseSaveFolder, DialogButton.NotNow), dialog.buttons)
         val model = PickerModel(count = 1, rowsPerPage = 1, dialog = dialog)
         // Back cancels the launch it held, which Not now does too for a player that needs its folder.
