@@ -384,6 +384,11 @@
       "tint": false,
       "accent": "#9EABC2"
     },
+    "app.com.topjohnwu.magisk": {
+      "file": "icons/app_magisk.xml",
+      "tint": false,
+      "accent": "#2FD3C4"
+    },
     "app.com.valvesoftware.android.steam.community": {
       "file": "icons/app_steam.xml",
       "tint": false,
@@ -419,6 +424,11 @@
       "tint": false,
       "accent": "#B4BFCF"
     },
+    "app.com.zaneschepke.wireguardautotunnel": {
+      "file": "icons/app_wg_tunnel.xml",
+      "tint": false,
+      "accent": "#F2424E"
+    },
     "app.come.nanodata.armsx2": {
       "file": "icons/app_armsx2.xml",
       "tint": false,
@@ -439,10 +449,20 @@
       "tint": false,
       "accent": "#FF5FA8"
     },
+    "app.io.github.huskydg.magisk": {
+      "file": "icons/app_magisk.xml",
+      "tint": false,
+      "accent": "#2FD3C4"
+    },
     "app.io.github.lime3ds.android": {
       "file": "icons/app_azahar.xml",
       "tint": false,
       "accent": "#F2BE86"
+    },
+    "app.io.github.vvb2060.magisk": {
+      "file": "icons/app_magisk.xml",
+      "tint": false,
+      "accent": "#2FD3C4"
     },
     "app.io.recompiled.redream": {
       "file": "icons/app_redream.xml",
