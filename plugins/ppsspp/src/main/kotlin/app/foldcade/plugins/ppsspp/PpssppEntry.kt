@@ -9,7 +9,7 @@ class PpssppEntry : PluginEntry {
     override val players: List<Player> = listOf(PpssppPlayer())
 }
 
-class PpssppPlayer : Player, SaveFolderHolder {
+class PpssppPlayer : Player, SaveFolderHolder, SaveLocationProbe {
     // Keep the former table id, including saved per-game emulator choices.
     override val id = "ppsspp.psp"
     override val displayName = "PPSSPP"
@@ -31,6 +31,13 @@ class PpssppPlayer : Player, SaveFolderHolder {
     override val saveFolderPickedInPlayer = true
     override val suggestedSaveFolder = "content://com.android.externalstorage.documents/document/primary%3APSP"
     override fun saveDeclarations(game: Game) = listOf(SaveDeclaration(SLOT, folder))
+
+    // The active Memory Stick selection is in PPSSPP's private memstick_dir.txt.
+    override val saveConfigPrivate = true
+
+    // 1.20.4 lacks the hook. Newer source has a startup-only override that also
+    // selects the settings folder. No Free or Gold APK is approved for pinning.
+    override fun pinsSaveFolder(packageName: String, versionCode: Long): Boolean = false
 
     // Argosy uses the same prefix-folder ZIP layout:
     // https://github.com/rommapp/argosy-launcher/blob/dbe576f3cfa5dfb9db7001f3d2de7f473e5238fe/app/src/main/kotlin/com/nendo/argosy/data/sync/platform/PrefixBundleFolderHandler.kt

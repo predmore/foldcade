@@ -121,7 +121,7 @@ class PluginContractTest {
         assertTrue(aliases.isDefault)
         assertTrue(IdlePlatform().aliases.isEmpty())
         assertEquals(1, PLUGIN_API_VERSION)
-        assertEquals(28, PLUGIN_API_MINOR)
+        assertEquals(29, PLUGIN_API_MINOR)
         for (name in listOf("findSaveFolderParts", "saveArchiveFilter", "canPlaceSave", "firmwareDestination", "getFirmwareKeepsFolders", "missingFirmware")) {
             assertTrue(Player::class.java.methods.single { it.name == name }.isDefault)
         }
@@ -129,6 +129,8 @@ class PluginContractTest {
         assertNull(object : SaveLocationProbe {}.signatureFile)
         assertTrue(SaveLocationProbe::class.java.methods.single { it.name == "getSaveConfigPrivate" }.isDefault)
         assertFalse(object : SaveLocationProbe {}.saveConfigPrivate)
+        assertTrue(SaveLocationProbe::class.java.methods.single { it.name == "pinsSaveFolder" }.isDefault)
+        assertFalse(object : SaveLocationProbe {}.pinsSaveFolder("org.ppsspp.ppsspp", 120_040_000L))
         assertTrue(SaveFolderAccess::class.java.methods.single { it.name == "modifiedAtMillis" }.isDefault)
         assertTrue(SaveFolderAccess::class.java.methods.single { it.name == "getStorageDocumentId" }.isDefault)
         assertTrue(SaveFolderHolder::class.java.methods.single { it.name == "getSaveFolderPlaces" }.isDefault)

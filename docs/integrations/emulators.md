@@ -246,6 +246,8 @@ Install [official PPSSPP](https://www.ppsspp.org/download/) and finish its first
 
 Foldcade looks for the **PSP** folder using access it already holds, including **Auto-find saves** all-files access. PPSSPP must hold access to that exact folder before Foldcade chooses it automatically. A stale or ambiguous copy asks. If needed, use **Settings › Emulators › PPSSPP** and choose the PSP folder that holds **SAVEDATA** and **SYSTEM**. Custom Memory Stick locations can be picked there too. The found path is shown in Settings and announced in R1.
 
+PPSSPP uses the folder set in its own **Settings › System › Memory Stick Folder**. Choose the same **PSP** folder in Foldcade. A game save written there during a Foldcade session checks the folder. If Foldcade detects a save in another readable PSP folder, use **Fix it** to keep the copies and bind the folder PPSSPP uses.
+
 Game saves sync through RomM as slot `savedata`. ISO, CSO v1, and PBP games are identified by `DISC_ID` in `PARAM.SFO`; a save archive contains all matching `SAVEDATA/<DISC_ID…>/` folders, under their original names. Games with unreadable metadata or nonstandard save-directory IDs cannot be matched by filename or title. Their files stay on the device; unsupported game images show **Saves not syncing**. Save states do not sync.
 
 If Foldcade cannot resolve a save destination and already holds or finds an incoming save, choose **Play without syncing** to start that launch anyway. When RomM is unreachable and Foldcade holds no incoming save, the game can play offline without syncing; the amber warnings stay.
