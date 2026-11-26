@@ -24,6 +24,21 @@
       "tint": false,
       "accent": "#E6B23A"
     },
+    "app.app.foldcade.moonlight": {
+      "file": "icons/app_foldcade_moonlight.xml",
+      "tint": false,
+      "accent": "#B98CFF"
+    },
+    "app.app.foldcade.moonlight.debug": {
+      "file": "icons/app_foldcade_moonlight.xml",
+      "tint": false,
+      "accent": "#B98CFF"
+    },
+    "app.app.foldcade.thor": {
+      "file": "icons/app_foldcade_thor.xml",
+      "tint": false,
+      "accent": "#C3CEDF"
+    },
     "app.app.gamenative": {
       "file": "icons/app_gamenative.xml",
       "tint": false,
@@ -383,6 +398,26 @@
       "file": "icons/app_termux.xml",
       "tint": false,
       "accent": "#9EABC2"
+    },
+    "app.com.thorfeatures.appprofiles": {
+      "file": "icons/app_fan_profiles.xml",
+      "tint": false,
+      "accent": "#6FD3FF"
+    },
+    "app.com.thorfeatures.oledwash": {
+      "file": "icons/app_oled_wash.xml",
+      "tint": false,
+      "accent": "#74DCCB"
+    },
+    "app.com.thorfeatures.screenpanel": {
+      "file": "icons/app_screen_panel.xml",
+      "tint": false,
+      "accent": "#A9DB8E"
+    },
+    "app.com.thorfeatures.stickcal": {
+      "file": "icons/app_stick_cal.xml",
+      "tint": false,
+      "accent": "#4A78FF"
     },
     "app.com.topjohnwu.magisk": {
       "file": "icons/app_magisk.xml",
